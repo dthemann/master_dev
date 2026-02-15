@@ -932,7 +932,8 @@ def convert_protein_with_openbabel(
         input_path.as_posix(),
         "-O",
         output_path.as_posix(),
-        "-xr",  # receptor mode for PDBQT
+        "-xh",  # output polar hydrogens only (PDBQT-specific)
+        "-xr",  # rigid receptor mode for PDBQT
     ]
     if add_hydrogens:
         cmd.append("-h")
@@ -992,7 +993,9 @@ def convert_ligand_with_openbabel(
         input_path.as_posix(),
         "-O",
         output_path.as_posix(),
-        "-h",  # add hydrogens
+        # "-xh",  # output polar hydrogens only (PDBQT-specific)
+        "-xr",  # rigid receptor mode for PDBQT
+        "-h",   # add hydrogens
     ]
 
     try:
@@ -1716,6 +1719,7 @@ class PDBValidator:
         output_dir: Optional[Path] = None,
         custom_postfix: str = "",
         process_postfixes: bool = True,
+        require_pdbfixer: bool = False,
     ):
         self.verbose = verbose
         self.fixed_files = {}
@@ -1723,21 +1727,27 @@ class PDBValidator:
         self.output_dir = Path(output_dir) if output_dir else None
         self.custom_postfix = custom_postfix
         self.process_postfixes = process_postfixes
-        self._check_pdbfixer()
+        self.pdbfixer_available = self._check_pdbfixer(require=require_pdbfixer)
     
-    def _check_pdbfixer(self):
+    def _check_pdbfixer(self, require: bool = False):
         """Check if PDBFixer is installed"""
         try:
             from pdbfixer import PDBFixer
             if self.verbose:
                 print("✓ PDBFixer is installed")
+            return True
         except ImportError as exc:
-            message = (
-                "PDBFixer not found. Install with:\n"
-                "  pip install pdbfixer\n"
-                "  OR conda install -c conda-forge pdbfixer"
-            )
-            raise RuntimeError(message) from exc
+            if require:
+                message = (
+                    "PDBFixer not found. Install with:\n"
+                    "  pip install pdbfixer\n"
+                    "  OR conda install -c conda-forge pdbfixer"
+                )
+                raise RuntimeError(message) from exc
+            else:
+                if self.verbose:
+                    print("⚠ PDBFixer not available - will skip validation")
+                return False
     
     def validate_pdb(
         self,
@@ -1767,6 +1777,12 @@ class PDBValidator:
         if not os.path.exists(pdb_file):
             print(f"✗ File not found: {pdb_file}")
             return None
+        
+        # If PDBFixer is not available, return original file
+        if not self.pdbfixer_available:
+            if self.verbose:
+                print(f"⚠ Skipping validation for {pdb_file} (PDBFixer not available)")
+            return pdb_file
         
         try:
             from pdbfixer import PDBFixer
