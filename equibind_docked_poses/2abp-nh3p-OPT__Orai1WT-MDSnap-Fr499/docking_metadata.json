@@ -1,0 +1,48 @@
+{
+  "protein_name": "Orai1WT-MDSnap-Fr499",
+  "ligand_name": "2abp-nh3p-OPT",
+  "protein_path": "/home/manndo/master_dev/Orai/Orai1WT-MDSnap-Fr499.pdb",
+  "ligand_path": "/home/manndo/master_dev/Drugs/2abp-nh3p-OPT.pdb",
+  "output_dir": "/home/manndo/master_dev/equibind_docked_poses/2abp-nh3p-OPT__Orai1WT-MDSnap-Fr499",
+  "status": "partial",
+  "poses": [
+    {
+      "pose_id": 1,
+      "sdf_path": "/home/manndo/master_dev/equibind_docked_poses/2abp-nh3p-OPT__Orai1WT-MDSnap-Fr499/pose_01.sdf",
+      "centroid": [
+        -8.537682352941175,
+        26.799085294117653,
+        -8.47309705882353
+      ],
+      "seed": 42,
+      "conformer_id": 1
+    },
+    {
+      "pose_id": 2,
+      "sdf_path": "/home/manndo/master_dev/equibind_docked_poses/2abp-nh3p-OPT__Orai1WT-MDSnap-Fr499/pose_02.sdf",
+      "centroid": [
+        -9.765808823529413,
+        28.454538235294123,
+        -22.938685294117647
+      ],
+      "seed": 42,
+      "conformer_id": 2
+    },
+    {
+      "pose_id": 3,
+      "sdf_path": "/home/manndo/master_dev/equibind_docked_poses/2abp-nh3p-OPT__Orai1WT-MDSnap-Fr499/pose_03.sdf",
+      "centroid": [
+        -8.267144117647057,
+        26.401638235294122,
+        -8.272779411764708
+      ],
+      "seed": 42,
+      "conformer_id": 3
+    }
+  ],
+  "num_poses": 3,
+  "num_attempts": 3,
+  "num_conformers_generated": 3,
+  "error_message": "Only 3/30 unique poses generated from 3 conformers",
+  "elapsed_time": 25.898303747177124
+}

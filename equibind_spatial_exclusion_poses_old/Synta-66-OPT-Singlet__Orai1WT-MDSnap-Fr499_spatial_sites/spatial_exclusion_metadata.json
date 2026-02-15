@@ -1,0 +1,144 @@
+{
+  "protein_name": "Orai1WT-MDSnap-Fr499",
+  "ligand_name": "Synta-66-OPT-Singlet",
+  "protein_path": "/home/manndo/master_dev/Orai/Orai1WT-MDSnap-Fr499.pdb",
+  "ligand_path": "/home/manndo/master_dev/Drugs/Synta-66-OPT-Singlet.pdb",
+  "output_dir": "/home/manndo/master_dev/equibind_spatial_exclusion_poses/Synta-66-OPT-Singlet__Orai1WT-MDSnap-Fr499_spatial_sites",
+  "status": "partial",
+  "binding_sites": [
+    {
+      "site_id": 1,
+      "centroid": [
+        -10.001820930232558,
+        27.2684023255814,
+        -2.2304697674418605
+      ],
+      "sdf_path": "/home/manndo/master_dev/equibind_spatial_exclusion_poses/Synta-66-OPT-Singlet__Orai1WT-MDSnap-Fr499_spatial_sites/site_01/pose_01.sdf",
+      "conformer_id": 1,
+      "attempt_number": 1,
+      "seed_used": 42,
+      "distance_to_nearest_site": null,
+      "num_poses": 5,
+      "poses": [
+        {
+          "pose_id": 1,
+          "sdf_path": "/home/manndo/master_dev/equibind_spatial_exclusion_poses/Synta-66-OPT-Singlet__Orai1WT-MDSnap-Fr499_spatial_sites/site_01/pose_01.sdf",
+          "centroid": [
+            -10.001820930232558,
+            27.2684023255814,
+            -2.2304697674418605
+          ],
+          "conformer_id": 1,
+          "seed_used": 42,
+          "distance_to_site_center": 0.0,
+          "rmsd_to_reference": 0.0
+        },
+        {
+          "pose_id": 2,
+          "sdf_path": "/home/manndo/master_dev/equibind_spatial_exclusion_poses/Synta-66-OPT-Singlet__Orai1WT-MDSnap-Fr499_spatial_sites/site_01/pose_02.sdf",
+          "centroid": [
+            -10.029060465116281,
+            27.27733720930232,
+            -2.150339534883721
+          ],
+          "conformer_id": 2,
+          "seed_used": 42,
+          "distance_to_site_center": 0.08510392809741198,
+          "rmsd_to_reference": 2.984564437740163
+        },
+        {
+          "pose_id": 3,
+          "sdf_path": "/home/manndo/master_dev/equibind_spatial_exclusion_poses/Synta-66-OPT-Singlet__Orai1WT-MDSnap-Fr499_spatial_sites/site_01/pose_03.sdf",
+          "centroid": [
+            -9.882923255813955,
+            26.338746511627903,
+            -1.332027906976744
+          ],
+          "conformer_id": 3,
+          "seed_used": 42,
+          "distance_to_site_center": 1.2983044196318934,
+          "rmsd_to_reference": 4.436750982209789
+        },
+        {
+          "pose_id": 4,
+          "sdf_path": "/home/manndo/master_dev/equibind_spatial_exclusion_poses/Synta-66-OPT-Singlet__Orai1WT-MDSnap-Fr499_spatial_sites/site_01/pose_04.sdf",
+          "centroid": [
+            -10.003948837209304,
+            27.344074418604645,
+            -1.9427302325581393
+          ],
+          "conformer_id": 4,
+          "seed_used": 42,
+          "distance_to_site_center": 0.29753123127786246,
+          "rmsd_to_reference": 4.604839005695214
+        },
+        {
+          "pose_id": 5,
+          "sdf_path": "/home/manndo/master_dev/equibind_spatial_exclusion_poses/Synta-66-OPT-Singlet__Orai1WT-MDSnap-Fr499_spatial_sites/site_01/pose_05.sdf",
+          "centroid": [
+            -9.872937209302329,
+            26.284016279069768,
+            -1.2402627906976746
+          ],
+          "conformer_id": 6,
+          "seed_used": 42,
+          "distance_to_site_center": 1.4021899867280754,
+          "rmsd_to_reference": 4.537652977624979
+        }
+      ]
+    }
+  ],
+  "num_sites_found": 1,
+  "total_poses": 5,
+  "total_conformers_tried": 60,
+  "total_docking_attempts": 60,
+  "rejected_in_exclusion": 54,
+  "poses_rejected_outside_site": 0,
+  "poses_rejected_low_rmsd": 1,
+  "elapsed_time": 607.098459482193,
+  "error_message": "Exhausted all 60 conformers. Found 1/10 sites",
+  "seeds_used": [
+    42,
+    123,
+    456,
+    789,
+    1001,
+    2022,
+    3141,
+    5926,
+    8675,
+    9999
+  ],
+  "exclusion_zones": [
+    {
+      "site_id": 1,
+      "center": [
+        -10.001820930232558,
+        27.2684023255814,
+        -2.2304697674418605
+      ],
+      "radius": 5.0
+    }
+  ],
+  "conformer_generation": {
+    "seeds_used": [
+      42,
+      123,
+      456,
+      789,
+      1001,
+      2022,
+      3141,
+      5926,
+      8675,
+      9999
+    ],
+    "conformers_per_seed": 6,
+    "total_conformers_generated": 60
+  },
+  "pose_parameters": {
+    "poses_per_site": 5,
+    "site_inclusion_radius": 6.0,
+    "min_pose_rmsd": 1.5
+  }
+}

@@ -9,9 +9,15 @@ import re
 import pandas as pd
 from pathlib import Path
 
-# Define paths
-MEEKO_DOCKING_DIR = "/home/manndo/MasterProject/docking_ready_meeko/docking"
-MGLTOOLS_DOCKING_DIR = "/home/manndo/MasterProject/docking_ready_mgltools/docking"
+# Define working directory paths
+wd = {
+    "meeko": "/home/manndo/MasterProject/docking_ready_meeko/docking",
+    "mgltools": "/home/manndo/MasterProject/docking_ready_mgltools/docking",
+    "output": "/home/manndo/MasterProject"
+}
+
+MEEKO_DOCKING_DIR = wd["meeko"]
+MGLTOOLS_DOCKING_DIR = wd["mgltools"]
 
 def parse_vina_log(log_path):
     """Parse a Vina log file and extract docking results."""
@@ -126,206 +132,319 @@ def collect_docking_results(docking_dir, method_name):
     return results
 
 
-def main():
-    print("=" * 80)
-    print("COMPARISON OF DOCKING RESULTS: MEEKO vs MGLTools CONVERSION")
-    print("=" * 80)
-    print()
+class CompareDockingTools:
+    """Compare docking results between Meeko and MGLTools conversion methods."""
     
-    # Collect results from both methods
-    print("Collecting Meeko docking results...")
-    meeko_results = collect_docking_results(MEEKO_DOCKING_DIR, "Meeko")
-    print(f"  Found {len(meeko_results)} docking runs")
+    def __init__(self, meeko_dir=None, mgltools_dir=None, output_dir=None, verbose=True):
+        """Initialize comparison with directory paths.
+        
+        Parameters:
+        -----------
+        meeko_dir : str or Path, optional
+            Path to Meeko docking directory (default: from wd dict)
+        mgltools_dir : str or Path, optional
+            Path to MGLTools docking directory (default: from wd dict)
+        output_dir : str or Path, optional
+            Path for output files (default: from wd dict)
+        verbose : bool, optional
+            Print detailed output (default: True)
+        """
+        self.meeko_dir = str(meeko_dir) if meeko_dir else MEEKO_DOCKING_DIR
+        self.mgltools_dir = str(mgltools_dir) if mgltools_dir else MGLTOOLS_DOCKING_DIR
+        self.output_dir = str(output_dir) if output_dir else wd.get("output", "/home/manndo/MasterProject")
+        self.verbose = verbose
+        
+        # Results storage
+        self.df_meeko = None
+        self.df_mgltools = None
+        self.df_comparison = None
+        self.comparison_data = []
+        
+    def collect_results(self):
+        """Collect docking results from both directories."""
+        if self.verbose:
+            print("=" * 80)
+            print("COMPARISON OF DOCKING RESULTS: MEEKO vs MGLTools CONVERSION")
+            print("=" * 80)
+            print()
+            print(f"Meeko directory: {self.meeko_dir}")
+            print(f"MGLTools directory: {self.mgltools_dir}")
+            print(f"Output directory: {self.output_dir}")
+            print()
+        
+        # Check if directories exist
+        if not os.path.exists(self.meeko_dir):
+            if self.verbose:
+                print(f"⚠ Warning: Meeko directory not found: {self.meeko_dir}")
+            meeko_results = []
+        else:
+            if self.verbose:
+                print("Collecting Meeko docking results...")
+            meeko_results = collect_docking_results(self.meeko_dir, "Meeko")
+            if self.verbose:
+                print(f"  Found {len(meeko_results)} docking runs")
+        
+        if not os.path.exists(self.mgltools_dir):
+            if self.verbose:
+                print(f"⚠ Warning: MGLTools directory not found: {self.mgltools_dir}")
+            mgltools_results = []
+        else:
+            if self.verbose:
+                print("Collecting MGLTools docking results...")
+            mgltools_results = collect_docking_results(self.mgltools_dir, "MGLTools")
+            if self.verbose:
+                print(f"  Found {len(mgltools_results)} docking runs")
+        
+        if self.verbose:
+            print()
+        
+        self.df_meeko = pd.DataFrame(meeko_results)
+        self.df_mgltools = pd.DataFrame(mgltools_results)
+        
+        return self.df_meeko, self.df_mgltools
     
-    print("Collecting MGLTools docking results...")
-    mgltools_results = collect_docking_results(MGLTOOLS_DOCKING_DIR, "MGLTools")
-    print(f"  Found {len(mgltools_results)} docking runs")
-    print()
+    def analyze(self):
+        """Run complete comparison analysis."""
+        if self.df_meeko is None or self.df_mgltools is None:
+            self.collect_results()
+        
+        self._print_summary_statistics()
+        self._compare_pairs()
+        self._compare_affinities()
+        self._save_results()
+        
+        return self.df_comparison
     
-    # Create DataFrames
-    df_meeko = pd.DataFrame(meeko_results)
-    df_mgltools = pd.DataFrame(mgltools_results)
-    
-    # ============================================================
-    # SUMMARY STATISTICS
-    # ============================================================
-    print("=" * 80)
-    print("SUMMARY STATISTICS")
-    print("=" * 80)
-    print()
-    
-    print("MEEKO Conversion Method:")
-    print(f"  Total docking runs: {len(df_meeko)}")
-    print(f"  Successful dockings: {df_meeko['success'].sum()}")
-    print(f"  Failed dockings: {(~df_meeko['success']).sum()}")
-    if df_meeko['success'].sum() > 0:
-        print(f"  Best affinity (overall): {df_meeko['best_affinity'].min():.3f} kcal/mol")
-        print(f"  Worst affinity (overall): {df_meeko['best_affinity'].max():.3f} kcal/mol")
-        print(f"  Mean best affinity: {df_meeko['best_affinity'].mean():.3f} kcal/mol")
-    print()
-    
-    print("MGLTools Conversion Method:")
-    print(f"  Total docking runs: {len(df_mgltools)}")
-    print(f"  Successful dockings: {df_mgltools['success'].sum()}")
-    print(f"  Failed dockings: {(~df_mgltools['success']).sum()}")
-    if df_mgltools['success'].sum() > 0:
-        print(f"  Best affinity (overall): {df_mgltools['best_affinity'].min():.3f} kcal/mol")
-        print(f"  Worst affinity (overall): {df_mgltools['best_affinity'].max():.3f} kcal/mol")
-        print(f"  Mean best affinity: {df_mgltools['best_affinity'].mean():.3f} kcal/mol")
-    print()
-    
-    # ============================================================
-    # DETAILED COMPARISON BY PROTEIN-LIGAND PAIR
-    # ============================================================
-    print("=" * 80)
-    print("DETAILED COMPARISON BY PROTEIN-LIGAND PAIR")
-    print("=" * 80)
-    print()
-    
-    # Normalize protein names for comparison (remove _retry1 suffix from meeko)
-    df_meeko['protein_normalized'] = df_meeko['protein'].str.replace('_retry1', '', regex=False)
-    df_mgltools['protein_normalized'] = df_mgltools['protein']
-    
-    # Get unique protein-ligand combinations
-    meeko_pairs = set(zip(df_meeko['protein_normalized'], df_meeko['ligand']))
-    mgltools_pairs = set(zip(df_mgltools['protein_normalized'], df_mgltools['ligand']))
-    
-    common_pairs = meeko_pairs & mgltools_pairs
-    meeko_only = meeko_pairs - mgltools_pairs
-    mgltools_only = mgltools_pairs - meeko_pairs
-    
-    print(f"Common protein-ligand pairs: {len(common_pairs)}")
-    print(f"Meeko-only pairs: {len(meeko_only)}")
-    print(f"MGLTools-only pairs: {len(mgltools_only)}")
-    print()
-    
-    if meeko_only:
-        print("Pairs only in Meeko results:")
-        for pair in sorted(meeko_only):
-            print(f"  {pair[0]} + {pair[1]}")
+    def _print_summary_statistics(self):
+        """Print summary statistics for both methods."""
+        if not self.verbose:
+            return
+            
+        print("=" * 80)
+        print("SUMMARY STATISTICS")
+        print("=" * 80)
+        print()
+        
+        print("MEEKO Conversion Method:")
+        print(f"  Total docking runs: {len(self.df_meeko)}")
+        if len(self.df_meeko) > 0 and 'success' in self.df_meeko.columns:
+            print(f"  Successful dockings: {self.df_meeko['success'].sum()}")
+            print(f"  Failed dockings: {(~self.df_meeko['success']).sum()}")
+            if self.df_meeko['success'].sum() > 0:
+                print(f"  Best affinity (overall): {self.df_meeko['best_affinity'].min():.3f} kcal/mol")
+                print(f"  Worst affinity (overall): {self.df_meeko['best_affinity'].max():.3f} kcal/mol")
+                print(f"  Mean best affinity: {self.df_meeko['best_affinity'].mean():.3f} kcal/mol")
+        else:
+            print("  No docking results found")
+        print()
+        
+        print("MGLTools Conversion Method:")
+        print(f"  Total docking runs: {len(self.df_mgltools)}")
+        if len(self.df_mgltools) > 0 and 'success' in self.df_mgltools.columns:
+            print(f"  Successful dockings: {self.df_mgltools['success'].sum()}")
+            print(f"  Failed dockings: {(~self.df_mgltools['success']).sum()}")
+            if self.df_mgltools['success'].sum() > 0:
+                print(f"  Best affinity (overall): {self.df_mgltools['best_affinity'].min():.3f} kcal/mol")
+                print(f"  Worst affinity (overall): {self.df_mgltools['best_affinity'].max():.3f} kcal/mol")
+                print(f"  Mean best affinity: {self.df_mgltools['best_affinity'].mean():.3f} kcal/mol")
+        else:
+            print("  No docking results found")
         print()
     
-    if mgltools_only:
-        print("Pairs only in MGLTools results:")
-        for pair in sorted(mgltools_only):
-            print(f"  {pair[0]} + {pair[1]}")
+    def _compare_pairs(self):
+        """Compare protein-ligand pairs between methods."""
+        if not self.verbose:
+            return
+        
+        # Check if we have data to compare
+        if len(self.df_meeko) == 0 and len(self.df_mgltools) == 0:
+            print("⚠ No docking results to compare")
+            return set()
+            
+        print("=" * 80)
+        print("DETAILED COMPARISON BY PROTEIN-LIGAND PAIR")
+        print("=" * 80)
         print()
-    
-    # ============================================================
-    # AFFINITY COMPARISON FOR COMMON PAIRS
-    # ============================================================
-    print("=" * 80)
-    print("AFFINITY COMPARISON FOR COMMON PAIRS")
-    print("=" * 80)
-    print()
-    
-    comparison_data = []
-    
-    print(f"{'Protein':<30} {'Ligand':<25} {'Meeko':>10} {'MGLTools':>10} {'Δ (M-MGL)':>10} {'Better':>10}")
-    print("-" * 105)
-    
-    for protein, ligand in sorted(common_pairs):
-        meeko_row = df_meeko[(df_meeko['protein_normalized'] == protein) & (df_meeko['ligand'] == ligand)]
-        mgltools_row = df_mgltools[(df_mgltools['protein_normalized'] == protein) & (df_mgltools['ligand'] == ligand)]
         
-        meeko_affinity = meeko_row['best_affinity'].values[0] if len(meeko_row) > 0 else None
-        mgltools_affinity = mgltools_row['best_affinity'].values[0] if len(mgltools_row) > 0 else None
+        # Normalize protein names
+        if len(self.df_meeko) > 0 and 'protein' in self.df_meeko.columns:
+            self.df_meeko['protein_normalized'] = self.df_meeko['protein'].str.replace('_retry1', '', regex=False)
+        if len(self.df_mgltools) > 0 and 'protein' in self.df_mgltools.columns:
+            self.df_mgltools['protein_normalized'] = self.df_mgltools['protein']
         
-        if meeko_affinity is not None and mgltools_affinity is not None:
-            delta = meeko_affinity - mgltools_affinity
-            better = "Meeko" if meeko_affinity < mgltools_affinity else ("MGLTools" if mgltools_affinity < meeko_affinity else "Equal")
+        # Get unique pairs
+        meeko_pairs = set(zip(self.df_meeko['protein_normalized'], self.df_meeko['ligand']))
+        mgltools_pairs = set(zip(self.df_mgltools['protein_normalized'], self.df_mgltools['ligand']))
+        
+        common_pairs = meeko_pairs & mgltools_pairs
+        meeko_only = meeko_pairs - mgltools_pairs
+        mgltools_only = mgltools_pairs - meeko_pairs
+        
+        print(f"Common protein-ligand pairs: {len(common_pairs)}")
+        print(f"Meeko-only pairs: {len(meeko_only)}")
+        print(f"MGLTools-only pairs: {len(mgltools_only)}")
+        print()
+        
+        if meeko_only:
+            print("Pairs only in Meeko results:")
+            for pair in sorted(meeko_only):
+                print(f"  {pair[0]} + {pair[1]}")
+            print()
+        
+        if mgltools_only:
+            print("Pairs only in MGLTools results:")
+            for pair in sorted(mgltools_only):
+                print(f"  {pair[0]} + {pair[1]}")
+            print()
+        
+        return common_pairs
+    
+    def _compare_affinities(self):
+        """Compare binding affinities for common pairs."""
+        # Check if we have data to compare
+        if len(self.df_meeko) == 0 or len(self.df_mgltools) == 0:
+            if self.verbose:
+                print("⚠ Insufficient data for affinity comparison")
+            return
+        
+        # Normalize protein names if not already done
+        if 'protein_normalized' not in self.df_meeko.columns and 'protein' in self.df_meeko.columns:
+            self.df_meeko['protein_normalized'] = self.df_meeko['protein'].str.replace('_retry1', '', regex=False)
+        if 'protein_normalized' not in self.df_mgltools.columns and 'protein' in self.df_mgltools.columns:
+            self.df_mgltools['protein_normalized'] = self.df_mgltools['protein']
+        
+        meeko_pairs = set(zip(self.df_meeko['protein_normalized'], self.df_meeko['ligand']))
+        mgltools_pairs = set(zip(self.df_mgltools['protein_normalized'], self.df_mgltools['ligand']))
+        common_pairs = meeko_pairs & mgltools_pairs
+        
+        if not self.verbose:
+            # Silent mode - just collect data
+            for protein, ligand in sorted(common_pairs):
+                meeko_row = self.df_meeko[(self.df_meeko['protein_normalized'] == protein) & (self.df_meeko['ligand'] == ligand)]
+                mgltools_row = self.df_mgltools[(self.df_mgltools['protein_normalized'] == protein) & (self.df_mgltools['ligand'] == ligand)]
+                
+                meeko_affinity = meeko_row['best_affinity'].values[0] if len(meeko_row) > 0 else None
+                mgltools_affinity = mgltools_row['best_affinity'].values[0] if len(mgltools_row) > 0 else None
+                
+                if meeko_affinity is not None and mgltools_affinity is not None:
+                    delta = meeko_affinity - mgltools_affinity
+                    better = "Meeko" if meeko_affinity < mgltools_affinity else ("MGLTools" if mgltools_affinity < meeko_affinity else "Equal")
+                    
+                    self.comparison_data.append({
+                        'protein': protein,
+                        'ligand': ligand,
+                        'meeko_affinity': meeko_affinity,
+                        'mgltools_affinity': mgltools_affinity,
+                        'delta': delta,
+                        'better_method': better
+                    })
+        else:
+            print("=" * 80)
+            print("AFFINITY COMPARISON FOR COMMON PAIRS")
+            print("=" * 80)
+            print()
             
-            print(f"{protein:<30} {ligand:<25} {meeko_affinity:>10.3f} {mgltools_affinity:>10.3f} {delta:>+10.3f} {better:>10}")
+            print(f"{'Protein':<30} {'Ligand':<25} {'Meeko':>10} {'MGLTools':>10} {'Δ (M-MGL)':>10} {'Better':>10}")
+            print("-" * 105)
             
-            comparison_data.append({
-                'protein': protein,
-                'ligand': ligand,
-                'meeko_affinity': meeko_affinity,
-                'mgltools_affinity': mgltools_affinity,
-                'delta': delta,
-                'better_method': better
-            })
-    
-    print()
-    
-    # ============================================================
-    # SUMMARY OF COMPARISON
-    # ============================================================
-    if comparison_data:
-        df_comparison = pd.DataFrame(comparison_data)
+            for protein, ligand in sorted(common_pairs):
+                meeko_row = self.df_meeko[(self.df_meeko['protein_normalized'] == protein) & (self.df_meeko['ligand'] == ligand)]
+                mgltools_row = self.df_mgltools[(self.df_mgltools['protein_normalized'] == protein) & (self.df_mgltools['ligand'] == ligand)]
+                
+                meeko_affinity = meeko_row['best_affinity'].values[0] if len(meeko_row) > 0 else None
+                mgltools_affinity = mgltools_row['best_affinity'].values[0] if len(mgltools_row) > 0 else None
+                
+                if meeko_affinity is not None and mgltools_affinity is not None:
+                    delta = meeko_affinity - mgltools_affinity
+                    better = "Meeko" if meeko_affinity < mgltools_affinity else ("MGLTools" if mgltools_affinity < meeko_affinity else "Equal")
+                    
+                    print(f"{protein:<30} {ligand:<25} {meeko_affinity:>10.3f} {mgltools_affinity:>10.3f} {delta:>+10.3f} {better:>10}")
+                    
+                    self.comparison_data.append({
+                        'protein': protein,
+                        'ligand': ligand,
+                        'meeko_affinity': meeko_affinity,
+                        'mgltools_affinity': mgltools_affinity,
+                        'delta': delta,
+                        'better_method': better
+                    })
+            print()
         
+        if self.comparison_data:
+            self.df_comparison = pd.DataFrame(self.comparison_data)
+            
+            if self.verbose:
+                self._print_comparison_summary()
+    
+    def _print_comparison_summary(self):
+        """Print summary of affinity comparison."""
+        if self.df_comparison is None or not self.verbose:
+            return
+            
         print("=" * 80)
         print("SUMMARY OF AFFINITY COMPARISON")
         print("=" * 80)
         print()
         
-        meeko_wins = (df_comparison['better_method'] == 'Meeko').sum()
-        mgltools_wins = (df_comparison['better_method'] == 'MGLTools').sum()
-        ties = (df_comparison['better_method'] == 'Equal').sum()
+        meeko_wins = (self.df_comparison['better_method'] == 'Meeko').sum()
+        mgltools_wins = (self.df_comparison['better_method'] == 'MGLTools').sum()
+        ties = (self.df_comparison['better_method'] == 'Equal').sum()
         
         print(f"Meeko produced better (lower) affinity: {meeko_wins} times")
         print(f"MGLTools produced better (lower) affinity: {mgltools_wins} times")
         print(f"Equal affinity: {ties} times")
         print()
         
-        print(f"Average delta (Meeko - MGLTools): {df_comparison['delta'].mean():.3f} kcal/mol")
+        print(f"Average delta (Meeko - MGLTools): {self.df_comparison['delta'].mean():.3f} kcal/mol")
         print(f"  - Negative delta means Meeko is better on average")
         print(f"  - Positive delta means MGLTools is better on average")
         print()
         
-        print(f"Maximum difference: {df_comparison['delta'].abs().max():.3f} kcal/mol")
-        print(f"Minimum difference: {df_comparison['delta'].abs().min():.3f} kcal/mol")
+        print(f"Maximum difference: {self.df_comparison['delta'].abs().max():.3f} kcal/mol")
+        print(f"Minimum difference: {self.df_comparison['delta'].abs().min():.3f} kcal/mol")
         print()
+    
+    def _save_results(self):
+        """Save comparison results to CSV files."""
+        os.makedirs(self.output_dir, exist_ok=True)
         
-        # ============================================================
-        # COMPARISON BY LIGAND
-        # ============================================================
-        print("=" * 80)
-        print("COMPARISON BY LIGAND")
-        print("=" * 80)
-        print()
+        if self.df_comparison is not None:
+            output_csv = os.path.join(self.output_dir, "meeko_vs_mgltools_comparison.csv")
+            self.df_comparison.to_csv(output_csv, index=False)
+            if self.verbose:
+                print(f"Comparison data saved to: {output_csv}")
+                print()
         
-        for ligand in df_comparison['ligand'].unique():
-            ligand_data = df_comparison[df_comparison['ligand'] == ligand]
-            print(f"Ligand: {ligand}")
-            print(f"  Mean Meeko affinity: {ligand_data['meeko_affinity'].mean():.3f} kcal/mol")
-            print(f"  Mean MGLTools affinity: {ligand_data['mgltools_affinity'].mean():.3f} kcal/mol")
-            print(f"  Mean delta: {ligand_data['delta'].mean():.3f} kcal/mol")
-            meeko_better = (ligand_data['better_method'] == 'Meeko').sum()
-            mgl_better = (ligand_data['better_method'] == 'MGLTools').sum()
-            print(f"  Meeko better: {meeko_better}, MGLTools better: {mgl_better}")
-            print()
-        
-        # ============================================================
-        # COMPARISON BY PROTEIN
-        # ============================================================
-        print("=" * 80)
-        print("COMPARISON BY PROTEIN")
-        print("=" * 80)
-        print()
-        
-        for protein in df_comparison['protein'].unique():
-            protein_data = df_comparison[df_comparison['protein'] == protein]
-            print(f"Protein: {protein}")
-            print(f"  Mean Meeko affinity: {protein_data['meeko_affinity'].mean():.3f} kcal/mol")
-            print(f"  Mean MGLTools affinity: {protein_data['mgltools_affinity'].mean():.3f} kcal/mol")
-            print(f"  Mean delta: {protein_data['delta'].mean():.3f} kcal/mol")
-            meeko_better = (protein_data['better_method'] == 'Meeko').sum()
-            mgl_better = (protein_data['better_method'] == 'MGLTools').sum()
-            print(f"  Meeko better: {meeko_better}, MGLTools better: {mgl_better}")
-            print()
-        
-        # Save comparison to CSV
-        output_csv = "/home/manndo/MasterProject/meeko_vs_mgltools_comparison.csv"
-        df_comparison.to_csv(output_csv, index=False)
-        print(f"Comparison data saved to: {output_csv}")
-        print()
-        
-        # Also save detailed results
-        all_results = pd.concat([df_meeko, df_mgltools], ignore_index=True)
-        detailed_csv = "/home/manndo/MasterProject/meeko_vs_mgltools_detailed.csv"
+        # Save detailed results
+        all_results = pd.concat([self.df_meeko, self.df_mgltools], ignore_index=True)
+        detailed_csv = os.path.join(self.output_dir, "meeko_vs_mgltools_detailed.csv")
         all_results.to_csv(detailed_csv, index=False)
-        print(f"Detailed results saved to: {detailed_csv}")
+        if self.verbose:
+            print(f"Detailed results saved to: {detailed_csv}")
+
+
+def main(meeko_dir=None, mgltools_dir=None, output_dir=None):
+    """Compare docking results between Meeko and MGLTools.
+    
+    Parameters:
+    -----------
+    meeko_dir : str, optional
+        Path to Meeko docking directory (default: from wd dict)
+    mgltools_dir : str, optional
+        Path to MGLTools docking directory (default: from wd dict)
+    output_dir : str, optional
+        Path for output files (default: from wd dict)
+    """
+    # Use the CompareDockingTools class
+    comparator = CompareDockingTools(
+        meeko_dir=meeko_dir,
+        mgltools_dir=mgltools_dir,
+        output_dir=output_dir,
+        verbose=True
+    )
+    
+    # Run complete analysis
+    comparator.analyze()
 
 
 if __name__ == "__main__":
