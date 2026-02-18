@@ -1,0 +1,61 @@
+# Virtual environment
+.venv/
+
+# Data 
+
+**docking_ready_meeko/
+**docking_ready_mgltools/
+
+**docking_ready_diffdock/
+**docking_ready_diffdock_poses/
+**diffdock_results/
+
+**euquibind_docked_poses/
+**equibind_conformer_poses/
+**equibind_pocket_guided/
+**equibind_spatial_exclusion_poses/
+**equibind_spatial_exclusion_poses_old/
+**equibind_batches/
+
+**fpocket_results/
+**pandamap_results/
+**posebusters_results/
+**posebuster_proved/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Logs
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.vscode/
+*.swp
+*.swo
+*~
+
+# Large output / results directories (uncomment as needed)
+# equibind_docked_poses/
+# equibind_conformer_poses/
+# equibind_pocket_guided/
+# equibind_spatial_exclusion_poses/
+# equibind_spatial_exclusion_poses_old/
+# equibind_batches/
+# fpocket_results/
+# pandamap_results/
+# posebusters_results/
+# posebuster_proved/
+# docking_ready_meeko/docking/
+# docking_ready_mgltools/docking/
