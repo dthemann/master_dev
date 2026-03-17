@@ -70,19 +70,9 @@ docking_ready_mgltools/docking/
 !Orai/**/*.sdf
 !Drugs/**/*.sdf
 
-docking_read_obabel/Orai1WT-MDSnap-Fr300_cleaned.box.txt
-docking_read_obabel/Orai1WT-MDSnap-Fr300_cleaned.box.txt
-docking_read_obabel/Orai1WT-MDSnap-Fr300_cleaned.pdb
-docking_read_obabel/Orai1WT-MDSnap-Fr300_cleaned.pdbqt
-docking_read_obabel/Orai1WT-MDSnap-Fr400_cleaned.box.txt
-docking_read_obabel/Orai1WT-MDSnap-Fr400_cleaned.pdb
-docking_read_obabel/Orai1WT-MDSnap-Fr400_cleaned.pdbqt
-docking_read_obabel/Orai1WT-MDSnap-Fr499_cleaned.box.txt
-docking_read_obabel/Orai1WT-MDSnap-Fr499_cleaned.pdb
-docking_read_obabel/Orai1WT-MDSnap-Fr499_cleaned.pdbqt
-docking_read_obabel/Orai1WT-START-Fr0_cleaned.box.txt
-docking_read_obabel/Orai1WT-START-Fr0_cleaned.pdb
-docking_read_obabel/Orai1WT-START-Fr0_cleaned.pdbqt
-Scripts/__pycache__/clean_pdb_like_pymol.cpython-312.pyc
-Scripts/__pycache__/compare_meeko_mgltools_docking.cpython-312.pyc
-Scripts/__pycache__/prep_docking.cpython-312.pyc
+# Ignore all PDB files except those in Orai/ and Drugs/
+*.pdb
+!Orai/**/*.pdb
+!Drugs/**/*.pdb
+!ligands_sdf_small_symmetric/**/*.pdb
+!ligands_sdf_large_symmetric/**/*.pdb
