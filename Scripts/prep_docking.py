@@ -7,9 +7,14 @@ For use with AutoDock Vina, Equibind, and Diffdock
 
 import argparse
 import os
+import re
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+
+# Default number of parallel workers (capped to avoid overwhelming the system)
+DEFAULT_MAX_WORKERS: int = min(os.cpu_count() or 4, 8)
 
 
 def discover_input_files(folder: Path, contents: str, recursive: bool = False) -> List[str]:
@@ -20,7 +25,7 @@ def discover_input_files(folder: Path, contents: str, recursive: bool = False) -
 
     contents = contents.lower()
     patterns = {
-        "ligands": ("*.xyz",),
+        "ligands": ("*.xyz", "*.sdf", "*.mol2", "*.pdb"),
         "proteins": ("*.pdb",),
     }
 
@@ -62,6 +67,38 @@ DEFAULT_PROTEIN_FILES = [
 
 def _printer(enabled: bool):
     return print if enabled else (lambda *args, **kwargs: None)
+
+
+def _run_parallel(
+    func,
+    items,
+    *,
+    max_workers: int = DEFAULT_MAX_WORKERS,
+    desc: str = "items",
+    verbose: bool = True,
+):
+    """Execute *func* over *items* in parallel using threads.
+
+    *func* receives a single item and must return a (key, value) tuple.
+    Returns a dict of {key: value} preserving all results.
+    Exceptions per-item are caught and stored as (key, exception).
+    """
+    log = _printer(verbose)
+    results = {}
+    workers = min(max_workers, len(items)) if items else 1
+    log(f"⚡ Processing {len(items)} {desc} with {workers} parallel workers")
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        future_to_item = {executor.submit(func, item): item for item in items}
+        for future in as_completed(future_to_item):
+            item = future_to_item[future]
+            try:
+                key, value = future.result()
+                results[key] = value
+            except Exception as exc:
+                log(f"✗ Parallel task failed for {item}: {exc}")
+                results[item] = exc
+    return results
 
 
 def _strip_extension_from_stem(stem: str, ext: str) -> str:
@@ -266,7 +303,6 @@ def _extract_problematic_residues(error_text: str) -> Optional[List[str]]:
     Parses strings like "Input residues {'M:69': 'HSP', 'M:113': 'HSE', ...}"
     Returns list of residue specs like ['M:69', 'M:113', ...]
     """
-    import re
     
     # Pattern to match the dictionary of problematic residues
     match = re.search(r"Input residues\s+\{([^}]+)\}", error_text)
@@ -1093,7 +1129,7 @@ def convert_with_pymol_generic(
     return output_path.as_posix()
 
 # Global variable for MGLTools path - can be set by users
-MGLTOOLS_PATH: Optional[Path] = "/home/manndo/ADFRsuite-1.0"
+MGLTOOLS_PATH: Optional[Path] = "/opt/ADFRsuite-1.0"
 
 def set_mgltools_path(path: str) -> None:
     """Set the path to MGLTools installation directory."""
@@ -1498,9 +1534,10 @@ def run_conversion_workflow(
     chain: Optional[List[str]] = None,
     verbose: bool = True,
     mgltools_path: Optional[str] = None,
+    max_workers: int = DEFAULT_MAX_WORKERS,
 ) -> Dict[str, Dict]:
     """
-    Run conversion chains for multiple files using multiple converters.
+    Run conversion chains for multiple files using multiple converters in parallel.
     
     Parameters:
     -----------
@@ -1516,6 +1553,8 @@ def run_conversion_workflow(
         Print progress
     mgltools_path : str
         Path to MGLTools installation directory (required for mgltools converter)
+    max_workers : int
+        Maximum number of parallel threads
     
     Returns:
     --------
@@ -1546,46 +1585,49 @@ def run_conversion_workflow(
     if mgltools_path:
         log(f"MGLTools path: {mgltools_path}")
     
+    # Build all (file, converter) tasks for parallel execution
+    tasks: List[Tuple[str, str]] = []
     for input_file in input_files:
+        for conv in converters:
+            tasks.append((input_file, conv))
+
+    def _run_one_chain(task):
+        input_file, conv = task
         file_name = Path(input_file).stem
-        file_results = {}
-        file_comparisons = {}
-        
-        log(f"\n{'='*70}")
-        log(f"Processing: {Path(input_file).name}")
-        log(f"{'='*70}")
-        
-        for converter in converters:
-            try:
-                result = run_conversion_chain(
+        try:
+            result = run_conversion_chain(
+                input_file,
+                conv,
+                output_base_dir / file_name,
+                chain=chain,
+                verbose=verbose,
+                mgltools_path=mgltools_path,
+            )
+            comparison = None
+            final_output = result.get("final_output")
+            if (final_output and
+                final_output.endswith('.pdb') and
+                input_file.endswith('.pdb') and
+                Path(final_output).exists()):
+                comparison = compare_pdb_files(
                     input_file,
-                    converter,
-                    output_base_dir / file_name,
-                    chain=chain,
+                    final_output,
                     verbose=verbose,
-                    mgltools_path=mgltools_path,
                 )
-                file_results[converter] = result
-                
-                # Compare if final output is PDB and input was PDB
-                final_output = result.get("final_output")
-                if (final_output and 
-                    final_output.endswith('.pdb') and 
-                    input_file.endswith('.pdb') and
-                    Path(final_output).exists()):
-                    comparison = compare_pdb_files(
-                        input_file,
-                        final_output,
-                        verbose=verbose,
-                    )
-                    file_comparisons[converter] = comparison
-                    
-            except Exception as exc:
-                log(f"✗ {converter} failed: {exc}")
-                file_results[converter] = {"error": str(exc)}
-        
-        all_results[file_name] = file_results
-        comparisons[file_name] = file_comparisons
+            return (file_name, conv), (result, comparison)
+        except Exception as exc:
+            log(f"✗ {conv} failed for {Path(input_file).name}: {exc}")
+            return (file_name, conv), ({"error": str(exc)}, None)
+
+    log(f"⚡ Running {len(tasks)} conversion chains in parallel...")
+    workers = min(max_workers, len(tasks)) if tasks else 1
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(_run_one_chain, t): t for t in tasks}
+        for future in as_completed(futures):
+            (file_name, conv), (result, comparison) = future.result()
+            all_results.setdefault(file_name, {})[conv] = result
+            if comparison:
+                comparisons.setdefault(file_name, {})[conv] = comparison
     
     return {
         "results": all_results,
@@ -1692,21 +1734,37 @@ class XYZConverter:
         self.converted_files[xyz_file] = results
         return results
     
-    def batch_convert(self, xyz_files: List[str], formats: List[str] = None) -> Dict:
-        """Convert multiple XYZ files"""
-        all_results = {}
-        
+    def batch_convert(
+        self,
+        xyz_files: List[str],
+        formats: List[str] = None,
+        max_workers: int = DEFAULT_MAX_WORKERS,
+    ) -> Dict:
+        """Convert multiple XYZ files in parallel."""
         print(f"\nPROCESSING {len(xyz_files)} LIGAND(S)")
         print("="*60)
-        
-        for xyz_file in xyz_files:
-            if os.path.exists(xyz_file):
-                results = self.convert_xyz(xyz_file, formats)
-                all_results[xyz_file] = results
-            else:
-                print(f"⚠ Skipping: {xyz_file} (not found)")
-        
-        return all_results
+
+        existing = [f for f in xyz_files if os.path.exists(f)]
+        for f in xyz_files:
+            if not os.path.exists(f):
+                print(f"⚠ Skipping: {f} (not found)")
+
+        if not existing:
+            return {}
+
+        def _convert_one(xyz_file):
+            results = self.convert_xyz(xyz_file, formats)
+            return xyz_file, results
+
+        all_results = _run_parallel(
+            _convert_one,
+            existing,
+            max_workers=max_workers,
+            desc="ligand XYZ files",
+            verbose=self.verbose,
+        )
+        # Filter out any exceptions
+        return {k: v for k, v in all_results.items() if not isinstance(v, Exception)}
 
 
 class PDBValidator:
@@ -1884,25 +1942,39 @@ class PDBValidator:
         *,
         add_hydrogens: bool = False,
         repair_terminals: Optional[bool] = None,
+        max_workers: int = DEFAULT_MAX_WORKERS,
     ) -> Dict[str, Optional[str]]:
-        """Validate multiple PDB files"""
-        all_results = {}
-        
+        """Validate multiple PDB files in parallel."""
         print(f"\nPROCESSING {len(pdb_files)} PROTEIN STRUCTURE(S)")
         print("="*60)
-        
-        for pdb_file in pdb_files:
-            if os.path.exists(pdb_file):
-                result = self.validate_pdb(
-                    pdb_file,
-                    add_hydrogens=add_hydrogens,
-                    repair_terminals=repair_terminals,
-                )
-                all_results[pdb_file] = result
-            else:
-                print(f"⚠ Skipping: {pdb_file} (not found)")
-                all_results[pdb_file] = None
-        
+
+        all_results: Dict[str, Optional[str]] = {}
+        existing = [f for f in pdb_files if os.path.exists(f)]
+        for f in pdb_files:
+            if not os.path.exists(f):
+                print(f"⚠ Skipping: {f} (not found)")
+                all_results[f] = None
+
+        if not existing:
+            return all_results
+
+        def _validate_one(pdb_file):
+            result = self.validate_pdb(
+                pdb_file,
+                add_hydrogens=add_hydrogens,
+                repair_terminals=repair_terminals,
+            )
+            return pdb_file, result
+
+        parallel_results = _run_parallel(
+            _validate_one,
+            existing,
+            max_workers=max_workers,
+            desc="protein PDB files",
+            verbose=self.verbose,
+        )
+        for k, v in parallel_results.items():
+            all_results[k] = None if isinstance(v, Exception) else v
         return all_results
 
 
@@ -2049,26 +2121,47 @@ def resolve_input_files(
     input_dir: Optional[Path] = None,
     contains: Optional[str] = None,
     recursive: bool = False,
-) -> Tuple[List[str], List[str]]:
-    """Normalize user inputs into ligand and protein file lists."""
+) -> Tuple[List[str], List[str], List[str]]:
+    """Normalize user inputs into ligand and protein file lists.
 
-    xyz_files = list(ligand_files or [])
+    Returns (xyz_files, pdb_files, ready_ligands) where *ready_ligands*
+    are SDF/MOL2/PDB files that do NOT need OpenBabel XYZ conversion.
+    """
+
+    _XYZ_EXTS = {".xyz"}
+    _READY_EXTS = {".sdf", ".mol2", ".pdb"}
+
+    xyz_files: List[str] = []
+    ready_ligands: List[str] = []
     pdb_files = list(protein_files or [])
+
+    def _classify_ligands(paths: Iterable[str]) -> None:
+        for p in paths:
+            ext = Path(p).suffix.lower()
+            if ext in _XYZ_EXTS:
+                xyz_files.append(p)
+            elif ext in _READY_EXTS:
+                ready_ligands.append(p)
+            else:
+                xyz_files.append(p)  # fallback: try OpenBabel
+
+    if ligand_files:
+        _classify_ligands(ligand_files)
 
     if input_dir:
         if not contains:
             raise ValueError("'contains' must be provided when specifying input_dir")
         discovered = discover_input_files(input_dir, contains, recursive)
         if contains.lower() == "ligands":
-            xyz_files.extend(discovered)
+            _classify_ligands(discovered)
         else:
             pdb_files.extend(discovered)
 
-    if not xyz_files and not pdb_files:
+    if not xyz_files and not ready_ligands and not pdb_files:
         xyz_files = list(DEFAULT_LIGAND_FILES)
         pdb_files = list(DEFAULT_PROTEIN_FILES)
 
-    return xyz_files, pdb_files
+    return xyz_files, pdb_files, ready_ligands
 
 
 # Valid converter options
@@ -2098,8 +2191,15 @@ def run_workflow(
     use_converter_prefix: bool = False,
     log_file: Optional[Path] = None,
     skip_pdb_validation: bool = False,
+    max_workers: int = DEFAULT_MAX_WORKERS,
 ) -> Dict[str, object]:
-    """Execute the preparation workflow and return collected outputs."""
+    """Execute the preparation workflow and return collected outputs.
+
+    Parameters
+    ----------
+    max_workers : int
+        Maximum number of parallel threads for conversion tasks.
+    """
 
     log = _printer(verbose)
 
@@ -2123,7 +2223,7 @@ def run_workflow(
 
     output_dir = Path(output_dir) if output_dir else None
 
-    xyz_files, pdb_files = resolve_input_files(
+    xyz_files, pdb_files, ready_ligands = resolve_input_files(
         ligand_files=ligand_files,
         protein_files=protein_files,
         input_dir=input_dir,
@@ -2139,7 +2239,7 @@ def run_workflow(
             output_dir=output_dir,
             custom_postfix=custom_postfix,
         )
-        xyz_converter.batch_convert(list(xyz_files), formats=ligand_formats)
+        xyz_converter.batch_convert(list(xyz_files), formats=ligand_formats, max_workers=max_workers)
         converted_ligands = xyz_converter.converted_files
         # Log ligand conversions
         for original_xyz, fmt_map in converted_ligands.items():
@@ -2147,7 +2247,27 @@ def run_workflow(
                 status = "success" if out_path else "failed"
                 message = "" if out_path else "No output produced"
                 add_entry("openbabel", f"ligand_convert_{fmt}", original_xyz, out_path, status, message)
-    else:
+
+    # SDF/MOL2/PDB ligands are already in a dockable format — register them
+    # directly so downstream steps (Meeko, etc.) can pick them up without an
+    # intermediate OpenBabel round-trip that may corrupt query features.
+    if ready_ligands:
+        log(f"• {len(ready_ligands)} ligand(s) already in SDF/MOL2/PDB format — using as-is")
+        import shutil
+        for lig_path in ready_ligands:
+            lig = Path(lig_path)
+            ext = lig.suffix.lower().lstrip(".")
+            if output_dir:
+                dest = Path(output_dir) / lig.name
+                if not dest.exists():
+                    shutil.copy2(lig, dest)
+                converted_ligands[lig_path] = {ext: dest.as_posix()}
+            else:
+                converted_ligands[lig_path] = {ext: lig_path}
+            add_entry("passthrough", f"ligand_ready_{ext}", lig_path,
+                      converted_ligands[lig_path][ext], "success", "Already in target format")
+
+    if not xyz_files and not ready_ligands:
         log("• No ligand files supplied; skipping conversion")
 
     log("\n\nSTEP 2: VALIDATING PROTEIN STRUCTURES")
@@ -2171,6 +2291,7 @@ def run_workflow(
                 list(pdb_files),
                 add_hydrogens=add_hydrogens,
                 repair_terminals=repair_terminals,
+                max_workers=max_workers,
             )
             for pdb_in, pdb_out in protein_results.items():
                 status = "success" if pdb_out else "failed"
@@ -2219,29 +2340,40 @@ def run_workflow(
                 docking_tools.append('AutoDock Vina')
 
     if convert_with_meeko and fixed_proteins:
-        for protein in fixed_proteins:
-            try:
-                pdbqt_path, box_path = convert_protein_with_meeko(
-                    protein,
-                    output_dir=output_dir,
-                    custom_postfix=custom_postfix,
-                    process_postfixes=process_postfixes,
-                    verbose=verbose,
-                    add_tool_postfix=add_tool_postfix,
-                    use_converter_prefix=use_converter_prefix,
-                )
-                meeko_outputs[protein] = pdbqt_path
-                meeko_box_files[protein] = box_path
-                log(f"✓ Meeko PDBQT generated: {pdbqt_path}")
-                add_entry("meeko", "protein_pdbqt", protein, pdbqt_path, "success")
-            except RuntimeError as exc:
-                meeko_outputs[protein] = None
-                meeko_box_files[protein] = None
-                log(f"✗ Meeko conversion failed for {protein}: {exc}")
-                add_entry("meeko", "protein_pdbqt", protein, None, "failed", str(exc))
+        def _meeko_protein(protein):
+            pdbqt_path, box_path = convert_protein_with_meeko(
+                protein,
+                output_dir=output_dir,
+                custom_postfix=custom_postfix,
+                process_postfixes=process_postfixes,
+                verbose=verbose,
+                add_tool_postfix=add_tool_postfix,
+                use_converter_prefix=use_converter_prefix,
+            )
+            return protein, (pdbqt_path, box_path)
+
+        log("⚡ Parallelizing Meeko protein conversions...")
+        workers = min(max_workers, len(fixed_proteins))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(_meeko_protein, p): p for p in fixed_proteins}
+            for future in as_completed(futures):
+                protein = futures[future]
+                try:
+                    _, (pdbqt_path, box_path) = future.result()
+                    meeko_outputs[protein] = pdbqt_path
+                    meeko_box_files[protein] = box_path
+                    log(f"✓ Meeko PDBQT generated: {pdbqt_path}")
+                    add_entry("meeko", "protein_pdbqt", protein, pdbqt_path, "success")
+                except RuntimeError as exc:
+                    meeko_outputs[protein] = None
+                    meeko_box_files[protein] = None
+                    log(f"✗ Meeko conversion failed for {protein}: {exc}")
+                    add_entry("meeko", "protein_pdbqt", protein, None, "failed", str(exc))
 
     if convert_ligands_with_meeko and converted_ligands:
         preferred_formats = ("sdf", "mol2", "pdb")
+        # Resolve source files first
+        ligand_tasks: List[Tuple[str, str]] = []  # (original_key, source_path)
         for original_xyz, format_map in converted_ligands.items():
             ligand_source = None
             for fmt in preferred_formats:
@@ -2252,89 +2384,98 @@ def run_workflow(
             if not ligand_source:
                 meeko_ligand_outputs[original_xyz] = None
                 log(f"⚠ No suitable format found for Meeko ligand prep: {original_xyz}")
-                continue
-            try:
-                ligand_pdbqt = convert_ligand_with_meeko(
-                    ligand_source,
-                    output_dir=output_dir,
-                    custom_postfix=custom_postfix,
-                    process_postfixes=process_postfixes,
-                    verbose=verbose,
-                    add_tool_postfix=add_tool_postfix,
-                    use_converter_prefix=use_converter_prefix,
-                )
-                meeko_ligand_outputs[original_xyz] = ligand_pdbqt
-                log(f"✓ Meeko ligand PDBQT generated: {ligand_pdbqt}")
-                add_entry("meeko", "ligand_pdbqt", ligand_source, ligand_pdbqt, "success")
-            except RuntimeError as exc:
-                meeko_ligand_outputs[original_xyz] = None
-                log(f"✗ Meeko ligand conversion failed for {ligand_source}: {exc}")
-                add_entry("meeko", "ligand_pdbqt", ligand_source, None, "failed", str(exc))
+            else:
+                ligand_tasks.append((original_xyz, ligand_source))
+
+        def _meeko_ligand(task):
+            original_xyz, ligand_source = task
+            ligand_pdbqt = convert_ligand_with_meeko(
+                ligand_source,
+                output_dir=output_dir,
+                custom_postfix=custom_postfix,
+                process_postfixes=process_postfixes,
+                verbose=verbose,
+                add_tool_postfix=add_tool_postfix,
+                use_converter_prefix=use_converter_prefix,
+            )
+            return original_xyz, (ligand_source, ligand_pdbqt)
+
+        if ligand_tasks:
+            log("⚡ Parallelizing Meeko ligand conversions...")
+            workers = min(max_workers, len(ligand_tasks))
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {executor.submit(_meeko_ligand, t): t for t in ligand_tasks}
+                for future in as_completed(futures):
+                    original_xyz, ligand_source = futures[future]
+                    try:
+                        _, (src, ligand_pdbqt) = future.result()
+                        meeko_ligand_outputs[original_xyz] = ligand_pdbqt
+                        log(f"✓ Meeko ligand PDBQT generated: {ligand_pdbqt}")
+                        add_entry("meeko", "ligand_pdbqt", src, ligand_pdbqt, "success")
+                    except RuntimeError as exc:
+                        meeko_ligand_outputs[original_xyz] = None
+                        log(f"✗ Meeko ligand conversion failed for {ligand_source}: {exc}")
+                        add_entry("meeko", "ligand_pdbqt", ligand_source, None, "failed", str(exc))
 
     # Converter-based protein conversion
     converter_protein_outputs: Dict[str, Optional[str]] = {}
     converter_box_files: Dict[str, Optional[str]] = {}
     if converter and convert_proteins and fixed_proteins:
         log(f"\n\nSTEP 4: CONVERTING PROTEINS USING {converter.upper()}")
-        for protein in fixed_proteins:
-            try:
-                if converter == "openbabel":
-                    pdbqt_path, box_path = convert_protein_with_openbabel(
-                        protein,
-                        output_dir=output_dir,
-                        custom_postfix=custom_postfix,
-                        process_postfixes=process_postfixes,
-                        add_hydrogens=add_hydrogens,
-                        verbose=verbose,
-                        add_tool_postfix=add_tool_postfix,
-                    )
-                elif converter == "meeko":
-                    pdbqt_path, box_path = convert_protein_with_meeko(
-                        protein,
-                        output_dir=output_dir,
-                        custom_postfix=custom_postfix,
-                        process_postfixes=process_postfixes,
-                        verbose=verbose,
-                        add_tool_postfix=add_tool_postfix,
-                        use_converter_prefix=use_converter_prefix,
-                    )
-                elif converter == "mgltools":
-                    pdbqt_path, box_path = convert_protein_with_mgltools(
-                        protein,
-                        output_dir=output_dir,
-                        custom_postfix=custom_postfix,
-                        process_postfixes=process_postfixes,
-                        verbose=verbose,
-                        add_tool_postfix=add_tool_postfix,
-                        use_converter_prefix=use_converter_prefix,
-                    )
-                elif converter == "pymol":
-                    pdbqt_path, box_path = convert_protein_with_pymol(
-                        protein,
-                        output_dir=output_dir,
-                        custom_postfix=custom_postfix,
-                        process_postfixes=process_postfixes,
-                        add_hydrogens=add_hydrogens,
-                        verbose=verbose,
-                        add_tool_postfix=add_tool_postfix,
-                    )
-                else:
-                    raise ValueError(f"Unknown converter: {converter}")
-                converter_protein_outputs[protein] = pdbqt_path
-                converter_box_files[protein] = box_path
-                log(f"✓ {converter.upper()} protein output: {pdbqt_path}")
-                add_entry(converter, "protein_convert", protein, pdbqt_path, "success")
-            except RuntimeError as exc:
-                converter_protein_outputs[protein] = None
-                converter_box_files[protein] = None
-                log(f"✗ {converter.upper()} protein conversion failed for {protein}: {exc}")
-                add_entry(converter, "protein_convert", protein, None, "failed", str(exc))
+
+        def _convert_protein(protein):
+            if converter == "openbabel":
+                return protein, convert_protein_with_openbabel(
+                    protein, output_dir=output_dir, custom_postfix=custom_postfix,
+                    process_postfixes=process_postfixes, add_hydrogens=add_hydrogens,
+                    verbose=verbose, add_tool_postfix=add_tool_postfix,
+                )
+            elif converter == "meeko":
+                return protein, convert_protein_with_meeko(
+                    protein, output_dir=output_dir, custom_postfix=custom_postfix,
+                    process_postfixes=process_postfixes, verbose=verbose,
+                    add_tool_postfix=add_tool_postfix, use_converter_prefix=use_converter_prefix,
+                )
+            elif converter == "mgltools":
+                return protein, convert_protein_with_mgltools(
+                    protein, output_dir=output_dir, custom_postfix=custom_postfix,
+                    process_postfixes=process_postfixes, verbose=verbose,
+                    add_tool_postfix=add_tool_postfix, use_converter_prefix=use_converter_prefix,
+                )
+            elif converter == "pymol":
+                return protein, convert_protein_with_pymol(
+                    protein, output_dir=output_dir, custom_postfix=custom_postfix,
+                    process_postfixes=process_postfixes, add_hydrogens=add_hydrogens,
+                    verbose=verbose, add_tool_postfix=add_tool_postfix,
+                )
+            else:
+                raise ValueError(f"Unknown converter: {converter}")
+
+        log(f"⚡ Parallelizing {converter.upper()} protein conversions...")
+        workers = min(max_workers, len(fixed_proteins))
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(_convert_protein, p): p for p in fixed_proteins}
+            for future in as_completed(futures):
+                protein = futures[future]
+                try:
+                    _, (pdbqt_path, box_path) = future.result()
+                    converter_protein_outputs[protein] = pdbqt_path
+                    converter_box_files[protein] = box_path
+                    log(f"✓ {converter.upper()} protein output: {pdbqt_path}")
+                    add_entry(converter, "protein_convert", protein, pdbqt_path, "success")
+                except RuntimeError as exc:
+                    converter_protein_outputs[protein] = None
+                    converter_box_files[protein] = None
+                    log(f"✗ {converter.upper()} protein conversion failed for {protein}: {exc}")
+                    add_entry(converter, "protein_convert", protein, None, "failed", str(exc))
 
     # Converter-based ligand conversion
     converter_ligand_outputs: Dict[str, Optional[str]] = {}
     if converter and convert_ligands and converted_ligands:
         log(f"\n\nSTEP 5: CONVERTING LIGANDS USING {converter.upper()}")
         preferred_formats = ("sdf", "mol2", "pdb")
+        # Resolve source files first
+        ligand_conv_tasks: List[Tuple[str, str]] = []
         for original_xyz, format_map in converted_ligands.items():
             ligand_source = None
             for fmt in preferred_formats:
@@ -2345,55 +2486,55 @@ def run_workflow(
             if not ligand_source:
                 converter_ligand_outputs[original_xyz] = None
                 log(f"⚠ No suitable format found for {converter.upper()} ligand prep: {original_xyz}")
-                continue
-            try:
-                if converter == "openbabel":
-                    ligand_output = convert_ligand_with_openbabel(
-                        ligand_source,
-                        output_dir=output_dir,
-                        custom_postfix=custom_postfix,
-                        process_postfixes=process_postfixes,
-                        verbose=verbose,
-                        add_tool_postfix=add_tool_postfix,
-                    )
-                elif converter == "meeko":
-                    ligand_output = convert_ligand_with_meeko(
-                        ligand_source,
-                        output_dir=output_dir,
-                        custom_postfix=custom_postfix,
-                        process_postfixes=process_postfixes,
-                        verbose=verbose,
-                        add_tool_postfix=add_tool_postfix,
-                        use_converter_prefix=use_converter_prefix,
-                    )
-                elif converter == "mgltools":
-                    ligand_output = convert_ligand_with_mgltools(
-                        ligand_source,
-                        output_dir=output_dir,
-                        custom_postfix=custom_postfix,
-                        process_postfixes=process_postfixes,
-                        verbose=verbose,
-                        add_tool_postfix=add_tool_postfix,
-                        use_converter_prefix=use_converter_prefix,
-                    )
-                elif converter == "pymol":
-                    ligand_output = convert_ligand_with_pymol(
-                        ligand_source,
-                        output_dir=output_dir,
-                        custom_postfix=custom_postfix,
-                        process_postfixes=process_postfixes,
-                        verbose=verbose,
-                        add_tool_postfix=add_tool_postfix,
-                    )
-                else:
-                    raise ValueError(f"Unknown converter: {converter}")
-                converter_ligand_outputs[original_xyz] = ligand_output
-                log(f"✓ {converter.upper()} ligand output: {ligand_output}")
-                add_entry(converter, "ligand_convert", ligand_source, ligand_output, "success")
-            except RuntimeError as exc:
-                converter_ligand_outputs[original_xyz] = None
-                log(f"✗ {converter.upper()} ligand conversion failed for {ligand_source}: {exc}")
-                add_entry(converter, "ligand_convert", ligand_source, None, "failed", str(exc))
+            else:
+                ligand_conv_tasks.append((original_xyz, ligand_source))
+
+        def _convert_ligand(task):
+            original_xyz, ligand_source = task
+            if converter == "openbabel":
+                out = convert_ligand_with_openbabel(
+                    ligand_source, output_dir=output_dir, custom_postfix=custom_postfix,
+                    process_postfixes=process_postfixes, verbose=verbose,
+                    add_tool_postfix=add_tool_postfix,
+                )
+            elif converter == "meeko":
+                out = convert_ligand_with_meeko(
+                    ligand_source, output_dir=output_dir, custom_postfix=custom_postfix,
+                    process_postfixes=process_postfixes, verbose=verbose,
+                    add_tool_postfix=add_tool_postfix, use_converter_prefix=use_converter_prefix,
+                )
+            elif converter == "mgltools":
+                out = convert_ligand_with_mgltools(
+                    ligand_source, output_dir=output_dir, custom_postfix=custom_postfix,
+                    process_postfixes=process_postfixes, verbose=verbose,
+                    add_tool_postfix=add_tool_postfix, use_converter_prefix=use_converter_prefix,
+                )
+            elif converter == "pymol":
+                out = convert_ligand_with_pymol(
+                    ligand_source, output_dir=output_dir, custom_postfix=custom_postfix,
+                    process_postfixes=process_postfixes, verbose=verbose,
+                    add_tool_postfix=add_tool_postfix,
+                )
+            else:
+                raise ValueError(f"Unknown converter: {converter}")
+            return original_xyz, (ligand_source, out)
+
+        if ligand_conv_tasks:
+            log(f"⚡ Parallelizing {converter.upper()} ligand conversions...")
+            workers = min(max_workers, len(ligand_conv_tasks))
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {executor.submit(_convert_ligand, t): t for t in ligand_conv_tasks}
+                for future in as_completed(futures):
+                    original_xyz, ligand_source = futures[future]
+                    try:
+                        _, (src, ligand_output) = future.result()
+                        converter_ligand_outputs[original_xyz] = ligand_output
+                        log(f"✓ {converter.upper()} ligand output: {ligand_output}")
+                        add_entry(converter, "ligand_convert", src, ligand_output, "success")
+                    except RuntimeError as exc:
+                        converter_ligand_outputs[original_xyz] = None
+                        log(f"✗ {converter.upper()} ligand conversion failed for {ligand_source}: {exc}")
+                        add_entry(converter, "ligand_convert", ligand_source, None, "failed", str(exc))
 
     log("\n\n" + "=" * 60)
     log("WORKFLOW COMPLETE")
@@ -2567,6 +2708,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=Path,
         help="Path to write conversion overview log file",
     )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=DEFAULT_MAX_WORKERS,
+        help=f"Maximum number of parallel threads for conversion tasks (default: {DEFAULT_MAX_WORKERS})",
+    )
     return parser
 
 
@@ -2601,6 +2748,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             use_converter_prefix=args.use_converter_prefix,
             log_file=args.log_file,
             skip_pdb_validation=args.skip_pdb_validation,
+            max_workers=args.max_workers,
         )
     except Exception as exc:  # pragma: no cover - CLI convenience
         print(f"✗ {exc}")
