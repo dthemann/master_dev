@@ -158,7 +158,7 @@ def _build_output_path(
 
 def _calculate_box_from_pdb(
     pdb_path: Path,
-    padding: float = 5.0,
+    padding: float = 2.0,
 ) -> Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]]:
     """Compute bounding-box center and size (with padding) from ATOM records."""
 
@@ -406,7 +406,7 @@ def convert_protein_with_meeko(
     output_dir: Optional[Path],
     custom_postfix: str,
     process_postfixes: bool,
-    padding: float = 5.0,
+    padding: float = 2.0,
     verbose: bool = True,
     add_tool_postfix: bool = False,
     use_converter_prefix: bool = False,
@@ -590,6 +590,59 @@ def convert_protein_with_meeko(
     raise RuntimeError(error_msg)
 
 
+# Meeko assigns extended atom types (CG0, CG1, CG2, G0, G1, G2, Si, B) that
+# are not recognized by standard AutoDock Vina / Vina-CUDA.  Map them back
+# to the closest AD4 type so that docking does not fail.
+_MEEKO_AD4_TYPE_MAP: Dict[str, str] = {
+    "CG0": "C",
+    "CG1": "C",
+    "CG2": "C",
+    "G0":  "C",
+    "G1":  "C",
+    "G2":  "C",
+    "Si":  "S",
+    "B":   "C",
+}
+
+
+def sanitize_pdbqt_atom_types(
+    pdbqt_path: Path,
+    type_map: Optional[Dict[str, str]] = None,
+    verbose: bool = True,
+) -> int:
+    """Remap non-standard atom types in a PDBQT file in-place.
+
+    Returns the number of atoms that were remapped.
+    """
+    log = _printer(verbose)
+    if type_map is None:
+        type_map = _MEEKO_AD4_TYPE_MAP
+
+    text = pdbqt_path.read_text()
+    lines = text.splitlines(keepends=True)
+    n_fixed = 0
+
+    for i, line in enumerate(lines):
+        if not (line.startswith("ATOM") or line.startswith("HETATM")):
+            continue
+        # AD4 atom type starts at column 78 (0-indexed 77) to end of line
+        if len(line.rstrip()) < 78:
+            continue
+        atype = line[77:].strip()
+        if atype in type_map:
+            new_type = type_map[atype]
+            # Right-pad to preserve fixed-width format
+            padded = new_type.ljust(len(line.rstrip()) - 77)
+            lines[i] = line[:77] + padded + "\n"
+            n_fixed += 1
+
+    if n_fixed:
+        pdbqt_path.write_text("".join(lines))
+        log(f"  Sanitized {n_fixed} non-standard atom type(s) in {pdbqt_path.name}")
+
+    return n_fixed
+
+
 def convert_ligand_with_meeko(
     ligand_path: str,
     *,
@@ -635,6 +688,9 @@ def convert_ligand_with_meeko(
         message = f"Meeko ligand preparation failed for {ligand_path}: {exc}"
         raise RuntimeError(message) from exc
 
+    # Remap non-standard Meeko atom types so Vina-CUDA can parse the file
+    sanitize_pdbqt_atom_types(output_path, verbose=verbose)
+
     return output_path.as_posix()
 
 
@@ -644,7 +700,7 @@ def convert_protein_with_mgltools(
     output_dir: Optional[Path],
     custom_postfix: str,
     process_postfixes: bool,
-    padding: float = 5.0,
+    padding: float = 2.0,
     verbose: bool = True,
     add_tool_postfix: bool = False,
     use_converter_prefix: bool = False,
@@ -815,7 +871,7 @@ def convert_protein_with_pymol(
     output_dir: Optional[Path],
     custom_postfix: str,
     process_postfixes: bool,
-    padding: float = 5.0,
+    padding: float = 2.0,
     add_hydrogens: bool = True,
     verbose: bool = True,
     add_tool_postfix: bool = False,
@@ -943,7 +999,7 @@ def convert_protein_with_openbabel(
     output_dir: Optional[Path],
     custom_postfix: str,
     process_postfixes: bool,
-    padding: float = 5.0,
+    padding: float = 2.0,
     add_hydrogens: bool = True,
     verbose: bool = True,
     add_tool_postfix: bool = False,

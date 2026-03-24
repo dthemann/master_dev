@@ -7,7 +7,7 @@ Calculates box center and size from ligand or binding site residues
 from pymol import cmd, stored
 import sys
 
-def calculate_box_parameters(selection, padding=5.0):
+def calculate_box_parameters(selection, padding=2.0):
     """
     Calculate docking box center and size from a PyMOL selection.
     
