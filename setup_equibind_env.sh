@@ -21,26 +21,21 @@ echo "================================================================"
 echo " EquiBind Environment Setup"
 echo "================================================================"
 
-# ── 1. Install Miniconda ──────────────────────────────────────────────────
-CONDA_DIR="$HOME/miniconda3"
-CONDA_BIN="$CONDA_DIR/bin/conda"
-
-if [ -f "$CONDA_BIN" ]; then
-    echo "✓ Miniconda already installed at $CONDA_DIR"
+# ── 1. Ensure conda is available ─────────────────────────────────────────
+# Use existing Anaconda/Miniconda installation
+if command -v conda &>/dev/null; then
+    CONDA_DIR="$(conda info --base)"
+elif [ -d "$HOME/anaconda3" ]; then
+    CONDA_DIR="$HOME/anaconda3"
+elif [ -d "$HOME/miniconda3" ]; then
+    CONDA_DIR="$HOME/miniconda3"
 else
-    echo "Installing Miniconda..."
-    wget -q https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh
-    bash /tmp/miniconda.sh -b -p "$CONDA_DIR"
-    rm /tmp/miniconda.sh
-    echo "✓ Miniconda installed"
+    echo "✗ No conda installation found. Please install Anaconda or Miniconda first."
+    exit 1
 fi
 
-# Make conda available in this script
 eval "$("$CONDA_DIR/bin/conda" shell.bash hook)"
-
-# Initialize conda for future shells (adds to .bashrc)
-conda init bash 2>/dev/null || true
-
+echo "Using existing conda at: $CONDA_DIR"
 echo "Conda version: $(conda --version)"
 
 # ── 2. Create equibind conda environment ──────────────────────────────────
@@ -50,7 +45,7 @@ if conda env list | grep -q "^${ENV_NAME} "; then
     echo "✓ Conda environment '$ENV_NAME' already exists"
 else
     echo "Creating conda environment '$ENV_NAME' (Python 3.9)..."
-    conda create -n "$ENV_NAME" python=3.9 -y -q
+    conda create -n "$ENV_NAME" --override-channels -c conda-forge python=3.9 -y -q
     echo "✓ Environment created"
 fi
 
@@ -70,7 +65,7 @@ pip install dgl -f https://data.dgl.ai/wheels/torch-2.4/cu124/repo.html -q
 
 # ── 5. Install RDKit and scientific dependencies ─────────────────────────
 echo "Installing RDKit and scientific packages..."
-conda install -n "$ENV_NAME" -c conda-forge rdkit numpy scipy pandas -y -q
+conda install -n "$ENV_NAME" --override-channels -c conda-forge rdkit numpy scipy pandas -y -q
 
 # ── 6. Install remaining Python dependencies ─────────────────────────────
 echo "Installing remaining pip dependencies..."
@@ -87,7 +82,7 @@ pip install -q \
     jinja2
 
 # ── 7. Clone and setup EquiBind ──────────────────────────────────────────
-EQUIBIND_DIR="/workspace/EquiBind"
+EQUIBIND_DIR="$HOME/tools/EquiBind"
 
 if [ -d "$EQUIBIND_DIR" ]; then
     echo "✓ EquiBind already cloned at $EQUIBIND_DIR"
@@ -161,21 +156,11 @@ echo " Setup Complete"
 echo "================================================================"
 echo ""
 echo "Next steps:"
-echo "  1. Source conda:      eval \"\$(~/miniconda3/bin/conda shell.bash hook)\""
-echo "  2. Activate env:      conda activate equibind"
-echo "  3. In Jupyter, select the 'Python (equibind)' kernel"
-echo "  4. Run the notebook:  00_Equibind_Para_Runpod.ipynb"
+echo "  1. Activate env:      conda activate equibind"
+echo "  2. In Jupyter, select the 'Python (equibind)' kernel"
+echo "  3. Run the notebook:  00_Equibind_Para_Runpod.ipynb"
 echo ""
-echo "Paths configured in notebook:"
-echo "  EQUIBIND_DIR:     /workspace/EquiBind"
+echo "Paths:"
+echo "  EQUIBIND_DIR:     $HOME/tools/EquiBind"
 echo "  EQUIBIND_DEVICE:  cuda"
-echo "  Ligands:          storage/ligands_sdf_large_approved/"
-echo "  Receptors:        Orai/"
-echo "  Pocket results:   /storage/pocket_results/{fpocket,p2rank}_results/"
-echo ""
-echo "⚠  NOTE: The notebook expects fpocket and p2rank results at:"
-echo "   /storage/pocket_results/fpocket_results/"
-echo "   /storage/pocket_results/p2rank_results/"
-echo "   These directories are currently MISSING. If you don't have pocket"
-echo "   predictions, the notebook will still generate unguided poses."
 echo ""
