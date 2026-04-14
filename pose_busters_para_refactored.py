@@ -248,7 +248,7 @@ def _collect_equibind_rows(poses_dir: str) -> list[dict]:
         parts = dir_clean.split("__")
         if len(parts) == 2:
             ligand, protein = parts
-            pose_count = len(list(subdir.glob("**/*.sdf")))
+            pose_count = len([f for f in subdir.glob("**/*.sdf") if "prep" not in f.parts])
             if pose_count > 0:
                 rows.append({
                     "docking_tool": "equibind",
@@ -337,7 +337,7 @@ def _expand_equibind_poses(row: dict, _conv_dir: Path) -> list[dict]:
     if not file_path.is_dir():
         return []
     poses = []
-    for sdf_file in sorted(file_path.glob("**/*.sdf")):
+    for sdf_file in sorted(f for f in file_path.glob("**/*.sdf") if "prep" not in f.parts):
         try:
             rel = str(sdf_file.relative_to(file_path))
         except ValueError:
