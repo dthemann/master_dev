@@ -1,0 +1,167 @@
+{
+  "timestamp": "2026-04-19T21:10:46.228549",
+  "configuration": {
+    "scoring_function": "vina",
+    "exhaustiveness": 32,
+    "num_modes": 10,
+    "energy_range": 3,
+    "vina_bin": "/home/manndo/AutoDock-Vina/build/linux/release/vina"
+  },
+  "overall": {
+    "total_combinations": 12,
+    "successful": 12,
+    "failed": 0,
+    "skipped": 0,
+    "total_poses": 120,
+    "total_time_seconds": 141.08140587806702
+  },
+  "by_protein": {
+    "Orai1WT-MDSnap-Fr300_meeko": {
+      "combinations": 3,
+      "poses": 30,
+      "success": 3
+    },
+    "Orai1WT-MDSnap-Fr400_meeko": {
+      "combinations": 3,
+      "poses": 30,
+      "success": 3
+    },
+    "Orai1WT-MDSnap-Fr499_meeko": {
+      "combinations": 3,
+      "poses": 30,
+      "success": 3
+    },
+    "Orai1WT-START-Fr0_meeko_retry1": {
+      "combinations": 3,
+      "poses": 30,
+      "success": 3
+    }
+  },
+  "by_ligand": {
+    "2abp-nh2-OPT": {
+      "combinations": 4,
+      "poses": 40,
+      "success": 4
+    },
+    "Synta-66-OPT-Singlet": {
+      "combinations": 4,
+      "poses": 40,
+      "success": 4
+    },
+    "gsk7975a-deprot-OPT": {
+      "combinations": 4,
+      "poses": 40,
+      "success": 4
+    }
+  },
+  "combinations": [
+    {
+      "protein": "Orai1WT-MDSnap-Fr300_meeko",
+      "ligand": "2abp-nh2-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 12.3,
+      "best_affinity": -7.729,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr300_meeko",
+      "ligand": "Synta-66-OPT-Singlet",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 12.3,
+      "best_affinity": -8.617,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr300_meeko",
+      "ligand": "gsk7975a-deprot-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 12.3,
+      "best_affinity": -9.786,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr400_meeko",
+      "ligand": "2abp-nh2-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.7,
+      "best_affinity": -8.01,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr400_meeko",
+      "ligand": "Synta-66-OPT-Singlet",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.7,
+      "best_affinity": -8.953,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr400_meeko",
+      "ligand": "gsk7975a-deprot-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.7,
+      "best_affinity": -9.777,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr499_meeko",
+      "ligand": "2abp-nh2-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.59,
+      "best_affinity": -7.668,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr499_meeko",
+      "ligand": "Synta-66-OPT-Singlet",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.59,
+      "best_affinity": -9.174,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr499_meeko",
+      "ligand": "gsk7975a-deprot-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.59,
+      "best_affinity": -10.219,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-START-Fr0_meeko_retry1",
+      "ligand": "2abp-nh2-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.44,
+      "best_affinity": -8.038,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-START-Fr0_meeko_retry1",
+      "ligand": "Synta-66-OPT-Singlet",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.44,
+      "best_affinity": -9.694,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-START-Fr0_meeko_retry1",
+      "ligand": "gsk7975a-deprot-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.44,
+      "best_affinity": -10.638,
+      "error": null
+    }
+  ]
+}

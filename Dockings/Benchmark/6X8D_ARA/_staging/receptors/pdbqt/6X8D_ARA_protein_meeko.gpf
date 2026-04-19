@@ -1,0 +1,27 @@
+parameter_file boron-silicon-atom_par.dat
+npts 122 108 136
+gridfld 6X8D_ARA_protein_meeko.maps.fld
+spacing 0.375
+receptor_types HD C A N NA OA F P SA S Cl Br I Mg Ca Mn Fe Zn
+ligand_types HD C A N NA OA F P SA S Cl Br I Si B
+receptor 6X8D_ARA_protein_meeko.pdbqt
+gridcenter 34.873 12.450 63.258
+smooth 0.500
+map 6X8D_ARA_protein_meeko.HD.map
+map 6X8D_ARA_protein_meeko.C.map
+map 6X8D_ARA_protein_meeko.A.map
+map 6X8D_ARA_protein_meeko.N.map
+map 6X8D_ARA_protein_meeko.NA.map
+map 6X8D_ARA_protein_meeko.OA.map
+map 6X8D_ARA_protein_meeko.F.map
+map 6X8D_ARA_protein_meeko.P.map
+map 6X8D_ARA_protein_meeko.SA.map
+map 6X8D_ARA_protein_meeko.S.map
+map 6X8D_ARA_protein_meeko.Cl.map
+map 6X8D_ARA_protein_meeko.Br.map
+map 6X8D_ARA_protein_meeko.I.map
+map 6X8D_ARA_protein_meeko.Si.map
+map 6X8D_ARA_protein_meeko.B.map
+elecmap 6X8D_ARA_protein_meeko.e.map
+dsolvmap 6X8D_ARA_protein_meeko.d.map
+dielectric -42.000

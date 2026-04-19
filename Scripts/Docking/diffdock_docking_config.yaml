@@ -1,0 +1,34 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# DiffDock Batch Docking Configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Input directories ─────────────────────────────────────────────────────────
+receptors_dir: "Data/Receptors"
+ligand_dirs:
+  - "Data/Ligands/JKU"
+
+# ── DiffDock installation ─────────────────────────────────────────────────────
+diffdock_dir: "/workspace/DiffDock"
+diffdock_python: "~/anaconda3/envs/diffdock/bin/python"
+diffdock_conda_env: "diffdock"
+
+# ── Inference parameters ──────────────────────────────────────────────────────
+num_samples: 10            # poses per complex
+inference_steps: 20        # denoising steps (fewer = faster, lower quality)
+device: "cuda:0"           # "cpu" or "cuda:0"
+
+# ── Timeout ───────────────────────────────────────────────────────────────────
+timeout_per_complex: 300   # seconds; 0 = unlimited
+
+# ── Output ────────────────────────────────────────────────────────────────────
+output_dir: "Dockings/diffdock_results"
+log_dir: "Dockings/Logs/diffdock_logs"
+
+# ── Batch mode ────────────────────────────────────────────────────────────────
+batch_mode: true           # true = CSV batch (fastest), false = sequential
+batch_size: 15             # complexes per DiffDock subprocess; 0 = all at once
+max_workers: 1             # parallel workers when batch_mode=false
+
+# ── Overwrite settings ────────────────────────────────────────────────────────
+overwrite_existing: false  # re-dock already completed combinations
+overwrite_error_log: true  # retry previously failed ligands

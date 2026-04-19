@@ -1,0 +1,85 @@
+AutoDock Vina v1.2.7-20-g93cdc3d-mod
+#################################################################
+# If you used AutoDock Vina in your work, please cite:          #
+#                                                               #
+# J. Eberhardt, D. Santos-Martins, A. F. Tillack, and S. Forli  #
+# AutoDock Vina 1.2.0: New Docking Methods, Expanded Force      #
+# Field, and Python Bindings, J. Chem. Inf. Model. (2021)       #
+# DOI 10.1021/acs.jcim.1c00203                                  #
+#                                                               #
+# O. Trott, A. J. Olson,                                        #
+# AutoDock Vina: improving the speed and accuracy of docking    #
+# with a new scoring function, efficient optimization and       #
+# multithreading, J. Comp. Chem. (2010)                         #
+# DOI 10.1002/jcc.21334                                         #
+#                                                               #
+# Please see https://github.com/ccsb-scripps/AutoDock-Vina for  #
+# more information.                                             #
+#################################################################
+
+Scoring function : vina
+Rigid receptor: /home/manndo/master_dev/Data/Receptors/pdbqt/Orai1WT-START-Fr0_meeko_retry1.pdbqt
+Ligands (batch mode): 3 molecules
+Grid center: X 3.879 Y 7.05 Z 1.235
+Grid size  : X 98.3 Y 91.8 Z 92.6
+Grid space : 0.375
+Exhaustiveness: 32
+CPU: 32
+Verbosity: 1
+
+WARNING: Search space volume is greater than 27000 Angstrom^3 (See FAQ)
+Computing Vina grid ... done.
+Performing docking (random seed: 42) ... 
+0%   10   20   30   40   50   60   70   80   90   100%
+|----|----|----|----|----|----|----|----|----|----|
+***************************************************
+
+mode |   affinity | dist from best mode
+     | (kcal/mol) | rmsd l.b.| rmsd u.b.
+-----+------------+----------+----------
+   1       -8.038          0          0
+   2       -8.036      1.611      2.346
+   3       -7.974      1.844      5.174
+   4        -7.97      45.69      47.49
+   5       -7.927      45.04       46.8
+   6       -7.868      44.48      46.81
+   7       -7.784      44.86      46.68
+   8       -7.433      37.98      39.59
+   9       -7.403      38.81      40.22
+  10       -7.366      39.01       40.4
+Performing docking (random seed: 42) ... 
+0%   10   20   30   40   50   60   70   80   90   100%
+|----|----|----|----|----|----|----|----|----|----|
+***************************************************
+
+mode |   affinity | dist from best mode
+     | (kcal/mol) | rmsd l.b.| rmsd u.b.
+-----+------------+----------+----------
+   1       -9.694          0          0
+   2       -9.678      2.974      3.648
+   3       -9.676      2.531      4.028
+   4       -9.626      4.072      4.465
+   5       -9.616      3.583      4.349
+   6        -9.59      2.103      2.731
+   7       -9.572      1.553      2.652
+   8       -9.566      3.825      4.603
+   9       -9.372      4.075      5.121
+  10       -9.368      3.629      4.337
+Performing docking (random seed: 42) ... 
+0%   10   20   30   40   50   60   70   80   90   100%
+|----|----|----|----|----|----|----|----|----|----|
+***************************************************
+
+mode |   affinity | dist from best mode
+     | (kcal/mol) | rmsd l.b.| rmsd u.b.
+-----+------------+----------+----------
+   1       -10.64          0          0
+   2       -10.61      3.527      4.359
+   3       -10.57       31.8      36.94
+   4       -10.55      3.663      4.183
+   5       -10.52      33.54      37.72
+   6       -10.41      3.819      4.721
+   7       -10.38      2.204      2.617
+   8       -10.18      2.292      2.706
+   9       -10.15      2.461       3.13
+  10       -10.08       3.15      3.899

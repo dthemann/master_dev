@@ -1,0 +1,25 @@
+receptors_dir: Data/Receptors
+ligand_dirs:
+- Data/Ligands/JKU
+prep_tool: both
+skip_pdb_validation: false
+process_postfixes: false
+repair_terminals: false
+output_dir: Dockings/vina_results
+log_dir: Dockings/Logs/vina_logs
+vina_bin: /home/manndo/AutoDock-Vina/build/linux/release/vina
+scoring_function: vina
+autogrid_bin: /usr/local/bin/autogrid4
+batch_mode: null
+batch_size: 10
+batch_timeout: 900
+exhaustiveness: 32
+num_modes: 10
+energy_range: 3
+seed: 42
+timeout_per_complex: 600
+max_workers: 1
+cpus_per_worker: 32
+overwrite_existing: true
+overwrite_poses: true
+overwrite_error_log: true

@@ -1,0 +1,167 @@
+{
+  "timestamp": "2026-04-19T21:08:25.007624",
+  "configuration": {
+    "scoring_function": "vina",
+    "exhaustiveness": 32,
+    "num_modes": 10,
+    "energy_range": 3,
+    "vina_bin": "/home/manndo/AutoDock-Vina/build/linux/release/vina"
+  },
+  "overall": {
+    "total_combinations": 12,
+    "successful": 12,
+    "failed": 0,
+    "skipped": 0,
+    "total_poses": 120,
+    "total_time_seconds": 142.94449925422668
+  },
+  "by_protein": {
+    "Orai1WT-MDSnap-Fr300_mgl_tools": {
+      "combinations": 3,
+      "poses": 30,
+      "success": 3
+    },
+    "Orai1WT-MDSnap-Fr400_mgl_tools": {
+      "combinations": 3,
+      "poses": 30,
+      "success": 3
+    },
+    "Orai1WT-MDSnap-Fr499_mgl_tools": {
+      "combinations": 3,
+      "poses": 30,
+      "success": 3
+    },
+    "Orai1WT-START-Fr0_mgl_tools": {
+      "combinations": 3,
+      "poses": 30,
+      "success": 3
+    }
+  },
+  "by_ligand": {
+    "2abp-nh2-OPT": {
+      "combinations": 4,
+      "poses": 40,
+      "success": 4
+    },
+    "Synta-66-OPT-Singlet": {
+      "combinations": 4,
+      "poses": 40,
+      "success": 4
+    },
+    "gsk7975a-deprot-OPT": {
+      "combinations": 4,
+      "poses": 40,
+      "success": 4
+    }
+  },
+  "combinations": [
+    {
+      "protein": "Orai1WT-MDSnap-Fr300_mgl_tools",
+      "ligand": "2abp-nh2-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 12.25,
+      "best_affinity": -7.353,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr300_mgl_tools",
+      "ligand": "Synta-66-OPT-Singlet",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 12.25,
+      "best_affinity": -8.587,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr300_mgl_tools",
+      "ligand": "gsk7975a-deprot-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 12.25,
+      "best_affinity": -9.815,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr400_mgl_tools",
+      "ligand": "2abp-nh2-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 12.08,
+      "best_affinity": -7.165,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr400_mgl_tools",
+      "ligand": "Synta-66-OPT-Singlet",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 12.08,
+      "best_affinity": -9.047,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr400_mgl_tools",
+      "ligand": "gsk7975a-deprot-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 12.08,
+      "best_affinity": -9.868,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr499_mgl_tools",
+      "ligand": "2abp-nh2-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.54,
+      "best_affinity": -7.608,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr499_mgl_tools",
+      "ligand": "Synta-66-OPT-Singlet",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.54,
+      "best_affinity": -9.136,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-MDSnap-Fr499_mgl_tools",
+      "ligand": "gsk7975a-deprot-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.54,
+      "best_affinity": -10.214,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-START-Fr0_mgl_tools",
+      "ligand": "2abp-nh2-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.78,
+      "best_affinity": -7.443,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-START-Fr0_mgl_tools",
+      "ligand": "Synta-66-OPT-Singlet",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.78,
+      "best_affinity": -8.246,
+      "error": null
+    },
+    {
+      "protein": "Orai1WT-START-Fr0_mgl_tools",
+      "ligand": "gsk7975a-deprot-OPT",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 11.78,
+      "best_affinity": -10.255,
+      "error": null
+    }
+  ]
+}

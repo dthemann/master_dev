@@ -125,7 +125,8 @@ def count_equibind_poses(poses_dir):
             ligand, protein = parts
 
             # Count SDF files recursively (covers site_XX subdirs and flat layouts)
-            pose_count = len(list(subdir.glob("**/*.sdf")))
+            # Exclude prep/ subdirectories (intermediate EquiBind outputs)
+            pose_count = len([f for f in subdir.glob("**/*.sdf") if "prep" not in f.parts])
 
             if pose_count > 0:
                 data.append({
@@ -312,7 +313,7 @@ def collect_equibind_rows(poses_dir):
         parts = dir_name_clean.split("__")
         if len(parts) == 2:
             ligand, protein = parts
-            pose_count = len(list(subdir.glob("**/*.sdf")))
+            pose_count = len([f for f in subdir.glob("**/*.sdf") if "prep" not in f.parts])
             if pose_count > 0:
                 rows.append({
                     "docking_tool": dir_name.split("__")[0] if "__" in dir_name else "equibind",
@@ -805,7 +806,7 @@ def collect_equibind_pose_files(row, converted_dir):
     method_key = row["docking_tool"]
 
     if file_path.is_dir():
-        for sdf_file in sorted(file_path.glob("**/*.sdf")):
+        for sdf_file in sorted(f for f in file_path.glob("**/*.sdf") if "prep" not in f.parts):
             try:
                 relative_path = sdf_file.relative_to(file_path)
                 pose_name_suffix = str(relative_path)

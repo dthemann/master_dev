@@ -65,6 +65,7 @@ posebusters_results/
 posebuster_proved/
 docking_ready_meeko/docking/
 docking_ready_mgltools/docking/
+large_equibind_pocket_guided - full/
 
 
 # Ignore all SDF files except those in Orai/ and Drugs/
@@ -73,6 +74,10 @@ docking_ready_mgltools/docking/
 !Drugs/**/*.sdf
 !storage/ligands_sdf_large_approved/*.sdf
 !storage/ligands_sdf_small_symmetric_approved/*.sdf
+!/home/manndo/master_dev/large_equibind_pocket_guided/*.sdf
+
+*.sdf:Zone.Identifier
+*.json:Zone.Identifier
 
 # Ignore all PDB files except those in Orai/ and Drugs/
 *.pdb

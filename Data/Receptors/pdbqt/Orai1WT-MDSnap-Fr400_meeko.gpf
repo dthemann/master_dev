@@ -1,0 +1,27 @@
+parameter_file boron-silicon-atom_par.dat
+npts 264 262 276
+gridfld Orai1WT-MDSnap-Fr400_meeko.maps.fld
+spacing 0.375
+receptor_types HD C A N NA OA F P SA S Cl Br I Mg Ca Mn Fe Zn
+ligand_types HD C A N NA OA F P SA S Cl Br I Si B
+receptor Orai1WT-MDSnap-Fr400_meeko.pdbqt
+gridcenter -0.199 10.388 -6.335
+smooth 0.500
+map Orai1WT-MDSnap-Fr400_meeko.HD.map
+map Orai1WT-MDSnap-Fr400_meeko.C.map
+map Orai1WT-MDSnap-Fr400_meeko.A.map
+map Orai1WT-MDSnap-Fr400_meeko.N.map
+map Orai1WT-MDSnap-Fr400_meeko.NA.map
+map Orai1WT-MDSnap-Fr400_meeko.OA.map
+map Orai1WT-MDSnap-Fr400_meeko.F.map
+map Orai1WT-MDSnap-Fr400_meeko.P.map
+map Orai1WT-MDSnap-Fr400_meeko.SA.map
+map Orai1WT-MDSnap-Fr400_meeko.S.map
+map Orai1WT-MDSnap-Fr400_meeko.Cl.map
+map Orai1WT-MDSnap-Fr400_meeko.Br.map
+map Orai1WT-MDSnap-Fr400_meeko.I.map
+map Orai1WT-MDSnap-Fr400_meeko.Si.map
+map Orai1WT-MDSnap-Fr400_meeko.B.map
+elecmap Orai1WT-MDSnap-Fr400_meeko.e.map
+dsolvmap Orai1WT-MDSnap-Fr400_meeko.d.map
+dielectric -42.000
