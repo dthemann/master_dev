@@ -1,0 +1,41 @@
+# PoseBusters config — Benchmark dockings (AutoDock + DiffDock + EquiBind)
+# ------------------------------------------------------------------------
+# Validates poses produced by the three benchmark docking cells in
+# Master_Docking.ipynb against the PoseBuster Benchmark receptors.
+#
+# The notebook cell that drives this config first stages the benchmark
+# docking outputs into the flat layout each collector expects, under
+# `posebusters_results/_benchmark_staging/`.
+
+work_dir: /home/manndo/master_dev
+
+# Staged receptors: symlinks to <pdb_id>_protein.pdb for every benchmark complex.
+receptors_dir: posebusters_results/_benchmark_staging/receptors
+
+# Staged docking outputs (created by the notebook cell):
+#   autodock/  : <pdb_id>__<pdb_id>_vina_out.pdbqt symlinks
+#   diffdock/  : <pdb_id>__<pdb_id>/ subdir with the SDF poses
+#   equibind/  : <pdb_id>__<pdb_id>/ subdir with the SDF poses
+docking_directories:
+  autodock:        posebusters_results/_benchmark_staging/autodock
+  diffdock:        posebusters_results/_benchmark_staging/diffdock
+  equibind_guided: posebusters_results/_benchmark_staging/equibind
+
+# "dock" runs PoseBusters with the receptor; falls back to "mol" if the
+# receptor PDB cannot be resolved for a given pose.
+config_mode: dock
+
+save_interval: 200
+overwrite: false
+num_workers: null
+
+# All PoseBusters CSVs / PNGs land here:
+output_base_dir: posebusters_results/benchmark
+
+# Bond-order template SDFs for AutoDock PDBQT -> SDF conversion.
+# The benchmark crystal ligands serve as perfect templates.
+ligand_template_dirs:
+  - Data/PoseBuster Benchmark Set
+
+copy_proved_poses: true
+make_plots: true

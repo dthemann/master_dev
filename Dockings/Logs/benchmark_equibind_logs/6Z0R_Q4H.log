@@ -1,0 +1,313 @@
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:104: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd(cast_inputs=th.float16)
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:128: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  def backward(ctx, dZ):
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:177: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd(cast_inputs=th.float16)
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:207: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  def backward(ctx, *dZ):
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:287: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd(cast_inputs=th.float16)
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:304: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  def backward(ctx, dZ):
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:352: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd(cast_inputs=th.float16)
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:371: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  def backward(ctx, *dZ):
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:431: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd(cast_inputs=th.float16)
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:467: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  def backward(ctx, grad_out):
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:498: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd(cast_inputs=th.float16)
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:535: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  def backward(ctx, *grad_out):
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:566: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd(cast_inputs=th.float16)
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:575: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  def backward(ctx, dy):
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:595: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd(cast_inputs=th.float16)
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:603: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  def backward(ctx, dy):
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:666: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd(cast_inputs=th.float16)
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/sparse.py:692: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd(cast_inputs=th.float16)
+GPU detected: NVIDIA GeForce RTX 4070 Laptop GPU
+================================================================================
+EquiBind Batch Docking Configuration
+================================================================================
+  Workspace:        /home/manndo/master_dev
+  Ligand dir:       /home/manndo/master_dev/Dockings/Benchmark_Equibind/_staging/6Z0R_Q4H/ligands
+  Receptor dir:     /home/manndo/master_dev/Dockings/Benchmark_Equibind/_staging/6Z0R_Q4H/receptors
+  EquiBind dir:     /home/manndo/tools/EquiBind
+  EquiBind device:  cuda
+  Output:           /home/manndo/master_dev/Dockings/Benchmark_Equibind/6Z0R_Q4H
+  Pocket results:   fpocket=/home/manndo/master_dev/pocket_results/fpocket_results
+                    p2rank=/home/manndo/master_dev/pocket_results/p2rank_results
+  Top pockets:      3 per method
+  Poses/pocket:     5
+  Unguided poses:   5
+  Workers:          26
+  GPU batch size:   8
+  UFF minimize:     True
+  Skip existing:    True
+  Force pocket:     True
+  Protein cropping: True (radius=8.0Å + buffer=3.0Å)
+================================================================================
+================================================================================
+GPU SUPPORT VALIDATION
+================================================================================
+
+PyTorch CUDA Status:
+  PyTorch version: 2.4.1+cu124
+  CUDA available: True
+  CUDA version: 12.4
+  Number of GPUs: 1
+  GPU Name: NVIDIA GeForce RTX 4070 Laptop GPU
+  GPU Memory: 8.59 GB
+  ✓ GPU tensor operations working
+
+NVIDIA GPU Information (nvidia-smi):
+Fri May  1 22:47:28 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.105.07             Driver Version: 581.80         CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GeForce RTX 4070 ...    On  |   00000000:01:00.0 Off |                  N/A |
+| N/A   53C    P0             13W /  117W |     161MiB /   8188MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A         1063823      C   /python3.8                            N/A      |
++-----------------------------------------------------------------------------------------+
+
+
+================================================================================
+✓ GPU ACCELERATION AVAILABLE
+  Recommended setting: equibind_device = 'cuda'
+  Current setting: equibind_device = 'cuda'
+================================================================================
+================================================================================
+EquiBind Batch Docking Configuration
+================================================================================
+  Workspace:        /home/manndo/master_dev
+  Ligand dir:       /home/manndo/master_dev/Dockings/Benchmark_Equibind/_staging/6Z0R_Q4H/ligands
+  Receptor dir:     /home/manndo/master_dev/Dockings/Benchmark_Equibind/_staging/6Z0R_Q4H/receptors
+  EquiBind dir:     /home/manndo/tools/EquiBind
+  EquiBind device:  cuda
+  Output:           /home/manndo/master_dev/Dockings/Benchmark_Equibind/6Z0R_Q4H
+  Pocket results:   fpocket=/home/manndo/master_dev/pocket_results/fpocket_results
+                    p2rank=/home/manndo/master_dev/pocket_results/p2rank_results
+  Top pockets:      3 per method
+  Poses/pocket:     5
+  Unguided poses:   5
+  Workers:          26
+  GPU batch size:   8
+  UFF minimize:     True
+  Skip existing:    True
+  Force pocket:     True
+  Protein cropping: True (radius=8.0Å + buffer=3.0Å)
+================================================================================
+/home/manndo/master_dev/Scripts/Docking/equibind_pipeline/equibind_model.py:84: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  checkpoint = torch.load(str(ckpt_path), map_location=dev)
+[2026-05-01 22:47:28.626358] [ Using Seed :  1  ]
+    · EquiBind model loaded from /home/manndo/tools/EquiBind/runs/flexible_self_docking/best_checkpoint.pt
+    ·   Device: cuda:0  |  Load time: 0.17s
+
+──────────────────────────────────────────────────────────────────────
+  GLOBALLY DECOUPLED 3-PHASE EQUIBIND PIPELINE
+──────────────────────────────────────────────────────────────────────
+  EquiBind device: cuda:0
+  GPU batch size: 8
+  Proteins: 1
+  Ligands: 1
+  Total combos: 1  (≈ 35 poses/combo)
+  Workers: 26
+
+    · 6Z0R_Q4H_protein: 3 fpocket + 3 p2rank pockets
+
+Pre-computing ligand properties...
+  1 ligands analysed
+Pre-computing protein properties...
+  1 proteins analysed
+Docking log: /home/manndo/master_dev/Dockings/Benchmark_Equibind/6Z0R_Q4H/docking_log.csv (0 existing entries)
+
+──────────────────────────────────────────────────────────────────────
+  PHASE 1: CPU PREPARATION — ALL COMBOS
+──────────────────────────────────────────────────────────────────────
+    · Building receptor graph for 6Z0R_Q4H_protein_protein.pdb
+    · Preparing cropped proteins for 6 pockets (6 workers)
+    · Cropped protein for fpocket_raw_p001: 46 residues, 669 atoms (radius=11.0Å)
+    · Cropped protein for fpocket_raw_p003: 51 residues, 759 atoms (radius=11.0Å)
+    · Cropped protein for p2rank_raw_p002: 45 residues, 669 atoms (radius=11.0Å)
+    · Cropped protein for fpocket_raw_p002: 57 residues, 912 atoms (radius=11.0Å)
+    · Cropped protein for p2rank_raw_p001: 43 residues, 715 atoms (radius=11.0Å)
+    · Cropped protein for p2rank_raw_p003: 46 residues, 658 atoms (radius=11.0Å)
+    · Generating conformers for 1 ligands (26 workers)
+    · Ligand 6Z0R_Q4H_ligand_start_conf: 10 conformers
+    · Building DockJobs for 1 combos (26 workers)
+
+────────────────────────────────────────────────────────────────────────────────
+  PHASE 1 COMPLETE in 1.7s (0.0 min)
+  Jobs prepared:    35
+  Cached results:   0
+  Unique proteins:  7
+  Unique ligands:   1
+  Receptor graphs:  7
+────────────────────────────────────────────────────────────────────────────────
+
+──────────────────────────────────────────────────────────────────────
+  PHASE 2: GPU INFERENCE — 35 TOTAL JOBS
+──────────────────────────────────────────────────────────────────────
+    ·   6Z0R_Q4H_protein_protein_crop_fpocket_raw_p001.pdb: 5 jobs → 1 batches
+[2026-05-01 22:47:31.457457] [ Using Seed :  456  ]
+/home/manndo/anaconda3/envs/equibind/lib/python3.8/site-packages/dgl/backend/pytorch/tensor.py:352: UserWarning: TypedStorage is deprecated. It will be removed in the future and UntypedStorage will be the only storage class. This should only matter to you if you are using storages directly.  To access UntypedStorage directly, use tensor.untyped_storage() instead of tensor.storage()
+  assert input.numel() == input.storage().size(), "Cannot convert view " \
+[2026-05-01 22:47:32.313369] [ Using Seed :  789  ]
+[2026-05-01 22:47:32.371972] [ Using Seed :  1001  ]
+[2026-05-01 22:47:32.426822] [ Using Seed :  3141  ]
+[2026-05-01 22:47:32.482154] [ Using Seed :  5926  ]
+    ·   6Z0R_Q4H_protein_protein_crop_fpocket_raw_p002.pdb: 5 jobs → 1 batches
+[2026-05-01 22:47:32.540620] [ Using Seed :  456  ]
+[2026-05-01 22:47:32.600464] [ Using Seed :  789  ]
+[2026-05-01 22:47:32.662190] [ Using Seed :  1001  ]
+[2026-05-01 22:47:32.719799] [ Using Seed :  3141  ]
+[2026-05-01 22:47:32.784116] [ Using Seed :  5926  ]
+    ·   6Z0R_Q4H_protein_protein_crop_fpocket_raw_p003.pdb: 5 jobs → 1 batches
+[2026-05-01 22:47:32.843094] [ Using Seed :  456  ]
+[2026-05-01 22:47:32.900390] [ Using Seed :  789  ]
+[2026-05-01 22:47:32.956524] [ Using Seed :  1001  ]
+[2026-05-01 22:47:33.023347] [ Using Seed :  3141  ]
+[2026-05-01 22:47:33.080693] [ Using Seed :  5926  ]
+    ·   6Z0R_Q4H_protein_protein_crop_p2rank_raw_p001.pdb: 5 jobs → 1 batches
+[2026-05-01 22:47:33.140123] [ Using Seed :  456  ]
+[2026-05-01 22:47:33.199507] [ Using Seed :  789  ]
+[2026-05-01 22:47:33.258475] [ Using Seed :  1001  ]
+[2026-05-01 22:47:33.318196] [ Using Seed :  3141  ]
+[2026-05-01 22:47:33.378386] [ Using Seed :  5926  ]
+    ·   6Z0R_Q4H_protein_protein_crop_p2rank_raw_p002.pdb: 5 jobs → 1 batches
+[2026-05-01 22:47:33.441239] [ Using Seed :  456  ]
+[2026-05-01 22:47:33.505625] [ Using Seed :  789  ]
+[2026-05-01 22:47:33.560411] [ Using Seed :  1001  ]
+[2026-05-01 22:47:33.620308] [ Using Seed :  3141  ]
+[2026-05-01 22:47:33.676141] [ Using Seed :  5926  ]
+    ·   6Z0R_Q4H_protein_protein_crop_p2rank_raw_p003.pdb: 5 jobs → 1 batches
+[2026-05-01 22:47:33.733337] [ Using Seed :  456  ]
+[2026-05-01 22:47:33.783367] [ Using Seed :  789  ]
+[2026-05-01 22:47:33.835987] [ Using Seed :  1001  ]
+[2026-05-01 22:47:33.888535] [ Using Seed :  3141  ]
+[2026-05-01 22:47:33.946829] [ Using Seed :  5926  ]
+    ·   6Z0R_Q4H_protein_protein.pdb: 5 jobs → 1 batches
+[2026-05-01 22:47:34.003183] [ Using Seed :  456  ]
+[2026-05-01 22:47:34.058768] [ Using Seed :  789  ]
+[2026-05-01 22:47:34.120219] [ Using Seed :  1001  ]
+[2026-05-01 22:47:34.175067] [ Using Seed :  3141  ]
+[2026-05-01 22:47:34.229886] [ Using Seed :  5926  ]
+
+────────────────────────────────────────────────────────────────────────────────
+  PHASE 2 COMPLETE in 3.9s (0.1 min)
+  Total batches: 7
+  Success: 35  |  Failed: 0
+  Avg inference: 80.7ms per ligand
+────────────────────────────────────────────────────────────────────────────────
+
+──────────────────────────────────────────────────────────────────────
+  PHASE 3: CPU POST-PROCESSING — 35 TOTAL JOBS
+──────────────────────────────────────────────────────────────────────
+    · Post-processing 35 new jobs (0 skipped)
+    · UFF: pre-warmed protein cache for 1 unique protein(s)
+    · Stage 1 (corrections+SDF): 0.1s — 0 done, 35 need UFF
+    · Stage 2: UFF — 35 jobs, 26 process workers
+    · UFF minimization: E 1085.5 → 1063.1 kcal/mol (ΔE=-22.4), converged, 13 ligand + 228 protein atoms
+    · UFF minimization: E 1218.6 → 1196.2 kcal/mol (ΔE=-22.4), converged, 13 ligand + 252 protein atoms
+    · UFF minimization: E 1221.9 → 1199.5 kcal/mol (ΔE=-22.4), converged, 13 ligand + 262 protein atoms
+    · UFF minimization: E 1207.2 → 1184.9 kcal/mol (ΔE=-22.4), converged, 13 ligand + 247 protein atoms
+    · UFF minimization: E 1154.2 → 1131.8 kcal/mol (ΔE=-22.4), converged, 13 ligand + 252 protein atoms
+    · UFF minimization: E 1949.3 → 1930.4 kcal/mol (ΔE=-18.9), converged, 13 ligand + 361 protein atoms
+    · UFF minimization: E 1988.1 → 1969.3 kcal/mol (ΔE=-18.9), converged, 13 ligand + 387 protein atoms
+    · UFF minimization: E 1940.3 → 1922.3 kcal/mol (ΔE=-18.0), converged, 13 ligand + 393 protein atoms
+    · UFF minimization: E 1931.6 → 1912.8 kcal/mol (ΔE=-18.9), converged, 13 ligand + 382 protein atoms
+    · UFF minimization: E 2283.1 → 2262.8 kcal/mol (ΔE=-20.4), converged, 13 ligand + 408 protein atoms
+    · UFF minimization: E 2261.1 → 2240.7 kcal/mol (ΔE=-20.4), converged, 13 ligand + 408 protein atoms
+    · UFF minimization: E 2181.1 → 2158.0 kcal/mol (ΔE=-23.1), converged, 13 ligand + 417 protein atoms
+    · UFF minimization: E 2350.0 → 2329.6 kcal/mol (ΔE=-20.4), converged, 13 ligand + 424 protein atoms
+    · UFF minimization: E 2301.6 → 2283.1 kcal/mol (ΔE=-18.5), converged, 13 ligand + 468 protein atoms
+    · UFF minimization: E 2234.0 → 2215.6 kcal/mol (ΔE=-18.5), converged, 13 ligand + 443 protein atoms
+    · UFF minimization: E 2076.7 → 2054.4 kcal/mol (ΔE=-22.4), converged, 13 ligand + 370 protein atoms
+    · UFF minimization: E 1837.3 → 1814.9 kcal/mol (ΔE=-22.4), converged, 13 ligand + 368 protein atoms
+    · UFF minimization: E 2211.8 → 2188.7 kcal/mol (ΔE=-23.1), converged, 13 ligand + 440 protein atoms
+    · UFF minimization: E 1960.8 → 1938.4 kcal/mol (ΔE=-22.3), converged, 13 ligand + 368 protein atoms
+    · UFF minimization: E 2233.8 → 2210.7 kcal/mol (ΔE=-23.1), converged, 13 ligand + 438 protein atoms
+    · UFF minimization: E 2714.6 → 2696.1 kcal/mol (ΔE=-18.5), converged, 13 ligand + 529 protein atoms
+    · UFF minimization: E 2019.8 → 1997.5 kcal/mol (ΔE=-22.3), converged, 13 ligand + 400 protein atoms
+    · UFF minimization: E 2263.4 → 2241.0 kcal/mol (ΔE=-22.3), converged, 13 ligand + 404 protein atoms
+    · UFF minimization: E 2090.9 → 2068.5 kcal/mol (ΔE=-22.3), converged, 13 ligand + 427 protein atoms
+    · UFF minimization: E 1749.5 → 1731.8 kcal/mol (ΔE=-17.7), converged, 13 ligand + 354 protein atoms
+    · UFF minimization: E 2305.5 → 2283.1 kcal/mol (ΔE=-22.3), converged, 13 ligand + 468 protein atoms
+    · UFF minimization: E 1940.3 → 1922.3 kcal/mol (ΔE=-18.0), converged, 13 ligand + 393 protein atoms
+    · UFF minimization: E 1749.5 → 1731.8 kcal/mol (ΔE=-17.7), converged, 13 ligand + 354 protein atoms
+    · UFF minimization: E 2442.8 → 2420.5 kcal/mol (ΔE=-22.3), converged, 13 ligand + 477 protein atoms
+    · UFF minimization: E 2003.1 → 1985.0 kcal/mol (ΔE=-18.0), converged, 13 ligand + 404 protein atoms
+    · UFF minimization: E 1749.5 → 1731.8 kcal/mol (ΔE=-17.7), converged, 13 ligand + 354 protein atoms
+    · UFF minimization: E 1415.8 → 1393.4 kcal/mol (ΔE=-22.4), converged, 13 ligand + 298 protein atoms
+    · UFF minimization: E 1945.7 → 1923.4 kcal/mol (ΔE=-22.3), converged, 13 ligand + 395 protein atoms
+    · UFF minimization: E 1791.4 → 1769.0 kcal/mol (ΔE=-22.3), converged, 13 ligand + 370 protein atoms
+    · UFF minimization: E 2186.0 → 2163.6 kcal/mol (ΔE=-22.3), converged, 13 ligand + 446 protein atoms
+    · Stage 2 (UFF): 2.1s (16.6 jobs/s)
+    · Checkpoint: saved guided_results.json for 1 combos
+
+────────────────────────────────────────────────────────────────────────────────
+  PHASE 3 COMPLETE in 2.3s (0.0 min)
+  Already done: 0
+  Newly processed: 35
+  Success: 35  |  Failed: 0
+────────────────────────────────────────────────────────────────────────────────
+
+──────────────────────────────────────────────────────────────────────
+  STATISTICS: UNGUIDED POSES vs POCKETS
+──────────────────────────────────────────────────────────────────────
+  Unguided poses: 5
+  In fpocket: 5  In p2rank: 0  In either: 5
+
+──────────────────────────────────────────────────────────────────────
+  TIMING REPORT
+──────────────────────────────────────────────────────────────────────
+
+  GLOBAL PHASE TIMING:
+  Phase                     Time (s)     Time (min)        %
+  ------------------------- ------------ ------------ ------
+  Phase 1: CPU Prep         1.7          0.0           21.7%
+  Phase 2: GPU Dock         3.9          0.1           49.5%
+  Phase 3: CPU Post         2.3          0.0           28.7%
+  TOTAL (phases)            7.9          0.1          100.0%
+  Pipeline wall time        7.9          0.1         
+
+  Timing saved to: /home/manndo/master_dev/Dockings/Benchmark_Equibind/6Z0R_Q4H/pipeline_timing.csv
+  Summary saved to: /home/manndo/master_dev/Dockings/Benchmark_Equibind/6Z0R_Q4H/pipeline_summary.json
+
+══════════════════════════════════════════════════════════════════════
+  SIGNAL MONITOR SUMMARY
+══════════════════════════════════════════════════════════════════════
+  EquiBind calls:        0
+  Successful returns:    0
+  Failed returns:        0
+  Poses inside pocket:   0
+  Poses rejected/outside:0
+    ├ guided rejected:   0
+    └ unguided outside:  0
+══════════════════════════════════════════════════════════════════════
+
+✓ Pipeline complete.
+  Poses (success): 35
+  Poses (failed):  0
+  Wall time:       7.9s

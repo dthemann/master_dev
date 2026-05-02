@@ -1,0 +1,81 @@
+REMARK SMILES CCCC[C@H](N[C@@H](CCc1ccccc1)C(=O)O)C(=O)N[C@@H](Cc1ccc(O)cc1)C(=O)O
+REMARK SMILES IDX 19 1 21 2 20 3 22 5 23 6 24 7 25 8 26 9 30 10 27 11 29 12
+REMARK SMILES IDX 28 13 31 15 32 16 33 17 5 19 4 20 3 21 2 22 1 23 6 24 7 26
+REMARK SMILES IDX 16 27 17 28 18 29 8 31 9 32 10 33 11 34 15 35 12 36 14 37
+REMARK SMILES IDX 13 38
+REMARK H PARENT 21 4 28 14 33 18 6 25 18 30
+ROOT
+ATOM      1  C   UNL     1      -0.564   0.736  -0.126  1.00  0.00     0.237 C 
+ATOM      2  N   UNL     1      -1.409   1.760   0.422  1.00  0.00    -0.341 N 
+ATOM      3  O   UNL     1      -1.062  -0.195  -0.818  1.00  0.00    -0.273 OA
+ATOM      4  H   UNL     1      -0.965   2.557   0.933  1.00  0.00     0.164 HD
+ENDROOT
+BRANCH   2   5
+ATOM      5  C   UNL     1      -2.873   1.675   0.394  1.00  0.00     0.196 C 
+BRANCH   5   6
+ATOM      6  C   UNL     1      -3.429   1.565   1.824  1.00  0.00     0.072 C 
+BRANCH   6   7
+ATOM      7  C   UNL     1      -2.838   0.381   2.553  1.00  0.00    -0.045 A 
+ATOM      8  C   UNL     1      -3.205  -0.929   2.196  1.00  0.00     0.007 A 
+ATOM      9  C   UNL     1      -2.623  -2.026   2.840  1.00  0.00     0.046 A 
+ATOM     10  C   UNL     1      -1.881   0.577   3.563  1.00  0.00     0.007 A 
+ATOM     11  C   UNL     1      -1.674  -1.825   3.852  1.00  0.00     0.115 A 
+ATOM     12  C   UNL     1      -1.313  -0.522   4.216  1.00  0.00     0.046 A 
+BRANCH  11  13
+ATOM     13  O   UNL     1      -1.082  -2.910   4.498  1.00  0.00    -0.508 OA
+ATOM     14  H   UNL     1      -1.326  -3.864   4.261  1.00  0.00     0.293 HD
+ENDBRANCH  11  13
+ENDBRANCH   6   7
+ENDBRANCH   5   6
+BRANCH   5  15
+ATOM     15  C   UNL     1      -3.434   2.886  -0.297  1.00  0.00     0.326 C 
+ATOM     16  O   UNL     1      -4.258   2.747  -1.242  1.00  0.00    -0.250 OA
+BRANCH  15  17
+ATOM     17  O   UNL     1      -3.059   4.165   0.113  1.00  0.00    -0.480 OA
+ATOM     18  H   UNL     1      -3.423   4.990  -0.356  1.00  0.00     0.296 HD
+ENDBRANCH  15  17
+ENDBRANCH   5  15
+ENDBRANCH   2   5
+BRANCH   1  19
+ATOM     19  C   UNL     1       0.927   0.792   0.089  1.00  0.00     0.144 C 
+BRANCH  19  20
+ATOM     20  C   UNL     1       1.586   1.815  -0.870  1.00  0.00     0.029 C 
+BRANCH  20  21
+ATOM     21  C   UNL     1       1.322   1.605  -2.376  1.00  0.00     0.002 C 
+BRANCH  21  22
+ATOM     22  C   UNL     1       2.111   0.430  -2.970  1.00  0.00    -0.003 C 
+ATOM     23  C   UNL     1       1.994   0.406  -4.492  1.00  0.00     0.004 C 
+ENDBRANCH  21  22
+ENDBRANCH  20  21
+ENDBRANCH  19  20
+BRANCH  19  24
+ATOM     24  N   UNL     1       1.528  -0.556  -0.035  1.00  0.00    -0.293 NA
+ATOM     25  H   UNL     1       2.554  -0.473  -0.231  1.00  0.00     0.124 HD
+BRANCH  24  26
+ATOM     26  C   UNL     1       1.344  -1.364   1.189  1.00  0.00     0.165 C 
+BRANCH  26  27
+ATOM     27  C   UNL     1       2.258  -0.887   2.295  1.00  0.00     0.320 C 
+ATOM     28  O   UNL     1       3.511  -0.897   2.138  1.00  0.00    -0.251 OA
+BRANCH  27  29
+ATOM     29  O   UNL     1       1.717  -0.436   3.495  1.00  0.00    -0.480 OA
+ATOM     30  H   UNL     1       2.314  -0.111   4.246  1.00  0.00     0.296 HD
+ENDBRANCH  27  29
+ENDBRANCH  26  27
+BRANCH  26  31
+ATOM     31  C   UNL     1       1.623  -2.854   0.905  1.00  0.00     0.036 C 
+BRANCH  31  32
+ATOM     32  C   UNL     1       0.587  -3.517  -0.027  1.00  0.00     0.038 C 
+BRANCH  32  33
+ATOM     33  C   UNL     1       0.869  -3.309  -1.498  1.00  0.00    -0.048 A 
+ATOM     34  C   UNL     1      -0.126  -2.787  -2.344  1.00  0.00     0.004 A 
+ATOM     35  C   UNL     1       2.082  -3.745  -2.064  1.00  0.00     0.004 A 
+ATOM     36  C   UNL     1       0.107  -2.661  -3.717  1.00  0.00     0.000 A 
+ATOM     37  C   UNL     1       2.312  -3.615  -3.437  1.00  0.00     0.000 A 
+ATOM     38  C   UNL     1       1.327  -3.069  -4.263  1.00  0.00     0.000 A 
+ENDBRANCH  32  33
+ENDBRANCH  31  32
+ENDBRANCH  26  31
+ENDBRANCH  24  26
+ENDBRANCH  19  24
+ENDBRANCH   1  19
+TORSDOF 17

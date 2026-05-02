@@ -1,0 +1,30 @@
+# PoseBusters config — Orai receptors × PoseBuster Benchmark Set ligands
+# Validates docked poses produced by AutoDock Vina, DiffDock, and EquiBind
+# against the four Orai1WT receptor variants (START-Fr0 + MD snapshots).
+
+work_dir: /home/manndo/master_dev
+
+# Staged folder containing only the 4 Orai receptor PDBs (created by the
+# Master_Docking notebook cell that drives this run).
+receptors_dir: posebusters_results/_orai_benchmark_staging/receptors
+
+docking_directories:
+  autodock:        Dockings/Orai_Benchmark/docking
+  diffdock:        Dockings/Orai_Benchmark_DiffDock
+  equibind_guided: Dockings/Orai_Benchmark_Equibind
+
+config_mode: dock          # use receptor-aware "dock" PoseBusters profile
+output_base_dir: posebusters_results/orai_benchmark
+save_interval: 200
+overwrite: false
+num_workers: null          # null -> all available CPU cores
+make_plots: true
+copy_proved_poses: true
+
+# Bond-order template SDFs for AutoDock PDBQT->SDF conversion.
+# The staging dir provides per-ligand symlinks named to match the AutoDock
+# ligand label (e.g. "5S8I_2LY_ligand_start_conf_vina.sdf"); the benchmark
+# directory is included as a fallback.
+ligand_template_dirs:
+  - posebusters_results/_orai_benchmark_staging/ligand_templates
+  - Data/PoseBuster Benchmark Set

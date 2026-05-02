@@ -1,0 +1,45 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# AutoDock Vina — Orai receptors × PoseBuster benchmark ligands
+# Batch mode: 50 ligands per Vina invocation per receptor
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Inputs (filled in / overridden by the notebook cell) ─────────────────────
+receptors_dir: Data/Receptors
+ligand_dirs:
+  - Dockings/Orai_Benchmark/_staging/ligands
+
+# ── Preparation tools ────────────────────────────────────────────────────────
+prep_tool: meeko                # mgltools | meeko | both
+skip_pdb_validation: false
+process_postfixes: false
+repair_terminals: false
+
+# ── Output ───────────────────────────────────────────────────────────────────
+output_dir: Dockings/Orai_Benchmark
+log_dir:    Dockings/Logs/orai_benchmark_logs
+
+# ── Vina executable & scoring ────────────────────────────────────────────────
+vina_bin:        /home/manndo/AutoDock-Vina/build/linux/release/vina
+scoring_function: vina           # vina | vinardo | ad4
+autogrid_bin:    /usr/local/bin/autogrid4
+
+# ── Batch mode (the key knob requested) ──────────────────────────────────────
+batch_mode:    true              # one Vina call per chunk of ligands
+batch_size:    50                # 50 ligands per invocation per receptor
+batch_timeout: 3600              # seconds per batch (0 = unlimited)
+
+# ── Docking parameters ───────────────────────────────────────────────────────
+exhaustiveness:      32
+num_modes:           10
+energy_range:        3
+seed:                42
+timeout_per_complex: 600
+
+# ── Parallelism ──────────────────────────────────────────────────────────────
+max_workers:     1               # batch mode runs receptors sequentially
+cpus_per_worker: 32
+
+# ── Overwrite settings ───────────────────────────────────────────────────────
+overwrite_existing:  false
+overwrite_poses:     false
+overwrite_error_log: false

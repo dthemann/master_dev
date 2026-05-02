@@ -1,0 +1,50 @@
+# PoseBusters Parallel Pose Validation Pipeline — Configuration
+# ---------------------------------------------------------------
+# All relative paths are resolved against `work_dir`.
+
+# Working directory (used for resolving relative paths and as a search root
+# for ligand templates during AutoDock PDBQT -> SDF conversion).
+work_dir: /home/manndo/master_dev
+
+# Folder containing receptor PDB files (searched recursively).
+receptors_dir: Orai
+
+# Mapping of docking-method name -> ligand/poses folder.
+# Supported method keys (registered collectors / expanders):
+#   autodock, diffdock, equibind_guided, equibind_exclusion, equibind_docked_poses
+docking_directories:
+  diffdock: diffdock_results/ligands_sdf_large
+  # autodock: docking_ready_mgltools/docking
+  # equibind_guided: equibind_pocket_guided
+  # equibind_exclusion: equibind_spatial_exclusion_poses
+  # equibind_docked_poses: equibind_docked_poses_2
+
+# PoseBusters configuration mode: "dock" (with protein) or "mol" (ligand only).
+config_mode: dock
+
+# Checkpoint to disk every N successfully processed poses.
+save_interval: 100
+
+# If true, delete any existing results CSV and re-run from scratch.
+# If false (default), resume by skipping poses already present in the CSV.
+overwrite: false
+
+# Worker count. Leave null/blank to use all available CPU cores.
+num_workers: null
+
+# Base output folder. The pipeline creates:
+#   <output_base_dir>/<config_mode>/                       — per-mode results
+#   <output_base_dir>/<config_mode>/converted_pdbqt/       — PDBQT->SDF files
+#   <output_base_dir>/pose_counts_overview.csv             — pose counts
+output_base_dir: posebusters_results
+
+# Optional extra directories to search for original ligand SDFs (used as
+# bond-order templates during AutoDock PDBQT -> SDF conversion). These are
+# tried before the built-in defaults (ligands/, Ligands/, etc.).
+ligand_template_dirs: []
+  # - ligands
+  # - docking_ready_mgltools/ligands
+
+# Post-processing toggles
+copy_proved_poses: true   # copy poses passing all PB tests into posebuster_proved/
+make_plots: true          # generate the five summary PNG figures

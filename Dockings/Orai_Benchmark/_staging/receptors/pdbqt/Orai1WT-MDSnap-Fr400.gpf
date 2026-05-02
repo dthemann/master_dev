@@ -1,0 +1,27 @@
+parameter_file boron-silicon-atom_par.dat
+npts 264 262 276
+gridfld Orai1WT-MDSnap-Fr400.maps.fld
+spacing 0.375
+receptor_types HD C A N NA OA F P SA S Cl Br I Mg Ca Mn Fe Zn
+ligand_types HD C A N NA OA F P SA S Cl Br I Si B
+receptor Orai1WT-MDSnap-Fr400.pdbqt
+gridcenter -0.199 10.388 -6.335
+smooth 0.500
+map Orai1WT-MDSnap-Fr400.HD.map
+map Orai1WT-MDSnap-Fr400.C.map
+map Orai1WT-MDSnap-Fr400.A.map
+map Orai1WT-MDSnap-Fr400.N.map
+map Orai1WT-MDSnap-Fr400.NA.map
+map Orai1WT-MDSnap-Fr400.OA.map
+map Orai1WT-MDSnap-Fr400.F.map
+map Orai1WT-MDSnap-Fr400.P.map
+map Orai1WT-MDSnap-Fr400.SA.map
+map Orai1WT-MDSnap-Fr400.S.map
+map Orai1WT-MDSnap-Fr400.Cl.map
+map Orai1WT-MDSnap-Fr400.Br.map
+map Orai1WT-MDSnap-Fr400.I.map
+map Orai1WT-MDSnap-Fr400.Si.map
+map Orai1WT-MDSnap-Fr400.B.map
+elecmap Orai1WT-MDSnap-Fr400.e.map
+dsolvmap Orai1WT-MDSnap-Fr400.d.map
+dielectric -42.000

@@ -1,0 +1,39 @@
+/home/manndo/anaconda3/envs/diffdock/lib/python3.9/site-packages/Bio/pairwise2.py:278: BiopythonDeprecationWarning: Bio.pairwise2 has been deprecated, and we intend to remove it in a future release of Biopython. As an alternative, please consider using Bio.Align.PairwiseAligner as a replacement, and contact the Biopython developers if you still need the Bio.pairwise2 module.
+  warnings.warn(
+/home/manndo/docking_tools/DiffDock/inference.py:202: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  state_dict = torch.load(f'{args.model_dir}/{args.ckpt}', map_location=torch.device('cpu'))
+/home/manndo/docking_tools/DiffDock/inference.py:210: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
+  state_dict = torch.load(f'{args.confidence_model_dir}/{args.confidence_ckpt}', map_location=torch.device('cpu'))
+0it [00:00, ?it/s]/home/manndo/docking_tools/DiffDock/datasets/parse_chi.py:91: RuntimeWarning: invalid value encountered in cast
+  Y = indices.astype(int)
+1it [03:02, 182.94s/it][2026-Apr-30 20:58:09 CEST] WARNING -Complex ['7NXO_UU8_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 6: 3 / 10 samples failed
+[2026-Apr-30 20:58:11 CEST] WARNING -Complex ['7NXO_UU8_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 7: 3 / 10 samples failed
+[2026-Apr-30 20:58:13 CEST] WARNING -Complex ['7NXO_UU8_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 8: 3 / 10 samples failed
+[2026-Apr-30 20:58:15 CEST] WARNING -Complex ['7NXO_UU8_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 9: 3 / 10 samples failed
+[2026-Apr-30 20:58:17 CEST] WARNING -Complex ['7NXO_UU8_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 10: 3 / 10 samples failed
+[2026-Apr-30 20:58:18 CEST] WARNING -Complex ['7NXO_UU8_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 11: 3 / 10 samples failed
+[2026-Apr-30 20:58:19 CEST] WARNING -Complex ['7NXO_UU8_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 12: 3 / 10 samples failed
+[2026-Apr-30 20:58:21 CEST] WARNING -Complex ['7NXO_UU8_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 13: 3 / 10 samples failed
+[2026-Apr-30 20:58:22 CEST] WARNING -Complex ['7NXO_UU8_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 14: 3 / 10 samples failed
+[2026-Apr-30 20:58:23 CEST] WARNING -Complex ['7NXO_UU8_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 15: 3 / 10 samples failed
+[2026-Apr-30 20:58:24 CEST] WARNING -Complex ['7NXO_UU8_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 16: 3 / 10 samples failed
+[2026-Apr-30 20:58:26 CEST] WARNING -Complex ['7NXO_UU8_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 17: 3 / 10 samples failed
+[2026-Apr-30 20:58:27 CEST] WARNING -Complex ['7NXO_UU8_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 18: 3 / 10 samples failed
+2it [09:25, 300.54s/it]3it [13:34, 276.93s/it]4it [17:38, 263.76s/it]5it [26:53, 368.87s/it][2026-Apr-30 21:17:07 CEST] WARNING -Complex ['7ODX_DGP_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 0: 1 / 10 samples failed
+6it [30:46, 322.68s/it]7it [35:56, 318.69s/it]8it [42:04, 334.22s/it]9it [47:52, 338.41s/it]10it [55:35, 377.03s/it][2026-Apr-30 21:48:53 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 3: 2 / 10 samples failed
+[2026-Apr-30 21:48:57 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 4: 3 / 10 samples failed
+[2026-Apr-30 21:49:00 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 5: 4 / 10 samples failed
+[2026-Apr-30 21:49:03 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 6: 4 / 10 samples failed
+[2026-Apr-30 21:49:05 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 7: 4 / 10 samples failed
+[2026-Apr-30 21:49:06 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 8: 4 / 10 samples failed
+[2026-Apr-30 21:49:08 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 9: 4 / 10 samples failed
+[2026-Apr-30 21:49:09 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 10: 4 / 10 samples failed
+[2026-Apr-30 21:49:10 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 11: 3 / 10 samples failed
+[2026-Apr-30 21:49:12 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 12: 3 / 10 samples failed
+[2026-Apr-30 21:49:13 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 13: 4 / 10 samples failed
+[2026-Apr-30 21:49:14 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 14: 3 / 10 samples failed
+[2026-Apr-30 21:49:15 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 15: 4 / 10 samples failed
+[2026-Apr-30 21:49:16 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 16: 4 / 10 samples failed
+[2026-Apr-30 21:49:17 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 17: 4 / 10 samples failed
+[2026-Apr-30 21:49:18 CEST] WARNING -Complex ['7OKC_VFE_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 18: 4 / 10 samples failed
+11it [1:00:16, 347.56s/it]12it [1:05:19, 334.10s/it]13it [1:09:12, 303.58s/it]14it [1:13:23, 287.47s/it]15it [1:19:49, 317.21s/it]15it [1:19:49, 319.29s/it]

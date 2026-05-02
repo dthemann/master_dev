@@ -1,0 +1,66 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# EquiBind Batch Docking Configuration
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Input directories ─────────────────────────────────────────────────────────
+receptors_dir: "Data/Receptors"
+ligand_dirs:
+  - "Data/Ligands/JKU"
+receptor_name_filter: ""           # only use receptor PDBs whose stem contains this substring ("" = all)
+
+# ── Pocket detection results (optional, used for pocket-guided docking) ──────
+fpocket_results_dir: "pocket_results/fpocket_results"
+p2rank_results_dir:  "pocket_results/p2rank_results"
+
+# ── EquiBind installation ─────────────────────────────────────────────────────
+equibind_dir: "~/tools/EquiBind"   # or e.g. "/home/manndo/docking_tools/EquiBind"
+device: "cuda"                     # "cpu" or "cuda"
+
+# ── Output ────────────────────────────────────────────────────────────────────
+output_dir: "Dockings/equibind_results"
+log_dir:    "Dockings/Logs/equibind_logs"
+
+# ── Pose generation ───────────────────────────────────────────────────────────
+n_top_pockets: 3                   # top-ranked pockets per method (fpocket + p2rank)
+poses_per_pocket: 3                # poses per pocket (uses different conformers)
+n_unguided_poses: 5                # natural EquiBind poses per protein-ligand pair
+pocket_match_threshold: 8.0        # Å — distance to consider a pose "inside" a pocket
+
+# ── Pocket enforcement ────────────────────────────────────────────────────────
+force_pocket: true                 # reject/clamp poses whose centroid drifts outside pocket
+clamp_pose_to_pocket: true         # clamp drifted poses (instead of rejecting)
+
+# ── Protein cropping (constrains EquiBind search space) ──────────────────────
+use_protein_cropping: true
+pocket_crop_radius: 8.0
+pocket_crop_buffer: 3.0
+
+# ── RDKit conformer generation ────────────────────────────────────────────────
+rdkit_seeds: [42, 123, 456, 789, 1001, 2022, 3141, 5926, 8675, 9999]
+conformers_per_seed: 1
+rdkit_prune_rms_thresh: 0.2
+
+# ── UFF post-docking minimization ─────────────────────────────────────────────
+uff_minimize: true
+uff_max_iters: 200
+uff_energy_tol: 1.0e-4             # energy convergence (kcal/mol)
+uff_force_tol:  1.0e-3             # force convergence
+uff_proximity_radius: 6.0
+uff_add_hydrogens: true
+uff_strip_nonstandard: true
+uff_vdw_thresh: 0.1
+uff_protein_constraint_wt: 100.0
+
+# ── Performance ───────────────────────────────────────────────────────────────
+gpu_batch_size: 8                  # ligands per GPU batch
+n_parallel_workers: 0              # 0 = auto (min(cpu_count, 26))
+parallel_conformer_gen: true
+parallel_uff: true
+
+# ── Overwrite settings ────────────────────────────────────────────────────────
+skip_existing: true                # re-use existing pose SDFs / cached results
+overwrite_existing: false          # re-dock already completed combinations
+overwrite_error_log: false          # retry previously failed ligands
+
+# ── Verbosity ─────────────────────────────────────────────────────────────────
+monitor_level: "WARNING"           # ALL | WARNING | CRITICAL
