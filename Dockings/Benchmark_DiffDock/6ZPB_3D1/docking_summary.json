@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-04-20T14:20:13.138866",
+  "configuration": {
+    "num_samples": 10,
+    "inference_steps": 20,
+    "device": "cuda:0",
+    "diffdock_dir": "/home/manndo/docking_tools/DiffDock"
+  },
+  "overall": {
+    "total_combinations": 1,
+    "successful": 1,
+    "failed": 0,
+    "skipped": 0,
+    "total_poses": 10,
+    "total_time_seconds": 43.801992654800415
+  },
+  "by_protein": {
+    "6ZPB_3D1": {
+      "combinations": 1,
+      "poses": 10,
+      "success": 1
+    }
+  },
+  "by_ligand": {
+    "6ZPB_3D1_start_conf": {
+      "combinations": 1,
+      "poses": 10,
+      "success": 1
+    }
+  },
+  "combinations": [
+    {
+      "protein": "6ZPB_3D1",
+      "ligand": "6ZPB_3D1_start_conf",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 43.8,
+      "error": null
+    }
+  ]
+}

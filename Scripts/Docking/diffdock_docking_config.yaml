@@ -8,8 +8,8 @@ ligand_dirs:
   - "Data/Ligands/JKU"
 
 # ── DiffDock installation ─────────────────────────────────────────────────────
-diffdock_dir: "/workspace/DiffDock"
-diffdock_python: "~/anaconda3/envs/diffdock/bin/python"
+diffdock_dir: "/home/manndo/docking_tools/DiffDock"
+diffdock_python: "/home/manndo/anaconda3/envs/diffdock/bin/python"
 diffdock_conda_env: "diffdock"
 
 # ── Inference parameters ──────────────────────────────────────────────────────
@@ -18,7 +18,7 @@ inference_steps: 20        # denoising steps (fewer = faster, lower quality)
 device: "cuda:0"           # "cpu" or "cuda:0"
 
 # ── Timeout ───────────────────────────────────────────────────────────────────
-timeout_per_complex: 300   # seconds; 0 = unlimited
+timeout_per_complex: 600   # seconds; 0 = unlimited
 
 # ── Output ────────────────────────────────────────────────────────────────────
 output_dir: "Dockings/diffdock_results"
@@ -31,4 +31,4 @@ max_workers: 1             # parallel workers when batch_mode=false
 
 # ── Overwrite settings ────────────────────────────────────────────────────────
 overwrite_existing: false  # re-dock already completed combinations
-overwrite_error_log: true  # retry previously failed ligands
+overwrite_error_log: false  # retry previously failed ligands

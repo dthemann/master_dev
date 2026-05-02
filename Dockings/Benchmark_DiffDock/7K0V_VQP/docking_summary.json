@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-04-20T15:29:00.749933",
+  "configuration": {
+    "num_samples": 10,
+    "inference_steps": 20,
+    "device": "cuda:0",
+    "diffdock_dir": "/home/manndo/docking_tools/DiffDock"
+  },
+  "overall": {
+    "total_combinations": 1,
+    "successful": 0,
+    "failed": 1,
+    "skipped": 0,
+    "total_poses": 0,
+    "total_time_seconds": 0.0
+  },
+  "by_protein": {
+    "7K0V_VQP": {
+      "combinations": 1,
+      "poses": 0,
+      "success": 0
+    }
+  },
+  "by_ligand": {
+    "7K0V_VQP_start_conf": {
+      "combinations": 1,
+      "poses": 0,
+      "success": 0
+    }
+  },
+  "combinations": [
+    {
+      "protein": "7K0V_VQP",
+      "ligand": "7K0V_VQP_start_conf",
+      "status": "failed",
+      "num_poses": 0,
+      "time_seconds": 0.0,
+      "error": "Batch timeout (300s)"
+    }
+  ]
+}

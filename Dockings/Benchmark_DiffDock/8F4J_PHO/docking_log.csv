@@ -1,0 +1,10 @@
+timestamp,combo_name,protein_name,ligand_name,status,error_reason,num_poses,elapsed_time_s,lig_molecular_weight,lig_heavy_atoms,lig_total_atoms,lig_rotatable_bonds,lig_num_rings,lig_aromatic_rings,lig_hbd,lig_hba,lig_tpsa,lig_logp,lig_formula,prot_num_residues,prot_num_atoms,prot_num_chains,num_samples,inference_steps,device,gpu_model,best_confidence
+2026-05-02T08:35:17.375983,8F4J_PHO_start_conf__8F4J_PHO,8F4J_PHO,8F4J_PHO_start_conf,failed,"No poses from batch. stderr tail: conf.sdf and /home/manndo/master_dev/Dockings/Benchmark_DiffDock/8F4J_PHO/prepared_proteins/8F4J_PHO_protein_prepared.pdb. We are skipping this complex.
+
+1it [00:01,  1.72s/it]
+1it [00:01,  1.72s/it]
+[2026-May-02 08:35:16 CEST] WARNING -
+    Failed for 0 / 1 complexes.
+    Skipped 1 / 1 complexes.
+
+",0,20.73,871.22,64,138,31,6,3,2,7,127.03,13.96,C55H74N4O5,5308,41600,40,10,20,cuda:0,NVIDIA GeForce RTX 4070 Laptop GPU,0.0

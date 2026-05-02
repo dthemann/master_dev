@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-05-02T08:35:17.377289",
+  "configuration": {
+    "num_samples": 10,
+    "inference_steps": 20,
+    "device": "cuda:0",
+    "diffdock_dir": "/home/manndo/docking_tools/DiffDock"
+  },
+  "overall": {
+    "total_combinations": 1,
+    "successful": 0,
+    "failed": 1,
+    "skipped": 0,
+    "total_poses": 0,
+    "total_time_seconds": 20.731107711791992
+  },
+  "by_protein": {
+    "8F4J_PHO": {
+      "combinations": 1,
+      "poses": 0,
+      "success": 0
+    }
+  },
+  "by_ligand": {
+    "8F4J_PHO_start_conf": {
+      "combinations": 1,
+      "poses": 0,
+      "success": 0
+    }
+  },
+  "combinations": [
+    {
+      "protein": "8F4J_PHO",
+      "ligand": "8F4J_PHO_start_conf",
+      "status": "failed",
+      "num_poses": 0,
+      "time_seconds": 20.73,
+      "error": "No poses from batch. stderr tail: conf.sdf and /home/manndo/master_dev/Dockings/Benchmark_DiffDock/8F4J_PHO/prepared_proteins/8F4J_PHO_protein_prepared.pdb. We are skipping this complex.\n\n1it [00:01,  1.72s/it]\n1it [00:01,  1.72s/it]\n[2026-May-02 08:35:16 CEST] WARNING -\n    Failed for 0 / 1 complexes.\n    Skipped 1 / 1 complexes.\n\n"
+    }
+  ]
+}

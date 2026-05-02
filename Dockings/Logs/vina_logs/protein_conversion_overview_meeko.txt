@@ -1,10 +1,10 @@
 Tool     | Stage            | Input                          | Output                               | Status  | Message
 ---------+------------------+--------------------------------+--------------------------------------+---------+--------
-pdbfixer | protein_validate | Orai1WT-START-Fr0.pdb          | Orai1WT-START-Fr0_meeko.pdb          | success |        
-pdbfixer | protein_validate | Orai1WT-MDSnap-Fr499.pdb       | Orai1WT-MDSnap-Fr499_meeko.pdb       | success |        
 pdbfixer | protein_validate | Orai1WT-MDSnap-Fr400.pdb       | Orai1WT-MDSnap-Fr400_meeko.pdb       | success |        
+pdbfixer | protein_validate | Orai1WT-START-Fr0.pdb          | Orai1WT-START-Fr0_meeko.pdb          | success |        
 pdbfixer | protein_validate | Orai1WT-MDSnap-Fr300.pdb       | Orai1WT-MDSnap-Fr300_meeko.pdb       | success |        
-meeko    | protein_convert  | Orai1WT-MDSnap-Fr300_meeko.pdb | Orai1WT-MDSnap-Fr300_meeko.pdbqt     | success |        
+pdbfixer | protein_validate | Orai1WT-MDSnap-Fr499.pdb       | Orai1WT-MDSnap-Fr499_meeko.pdb       | success |        
 meeko    | protein_convert  | Orai1WT-MDSnap-Fr499_meeko.pdb | Orai1WT-MDSnap-Fr499_meeko.pdbqt     | success |        
+meeko    | protein_convert  | Orai1WT-MDSnap-Fr300_meeko.pdb | Orai1WT-MDSnap-Fr300_meeko.pdbqt     | success |        
 meeko    | protein_convert  | Orai1WT-MDSnap-Fr400_meeko.pdb | Orai1WT-MDSnap-Fr400_meeko.pdbqt     | success |        
 meeko    | protein_convert  | Orai1WT-START-Fr0_meeko.pdb    | Orai1WT-START-Fr0_meeko_retry1.pdbqt | success |        

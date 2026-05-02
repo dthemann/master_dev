@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-04-21T16:55:53.061631",
+  "configuration": {
+    "num_samples": 10,
+    "inference_steps": 20,
+    "device": "cuda:0",
+    "diffdock_dir": "/home/manndo/docking_tools/DiffDock"
+  },
+  "overall": {
+    "total_combinations": 1,
+    "successful": 1,
+    "failed": 0,
+    "skipped": 0,
+    "total_poses": 10,
+    "total_time_seconds": 201.7704062461853
+  },
+  "by_protein": {
+    "6W59_SZD": {
+      "combinations": 1,
+      "poses": 10,
+      "success": 1
+    }
+  },
+  "by_ligand": {
+    "6W59_SZD_start_conf": {
+      "combinations": 1,
+      "poses": 10,
+      "success": 1
+    }
+  },
+  "combinations": [
+    {
+      "protein": "6W59_SZD",
+      "ligand": "6W59_SZD_start_conf",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 201.77,
+      "error": null
+    }
+  ]
+}

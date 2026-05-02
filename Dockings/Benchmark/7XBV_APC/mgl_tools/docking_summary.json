@@ -1,0 +1,43 @@
+{
+  "timestamp": "2026-04-20T11:46:49.280619",
+  "configuration": {
+    "scoring_function": "vina",
+    "exhaustiveness": 32,
+    "num_modes": 10,
+    "energy_range": 3,
+    "vina_bin": "/home/manndo/AutoDock-Vina/build/linux/release/vina"
+  },
+  "overall": {
+    "total_combinations": 1,
+    "successful": 1,
+    "failed": 0,
+    "skipped": 0,
+    "total_poses": 10,
+    "total_time_seconds": 21.568424701690674
+  },
+  "by_protein": {
+    "7XBV_APC_protein_mgl_tools": {
+      "combinations": 1,
+      "poses": 10,
+      "success": 1
+    }
+  },
+  "by_ligand": {
+    "7XBV_APC_ligand_start_conf": {
+      "combinations": 1,
+      "poses": 10,
+      "success": 1
+    }
+  },
+  "combinations": [
+    {
+      "protein": "7XBV_APC_protein_mgl_tools",
+      "ligand": "7XBV_APC_ligand_start_conf",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 21.57,
+      "best_affinity": -7.589,
+      "error": null
+    }
+  ]
+}

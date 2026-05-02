@@ -1,0 +1,43 @@
+{
+  "timestamp": "2026-04-20T12:15:20.390169",
+  "configuration": {
+    "scoring_function": "vina",
+    "exhaustiveness": 32,
+    "num_modes": 10,
+    "energy_range": 3,
+    "vina_bin": "/home/manndo/AutoDock-Vina/build/linux/release/vina"
+  },
+  "overall": {
+    "total_combinations": 1,
+    "successful": 1,
+    "failed": 0,
+    "skipped": 0,
+    "total_poses": 9,
+    "total_time_seconds": 10.298377752304077
+  },
+  "by_protein": {
+    "8D19_GSH_protein_meeko": {
+      "combinations": 1,
+      "poses": 9,
+      "success": 1
+    }
+  },
+  "by_ligand": {
+    "8D19_GSH_ligand_start_conf": {
+      "combinations": 1,
+      "poses": 9,
+      "success": 1
+    }
+  },
+  "combinations": [
+    {
+      "protein": "8D19_GSH_protein_meeko",
+      "ligand": "8D19_GSH_ligand_start_conf",
+      "status": "success",
+      "num_poses": 9,
+      "time_seconds": 10.3,
+      "best_affinity": -4.937,
+      "error": null
+    }
+  ]
+}

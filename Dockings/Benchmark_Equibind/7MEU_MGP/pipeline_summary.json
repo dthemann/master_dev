@@ -1,0 +1,971 @@
+{
+  "timestamp": "2026-05-02T09:14:44.101141",
+  "architecture": "globally decoupled 3-phase pipeline",
+  "config": {
+    "gpu_batch_size": 8,
+    "n_top_pockets": 3,
+    "poses_per_pocket": 5,
+    "n_unguided_poses": 5,
+    "pocket_match_threshold_A": 8.0,
+    "force_pocket": true,
+    "uff_minimize": true,
+    "n_parallel_workers": 26,
+    "use_protein_cropping": true
+  },
+  "global_timing": {
+    "pipeline_wall_time_s": 12.2,
+    "phase1_prep_s": 2.2,
+    "phase2_dock_s": 3.2,
+    "phase3_post_s": 6.8
+  },
+  "totals": {
+    "combos": 1,
+    "total_jobs_prepared": 35,
+    "total_cached": 0,
+    "poses_success": 35,
+    "poses_failed": 0,
+    "unguided_in_pocket": 2
+  },
+  "monitor_counters": {
+    "equibind_calls": 0,
+    "equibind_success": 0,
+    "equibind_fail": 0
+  },
+  "per_combo_timing": [
+    {
+      "protein": "7MEU_MGP_protein",
+      "ligand": "7MEU_MGP_ligand_start_conf",
+      "prep_s": 0.14,
+      "dock_s": 2.68,
+      "post_s": 70.35,
+      "total_s": 73.18
+    }
+  ],
+  "all_results": [
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 1,
+      "pocket_unique_id": "fpocket_raw_p001",
+      "pose_num": 1,
+      "pocket_center": [
+        -2.0760329218107008,
+        9.362337448559668,
+        72.26244032921808
+      ],
+      "pose_centroid": [
+        -2.7364303030303025,
+        4.895081818181818,
+        76.59898787878787
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p001_pose01.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 574.8891823208772,
+      "uff_energy_after": 81.22761424227143,
+      "prep_time_s": 0.0058,
+      "dock_time_s": 0.7091,
+      "post_time_s": 1.5952
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 1,
+      "pocket_unique_id": "fpocket_raw_p001",
+      "pose_num": 2,
+      "pocket_center": [
+        -2.0760329218107008,
+        9.362337448559668,
+        72.26244032921808
+      ],
+      "pose_centroid": [
+        -3.9841303030303026,
+        3.24290303030303,
+        75.73613636363636
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p001_pose02.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 16304337.303352794,
+      "uff_energy_after": 93.74055209668124,
+      "prep_time_s": 0.0041,
+      "dock_time_s": 0.0573,
+      "post_time_s": 1.5907
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 1,
+      "pocket_unique_id": "fpocket_raw_p001",
+      "pose_num": 3,
+      "pocket_center": [
+        -2.0760329218107008,
+        9.362337448559668,
+        72.26244032921808
+      ],
+      "pose_centroid": [
+        -5.838387878787877,
+        6.04550303030303,
+        75.89632727272728
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p001_pose03.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 55729325.770850785,
+      "uff_energy_after": 637.0329219869035,
+      "prep_time_s": 0.0042,
+      "dock_time_s": 0.0593,
+      "post_time_s": 1.5448
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 1,
+      "pocket_unique_id": "fpocket_raw_p001",
+      "pose_num": 4,
+      "pocket_center": [
+        -2.0760329218107008,
+        9.362337448559668,
+        72.26244032921808
+      ],
+      "pose_centroid": [
+        -5.237821212121212,
+        4.517266666666666,
+        75.76240909090912
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p001_pose04.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 19957306963.481106,
+      "uff_energy_after": 716.4296728186077,
+      "prep_time_s": 0.0034,
+      "dock_time_s": 0.0538,
+      "post_time_s": 1.5284
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 1,
+      "pocket_unique_id": "fpocket_raw_p001",
+      "pose_num": 5,
+      "pocket_center": [
+        -2.0760329218107008,
+        9.362337448559668,
+        72.26244032921808
+      ],
+      "pose_centroid": [
+        -4.342139393939394,
+        3.806724242424243,
+        77.80441818181816
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p001_pose05.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 5114760523.995043,
+      "uff_energy_after": 218.07806362049521,
+      "prep_time_s": 0.0041,
+      "dock_time_s": 0.0561,
+      "post_time_s": 1.5836
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 2,
+      "pocket_unique_id": "fpocket_raw_p002",
+      "pose_num": 1,
+      "pocket_center": [
+        -9.307000000000002,
+        -2.2498235294117648,
+        96.7235294117647
+      ],
+      "pose_centroid": [
+        -2.3505878787878784,
+        0.5993242424242424,
+        99.47692424242425
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p002_pose01.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 1655211.3474054236,
+      "uff_energy_after": 96.28390838188825,
+      "prep_time_s": 0.0037,
+      "dock_time_s": 0.0629,
+      "post_time_s": 1.5853
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 2,
+      "pocket_unique_id": "fpocket_raw_p002",
+      "pose_num": 2,
+      "pocket_center": [
+        -9.307000000000002,
+        -2.2498235294117648,
+        96.7235294117647
+      ],
+      "pose_centroid": [
+        -5.140615151515151,
+        -0.7026424242424243,
+        102.15429696969699
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p002_pose02.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 274.1831726299184,
+      "uff_energy_after": 85.60367325680888,
+      "prep_time_s": 0.0036,
+      "dock_time_s": 0.0591,
+      "post_time_s": 1.5166
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 2,
+      "pocket_unique_id": "fpocket_raw_p002",
+      "pose_num": 3,
+      "pocket_center": [
+        -9.307000000000002,
+        -2.2498235294117648,
+        96.7235294117647
+      ],
+      "pose_centroid": [
+        -2.445469696969697,
+        0.18486060606060603,
+        100.83536666666666
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p002_pose03.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 6565.795614267786,
+      "uff_energy_after": 89.59208632283278,
+      "prep_time_s": 0.0037,
+      "dock_time_s": 0.0534,
+      "post_time_s": 1.6015
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 2,
+      "pocket_unique_id": "fpocket_raw_p002",
+      "pose_num": 4,
+      "pocket_center": [
+        -9.307000000000002,
+        -2.2498235294117648,
+        96.7235294117647
+      ],
+      "pose_centroid": [
+        -4.534178787878787,
+        -0.060281818181817985,
+        101.90404545454548
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p002_pose04.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 35681.28737133773,
+      "uff_energy_after": 104.82947872635664,
+      "prep_time_s": 0.0037,
+      "dock_time_s": 0.0607,
+      "post_time_s": 1.6183
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 2,
+      "pocket_unique_id": "fpocket_raw_p002",
+      "pose_num": 5,
+      "pocket_center": [
+        -9.307000000000002,
+        -2.2498235294117648,
+        96.7235294117647
+      ],
+      "pose_centroid": [
+        -6.844721212121211,
+        0.29092727272727265,
+        100.03963030303032
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p002_pose05.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 265.8568542286137,
+      "uff_energy_after": 84.27721524685437,
+      "prep_time_s": 0.0035,
+      "dock_time_s": 0.0589,
+      "post_time_s": 1.6897
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 3,
+      "pocket_unique_id": "fpocket_raw_p003",
+      "pose_num": 1,
+      "pocket_center": [
+        -2.5691904761904762,
+        11.793809523809523,
+        52.570428571428565
+      ],
+      "pose_centroid": [
+        -4.011412121212122,
+        15.99189696969697,
+        59.52503333333332
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p003_pose01.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 3755.359506948902,
+      "uff_energy_after": 3573.9526044811378,
+      "prep_time_s": 0.0043,
+      "dock_time_s": 0.0595,
+      "post_time_s": 4.349
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 3,
+      "pocket_unique_id": "fpocket_raw_p003",
+      "pose_num": 2,
+      "pocket_center": [
+        -2.5691904761904762,
+        11.793809523809523,
+        52.570428571428565
+      ],
+      "pose_centroid": [
+        -5.473654545454547,
+        15.74524242424242,
+        55.204800000000006
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p003_pose02.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 2998.6648000938508,
+      "uff_energy_after": 2809.9572709228114,
+      "prep_time_s": 0.0042,
+      "dock_time_s": 0.0536,
+      "post_time_s": 3.5782
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 3,
+      "pocket_unique_id": "fpocket_raw_p003",
+      "pose_num": 3,
+      "pocket_center": [
+        -2.5691904761904762,
+        11.793809523809523,
+        52.570428571428565
+      ],
+      "pose_centroid": [
+        -5.747512121212121,
+        16.006351515151515,
+        58.67947878787879
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p003_pose03.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 3099.048595942107,
+      "uff_energy_after": 2914.17090427597,
+      "prep_time_s": 0.0042,
+      "dock_time_s": 0.0547,
+      "post_time_s": 3.8466
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 3,
+      "pocket_unique_id": "fpocket_raw_p003",
+      "pose_num": 4,
+      "pocket_center": [
+        -2.5691904761904762,
+        11.793809523809523,
+        52.570428571428565
+      ],
+      "pose_centroid": [
+        -4.673672727272728,
+        16.328948484848485,
+        56.89583333333333
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p003_pose04.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 2762.992541009766,
+      "uff_energy_after": 2579.155605617943,
+      "prep_time_s": 0.0043,
+      "dock_time_s": 0.0598,
+      "post_time_s": 3.5617
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "fpocket",
+      "pocket_id": 3,
+      "pocket_unique_id": "fpocket_raw_p003",
+      "pose_num": 5,
+      "pocket_center": [
+        -2.5691904761904762,
+        11.793809523809523,
+        52.570428571428565
+      ],
+      "pose_centroid": [
+        -3.7943212121212118,
+        16.607515151515152,
+        58.93261818181819
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/fpocket_raw_p003_pose05.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 3813.562867985644,
+      "uff_energy_after": 3634.8946929947438,
+      "prep_time_s": 0.0049,
+      "dock_time_s": 0.0564,
+      "post_time_s": 4.4394
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 1,
+      "pocket_unique_id": "p2rank_raw_p001",
+      "pose_num": 1,
+      "pocket_center": [
+        -12.865,
+        13.3687,
+        52.9827
+      ],
+      "pose_centroid": [
+        -14.484848484848484,
+        17.95701818181818,
+        59.75353333333334
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p001_pose01.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 261.0282247338534,
+      "uff_energy_after": 84.28810586991642,
+      "prep_time_s": 0.0041,
+      "dock_time_s": 0.0581,
+      "post_time_s": 1.6722
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 1,
+      "pocket_unique_id": "p2rank_raw_p001",
+      "pose_num": 2,
+      "pocket_center": [
+        -12.865,
+        13.3687,
+        52.9827
+      ],
+      "pose_centroid": [
+        -12.73131818181818,
+        10.508630303030301,
+        58.479527272727275
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p001_pose02.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 404.9480971441445,
+      "uff_energy_after": 83.28859155129184,
+      "prep_time_s": 0.0038,
+      "dock_time_s": 0.0584,
+      "post_time_s": 1.6102
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 1,
+      "pocket_unique_id": "p2rank_raw_p001",
+      "pose_num": 3,
+      "pocket_center": [
+        -12.865,
+        13.3687,
+        52.9827
+      ],
+      "pose_centroid": [
+        -14.277393939393939,
+        18.63488484848485,
+        59.33268484848485
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p001_pose03.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 5267.6825764525665,
+      "uff_energy_after": 86.96393948270676,
+      "prep_time_s": 0.0043,
+      "dock_time_s": 0.0575,
+      "post_time_s": 1.6545
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 1,
+      "pocket_unique_id": "p2rank_raw_p001",
+      "pose_num": 4,
+      "pocket_center": [
+        -12.865,
+        13.3687,
+        52.9827
+      ],
+      "pose_centroid": [
+        -12.401539393939396,
+        8.616445454545456,
+        59.15328787878787
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p001_pose04.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 659.0977645713133,
+      "uff_energy_after": 80.30459804267198,
+      "prep_time_s": 0.0039,
+      "dock_time_s": 0.0584,
+      "post_time_s": 1.595
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 1,
+      "pocket_unique_id": "p2rank_raw_p001",
+      "pose_num": 5,
+      "pocket_center": [
+        -12.865,
+        13.3687,
+        52.9827
+      ],
+      "pose_centroid": [
+        -13.671572727272727,
+        9.728233333333334,
+        59.78476363636364
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p001_pose05.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 3638543119.543932,
+      "uff_energy_after": 134.5183666236801,
+      "prep_time_s": 0.004,
+      "dock_time_s": 0.0567,
+      "post_time_s": 1.5908
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 2,
+      "pocket_unique_id": "p2rank_raw_p002",
+      "pose_num": 1,
+      "pocket_center": [
+        5.4621,
+        7.6143,
+        96.5496
+      ],
+      "pose_centroid": [
+        -0.4160515151515151,
+        2.5638727272727273,
+        93.9790606060606
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p002_pose01.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 1930.979825081926,
+      "uff_energy_after": 87.22143327454087,
+      "prep_time_s": 0.0045,
+      "dock_time_s": 0.0558,
+      "post_time_s": 1.6792
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 2,
+      "pocket_unique_id": "p2rank_raw_p002",
+      "pose_num": 2,
+      "pocket_center": [
+        5.4621,
+        7.6143,
+        96.5496
+      ],
+      "pose_centroid": [
+        -1.025260606060606,
+        4.7833,
+        93.19329393939395
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p002_pose02.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 267.31570331459386,
+      "uff_energy_after": 81.90737593126173,
+      "prep_time_s": 0.0052,
+      "dock_time_s": 0.0577,
+      "post_time_s": 1.6818
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 2,
+      "pocket_unique_id": "p2rank_raw_p002",
+      "pose_num": 3,
+      "pocket_center": [
+        5.4621,
+        7.6143,
+        96.5496
+      ],
+      "pose_centroid": [
+        0.8875242424242425,
+        1.3354666666666668,
+        94.08988787878789
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p002_pose03.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 866.5116712002606,
+      "uff_energy_after": 83.94113360708955,
+      "prep_time_s": 0.0047,
+      "dock_time_s": 0.0613,
+      "post_time_s": 1.6773
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 2,
+      "pocket_unique_id": "p2rank_raw_p002",
+      "pose_num": 4,
+      "pocket_center": [
+        5.4621,
+        7.6143,
+        96.5496
+      ],
+      "pose_centroid": [
+        0.18377575757575762,
+        2.764387878787879,
+        93.54315454545454
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p002_pose04.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 266.37003392765087,
+      "uff_energy_after": 83.01138065338212,
+      "prep_time_s": 0.0042,
+      "dock_time_s": 0.0568,
+      "post_time_s": 1.7082
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 2,
+      "pocket_unique_id": "p2rank_raw_p002",
+      "pose_num": 5,
+      "pocket_center": [
+        5.4621,
+        7.6143,
+        96.5496
+      ],
+      "pose_centroid": [
+        -0.8761939393939393,
+        3.819760606060606,
+        93.5727393939394
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p002_pose05.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 165546.192719019,
+      "uff_energy_after": 95.2787215360237,
+      "prep_time_s": 0.0039,
+      "dock_time_s": 0.0606,
+      "post_time_s": 1.6655
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 3,
+      "pocket_unique_id": "p2rank_raw_p003",
+      "pose_num": 1,
+      "pocket_center": [
+        -15.5033,
+        8.6477,
+        79.8613
+      ],
+      "pose_centroid": [
+        -15.513348484848485,
+        6.155254545454547,
+        78.42284242424242
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p003_pose01.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 16696002828.057158,
+      "uff_energy_after": 102.99363540237017,
+      "prep_time_s": 0.0039,
+      "dock_time_s": 0.0604,
+      "post_time_s": 1.6814
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 3,
+      "pocket_unique_id": "p2rank_raw_p003",
+      "pose_num": 2,
+      "pocket_center": [
+        -15.5033,
+        8.6477,
+        79.8613
+      ],
+      "pose_centroid": [
+        -11.630669696969697,
+        7.689445454545456,
+        76.93202424242422
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p003_pose02.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 2025876.1769447092,
+      "uff_energy_after": 161.23065380107755,
+      "prep_time_s": 0.0037,
+      "dock_time_s": 0.0567,
+      "post_time_s": 1.0468
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 3,
+      "pocket_unique_id": "p2rank_raw_p003",
+      "pose_num": 3,
+      "pocket_center": [
+        -15.5033,
+        8.6477,
+        79.8613
+      ],
+      "pose_centroid": [
+        -14.702793939393944,
+        6.769136363636362,
+        78.81298787878788
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p003_pose03.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 416.5662190334702,
+      "uff_energy_after": 86.7144440339849,
+      "prep_time_s": 0.0039,
+      "dock_time_s": 0.0573,
+      "post_time_s": 0.9878
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 3,
+      "pocket_unique_id": "p2rank_raw_p003",
+      "pose_num": 4,
+      "pocket_center": [
+        -15.5033,
+        8.6477,
+        79.8613
+      ],
+      "pose_centroid": [
+        -12.716442424242425,
+        7.275542424242423,
+        77.46361515151517
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p003_pose04.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 267.2641560417205,
+      "uff_energy_after": 83.04836253738343,
+      "prep_time_s": 0.0049,
+      "dock_time_s": 0.0631,
+      "post_time_s": 1.0126
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "p2rank",
+      "pocket_id": 3,
+      "pocket_unique_id": "p2rank_raw_p003",
+      "pose_num": 5,
+      "pocket_center": [
+        -15.5033,
+        8.6477,
+        79.8613
+      ],
+      "pose_centroid": [
+        -11.678933333333331,
+        7.308342424242425,
+        76.40639696969697
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/p2rank_raw_p003_pose05.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 15866141.19863981,
+      "uff_energy_after": 368.28813493743166,
+      "prep_time_s": 0.0052,
+      "dock_time_s": 0.0579,
+      "post_time_s": 0.9889
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "unguided",
+      "pocket_id": null,
+      "pocket_unique_id": null,
+      "pose_num": 1,
+      "pocket_center": null,
+      "pose_centroid": [
+        -0.9984242424242424,
+        11.123148484848485,
+        71.52693333333335
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/unguided_001.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 11819058.770349814,
+      "uff_energy_after": 97.74348642178234,
+      "prep_time_s": 0.0037,
+      "dock_time_s": 0.0624,
+      "post_time_s": 0.9922
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "unguided",
+      "pocket_id": null,
+      "pocket_unique_id": null,
+      "pose_num": 2,
+      "pocket_center": null,
+      "pose_centroid": [
+        0.9702484848484852,
+        9.877821212121212,
+        82.02376666666665
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/unguided_002.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 822.5326183061609,
+      "uff_energy_after": 83.82043458168191,
+      "prep_time_s": 0.0038,
+      "dock_time_s": 0.0566,
+      "post_time_s": 0.9262
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "unguided",
+      "pocket_id": null,
+      "pocket_unique_id": null,
+      "pose_num": 3,
+      "pocket_center": null,
+      "pose_centroid": [
+        0.5505818181818178,
+        9.376481818181817,
+        80.42954545454545
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/unguided_003.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 4367.399982831607,
+      "uff_energy_after": 4182.743102778638,
+      "prep_time_s": 0.003,
+      "dock_time_s": 0.0598,
+      "post_time_s": 4.595
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "unguided",
+      "pocket_id": null,
+      "pocket_unique_id": null,
+      "pose_num": 4,
+      "pocket_center": null,
+      "pose_centroid": [
+        1.2600212121212127,
+        9.836960606060604,
+        80.72338484848486
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/unguided_004.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 4822.153381563297,
+      "uff_energy_after": 4636.324910424765,
+      "prep_time_s": 0.0031,
+      "dock_time_s": 0.0564,
+      "post_time_s": 4.9238
+    },
+    {
+      "protein_name": "7MEU_MGP_protein",
+      "ligand_name": "7MEU_MGP_ligand_start_conf",
+      "mode": "unguided",
+      "pocket_id": null,
+      "pocket_unique_id": null,
+      "pose_num": 5,
+      "pocket_center": null,
+      "pose_centroid": [
+        -0.2579151515151516,
+        10.671278787878785,
+        77.26113939393939
+      ],
+      "sdf_path": "/home/manndo/master_dev/Dockings/Benchmark_Equibind/7MEU_MGP/7MEU_MGP_ligand_start_conf__7MEU_MGP_protein/unguided_005.sdf",
+      "success": true,
+      "error": "",
+      "uff_minimized": true,
+      "uff_energy_before": 271.0116733933314,
+      "uff_energy_after": 83.75861810399243,
+      "prep_time_s": 0.0031,
+      "dock_time_s": 0.0569,
+      "post_time_s": 1.0343
+    }
+  ]
+}

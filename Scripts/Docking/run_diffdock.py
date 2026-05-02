@@ -267,17 +267,23 @@ def prepare_ligand_for_diffdock(input_sdf: Path, output_dir: Path) -> Path:
             dv = default_valence[symbol]
             bc = bond_counts[idx]
             ev = explicit_valences[idx]
-            if bc > dv and ev > 0:
+            # Only infer a charge when the SDF does NOT already declare an
+            # explicit valence (ev == 0). If ev > 0, the writer already told
+            # the parser the intended valence (e.g. P with valence 5 in a
+            # phosphonate) — adding a charge would corrupt the molecule.
+            if bc > dv and ev == 0:
                 charge = bc - dv
                 charges_to_add[idx + 1] = charge
 
         if not charges_to_add:
             return input_sdf
 
+        # MDL V2000 M  CHG line uses fixed 4-char columns:
+        # "M  CHGnnn aaa ccc aaa ccc..." where nnn=count(>3), each atom/charge=>4
         charge_atoms = list(charges_to_add.items())
-        chg_line = f"M  CHG  {len(charge_atoms)}"
+        chg_line = f"M  CHG{len(charge_atoms):>3}"
         for atom_idx, charge in charge_atoms:
-            chg_line += f"  {atom_idx:3d}  {charge:3d}"
+            chg_line += f"{atom_idx:>4}{charge:>4}"
         chg_line += "\n"
 
         with open(output_sdf, 'w') as f:
@@ -619,7 +625,7 @@ def _build_diffdock_config(
     config["actual_steps"] = steps - 1
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    custom_yaml = output_dir / "custom_inference_args.yaml"
+    custom_yaml = (output_dir / "custom_inference_args.yaml").resolve()
     with open(custom_yaml, "w") as f:
         yaml.dump(config, f, default_flow_style=False)
 
@@ -657,9 +663,9 @@ def _run_diffdock_batch_subprocess(
 ) -> subprocess.CompletedProcess:
     cmd = [
         diffdock_python, "-m", "inference",
-        "--config", str(config_yaml),
-        "--protein_ligand_csv", str(csv_path),
-        "--out_dir", str(out_dir),
+        "--config", str(Path(config_yaml).resolve()),
+        "--protein_ligand_csv", str(Path(csv_path).resolve()),
+        "--out_dir", str(Path(out_dir).resolve()),
         "--samples_per_complex", str(samples),
         "--no_final_step_noise",
     ]
@@ -708,10 +714,10 @@ def _run_diffdock_subprocess(
 
     cmd = [
         diffdock_python, "-m", "inference",
-        "--config", str(config_yaml),
-        "--protein_path", str(protein_path),
-        "--ligand_description", str(ligand_path),
-        "--out_dir", str(output_dir),
+        "--config", str(config_yaml.resolve()),
+        "--protein_path", str(protein_path.resolve()),
+        "--ligand_description", str(ligand_path.resolve()),
+        "--out_dir", str(output_dir.resolve()),
         "--samples_per_complex", str(samples),
         "--no_final_step_noise",
     ]

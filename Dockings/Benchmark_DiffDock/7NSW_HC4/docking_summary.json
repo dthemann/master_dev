@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-04-20T16:38:43.205673",
+  "configuration": {
+    "num_samples": 10,
+    "inference_steps": 20,
+    "device": "cuda:0",
+    "diffdock_dir": "/home/manndo/docking_tools/DiffDock"
+  },
+  "overall": {
+    "total_combinations": 1,
+    "successful": 1,
+    "failed": 0,
+    "skipped": 0,
+    "total_poses": 10,
+    "total_time_seconds": 66.21795678138733
+  },
+  "by_protein": {
+    "7NSW_HC4": {
+      "combinations": 1,
+      "poses": 10,
+      "success": 1
+    }
+  },
+  "by_ligand": {
+    "7NSW_HC4_start_conf": {
+      "combinations": 1,
+      "poses": 10,
+      "success": 1
+    }
+  },
+  "combinations": [
+    {
+      "protein": "7NSW_HC4",
+      "ligand": "7NSW_HC4_start_conf",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 66.22,
+      "error": null
+    }
+  ]
+}

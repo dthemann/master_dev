@@ -1,0 +1,27 @@
+parameter_file boron-silicon-atom_par.dat
+npts 162 168 232
+gridfld 7MWN_WI5_protein_meeko_retry1.maps.fld
+spacing 0.375
+receptor_types HD C A N NA OA F P SA S Cl Br I Mg Ca Mn Fe Zn
+ligand_types HD C A N NA OA F P SA S Cl Br I Si B
+receptor 7MWN_WI5_protein_meeko_retry1.pdbqt
+gridcenter 9.652 -15.139 -26.726
+smooth 0.500
+map 7MWN_WI5_protein_meeko_retry1.HD.map
+map 7MWN_WI5_protein_meeko_retry1.C.map
+map 7MWN_WI5_protein_meeko_retry1.A.map
+map 7MWN_WI5_protein_meeko_retry1.N.map
+map 7MWN_WI5_protein_meeko_retry1.NA.map
+map 7MWN_WI5_protein_meeko_retry1.OA.map
+map 7MWN_WI5_protein_meeko_retry1.F.map
+map 7MWN_WI5_protein_meeko_retry1.P.map
+map 7MWN_WI5_protein_meeko_retry1.SA.map
+map 7MWN_WI5_protein_meeko_retry1.S.map
+map 7MWN_WI5_protein_meeko_retry1.Cl.map
+map 7MWN_WI5_protein_meeko_retry1.Br.map
+map 7MWN_WI5_protein_meeko_retry1.I.map
+map 7MWN_WI5_protein_meeko_retry1.Si.map
+map 7MWN_WI5_protein_meeko_retry1.B.map
+elecmap 7MWN_WI5_protein_meeko_retry1.e.map
+dsolvmap 7MWN_WI5_protein_meeko_retry1.d.map
+dielectric -42.000

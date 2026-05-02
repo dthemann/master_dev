@@ -1,10 +1,10 @@
 Tool     | Stage            | Input                              | Output                               | Status  | Message
 ---------+------------------+------------------------------------+--------------------------------------+---------+--------
-pdbfixer | protein_validate | Orai1WT-MDSnap-Fr499.pdb           | Orai1WT-MDSnap-Fr499_mgl_tools.pdb   | success |        
-pdbfixer | protein_validate | Orai1WT-START-Fr0.pdb              | Orai1WT-START-Fr0_mgl_tools.pdb      | success |        
 pdbfixer | protein_validate | Orai1WT-MDSnap-Fr300.pdb           | Orai1WT-MDSnap-Fr300_mgl_tools.pdb   | success |        
 pdbfixer | protein_validate | Orai1WT-MDSnap-Fr400.pdb           | Orai1WT-MDSnap-Fr400_mgl_tools.pdb   | success |        
+pdbfixer | protein_validate | Orai1WT-MDSnap-Fr499.pdb           | Orai1WT-MDSnap-Fr499_mgl_tools.pdb   | success |        
+pdbfixer | protein_validate | Orai1WT-START-Fr0.pdb              | Orai1WT-START-Fr0_mgl_tools.pdb      | success |        
+mgltools | protein_convert  | Orai1WT-MDSnap-Fr300_mgl_tools.pdb | Orai1WT-MDSnap-Fr300_mgl_tools.pdbqt | success |        
 mgltools | protein_convert  | Orai1WT-MDSnap-Fr499_mgl_tools.pdb | Orai1WT-MDSnap-Fr499_mgl_tools.pdbqt | success |        
 mgltools | protein_convert  | Orai1WT-MDSnap-Fr400_mgl_tools.pdb | Orai1WT-MDSnap-Fr400_mgl_tools.pdbqt | success |        
-mgltools | protein_convert  | Orai1WT-MDSnap-Fr300_mgl_tools.pdb | Orai1WT-MDSnap-Fr300_mgl_tools.pdbqt | success |        
 mgltools | protein_convert  | Orai1WT-START-Fr0_mgl_tools.pdb    | Orai1WT-START-Fr0_mgl_tools.pdbqt    | success |        

@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-04-21T14:37:45.325252",
+  "configuration": {
+    "num_samples": 10,
+    "inference_steps": 20,
+    "device": "cuda:0",
+    "diffdock_dir": "/home/manndo/docking_tools/DiffDock"
+  },
+  "overall": {
+    "total_combinations": 1,
+    "successful": 1,
+    "failed": 0,
+    "skipped": 0,
+    "total_poses": 10,
+    "total_time_seconds": 52.672526359558105
+  },
+  "by_protein": {
+    "8BN6_R53": {
+      "combinations": 1,
+      "poses": 10,
+      "success": 1
+    }
+  },
+  "by_ligand": {
+    "8BN6_R53_start_conf": {
+      "combinations": 1,
+      "poses": 10,
+      "success": 1
+    }
+  },
+  "combinations": [
+    {
+      "protein": "8BN6_R53",
+      "ligand": "8BN6_R53_start_conf",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 52.67,
+      "error": null
+    }
+  ]
+}

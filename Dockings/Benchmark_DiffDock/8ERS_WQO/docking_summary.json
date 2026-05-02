@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-04-21T15:06:38.885006",
+  "configuration": {
+    "num_samples": 10,
+    "inference_steps": 20,
+    "device": "cuda:0",
+    "diffdock_dir": "/home/manndo/docking_tools/DiffDock"
+  },
+  "overall": {
+    "total_combinations": 1,
+    "successful": 1,
+    "failed": 0,
+    "skipped": 0,
+    "total_poses": 10,
+    "total_time_seconds": 60.559378147125244
+  },
+  "by_protein": {
+    "8ERS_WQO": {
+      "combinations": 1,
+      "poses": 10,
+      "success": 1
+    }
+  },
+  "by_ligand": {
+    "8ERS_WQO_start_conf": {
+      "combinations": 1,
+      "poses": 10,
+      "success": 1
+    }
+  },
+  "combinations": [
+    {
+      "protein": "8ERS_WQO",
+      "ligand": "8ERS_WQO_start_conf",
+      "status": "success",
+      "num_poses": 10,
+      "time_seconds": 60.56,
+      "error": null
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+parameter_file boron-silicon-atom_par.dat
+npts 180 182 150
+gridfld 6ZXQ_IMO_protein_meeko_retry1.maps.fld
+spacing 0.375
+receptor_types HD C A N NA OA F P SA S Cl Br I Mg Ca Mn Fe Zn
+ligand_types HD C A N NA OA F P SA S Cl Br I Si B
+receptor 6ZXQ_IMO_protein_meeko_retry1.pdbqt
+gridcenter -19.808 -5.243 13.280
+smooth 0.500
+map 6ZXQ_IMO_protein_meeko_retry1.HD.map
+map 6ZXQ_IMO_protein_meeko_retry1.C.map
+map 6ZXQ_IMO_protein_meeko_retry1.A.map
+map 6ZXQ_IMO_protein_meeko_retry1.N.map
+map 6ZXQ_IMO_protein_meeko_retry1.NA.map
+map 6ZXQ_IMO_protein_meeko_retry1.OA.map
+map 6ZXQ_IMO_protein_meeko_retry1.F.map
+map 6ZXQ_IMO_protein_meeko_retry1.P.map
+map 6ZXQ_IMO_protein_meeko_retry1.SA.map
+map 6ZXQ_IMO_protein_meeko_retry1.S.map
+map 6ZXQ_IMO_protein_meeko_retry1.Cl.map
+map 6ZXQ_IMO_protein_meeko_retry1.Br.map
+map 6ZXQ_IMO_protein_meeko_retry1.I.map
+map 6ZXQ_IMO_protein_meeko_retry1.Si.map
+map 6ZXQ_IMO_protein_meeko_retry1.B.map
+elecmap 6ZXQ_IMO_protein_meeko_retry1.e.map
+dsolvmap 6ZXQ_IMO_protein_meeko_retry1.d.map
+dielectric -42.000

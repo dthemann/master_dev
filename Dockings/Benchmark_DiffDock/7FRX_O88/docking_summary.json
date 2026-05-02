@@ -1,0 +1,41 @@
+{
+  "timestamp": "2026-04-21T22:55:43.073562",
+  "configuration": {
+    "num_samples": 10,
+    "inference_steps": 20,
+    "device": "cuda:0",
+    "diffdock_dir": "/home/manndo/docking_tools/DiffDock"
+  },
+  "overall": {
+    "total_combinations": 1,
+    "successful": 0,
+    "failed": 1,
+    "skipped": 0,
+    "total_poses": 0,
+    "total_time_seconds": 17.923809051513672
+  },
+  "by_protein": {
+    "7FRX_O88": {
+      "combinations": 1,
+      "poses": 0,
+      "success": 0
+    }
+  },
+  "by_ligand": {
+    "7FRX_O88_start_conf": {
+      "combinations": 1,
+      "poses": 0,
+      "success": 0
+    }
+  },
+  "combinations": [
+    {
+      "protein": "7FRX_O88",
+      "ligand": "7FRX_O88_start_conf",
+      "status": "failed",
+      "num_poses": 0,
+      "time_seconds": 17.92,
+      "error": "No poses from batch. stderr tail: conf.sdf and /home/manndo/master_dev/Dockings/Benchmark_DiffDock/7FRX_O88/prepared_proteins/7FRX_O88_protein_prepared.pdb. We are skipping this complex.\n\n1it [00:00,  1.03it/s]\n1it [00:00,  1.03it/s]\n[2026-Apr-21 22:55:42 CEST] WARNING -\n    Failed for 0 / 1 complexes.\n    Skipped 1 / 1 complexes.\n\n"
+    }
+  ]
+}
