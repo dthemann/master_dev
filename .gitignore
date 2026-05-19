@@ -61,20 +61,11 @@ equibind_spatial_exclusion_poses_old/
 equibind_batches/
 fpocket_results/
 pandamap_results/
-posebusters_results/
-posebuster_proved/
+# posebusters_results/
+# posebuster_proved/
 docking_ready_meeko/docking/
 docking_ready_mgltools/docking/
 large_equibind_pocket_guided - full/
-
-
-# Ignore all SDF files except those in Orai/ and Drugs/
-*.sdf
-!Orai/**/*.sdf
-!Drugs/**/*.sdf
-!storage/ligands_sdf_large_approved/*.sdf
-!storage/ligands_sdf_small_symmetric_approved/*.sdf
-!/home/manndo/master_dev/large_equibind_pocket_guided/*.sdf
 
 *.sdf:Zone.Identifier
 *.json:Zone.Identifier
