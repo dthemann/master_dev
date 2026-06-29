@@ -6,6 +6,12 @@ Usage:
     python run_diffdock.py                           # uses default config next to this script
     python run_diffdock.py -c my_config.yaml         # custom config
     python run_diffdock.py --dry-run                  # validate setup without docking
+    python run_diffdock.py --optimize smina           # re-optimise poses (none|smina|gnina|all)
+
+Optionally re-optimises each DiffDock pose against the receptor with smina
+and/or gnina (local minimisation, same pocket); set via the 'optimization'
+config key or the --optimize flag. Optimised poses and scores are written
+alongside the originals (optimized_<tool>/ + optimization_log.csv).
 """
 from __future__ import annotations
 
@@ -13,6 +19,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -64,6 +71,14 @@ def print_config(cfg: dict) -> None:
     print(f"Device:              {cfg['device']}")
     print(f"Samples per complex: {cfg.get('num_samples', 10)}")
     print(f"Inference steps:     {cfg.get('inference_steps', 20)}")
+
+    opt = str(cfg.get("optimization", "none")).strip().lower()
+    print(f"Pose optimization:   {opt}")
+    if opt not in ("none", "off", ""):
+        print(f"  search mode:       {cfg.get('optimize_search', 'minimize')}")
+        print(f"  autobox add:       {cfg.get('optimize_autobox_add', 4.0)} Å")
+        if opt in ("gnina", "all"):
+            print(f"  gnina GPU:         {'on' if cfg.get('gnina_use_gpu', False) else 'off (--no_gpu)'}")
     tpc = cfg.get("timeout_per_complex", 0)
     print(f"Timeout per complex: {tpc}s ({tpc / 60:.0f} min)" if tpc else "Timeout per complex: unlimited")
 
@@ -71,6 +86,8 @@ def print_config(cfg: dict) -> None:
     batch_size = cfg.get("batch_size", 15)
     print(f"Batch mode:          {'ON' if batch_mode else 'OFF'}")
     print(f"Batch size:          {batch_size or 'all at once'}")
+    if batch_mode:
+        print(f"Group by receptor:   {'YES' if cfg.get('group_by_receptor', False) else 'no'}")
     if not batch_mode:
         print(f"Workers:             {cfg.get('max_workers', 1)}")
 
@@ -846,10 +863,21 @@ def _run_batch_csv_mode(
     device = cfg.get("device", "cuda:0")
     timeout = cfg.get("timeout_per_complex", 300)
     batch_size = cfg.get("batch_size", 15) or len(combos_to_dock)
+    group_by_receptor = cfg.get("group_by_receptor", False)
     diffdock_python = cfg["diffdock_python"]
     diffdock_dir = Path(cfg["diffdock_dir"])
 
-    batches = [combos_to_dock[i:i + batch_size] for i in range(0, len(combos_to_dock), batch_size)]
+    if group_by_receptor:
+        receptor_groups: Dict[Path, list] = defaultdict(list)
+        for combo in combos_to_dock:
+            receptor_groups[combo[3]].append(combo)  # combo[3] == orig_prot
+        batches = []
+        for group in receptor_groups.values():
+            batches.extend(
+                group[i:i + batch_size] for i in range(0, len(group), batch_size)
+            )
+    else:
+        batches = [combos_to_dock[i:i + batch_size] for i in range(0, len(combos_to_dock), batch_size)]
     config_yaml = _build_diffdock_config(samples, steps, output_dir, diffdock_dir)
 
     combos_completed = 0
@@ -859,7 +887,7 @@ def _run_batch_csv_mode(
     progress_file.parent.mkdir(exist_ok=True)
 
     for batch_idx, batch in enumerate(batches):
-        batch_start_idx = batch_idx * batch_size
+        batch_start_idx = sum(len(batches[k]) for k in range(batch_idx))
         batch_end_idx = min(batch_start_idx + len(batch), total_combos)
 
         print(f"\n  ── Batch {batch_idx + 1}/{len(batches)} ({len(batch)} complexes) "
@@ -1069,6 +1097,350 @@ def _run_batch_csv_mode(
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Post-pose optimization (smina / gnina)
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# DiffDock predicts ligand coordinates directly; it never minimises against a
+# force field or excluded-volume term. An optional local re-optimisation relaxes
+# each pose against the receptor (boxed around the pose, so it stays in the same
+# pocket) and attaches a physics/CNN score:
+#
+#   smina  → --minimize / --local_only, writes <minimizedAffinity> (kcal/mol).
+#   gnina  → same CLI + a CNN rescorer, writes <CNNscore>/<CNNaffinity> too.
+#
+# Both share the AutoDock-Vina interface, so one wrapper drives either. The
+# original DiffDock SDFs are never modified — optimised poses are written to a
+# per-tool subfolder (optimized_smina/ , optimized_gnina/) and scored in
+# optimization_log.csv.
+
+OPTIMIZER_TOOLS = ("smina", "gnina")
+
+OPTIMIZATION_LOG_COLUMNS = [
+    "timestamp", "combo_name", "protein_name", "ligand_name", "tool",
+    "pose_rank", "pose_file", "diffdock_confidence",
+    "minimized_affinity", "cnn_score", "cnn_affinity",
+    "optimized_file", "status", "message", "elapsed_time_s",
+]
+
+# SDF data tags written by smina/gnina, mapped to our log column names.
+_SDF_TAG_RE = re.compile(r">\s*<([^>]+)>\s*\n([^\n]*)")
+_SCORE_TAGS = {
+    "minimizedAffinity": "minimized_affinity",
+    "CNNscore": "cnn_score",
+    "CNNaffinity": "cnn_affinity",
+}
+
+
+def resolve_optimizers(cfg: dict) -> List[str]:
+    """Map the ``optimization`` config value to a list of tools to run."""
+    mode = str(cfg.get("optimization", "none")).strip().lower()
+    if mode in ("none", "off", "false", ""):
+        return []
+    if mode == "all":
+        return list(OPTIMIZER_TOOLS)
+    if mode in OPTIMIZER_TOOLS:
+        return [mode]
+    raise ValueError(
+        f"optimization must be one of none/smina/gnina/all (got {mode!r})"
+    )
+
+
+def _resolve_optimizer_exe(tool: str, cfg: dict) -> str:
+    """Locate a tool's executable: explicit config path → PATH → ''."""
+    explicit = cfg.get(f"{tool}_executable")
+    if explicit:
+        path = os.path.expanduser(str(explicit))
+        if Path(path).exists():
+            return path
+        return shutil.which(path) or ""
+    return shutil.which(tool) or ""
+
+
+def _gnina_subprocess_env(cfg: dict) -> dict:
+    """Environment for the gnina subprocess, with CUDA/cuDNN libs on the path.
+
+    The prebuilt gnina CUDA binary is dynamically linked against the CUDA
+    runtime + cuDNN 9 shared objects (libcudart.so.12, libcudnn.so.9, libcublas,
+    …). Those are not installed system-wide but ARE bundled inside the diffdock
+    env's torch install, so we add that env's ``nvidia/*/lib`` dirs to
+    LD_LIBRARY_PATH. gnina resolves these at load time regardless of --no_gpu,
+    so this is needed for CPU runs too. Honours an explicit ``gnina_lib_dirs``
+    config list (prepended first).
+    """
+    env = os.environ.copy()
+    lib_dirs: List[str] = []
+
+    for d in cfg.get("gnina_lib_dirs") or []:
+        p = os.path.expanduser(str(d))
+        if Path(p).is_dir():
+            lib_dirs.append(p)
+
+    diffdock_python = cfg.get("diffdock_python")
+    if diffdock_python:
+        env_root = Path(os.path.expanduser(diffdock_python)).resolve().parent.parent
+        lib_dirs.extend(
+            str(p) for p in sorted(env_root.glob("lib/python*/site-packages/nvidia/*/lib"))
+            if p.is_dir()
+        )
+
+    if lib_dirs:
+        existing = env.get("LD_LIBRARY_PATH", "")
+        env["LD_LIBRARY_PATH"] = ":".join(lib_dirs + ([existing] if existing else []))
+    return env
+
+
+def _probe_optimizer(tool: str, exe: str, cfg: dict) -> Tuple[bool, str]:
+    """Run ``<exe> --version`` to confirm the binary actually loads.
+
+    Catches missing shared libraries (e.g. libcudnn.so.9 for the gnina CUDA
+    build) before a real docking run — used by --dry-run.
+    """
+    env = _gnina_subprocess_env(cfg) if tool == "gnina" else None
+    try:
+        proc = subprocess.run([exe, "--version"], capture_output=True, text=True,
+                              timeout=30, env=env)
+    except Exception as e:
+        return False, str(e)
+    lines = (proc.stdout or proc.stderr or "").strip().splitlines()
+    if proc.returncode != 0:
+        return False, lines[-1] if lines else f"rc={proc.returncode}"
+    return True, lines[0] if lines else "ok"
+
+
+def _parse_sdf_scores(sdf_path: Path) -> Dict[str, float]:
+    scores: Dict[str, float] = {}
+    try:
+        text = Path(sdf_path).read_text()
+    except Exception:
+        return scores
+    for m in _SDF_TAG_RE.finditer(text):
+        tag = m.group(1).strip()
+        col = _SCORE_TAGS.get(tag)
+        if col and col not in scores:
+            try:
+                scores[col] = float(m.group(2).strip())
+            except ValueError:
+                pass
+    return scores
+
+
+def run_optimizer_tool(
+    tool: str,
+    exe: str,
+    receptor: Path,
+    pose_sdf: Path,
+    out_sdf: Path,
+    cfg: dict,
+) -> Tuple[bool, Dict[str, float], str]:
+    """Locally re-optimise a single pose with smina or gnina.
+
+    Returns ``(success, scores, message)``. On failure the caller keeps the
+    original DiffDock pose, so a pose is never lost.
+    """
+    search = str(cfg.get("optimize_search", "minimize")).strip().lower()
+    autobox_add = cfg.get("optimize_autobox_add", 4.0)
+    cpu = cfg.get("optimize_cpu", 1)
+    seed = cfg.get("optimize_seed", 0)
+    timeout_s = cfg.get("optimize_timeout", 300)
+
+    out_sdf.parent.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        exe,
+        "--receptor", str(receptor),
+        "--ligand", str(pose_sdf),
+        "--autobox_ligand", str(pose_sdf),
+        "--autobox_add", str(autobox_add),
+        "--out", str(out_sdf),
+        "--cpu", str(cpu),
+        "--seed", str(seed),
+        "--num_modes", "1",
+    ]
+    # --local_only and --minimize both keep the ligand near its input pose and
+    # never run a global search, so the optimised pose stays in the same pocket.
+    cmd.append("--minimize" if search == "minimize" else "--local_only")
+    # gnina runs a CNN by default; keep it off the GPU unless asked (the GPU is
+    # usually busy with DiffDock). smina has no --no_gpu flag.
+    if tool == "gnina" and not cfg.get("gnina_use_gpu", False):
+        cmd.append("--no_gpu")
+
+    # gnina needs the diffdock env's bundled CUDA/cuDNN libs on LD_LIBRARY_PATH.
+    proc_env = _gnina_subprocess_env(cfg) if tool == "gnina" else None
+
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_s, env=proc_env)
+    except subprocess.TimeoutExpired:
+        return False, {}, f"{tool} timed out after {timeout_s}s"
+    except FileNotFoundError:
+        return False, {}, f"{tool} executable not found: {exe}"
+    except Exception as e:  # pragma: no cover - defensive
+        return False, {}, f"{tool} invocation failed: {e}"
+
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or "").strip().splitlines()
+        return False, {}, f"{tool} rc={proc.returncode}: {err[-1] if err else 'unknown error'}"
+
+    if not out_sdf.exists() or out_sdf.stat().st_size == 0:
+        return False, {}, f"{tool} produced no output pose"
+
+    return True, _parse_sdf_scores(out_sdf), f"{tool} {search} ok"
+
+
+def _load_optimization_keys(log_path: Path) -> set:
+    keys: set = set()
+    if log_path.exists():
+        try:
+            df = pd.read_csv(log_path)
+            for _, row in df.iterrows():
+                keys.add((row["combo_name"], row["tool"], row["pose_file"]))
+        except Exception:
+            pass
+    return keys
+
+
+def _write_optimization_log(log_path: Path, rows: List[dict], overwrite: bool) -> None:
+    if not rows:
+        return
+    df_new = pd.DataFrame(rows, columns=OPTIMIZATION_LOG_COLUMNS)
+    if log_path.exists():
+        try:
+            df_old = pd.read_csv(log_path)
+        except Exception:
+            df_old = pd.DataFrame(columns=OPTIMIZATION_LOG_COLUMNS)
+        if overwrite and not df_old.empty:
+            new_keys = set(zip(df_new["combo_name"], df_new["tool"], df_new["pose_file"]))
+            mask = [
+                (c, t, p) not in new_keys
+                for c, t, p in zip(df_old["combo_name"], df_old["tool"], df_old["pose_file"])
+            ]
+            df_old = df_old[mask]
+        frames = [df for df in (df_old, df_new) if not df.empty]
+        df_all = pd.concat(frames, ignore_index=True) if frames else df_new
+    else:
+        df_all = df_new
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    df_all.to_csv(log_path, index=False)
+
+
+def optimize_results(
+    results: List[DockingResult],
+    prot_cache: Dict[Path, Path],
+    cfg: dict,
+    output_dir: Path,
+    overwrite: bool = False,
+) -> None:
+    """Run the configured optimizer(s) over every successful pose in-place.
+
+    Operates on both freshly docked and previously docked (skipped) complexes,
+    so enabling ``optimization`` and re-running optimises existing poses without
+    re-docking. Idempotent: existing optimised SDFs are reused unless ``overwrite``.
+    """
+    tools = resolve_optimizers(cfg)
+    if not tools:
+        return
+
+    exes: Dict[str, str] = {}
+    for tool in tools:
+        exe = _resolve_optimizer_exe(tool, cfg)
+        if exe:
+            exes[tool] = exe
+        else:
+            print(f"  ⚠ {tool} not found on PATH — set '{tool}_executable' in the "
+                  f"config or install it into the env. Skipping {tool}.")
+    tools = [t for t in tools if t in exes]
+    if not tools:
+        print("  ⚠ No optimizer executables available — skipping optimization.")
+        return
+
+    targets = [r for r in results if r.status in ("success", "skipped") and r.pose_files]
+
+    print("\n" + "=" * 80)
+    print(f"Pose optimization: {', '.join(tools)}")
+    print("=" * 80)
+    print(f"Optimizing {len(targets)} complexes × {len(tools)} tool(s) "
+          f"(search={cfg.get('optimize_search', 'minimize')})")
+
+    log_path = output_dir / "optimization_log.csv"
+    seen = _load_optimization_keys(log_path)
+
+    rows: List[dict] = []
+    n_ok = n_fail = n_reused = 0
+
+    for idx, r in enumerate(targets, 1):
+        receptor = Path(prot_cache.get(r.protein_path, r.protein_path))
+        combo_name = f"{r.ligand_name}__{r.protein_name}"
+
+        for tool in tools:
+            tool_dir = r.output_dir / f"optimized_{tool}"
+            for pose in r.pose_files:
+                out_sdf = tool_dir / f"{pose.stem}_{tool}.sdf"
+                key = (combo_name, tool, pose.name)
+
+                if key in seen and not overwrite:
+                    continue
+
+                reuse = out_sdf.exists() and out_sdf.stat().st_size > 0 and not overwrite
+                if reuse:
+                    ok, scores, msg = True, _parse_sdf_scores(out_sdf), "reused existing"
+                    elapsed = 0.0
+                    n_reused += 1
+                else:
+                    t0 = time.time()
+                    ok, scores, msg = run_optimizer_tool(
+                        tool, exes[tool], receptor, pose, out_sdf, cfg,
+                    )
+                    elapsed = time.time() - t0
+                    if ok:
+                        n_ok += 1
+                    else:
+                        n_fail += 1
+
+                rows.append({
+                    "timestamp": datetime.now().isoformat(),
+                    "combo_name": combo_name,
+                    "protein_name": r.protein_name,
+                    "ligand_name": r.ligand_name,
+                    "tool": tool,
+                    "pose_rank": extract_rank_from_filename(pose.name),
+                    "pose_file": pose.name,
+                    "diffdock_confidence": round(extract_confidence_from_filename(pose.name), 4),
+                    "minimized_affinity": scores.get("minimized_affinity"),
+                    "cnn_score": scores.get("cnn_score"),
+                    "cnn_affinity": scores.get("cnn_affinity"),
+                    "optimized_file": str(out_sdf) if ok else "",
+                    "status": "success" if ok else "failed",
+                    "message": msg,
+                    "elapsed_time_s": round(elapsed, 2),
+                })
+                seen.add(key)
+
+        print(f"  [{idx}/{len(targets)}] {combo_name}: "
+              f"{len(r.pose_files)} pose(s) × {len(tools)} tool(s)")
+
+    _write_optimization_log(log_path, rows, overwrite=overwrite)
+    print(f"\nOptimization complete: {n_ok} optimized, {n_reused} reused, {n_fail} failed")
+
+    # Per-tool wall-clock time spent this run (reused poses contribute 0s and
+    # are excluded from the pose count / average).
+    time_by_tool: Dict[str, float] = defaultdict(float)
+    runs_by_tool: Dict[str, int] = defaultdict(int)
+    for row in rows:
+        time_by_tool[row["tool"]] += row["elapsed_time_s"]
+        if row["message"] != "reused existing":
+            runs_by_tool[row["tool"]] += 1
+    if rows:
+        print("Time by tool (this run, excludes reused):")
+        for tool in tools:
+            secs = time_by_tool.get(tool, 0.0)
+            n = runs_by_tool.get(tool, 0)
+            avg = secs / n if n else 0.0
+            print(f"  {tool}: {secs:.1f}s total ({secs / 60:.1f} min) "
+                  f"over {n} pose(s) ({avg:.1f}s/pose)")
+
+    print(f"Optimization log: {log_path}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Main docking orchestrator
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1108,7 +1480,11 @@ def run_diffdock(
     print("=" * 80)
     print("DiffDock Docking")
     print("=" * 80)
-    mode_str = "CSV batch" if batch_mode else (f"parallel ({max_workers} workers)" if max_workers > 1 else "sequential")
+    if batch_mode:
+        gbr = cfg.get("group_by_receptor", False)
+        mode_str = "CSV batch (group-by-receptor)" if gbr else "CSV batch"
+    else:
+        mode_str = f"parallel ({max_workers} workers)" if max_workers > 1 else "sequential"
     print(f"Mode: {mode_str}")
     print(f"Output directory: {output_dir}")
     print(f"Proteins: {len(proteins)}  |  Ligands: {len(ligands)}  |  Total: {total}")
@@ -1194,6 +1570,12 @@ def run_diffdock(
 
     if not combos_to_dock:
         print("Nothing to dock!")
+        # Still run the configured post-pose optimisation over already-docked
+        # poses (skipped results carry their pose_files). Without this, enabling
+        # optimization for an already-docked complex would silently do nothing,
+        # because the optimize_results() call below is only reached when there is
+        # something new to dock.
+        optimize_results(results, prot_cache, cfg, output_dir, overwrite=overwrite_existing)
         save_error_log(output_dir, error_log)
         return results
 
@@ -1315,6 +1697,9 @@ def run_diffdock(
     print(f"\nDocking complete in {total_time:.1f}s ({total_time/60:.1f} min)")
     print(f"  Success: {n_success}  |  Failed: {n_failed}  |  Skipped: {len(skipped_results)}")
 
+    # Optional post-pose optimization (smina / gnina) over all poses produced.
+    optimize_results(results, prot_cache, cfg, output_dir, overwrite=overwrite_existing)
+
     save_error_log(output_dir, error_log)
     print(f"Error log saved: {output_dir / ERROR_LOG_FILENAME} ({len(error_log)} entries)")
     print(f"Docking log: {log_path} ({len(existing_combos)} entries)")
@@ -1426,6 +1811,10 @@ def main():
         "--dry-run", action="store_true",
         help="Validate configuration and inputs without running docking",
     )
+    parser.add_argument(
+        "--optimize", choices=["none", "smina", "gnina", "all"], default=None,
+        help="Post-pose optimization tool(s); overrides config 'optimization'",
+    )
     args = parser.parse_args()
 
     # Load config
@@ -1434,6 +1823,15 @@ def main():
         print(f"ERROR: Config file not found: {config_path}")
         sys.exit(1)
     cfg = load_config(config_path)
+
+    # CLI override for the optimization mode, then validate it up front.
+    if args.optimize is not None:
+        cfg["optimization"] = args.optimize
+    try:
+        resolve_optimizers(cfg)
+    except ValueError as e:
+        print(f"ERROR: {e}")
+        sys.exit(1)
 
     # Resolve paths relative to CWD
     receptors_dir = Path(cfg["receptors_dir"])
@@ -1480,6 +1878,15 @@ def main():
             proteins = collect_files(receptors_dir, [".pdb"])
             ligands = collect_files(d, [".sdf", ".mol2"])
             print(f"  {d.name}: {len(proteins)} proteins, {len(ligands)} ligands")
+        # Check optimizer executables resolve AND actually load (probe --version)
+        for tool in resolve_optimizers(cfg):
+            exe = _resolve_optimizer_exe(tool, cfg)
+            if not exe:
+                print(f"  optimizer {tool}: NOT FOUND (install into the env or set {tool}_executable)")
+                continue
+            ok, msg = _probe_optimizer(tool, exe, cfg)
+            print(f"  optimizer {tool}: {exe}")
+            print(f"      {'✓ ' + msg if ok else '✗ FAILS TO RUN: ' + msg}")
         print("\n[DRY RUN] Configuration validated. Exiting before docking.")
         sys.exit(0)
 

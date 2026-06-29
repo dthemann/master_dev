@@ -1,90 +1,0 @@
-/home/manndo/anaconda3/envs/diffdock/lib/python3.9/site-packages/Bio/pairwise2.py:278: BiopythonDeprecationWarning: Bio.pairwise2 has been deprecated, and we intend to remove it in a future release of Biopython. As an alternative, please consider using Bio.Align.PairwiseAligner as a replacement, and contact the Biopython developers if you still need the Bio.pairwise2 module.
-  warnings.warn(
-/home/manndo/docking_tools/DiffDock/inference.py:202: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
-  state_dict = torch.load(f'{args.model_dir}/{args.ckpt}', map_location=torch.device('cpu'))
-/home/manndo/docking_tools/DiffDock/inference.py:210: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
-  state_dict = torch.load(f'{args.confidence_model_dir}/{args.confidence_ckpt}', map_location=torch.device('cpu'))
-0it [00:00, ?it/s]/home/manndo/docking_tools/DiffDock/datasets/parse_chi.py:91: RuntimeWarning: invalid value encountered in cast
-  Y = indices.astype(int)
-1it [09:27, 567.45s/it]2it [15:30, 447.19s/it][2026-May-01 04:04:13 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 4: 1 / 10 samples failed
-[2026-May-01 04:04:19 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 5: 1 / 10 samples failed
-[2026-May-01 04:04:24 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 6: 1 / 10 samples failed
-[2026-May-01 04:04:29 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 7: 1 / 10 samples failed
-[2026-May-01 04:04:32 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 8: 1 / 10 samples failed
-[2026-May-01 04:04:36 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 9: 1 / 10 samples failed
-[2026-May-01 04:04:39 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 10: 1 / 10 samples failed
-[2026-May-01 04:04:41 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 11: 1 / 10 samples failed
-[2026-May-01 04:04:44 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 12: 1 / 10 samples failed
-[2026-May-01 04:04:46 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 13: 1 / 10 samples failed
-[2026-May-01 04:04:48 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 14: 1 / 10 samples failed
-[2026-May-01 04:04:50 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 15: 1 / 10 samples failed
-[2026-May-01 04:04:52 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 16: 1 / 10 samples failed
-[2026-May-01 04:04:54 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 17: 1 / 10 samples failed
-[2026-May-01 04:04:56 CEST] WARNING -Complex ['7T2I_E9F_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 18: 1 / 10 samples failed
-3it [21:36, 410.32s/it]4it [25:45, 346.56s/it]5it [30:37, 326.76s/it][2026-May-01 04:17:37 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 1: 1 / 10 samples failed
-[2026-May-01 04:18:54 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 2: 1 / 10 samples failed
-[2026-May-01 04:19:56 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 3: 1 / 10 samples failed
-[2026-May-01 04:20:31 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 4: 1 / 10 samples failed
-[2026-May-01 04:20:47 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 5: 1 / 10 samples failed
-[2026-May-01 04:20:52 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 6: 1 / 10 samples failed
-[2026-May-01 04:20:57 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 7: 1 / 10 samples failed
-[2026-May-01 04:21:01 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 8: 1 / 10 samples failed
-[2026-May-01 04:21:05 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 9: 1 / 10 samples failed
-[2026-May-01 04:21:08 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 10: 1 / 10 samples failed
-[2026-May-01 04:21:11 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 11: 1 / 10 samples failed
-[2026-May-01 04:21:14 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 12: 1 / 10 samples failed
-[2026-May-01 04:21:17 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 13: 1 / 10 samples failed
-[2026-May-01 04:21:19 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 14: 1 / 10 samples failed
-[2026-May-01 04:21:22 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 15: 1 / 10 samples failed
-[2026-May-01 04:21:24 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 16: 1 / 10 samples failed
-[2026-May-01 04:21:26 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 17: 1 / 10 samples failed
-[2026-May-01 04:21:28 CEST] WARNING -Complex ['7T9O_GEI_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 18: 1 / 10 samples failed
-6it [38:09, 369.23s/it]7it [45:58, 401.89s/it][2026-May-01 04:30:43 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 1: 1 / 10 samples failed
-[2026-May-01 04:30:48 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 2: 4 / 10 samples failed
-[2026-May-01 04:30:50 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 3: 6 / 10 samples failed
-[2026-May-01 04:30:52 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 4: 7 / 10 samples failed
-[2026-May-01 04:30:53 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 5: 8 / 10 samples failed
-[2026-May-01 04:30:54 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 6: 8 / 10 samples failed
-[2026-May-01 04:30:54 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 7: 8 / 10 samples failed
-[2026-May-01 04:30:55 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 8: 8 / 10 samples failed
-[2026-May-01 04:30:55 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 9: 6 / 10 samples failed
-[2026-May-01 04:30:56 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 10: 5 / 10 samples failed
-[2026-May-01 04:30:56 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 11: 7 / 10 samples failed
-[2026-May-01 04:30:56 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 12: 8 / 10 samples failed
-[2026-May-01 04:30:57 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 13: 8 / 10 samples failed
-[2026-May-01 04:30:57 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 14: 8 / 10 samples failed
-[2026-May-01 04:30:57 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 15: 8 / 10 samples failed
-[2026-May-01 04:30:58 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 16: 8 / 10 samples failed
-[2026-May-01 04:30:58 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 17: 8 / 10 samples failed
-[2026-May-01 04:30:58 CEST] WARNING -Complex ['7TBU_S3P_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 18: 8 / 10 samples failed
-8it [47:38, 305.94s/it]9it [52:35, 303.23s/it]10it [59:43, 341.67s/it][2026-May-01 04:44:39 CEST] WARNING -Complex ['7THI_PGA_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 6: 1 / 10 samples failed
-[2026-May-01 04:44:41 CEST] WARNING -Complex ['7THI_PGA_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 7: 2 / 10 samples failed
-[2026-May-01 04:44:42 CEST] WARNING -Complex ['7THI_PGA_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 8: 3 / 10 samples failed
-[2026-May-01 04:44:43 CEST] WARNING -Complex ['7THI_PGA_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 9: 3 / 10 samples failed
-[2026-May-01 04:44:45 CEST] WARNING -Complex ['7THI_PGA_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 10: 3 / 10 samples failed
-[2026-May-01 04:44:46 CEST] WARNING -Complex ['7THI_PGA_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 11: 3 / 10 samples failed
-[2026-May-01 04:44:46 CEST] WARNING -Complex ['7THI_PGA_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 12: 3 / 10 samples failed
-[2026-May-01 04:44:47 CEST] WARNING -Complex ['7THI_PGA_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 13: 3 / 10 samples failed
-[2026-May-01 04:44:48 CEST] WARNING -Complex ['7THI_PGA_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 14: 3 / 10 samples failed
-[2026-May-01 04:44:49 CEST] WARNING -Complex ['7THI_PGA_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 15: 3 / 10 samples failed
-[2026-May-01 04:44:50 CEST] WARNING -Complex ['7THI_PGA_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 16: 3 / 10 samples failed
-[2026-May-01 04:44:51 CEST] WARNING -Complex ['7THI_PGA_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 17: 3 / 10 samples failed
-[2026-May-01 04:44:51 CEST] WARNING -Complex ['7THI_PGA_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 18: 3 / 10 samples failed
-11it [1:01:31, 270.15s/it][2026-May-01 04:46:04 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 2: 2 / 10 samples failed
-[2026-May-01 04:46:14 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 3: 2 / 10 samples failed
-[2026-May-01 04:46:17 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 4: 3 / 10 samples failed
-[2026-May-01 04:46:20 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 5: 3 / 10 samples failed
-[2026-May-01 04:46:22 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 6: 3 / 10 samples failed
-[2026-May-01 04:46:24 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 7: 3 / 10 samples failed
-[2026-May-01 04:46:26 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 8: 3 / 10 samples failed
-[2026-May-01 04:46:28 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 9: 3 / 10 samples failed
-[2026-May-01 04:46:29 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 10: 3 / 10 samples failed
-[2026-May-01 04:46:30 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 11: 3 / 10 samples failed
-[2026-May-01 04:46:31 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 12: 3 / 10 samples failed
-[2026-May-01 04:46:33 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 13: 3 / 10 samples failed
-[2026-May-01 04:46:34 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 14: 3 / 10 samples failed
-[2026-May-01 04:46:35 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 15: 3 / 10 samples failed
-[2026-May-01 04:46:36 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 16: 3 / 10 samples failed
-[2026-May-01 04:46:37 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 17: 3 / 10 samples failed
-[2026-May-01 04:46:38 CEST] WARNING -Complex ['7TM6_GPJ_start_conf__Orai1WT-START-Fr0'] Batch 1 Inference Iteration 18: 3 / 10 samples failed
-12it [1:03:17, 220.31s/it]13it [1:05:59, 202.49s/it]14it [1:09:18, 201.46s/it]15it [1:11:49, 186.15s/it]15it [1:11:49, 287.28s/it]

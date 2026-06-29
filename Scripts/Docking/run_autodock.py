@@ -38,6 +38,9 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from Scripts.Utilities.prep_docking import run_workflow  # noqa: E402
+from Scripts.Utilities.inject_hetatms import (  # noqa: E402
+    inject_hetatms, DEFAULT_KEEP_COFACTORS, DEFAULT_KEEP_METALS,
+)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -66,6 +69,18 @@ def load_config(config_path: Path) -> dict:
         raise ValueError(f"Invalid scoring_function '{scoring}'. Must be 'vina', 'vinardo', or 'ad4'.")
     cfg["scoring_function"] = scoring
 
+    # retain_hetatm_residues: None/false = off, True = default KEEP list (cofactors+metals),
+    # explicit list = use those 3-letter residue codes only.
+    raw_keep = cfg.get("retain_hetatm_residues", None)
+    if raw_keep in (None, False):
+        cfg["retain_hetatm_residues"] = None
+    elif raw_keep is True:
+        cfg["retain_hetatm_residues"] = sorted(DEFAULT_KEEP_COFACTORS | DEFAULT_KEEP_METALS)
+    else:
+        cfg["retain_hetatm_residues"] = sorted(
+            {str(r).strip().upper() for r in raw_keep if str(r).strip()}
+        )
+
     return cfg
 
 
@@ -93,6 +108,13 @@ def print_config(cfg: dict) -> None:
     tpc = cfg.get("timeout_per_complex", 0)
     print(f"Timeout per complex: {tpc}s ({tpc / 60:.0f} min)" if tpc else "Timeout per complex: unlimited")
     print(f"Workers:             {cfg.get('max_workers', 1)}  (CPUs/worker: {cfg.get('cpus_per_worker', 4)})")
+    keep = cfg.get("retain_hetatm_residues")
+    if keep:
+        n = len(keep)
+        sample = ", ".join(keep[:8]) + (f", … (+{n-8} more)" if n > 8 else "")
+        print(f"Retain HETATM:       YES  ({n} residue types: {sample})")
+    else:
+        print(f"Retain HETATM:       no")
     print(f"Overwrite docking:   {cfg.get('overwrite_existing', False)}")
     print(f"Overwrite poses:     {cfg.get('overwrite_poses', False)}")
     print(f"Output dir:          {cfg['output_dir']}")
@@ -143,6 +165,85 @@ class DockingResult:
 
 def get_file_stem(path: Path) -> str:
     return path.stem.replace("_ligand", "").replace("_protein", "")
+
+
+def _inject_hetatms_into_protein_outputs(
+    protein_outputs: dict,
+    keep_residues: list[str] | None,
+    label: str = "",
+) -> None:
+    """For every (cleaned_pdb -> pdbqt) entry produced by `run_workflow`, append
+    KEEP-list HETATM atoms (cofactors + metals) from the *original* source PDB
+    into the receptor PDBQT in place.
+
+    The dict key in `protein_outputs` points to the PDBFixer-cleaned PDB, which
+    has already had heterogens stripped. We therefore look up the matching
+    original PDB in ``protein_outputs["protein_files"]`` by stem (the cleaner
+    appends a converter postfix like ``_meeko`` or ``_mgl_tools``) and extract
+    HETATMs from there. No-op when keep_residues is falsy.
+
+    Idempotent only when called once per pdbqt; calling twice would double-inject.
+    """
+    if not keep_residues:
+        return
+    keep_set = set(keep_residues)
+
+    # Build {original_stem -> original_pdb_path} from the workflow's
+    # original input list. `protein_files` is a list/set of pre-PDBFixer paths.
+    originals = list(protein_outputs.get("protein_files") or [])
+    orig_by_stem: dict[str, Path] = {Path(p).stem: Path(p) for p in originals}
+
+    # Common converter postfixes that the cleaning step appends to the stem.
+    _POSTFIXES = ("_meeko", "_mgl_tools", "_pymol", "_openbabel", "_mko", "_mgl")
+
+    def _resolve_original(cleaned_pdb: Path) -> Path | None:
+        """Map a cleaned PDB path back to its original source PDB."""
+        stem = cleaned_pdb.stem
+        for sfx in _POSTFIXES:
+            if stem.endswith(sfx):
+                cand = stem[: -len(sfx)]
+                if cand in orig_by_stem:
+                    return orig_by_stem[cand]
+        # Fallback: exact stem match (no postfix applied)
+        if stem in orig_by_stem:
+            return orig_by_stem[stem]
+        # Fallback: any original whose stem is a prefix of cleaned stem
+        for s, p in orig_by_stem.items():
+            if stem.startswith(s):
+                return p
+        return None
+
+    for key in ("meeko_outputs", "converter_protein_outputs"):
+        produced = protein_outputs.get(key) or {}
+        injected = 0
+        atoms_added = 0
+        for cleaned_pdb_str, pdbqt in produced.items():
+            if not pdbqt:
+                continue
+            cleaned_path = Path(cleaned_pdb_str)
+            pdbqt_path = Path(pdbqt)
+            if not pdbqt_path.exists():
+                continue
+            src_path = _resolve_original(cleaned_path)
+            if src_path is None or not src_path.exists():
+                # As a last resort, try the dict key (works for callers that
+                # passed the original directly, with no PDBFixer cleaning).
+                src_path = cleaned_path if cleaned_path.exists() else None
+            if src_path is None:
+                continue
+            try:
+                result = inject_hetatms(src_path, pdbqt_path, keep_residues=keep_set)
+            except Exception as exc:
+                print(f"  ⚠ HETATM injection failed for {pdbqt_path.name}: {exc}")
+                continue
+            if result["atoms_injected"] > 0:
+                injected += 1
+                atoms_added += result["atoms_injected"]
+                print(f"  ✓ {pdbqt_path.name}: +{result['atoms_injected']} atoms "
+                      f"({result['by_resname']})  ← {src_path.name}")
+        if produced:
+            print(f"  [{label or key}] HETATM injection: {injected}/{len(produced)} "
+                  f"receptors augmented, +{atoms_added} atoms total")
 
 
 def collect_files(root: Path, extensions: List[str]) -> List[Path]:
@@ -1553,6 +1654,16 @@ def main():
             convert_proteins=True,
             log_file=log_dir / f"protein_conversion_overview_{conv_name}.txt",
         )
+
+        # ── A1: append KEEP-list HETATMs (cofactors + metals) so AutoDock
+        # avoids clashing with the cofactor that PoseBusters later validates
+        # against. No-op when retain_hetatm_residues is None/false.
+        if cfg.get("retain_hetatm_residues"):
+            print(f"\n  ── HETATM injection ({conv_name}) ──")
+            _inject_hetatms_into_protein_outputs(
+                protein_outputs, cfg["retain_hetatm_residues"], label=conv_name,
+            )
+
         all_protein_outputs.append((conv_name, protein_outputs))
 
     if args.dry_run:

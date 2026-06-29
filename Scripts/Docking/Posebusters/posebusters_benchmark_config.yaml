@@ -39,3 +39,52 @@ ligand_template_dirs:
 
 copy_proved_poses: true
 make_plots: true
+
+# HETATM keep-mode (preferred). Validate against EXACTLY the atoms the docker
+# saw: keep only the injected cofactor+metal set and strip every other HETATM
+# (buffers, glycans, cognate-ligand remnants, stray chloride, ...). "auto"
+# pulls the same DEFAULT_KEEP_COFACTORS|DEFAULT_KEEP_METALS that the docking
+# step injects when `retain_hetatm_residues: true`, so the two stay in lock-step
+# and PoseBusters can only ever flag clashes against atoms Vina was given.
+# Set to an explicit list to override, or remove/false to fall back to the
+# explicit `strip_hetatm_residues` list below.
+keep_hetatm_residues: auto
+
+# Legacy explicit-strip list. IGNORED while keep_hetatm_residues is set above;
+# retained for reference / for runs that disable keep-mode.
+strip_hetatm_residues:
+  # waters / heavy-atom waters
+  - HOH
+  - WAT
+  - DOD
+  # solvents & cryoprotectants
+  - EDO   # ethylene glycol
+  - GOL   # glycerol
+  - DMS   # DMSO
+  - PEG   # polyethylene glycol
+  - PGE   # triethylene glycol
+  - MPD   # 2-methyl-2,4-pentanediol
+  - IPA   # isopropanol
+  - BME   # beta-mercaptoethanol
+  - MES   # MES buffer
+  - EPE   # HEPES buffer
+  - TRS   # Tris buffer
+  - BTB   # Bis-tris buffer
+  - BCN   # bicine buffer
+  - CIT   # citrate
+  - IMD   # imidazole (often crystallisation aid, not cofactor)
+  # small acidic / ionic crystallisation additives
+  - FMT   # formate
+  - ACT   # acetate
+  - SO4   # sulfate
+  - PO4   # phosphate
+  - NO3   # nitrate
+  - CO3   # carbonate
+  - NH4   # ammonium
+  - SCN   # thiocyanate
+  - IOD   # iodide
+  - BR    # bromide
+  # benign monatomic halides commonly from buffer (kept conservative; metal
+  # coordination Cl/Na can be re-added by clearing this entry):
+  # - CL
+  # - NA

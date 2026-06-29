@@ -1,34 +1,28 @@
-# ═══════════════════════════════════════════════════════════════════════════════
-# DiffDock Batch Docking Configuration
-# ═══════════════════════════════════════════════════════════════════════════════
-
-# ── Input directories ─────────────────────────────────────────────────────────
-receptors_dir: "Data/Receptors"
+receptors_dir: Data/Receptors
 ligand_dirs:
-  - "Data/Ligands/JKU"
-
-# ── DiffDock installation ─────────────────────────────────────────────────────
-diffdock_dir: "/home/manndo/docking_tools/DiffDock"
-diffdock_python: "/home/manndo/anaconda3/envs/diffdock/bin/python"
-diffdock_conda_env: "diffdock"
-
-# ── Inference parameters ──────────────────────────────────────────────────────
-num_samples: 10            # poses per complex
-inference_steps: 20        # denoising steps (fewer = faster, lower quality)
-device: "cuda:0"           # "cpu" or "cuda:0"
-
-# ── Timeout ───────────────────────────────────────────────────────────────────
-timeout_per_complex: 600   # seconds; 0 = unlimited
-
-# ── Output ────────────────────────────────────────────────────────────────────
-output_dir: "Dockings/diffdock_results"
-log_dir: "Dockings/Logs/diffdock_logs"
-
-# ── Batch mode ────────────────────────────────────────────────────────────────
-batch_mode: true           # true = CSV batch (fastest), false = sequential
-batch_size: 15             # complexes per DiffDock subprocess; 0 = all at once
-max_workers: 1             # parallel workers when batch_mode=false
-
-# ── Overwrite settings ────────────────────────────────────────────────────────
-overwrite_existing: false  # re-dock already completed combinations
-overwrite_error_log: false  # retry previously failed ligands
+- Data/Ligands/JKU/pdbqt
+diffdock_dir: /home/manndo/docking_tools/DiffDock
+diffdock_python: /home/manndo/anaconda3/envs/diffdock/bin/python
+diffdock_conda_env: diffdock
+num_samples: 10
+inference_steps: 20
+device: cuda:0
+timeout_per_complex: 600
+output_dir: Dockings/diffdock_results
+log_dir: Dockings/Logs/diffdock_logs
+batch_mode: true
+batch_size: 15
+group_by_receptor: true
+max_workers: 1
+overwrite_existing: false
+overwrite_error_log: false
+optimization: all
+optimize_search: minimize
+optimize_autobox_add: 4.0
+optimize_cpu: 1
+optimize_seed: 0
+optimize_timeout: 300
+gnina_use_gpu: true
+smina_executable: /home/manndo/anaconda3/envs/diffdock/bin/smina
+gnina_executable: /home/manndo/docking_tools/gnina
+gnina_lib_dirs: []

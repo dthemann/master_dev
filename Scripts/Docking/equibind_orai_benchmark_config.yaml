@@ -1,0 +1,71 @@
+# Independent EquiBind config for the Orai_Benchmark_Equibind cross-docking run
+# (benchmark ligands × Orai receptors). Decoupled from equibind_docking_config.yaml
+# so this run uses .sdf ligands and ONLY the EquiBind settings that produced the
+# best results on the PoseBuster Benchmark set, while the main benchmark / Orai×JKU
+# runs keep their own settings.
+#
+# BEST-BENCHMARK SETTINGS (per-variant PoseBusters analysis of the benchmark poses):
+#   unguided + smina refinement was ~3x more PB-valid (23%) than any guided
+#   fpocket/p2rank variant (6-10%), and clampON vs clampOFF were identical for
+#   unguided (clamping is a no-op without a guiding pocket). So we keep only that
+#   one variant:  n_top_pockets: 0 (no guided) · refine_mode: on (smina) · clamp_mode: off.
+#
+# 10 unguided poses = 10 rdkit_seeds x conformers_per_seed:1 = 10 conformers
+# (n_unguided_poses is capped by the number of conformers, so 10 seeds suffice).
+receptors_dir: Data/Receptors
+ligand_dirs: []                       # unused: the notebook cell stages *_ligand_start_conf.sdf itself
+receptor_name_filter: _cleaned
+ligand_extensions:
+- .sdf
+fpocket_results_dir: pocket_results/fpocket_results
+p2rank_results_dir: pocket_results/p2rank_results
+equibind_dir: /home/manndo/tools/EquiBind
+equibind_python: /home/manndo/anaconda3/envs/equibind/bin/python
+device: cuda
+output_dir: Dockings/Orai_Benchmark_Equibind
+log_dir: Dockings/Logs/orai_benchmark_equibind_logs
+n_top_pockets: 0           # guided (fpocket/p2rank) docking OFF — only unguided poses
+poses_per_pocket: 3        # (inert while n_top_pockets: 0)
+n_unguided_poses: 10
+pocket_match_threshold: 8.0
+force_pocket: true
+clamp_pose_to_pocket: true
+clamp_mode: "off"          # no-op for unguided poses (clampON == clampOFF on benchmark); quoted so YAML keeps the string
+refine_mode: "on"          # smina-refined only (smina > raw: 23% vs 21% PB-valid); quoted so YAML keeps the string
+refine_tool: smina         # smina | gnina | both (gnina adds a CNN rescore on top of physics)
+smina_search: local_only
+smina_autobox_add: 4.0
+smina_cpu: 1
+smina_seed: 0
+smina_timeout_s: 300
+smina_receptor_ext: .pdb
+smina_executable: ''
+gnina_executable: ''       # '' = autodetect on PATH (or set via EQ_GNINA); only used when refine_tool is gnina/both
+gnina_use_gpu: false       # run gnina's CNN on the GPU (off: --no_gpu, since the GPU runs EquiBind)
+use_protein_cropping: true
+pocket_crop_radius: 8.0
+pocket_crop_buffer: 3.0
+rdkit_seeds:
+- 42
+- 123
+- 456
+- 789
+- 1001
+- 2022
+- 3141
+- 5926
+- 8675
+- 9999
+conformers_per_seed: 1
+uff_minimize: true
+uff_max_iters: 200
+uff_energy_tol: 0.0001
+uff_force_tol: 0.001
+uff_proximity_radius: 6.0
+uff_add_hydrogens: true
+uff_strip_nonstandard: true
+uff_vdw_thresh: 10.0
+gpu_batch_size: 8
+n_parallel_workers: 0
+parallel_conformer_gen: true
+skip_existing: true

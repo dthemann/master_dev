@@ -38,9 +38,16 @@ class GuidedPoseResult:
     uff_energy_before: Optional[float] = None
     uff_energy_after: Optional[float] = None
     uff_minimized: bool = False
-    prep_time_s: float = 0.0
-    dock_time_s: float = 0.0
-    post_time_s: float = 0.0
+    # Variant provenance (None == single-variant / legacy run):
+    clamp_variant: Optional[str] = None     # "clampON" | "clampOFF"
+    refine_variant: Optional[str] = None     # "raw" | "smina" | "gnina"
+    refine_affinity: Optional[float] = None  # smina/gnina minimized affinity (kcal/mol)
+    cnn_score: Optional[float] = None        # gnina CNN pose score (0..1); None for smina/raw
+    cnn_affinity: Optional[float] = None     # gnina CNN predicted affinity (pK); None otherwise
+    prep_time_s: float = 0.0        # Phase 1 input prep (shared across a pose's variants)
+    dock_time_s: float = 0.0        # Phase 2 GPU inference (shared across a pose's variants)
+    post_time_s: float = 0.0        # Phase 3 corrections + clamp + UFF (per clamp variant)
+    refine_time_s: float = 0.0      # smina/gnina re-search cost (per refine variant; ~0 for raw)
 
     def to_dict(self) -> dict:
         return {
@@ -54,9 +61,15 @@ class GuidedPoseResult:
             "uff_minimized": self.uff_minimized,
             "uff_energy_before": self.uff_energy_before,
             "uff_energy_after": self.uff_energy_after,
+            "clamp_variant": self.clamp_variant,
+            "refine_variant": self.refine_variant,
+            "refine_affinity": self.refine_affinity,
+            "cnn_score": self.cnn_score,
+            "cnn_affinity": self.cnn_affinity,
             "prep_time_s": round(self.prep_time_s, 4),
             "dock_time_s": round(self.dock_time_s, 4),
             "post_time_s": round(self.post_time_s, 4),
+            "refine_time_s": round(self.refine_time_s, 4),
         }
 
 
@@ -109,3 +122,6 @@ class P3Intermediate:
     prep_time: float
     dock_time: float
     pre_uff_time: float
+    # "" for a single-variant run; "__clampON"/"__clampOFF" when clamp_mode=both.
+    clamp_suffix: str = ""
+    clamp_variant: Optional[str] = None

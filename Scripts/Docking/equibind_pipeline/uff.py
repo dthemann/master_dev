@@ -383,8 +383,15 @@ def uff_minimize_pose(
                 msg_suffix=f"ligand-only ({', '.join(blame)})")
 
         try:
+            # ignoreInterfragInteractions MUST be False: the ligand and the
+            # pocket are separate fragments in `combined`, and RDKit's default
+            # (True) would drop ALL ligand<->protein nonbonded terms — making
+            # the protein invisible to the minimizer and leaving steric clashes
+            # completely unrelieved. With it False (and the protein atoms fixed
+            # below) the ligand is pushed out of protein overlaps.
             ff = rdForceFieldHelpers.UFFGetMoleculeForceField(
-                combined, vdwThresh=CFG.uff_vdw_thresh)
+                combined, vdwThresh=CFG.uff_vdw_thresh,
+                ignoreInterfragInteractions=False)
         except Exception as e:
             monitor.warning(f"UFF FF construction failed on combined mol: {e}")
             return _ligand_only_minimize(

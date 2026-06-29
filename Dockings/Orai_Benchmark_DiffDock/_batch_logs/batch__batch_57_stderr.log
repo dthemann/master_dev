@@ -1,101 +1,0 @@
-/home/manndo/anaconda3/envs/diffdock/lib/python3.9/site-packages/Bio/pairwise2.py:278: BiopythonDeprecationWarning: Bio.pairwise2 has been deprecated, and we intend to remove it in a future release of Biopython. As an alternative, please consider using Bio.Align.PairwiseAligner as a replacement, and contact the Biopython developers if you still need the Bio.pairwise2 module.
-  warnings.warn(
-/home/manndo/docking_tools/DiffDock/inference.py:202: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
-  state_dict = torch.load(f'{args.model_dir}/{args.ckpt}', map_location=torch.device('cpu'))
-/home/manndo/docking_tools/DiffDock/inference.py:210: FutureWarning: You are using `torch.load` with `weights_only=False` (the current default value), which uses the default pickle module implicitly. It is possible to construct malicious pickle data which will execute arbitrary code during unpickling (See https://github.com/pytorch/pytorch/blob/main/SECURITY.md#untrusted-models for more details). In a future release, the default value for `weights_only` will be flipped to `True`. This limits the functions that could be executed during unpickling. Arbitrary objects will no longer be allowed to be loaded via this mode unless they are explicitly allowlisted by the user via `torch.serialization.add_safe_globals`. We recommend you start setting `weights_only=True` for any use case where you don't have full control of the loaded file. Please open an issue on GitHub for any issues related to this experimental feature.
-  state_dict = torch.load(f'{args.confidence_model_dir}/{args.confidence_ckpt}', map_location=torch.device('cpu'))
-0it [00:00, ?it/s]/home/manndo/docking_tools/DiffDock/datasets/parse_chi.py:91: RuntimeWarning: invalid value encountered in cast
-  Y = indices.astype(int)
-[2026-Apr-30 07:03:58 CEST] WARNING -Complex ['8BTI_RFO_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 8: 1 / 10 samples failed
-1it [03:00, 180.79s/it]2it [10:13, 329.10s/it][2026-Apr-30 07:12:09 CEST] WARNING -Complex ['8C5D_GTB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 0: 1 / 10 samples failed
-3it [12:20, 236.65s/it][2026-Apr-30 07:13:54 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 1: 6 / 10 samples failed
-[2026-Apr-30 07:13:57 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 2: 6 / 10 samples failed
-[2026-Apr-30 07:13:58 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 3: 7 / 10 samples failed
-[2026-Apr-30 07:13:59 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 4: 9 / 10 samples failed
-[2026-Apr-30 07:14:00 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 5: 9 / 10 samples failed
-[2026-Apr-30 07:14:00 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 6: 9 / 10 samples failed
-[2026-Apr-30 07:14:01 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 7: 9 / 10 samples failed
-[2026-Apr-30 07:14:01 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 8: 9 / 10 samples failed
-[2026-Apr-30 07:14:01 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 9: 9 / 10 samples failed
-[2026-Apr-30 07:14:02 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 10: 9 / 10 samples failed
-[2026-Apr-30 07:14:02 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 11: 9 / 10 samples failed
-[2026-Apr-30 07:14:02 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 12: 9 / 10 samples failed
-[2026-Apr-30 07:14:03 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 13: 9 / 10 samples failed
-[2026-Apr-30 07:14:03 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 14: 9 / 10 samples failed
-[2026-Apr-30 07:14:03 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 15: 9 / 10 samples failed
-[2026-Apr-30 07:14:03 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 16: 9 / 10 samples failed
-[2026-Apr-30 07:14:04 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 17: 9 / 10 samples failed
-[2026-Apr-30 07:14:04 CEST] WARNING -Complex ['8C5M_MTA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 18: 9 / 10 samples failed
-4it [12:52, 155.90s/it][2026-Apr-30 07:14:58 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 1: 1 / 10 samples failed
-[2026-Apr-30 07:15:20 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 2: 1 / 10 samples failed
-[2026-Apr-30 07:15:35 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 3: 1 / 10 samples failed
-[2026-Apr-30 07:15:42 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 4: 1 / 10 samples failed
-[2026-Apr-30 07:15:48 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 5: 1 / 10 samples failed
-[2026-Apr-30 07:15:52 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 6: 1 / 10 samples failed
-[2026-Apr-30 07:15:56 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 7: 1 / 10 samples failed
-[2026-Apr-30 07:15:59 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 8: 1 / 10 samples failed
-[2026-Apr-30 07:16:02 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 9: 1 / 10 samples failed
-[2026-Apr-30 07:16:05 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 10: 1 / 10 samples failed
-[2026-Apr-30 07:16:07 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 11: 1 / 10 samples failed
-[2026-Apr-30 07:16:09 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 12: 1 / 10 samples failed
-[2026-Apr-30 07:16:11 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 13: 1 / 10 samples failed
-[2026-Apr-30 07:16:13 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 14: 1 / 10 samples failed
-[2026-Apr-30 07:16:14 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 15: 1 / 10 samples failed
-[2026-Apr-30 07:16:16 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 16: 1 / 10 samples failed
-[2026-Apr-30 07:16:18 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 17: 1 / 10 samples failed
-[2026-Apr-30 07:16:19 CEST] WARNING -Complex ['8C7Y_TXV_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 18: 1 / 10 samples failed
-5it [15:07, 148.24s/it][2026-Apr-30 07:17:04 CEST] WARNING -Complex ['8CGC_LMR_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 10: 1 / 10 samples failed
-6it [15:59, 115.81s/it][2026-Apr-30 07:17:33 CEST] WARNING -Complex ['8CI0_8EL_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 0: 1 / 10 samples failed
-7it [17:30, 107.54s/it][2026-Apr-30 07:19:52 CEST] WARNING -Complex ['8CNH_V6U_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 4: 1 / 10 samples failed
-8it [19:08, 104.62s/it]9it [20:16, 93.21s/it] [2026-Apr-30 07:22:20 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 4: 1 / 10 samples failed
-[2026-Apr-30 07:22:24 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 5: 1 / 10 samples failed
-[2026-Apr-30 07:22:27 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 6: 1 / 10 samples failed
-[2026-Apr-30 07:22:30 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 7: 1 / 10 samples failed
-[2026-Apr-30 07:22:32 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 8: 1 / 10 samples failed
-[2026-Apr-30 07:22:35 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 9: 1 / 10 samples failed
-[2026-Apr-30 07:22:37 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 10: 1 / 10 samples failed
-[2026-Apr-30 07:22:39 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 11: 1 / 10 samples failed
-[2026-Apr-30 07:22:40 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 12: 1 / 10 samples failed
-[2026-Apr-30 07:22:42 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 13: 1 / 10 samples failed
-[2026-Apr-30 07:22:43 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 14: 1 / 10 samples failed
-[2026-Apr-30 07:22:45 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 15: 1 / 10 samples failed
-[2026-Apr-30 07:22:46 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 16: 1 / 10 samples failed
-[2026-Apr-30 07:22:48 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 17: 1 / 10 samples failed
-[2026-Apr-30 07:22:49 CEST] WARNING -Complex ['8D19_GSH_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 18: 1 / 10 samples failed
-10it [21:36, 89.03s/it][2026-Apr-30 07:23:10 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 1: 3 / 10 samples failed
-[2026-Apr-30 07:23:12 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 2: 7 / 10 samples failed
-[2026-Apr-30 07:23:13 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 3: 8 / 10 samples failed
-[2026-Apr-30 07:23:14 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 4: 8 / 10 samples failed
-[2026-Apr-30 07:23:15 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 5: 8 / 10 samples failed
-[2026-Apr-30 07:23:16 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 6: 8 / 10 samples failed
-[2026-Apr-30 07:23:16 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 7: 8 / 10 samples failed
-[2026-Apr-30 07:23:17 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 8: 8 / 10 samples failed
-[2026-Apr-30 07:23:17 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 9: 8 / 10 samples failed
-[2026-Apr-30 07:23:18 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 10: 8 / 10 samples failed
-[2026-Apr-30 07:23:18 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 11: 8 / 10 samples failed
-[2026-Apr-30 07:23:18 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 12: 8 / 10 samples failed
-[2026-Apr-30 07:23:19 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 13: 8 / 10 samples failed
-[2026-Apr-30 07:23:19 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 14: 8 / 10 samples failed
-[2026-Apr-30 07:23:19 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 15: 8 / 10 samples failed
-[2026-Apr-30 07:23:20 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 16: 8 / 10 samples failed
-[2026-Apr-30 07:23:20 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 17: 8 / 10 samples failed
-[2026-Apr-30 07:23:20 CEST] WARNING -Complex ['8D39_QDB_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 18: 8 / 10 samples failed
-11it [22:07, 71.29s/it]12it [23:58, 83.39s/it]13it [30:30, 176.90s/it]14it [32:12, 154.19s/it][2026-Apr-30 07:35:58 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 1: 5 / 10 samples failed
-[2026-Apr-30 07:36:33 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 2: 4 / 10 samples failed
-[2026-Apr-30 07:36:38 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 3: 5 / 10 samples failed
-[2026-Apr-30 07:36:42 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 4: 5 / 10 samples failed
-[2026-Apr-30 07:36:46 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 5: 5 / 10 samples failed
-[2026-Apr-30 07:36:49 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 6: 5 / 10 samples failed
-[2026-Apr-30 07:36:51 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 7: 5 / 10 samples failed
-[2026-Apr-30 07:36:53 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 8: 5 / 10 samples failed
-[2026-Apr-30 07:36:55 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 9: 5 / 10 samples failed
-[2026-Apr-30 07:36:57 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 10: 5 / 10 samples failed
-[2026-Apr-30 07:36:58 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 11: 5 / 10 samples failed
-[2026-Apr-30 07:37:00 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 12: 5 / 10 samples failed
-[2026-Apr-30 07:37:01 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 13: 5 / 10 samples failed
-[2026-Apr-30 07:37:02 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 14: 5 / 10 samples failed
-[2026-Apr-30 07:37:03 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 15: 5 / 10 samples failed
-[2026-Apr-30 07:37:04 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 16: 5 / 10 samples failed
-[2026-Apr-30 07:37:06 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 17: 5 / 10 samples failed
-[2026-Apr-30 07:37:07 CEST] WARNING -Complex ['8DP2_UMA_start_conf__Orai1WT-MDSnap-Fr499'] Batch 1 Inference Iteration 18: 5 / 10 samples failed
-15it [35:54, 174.55s/it]15it [35:54, 143.62s/it]

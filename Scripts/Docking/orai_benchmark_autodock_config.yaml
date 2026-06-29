@@ -9,7 +9,7 @@ ligand_dirs:
   - Dockings/Orai_Benchmark/_staging/ligands
 
 # ── Preparation tools ────────────────────────────────────────────────────────
-prep_tool: meeko                # mgltools | meeko | both
+prep_tool: mgltools                # mgltools | meeko | both
 skip_pdb_validation: false
 process_postfixes: false
 repair_terminals: false
@@ -43,3 +43,8 @@ cpus_per_worker: 32
 overwrite_existing:  false
 overwrite_poses:     false
 overwrite_error_log: false
+
+# A1: retain biologically relevant HETATMs (cofactors + metal ions) in the
+# Meeko-prepared receptor PDBQTs. Orai is apo so this is typically a no-op
+# here, but keep it enabled for consistency with the main pipeline.
+retain_hetatm_residues: true

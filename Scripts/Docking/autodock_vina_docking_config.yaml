@@ -20,6 +20,7 @@ seed: 42
 timeout_per_complex: 600
 max_workers: 1
 cpus_per_worker: 32
-overwrite_existing: true
-overwrite_poses: true
-overwrite_error_log: true
+overwrite_existing: false
+overwrite_poses: false
+overwrite_error_log: false
+retain_hetatm_residues: true

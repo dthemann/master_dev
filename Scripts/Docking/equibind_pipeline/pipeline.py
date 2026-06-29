@@ -51,9 +51,79 @@ from .properties import (
     get_ligand_properties, get_protein_properties, precompute_properties,
 )
 from .types import DockJob, GuidedPoseResult, P3Intermediate, TimingRecord
+from .refine import refine_pose
 from .uff import prewarm_protein_cache, uff_minimize_pose
 
 _BAR = "\u2500" * 80
+
+
+# \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+# Pose-variant fan-out  (centroid-clamp axis  x  re-search axis)
+# \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+# Each EquiBind pose can fan out into several finalized variants so the effect
+# of centroid clamping and of the docking re-search can be measured directly.
+# When both axes are single-valued (clamp_mode='on', refine_mode='off') exactly
+# one file is written with the legacy name \u2014 fully back-compatible.
+
+def _clamp_variants() -> List[Tuple[str, str]]:
+    """(filename_suffix, behaviour) per clamp variant for ``CFG.clamp_mode``.
+
+    behaviour \u2208 {'default' (legacy force_pocket + clamp_pose_to_pocket; may
+    reject far poses), 'force_clamp' (always clamp inward, never reject),
+    'no_clamp' (keep the raw EquiBind centroid)}.
+    """
+    m = CFG.clamp_mode
+    if m == "off":
+        return [("", "no_clamp")]
+    if m == "both":
+        return [("__clampON", "force_clamp"), ("__clampOFF", "no_clamp")]
+    return [("", "default")]  # "on"
+
+
+def _refine_variants() -> List[Tuple[str, str]]:
+    """(filename_suffix, kind) per re-search variant for ``CFG.refine_mode``.
+
+    ``kind`` ∈ {'raw', 'smina', 'gnina'}. With one active tool the refined file
+    keeps the legacy unsuffixed name ('on') / '__refRAW'+'__refSMINA' ('both');
+    with ``refine_tool='both'`` each tool gets its own '__ref<TOOL>' suffix so a
+    pose fans out into one refined variant per backend.
+    """
+    m = CFG.refine_mode
+    if m == "off":
+        return [("", "raw")]
+    tools = CFG.refine_tool_list()
+
+    def _tool_suffix(tool: str) -> str:
+        return f"__ref{tool.upper()}" if len(tools) > 1 else ""
+
+    if m == "on":
+        return [(_tool_suffix(t), t) for t in tools]
+    # "both": the un-refined pose plus one refined pose per active tool.
+    return [("__refRAW", "raw")] + [(f"__ref{t.upper()}", t) for t in tools]
+
+
+def _clamp_label(suffix: str) -> Optional[str]:
+    return suffix.lstrip("_") or None
+
+
+def _variant_specs() -> List[Tuple[str, Optional[str], Optional[str]]]:
+    """(filename_suffix, clamp_variant_label, refine_kind_label) per variant."""
+    refine_active = CFG.refine_mode != "off"
+    specs: List[Tuple[str, Optional[str], Optional[str]]] = []
+    for cs, _ in _clamp_variants():
+        for rs, rk in _refine_variants():
+            specs.append((cs + rs, _clamp_label(cs), rk if refine_active else None))
+    return specs
+
+
+def _variant_count() -> int:
+    return len(_variant_specs())
+
+
+def _variant_final_paths(base_sdf: Path) -> List[Path]:
+    """Every output SDF a single pose fans out into (clamp \u00d7 re-search)."""
+    d, base = base_sdf.parent, base_sdf.stem
+    return [d / f"{base}{suf}.sdf" for suf, _, _ in _variant_specs()]
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -226,7 +296,8 @@ def _prepare_dock_job(
 # Phase 3 helpers — Stage 1 (pre-UFF) + Stage 3 (finalize)
 # ════════════════════════════════════════════════════════════════════════
 
-def _result_failed(job: DockJob, error: str, post_time: float = 0.0) -> GuidedPoseResult:
+def _result_failed(job: DockJob, error: str, post_time: float = 0.0,
+                   clamp_variant: Optional[str] = None) -> GuidedPoseResult:
     return GuidedPoseResult(
         protein_name=job.protein_name, ligand_name=job.ligand_name,
         mode=job.mode,
@@ -234,36 +305,95 @@ def _result_failed(job: DockJob, error: str, post_time: float = 0.0) -> GuidedPo
         pocket_unique_id=job.pocket.unique_id if job.pocket else None,
         pose_num=job.pose_num,
         pocket_center=job.pocket_center, pose_centroid=None,
-        sdf_path=None, success=False, error=error,
+        sdf_path=None, success=False, error=error, clamp_variant=clamp_variant,
         prep_time_s=job.prep_time, dock_time_s=job.dock_time, post_time_s=post_time,
     )
 
 
-def _result_success(job: DockJob, sdf: Path, post_time: float,
-                    uff_minimized: bool = False,
-                    uff_e_before: Optional[float] = None,
-                    uff_e_after: Optional[float] = None) -> GuidedPoseResult:
+def _result_failed_inter(inter: P3Intermediate, error: str,
+                         post_time: float = 0.0) -> GuidedPoseResult:
+    return GuidedPoseResult(
+        protein_name=inter.protein_name, ligand_name=inter.ligand_name,
+        mode=inter.mode, pocket_id=inter.pocket_id,
+        pocket_unique_id=inter.pocket_unique_id, pose_num=inter.pose_num,
+        pocket_center=inter.pocket_center, pose_centroid=None,
+        sdf_path=None, success=False, error=error, clamp_variant=inter.clamp_variant,
+        prep_time_s=inter.prep_time, dock_time_s=inter.dock_time, post_time_s=post_time,
+    )
+
+
+def _skipped_variant_result(job: DockJob, path: Path,
+                            clamp_variant: Optional[str],
+                            refine_variant: Optional[str]) -> GuidedPoseResult:
     return GuidedPoseResult(
         protein_name=job.protein_name, ligand_name=job.ligand_name,
         mode=job.mode,
         pocket_id=job.pocket.pocket_id if job.pocket else None,
         pocket_unique_id=job.pocket.unique_id if job.pocket else None,
         pose_num=job.pose_num,
-        pocket_center=job.pocket_center, pose_centroid=_sdf_centroid(sdf),
-        sdf_path=sdf, success=True,
-        uff_minimized=uff_minimized,
-        uff_energy_before=uff_e_before, uff_energy_after=uff_e_after,
-        prep_time_s=job.prep_time, dock_time_s=job.dock_time, post_time_s=post_time,
+        pocket_center=job.pocket_center, pose_centroid=_sdf_centroid(path),
+        sdf_path=path, success=True,
+        clamp_variant=clamp_variant, refine_variant=refine_variant,
     )
 
 
-def _postprocess_pre_uff(job: DockJob) -> Tuple[Optional[GuidedPoseResult],
-                                                 Optional[P3Intermediate]]:
-    """Stage 1: corrections + SDF write + pocket enforcement."""
+def _tag_pose_source(sdf_path: Path, mode: Optional[str],
+                     pocket_unique_id: Optional[str] = None,
+                     clamp_variant: Optional[str] = None,
+                     refine_variant: Optional[str] = None,
+                     refine_affinity: Optional[float] = None,
+                     cnn_score: Optional[float] = None,
+                     cnn_affinity: Optional[float] = None) -> None:
+    """Embed pose provenance as SDF properties on a finalized pose.
+
+    Records ``<pocket_source>`` (fpocket | p2rank | unguided), ``<pocket_id>``
+    (guided), and — when the corresponding axis is active — ``<clamp_variant>``,
+    ``<refine_variant>``, the per-tool affinity (``<smina_affinity>`` /
+    ``<gnina_affinity>``) and, for gnina, ``<cnn_score>`` / ``<cnn_affinity>``.
+    Done at the text level so the molecule block stays byte-for-byte intact;
+    best-effort — a tagging failure must never lose the pose.
+    """
+    try:
+        text = sdf_path.read_text()
+        block = f">  <pocket_source>\n{mode or 'unguided'}\n\n"
+        if pocket_unique_id:
+            block += f">  <pocket_id>\n{pocket_unique_id}\n\n"
+        if clamp_variant:
+            block += f">  <clamp_variant>\n{clamp_variant}\n\n"
+        if refine_variant:
+            block += f">  <refine_variant>\n{refine_variant}\n\n"
+        if refine_affinity is not None:
+            # Per-tool tag: <smina_affinity> stays byte-identical for smina poses.
+            aff_tag = (f"{refine_variant}_affinity"
+                       if refine_variant in ("smina", "gnina") else "refine_affinity")
+            block += f">  <{aff_tag}>\n{refine_affinity:.3f}\n\n"
+        if cnn_score is not None:
+            block += f">  <cnn_score>\n{cnn_score:.3f}\n\n"
+        if cnn_affinity is not None:
+            block += f">  <cnn_affinity>\n{cnn_affinity:.3f}\n\n"
+        if "$$$$" in text:
+            i = text.rindex("$$$$")
+            text = text[:i] + block + text[i:]
+        else:
+            text = text.rstrip("\n") + "\n" + block + "$$$$\n"
+        sdf_path.write_text(text)
+    except Exception:
+        pass
+
+
+def _postprocess_stage1(job: DockJob, clamp_suffix: str,
+                        clamp_behavior: str) -> Tuple[Optional[GuidedPoseResult],
+                                                      Optional[P3Intermediate]]:
+    """Stage 1 for one clamp variant: corrections + SDF write + centroid clamp.
+
+    Returns ``(failed_result | None, P3Intermediate | None)``. Never finalizes \u2014
+    Stage 3 (:func:`_emit_variants`) writes the clamp \u00d7 re-search output files.
+    """
     t0 = time.time()
+    clamp_variant = _clamp_label(clamp_suffix)
 
     if not job.gpu_success or job.predicted_coords is None:
-        return _result_failed(job, job.error), None
+        return _result_failed(job, job.error, clamp_variant=clamp_variant), None
 
     try:
         optimized_mol = run_corrections_inproc(
@@ -275,14 +405,15 @@ def _postprocess_pre_uff(job: DockJob) -> Tuple[Optional[GuidedPoseResult],
         for i in range(optimized_mol.GetNumAtoms()):
             conf.SetAtomPosition(i, Point3D(*coords_np[i].tolist()))
 
-    pose_dir = job.combo_dir / f"{job.job_id}_run"
+    pose_dir = job.combo_dir / f"{job.job_id}{clamp_suffix}_run"
     pose_dir.mkdir(parents=True, exist_ok=True)
     out_sdf = pose_dir / "output.sdf"
     try:
         w = Chem.SDWriter(str(out_sdf)); w.write(optimized_mol); w.close()
     except Exception as e:
         return _result_failed(job, f"SDF write failed: {e}",
-                              post_time=time.time() - t0), None
+                              post_time=time.time() - t0,
+                              clamp_variant=clamp_variant), None
 
     if job.crop_offset is not None and np.any(job.crop_offset != 0):
         restored = pose_dir / "output_restored.sdf"
@@ -291,10 +422,19 @@ def _postprocess_pre_uff(job: DockJob) -> Tuple[Optional[GuidedPoseResult],
 
     centroid = _sdf_centroid(out_sdf)
 
-    if CFG.force_pocket and centroid is not None and job.pocket_center is not None:
+    # \u2500\u2500 Centroid clamping \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+    # 'no_clamp'    \u2192 keep the raw EquiBind centroid (no translate, no reject).
+    # 'force_clamp' \u2192 always pull a far centroid back inside the pocket.
+    # 'default'     \u2192 legacy: honour CFG.force_pocket + CFG.clamp_pose_to_pocket
+    #                 (clamp far poses, or reject them if clamping is disabled).
+    if clamp_behavior != "no_clamp" and centroid is not None and job.pocket_center is not None:
         dist = math.dist(centroid, job.pocket_center)
         if dist > CFG.pocket_match_threshold:
-            if CFG.clamp_pose_to_pocket:
+            do_clamp = (clamp_behavior == "force_clamp"
+                        or (CFG.force_pocket and CFG.clamp_pose_to_pocket))
+            do_reject = (clamp_behavior == "default"
+                         and CFG.force_pocket and not CFG.clamp_pose_to_pocket)
+            if do_clamp:
                 clamped = pose_dir / "output_clamped.sdf"
                 ok, _, _ = clamp_pose_to_pocket(
                     sdf_path=out_sdf, pocket_center=job.pocket_center,
@@ -302,26 +442,20 @@ def _postprocess_pre_uff(job: DockJob) -> Tuple[Optional[GuidedPoseResult],
                 )
                 if ok:
                     out_sdf = clamped
-                else:
+                elif clamp_behavior == "default":
                     shutil.rmtree(pose_dir, ignore_errors=True)
                     return _result_failed(
                         job,
                         f"Pose rejected: {dist:.1f}\u00c5 from pocket (clamping failed)",
                         post_time=time.time() - t0,
-                    ), None
-            else:
+                        clamp_variant=clamp_variant), None
+                # force_clamp + clamp failure \u2192 keep the unclamped pose.
+            elif do_reject:
                 shutil.rmtree(pose_dir, ignore_errors=True)
                 return _result_failed(
                     job, f"Pose rejected: {dist:.1f}\u00c5 from pocket",
                     post_time=time.time() - t0,
-                ), None
-
-    # No UFF -> finalize now
-    if not CFG.uff_minimize:
-        job.final_sdf.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(out_sdf, job.final_sdf)
-        shutil.rmtree(pose_dir, ignore_errors=True)
-        return _result_success(job, job.final_sdf, time.time() - t0), None
+                    clamp_variant=clamp_variant), None
 
     return None, P3Intermediate(
         out_sdf=out_sdf, pose_dir=pose_dir,
@@ -336,6 +470,7 @@ def _postprocess_pre_uff(job: DockJob) -> Tuple[Optional[GuidedPoseResult],
         pocket_center=job.pocket_center,
         prep_time=job.prep_time, dock_time=job.dock_time,
         pre_uff_time=time.time() - t0,
+        clamp_suffix=clamp_suffix, clamp_variant=clamp_variant,
     )
 
 
@@ -348,33 +483,70 @@ def _uff_minimize_timed(docked_sdf: Path, protein_pdb: Path,
     return ok, e_before, e_after, msg, time.time() - t0
 
 
-def _finalize_uff_result(inter: P3Intermediate, uff_result: tuple) -> GuidedPoseResult:
-    ok, e_before, e_after, msg, uff_time = uff_result
-    out_sdf = inter.out_sdf
-    uff_minimized = False
-    e_b = e_a = None
-    if ok and inter.minimized_sdf.exists():
-        out_sdf = inter.minimized_sdf
-        uff_minimized = True
-        e_b, e_a = e_before, e_after
+def _emit_variants(inter: P3Intermediate, geom_sdf: Path, post_time: float,
+                   uff_minimized: bool, uff_e_before: Optional[float],
+                   uff_e_after: Optional[float]) -> List[GuidedPoseResult]:
+    """Stage 3: write the re-search variants for one (already-clamped) pose.
 
-    inter.final_sdf.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(out_sdf, inter.final_sdf)
+    ``geom_sdf`` is the finished geometry (UFF-minimized if available, else the
+    pre-UFF pose). For each re-search variant: 'raw' just copies it; 'smina' /
+    'gnina' run a local docking re-search and fall back to the raw pose on
+    failure so a pose is never lost. Cleans up the per-pose scratch dir when done.
+    """
+    base_sdf = inter.final_sdf
+    d, base = base_sdf.parent, base_sdf.stem
+    d.mkdir(parents=True, exist_ok=True)
+    refine_active = CFG.refine_mode != "off"
+    results: List[GuidedPoseResult] = []
+
+    for rsuf, rkind in _refine_variants():
+        target = d / f"{base}{inter.clamp_suffix}{rsuf}.sdf"
+        affinity: Optional[float] = None
+        cnn_score: Optional[float] = None
+        cnn_affinity: Optional[float] = None
+        err = ""
+        # Time the re-search per refine variant so 'raw' (a plain copy, ~0 s) and
+        # 'smina'/'gnina' (a local docking subprocess) are directly comparable.
+        # post_time (corrections + clamp + UFF) is the shared geometry work and is
+        # kept separate; refine_time_s isolates the re-search cost on top of it.
+        r0 = time.time()
+        if rkind in ("smina", "gnina"):
+            ok, scores, msg = refine_pose(
+                geom_sdf, inter.protein_pdb, target, tool=rkind)
+            if not ok or not (target.exists() and target.stat().st_size > 0):
+                monitor.warning(
+                    f"{rkind} refine failed for {target.name}: {msg}; keeping pre-refine pose")
+                shutil.copy2(geom_sdf, target)
+                err = f"refine_failed: {msg}"
+            else:
+                affinity = scores.get("minimized_affinity")
+                cnn_score = scores.get("cnn_score")
+                cnn_affinity = scores.get("cnn_affinity")
+        else:
+            shutil.copy2(geom_sdf, target)
+        refine_time = time.time() - r0
+
+        refine_variant = rkind if refine_active else None
+        _tag_pose_source(target, inter.mode, inter.pocket_unique_id,
+                         clamp_variant=inter.clamp_variant,
+                         refine_variant=refine_variant, refine_affinity=affinity,
+                         cnn_score=cnn_score, cnn_affinity=cnn_affinity)
+        results.append(GuidedPoseResult(
+            protein_name=inter.protein_name, ligand_name=inter.ligand_name,
+            mode=inter.mode, pocket_id=inter.pocket_id,
+            pocket_unique_id=inter.pocket_unique_id, pose_num=inter.pose_num,
+            pocket_center=inter.pocket_center, pose_centroid=_sdf_centroid(target),
+            sdf_path=target, success=True, error=err,
+            uff_minimized=uff_minimized,
+            uff_energy_before=uff_e_before, uff_energy_after=uff_e_after,
+            clamp_variant=inter.clamp_variant, refine_variant=refine_variant,
+            refine_affinity=affinity, cnn_score=cnn_score, cnn_affinity=cnn_affinity,
+            prep_time_s=inter.prep_time, dock_time_s=inter.dock_time,
+            post_time_s=post_time, refine_time_s=refine_time,
+        ))
+
     shutil.rmtree(inter.pose_dir, ignore_errors=True)
-
-    return GuidedPoseResult(
-        protein_name=inter.protein_name, ligand_name=inter.ligand_name,
-        mode=inter.mode,
-        pocket_id=inter.pocket_id, pocket_unique_id=inter.pocket_unique_id,
-        pose_num=inter.pose_num,
-        pocket_center=inter.pocket_center,
-        pose_centroid=_sdf_centroid(inter.final_sdf),
-        sdf_path=inter.final_sdf, success=True,
-        uff_minimized=uff_minimized,
-        uff_energy_before=e_b, uff_energy_after=e_a,
-        prep_time_s=inter.prep_time, dock_time_s=inter.dock_time,
-        post_time_s=inter.pre_uff_time + uff_time,
-    )
+    return results
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -392,7 +564,7 @@ def run_pipeline() -> dict:  # noqa: C901  (long but linear)
 
     out_dir = CFG.pocket_guided_output_dir
 
-    ligand_files = _collect_input_files(CFG.drugs_dir, [".sdf", ".pdb", ".mol2"])
+    ligand_files = _collect_input_files(CFG.drugs_dir, CFG.ligand_extensions)
     receptor_files = _collect_input_files(CFG.receptors_dir, [".pdb"],
                                           name_filter=CFG.receptor_name_filter)
     if not ligand_files or not receptor_files:
@@ -568,7 +740,8 @@ def run_pipeline() -> dict:  # noqa: C901  (long but linear)
         if CFG.skip_existing and results_file.exists():
             try:
                 cached = json.loads(results_file.read_text())
-                expected = len(all_pockets) * CFG.poses_per_pocket + CFG.n_unguided_poses
+                expected = ((len(all_pockets) * CFG.poses_per_pocket
+                             + CFG.n_unguided_poses) * _variant_count())
                 if len(cached) >= expected:
                     for r in cached:
                         local_cached.append(GuidedPoseResult(
@@ -592,15 +765,18 @@ def run_pipeline() -> dict:  # noqa: C901  (long but linear)
             conf_idx = 0
             for pose_num in range(1, CFG.poses_per_pocket + 1):
                 final_sdf = combo_dir / f"{uid}_pose{pose_num:02d}.sdf"
-                if final_sdf.exists() and CFG.skip_existing:
-                    local_cached.append(GuidedPoseResult(
-                        protein_name=pname, ligand_name=lname,
-                        mode=pocket.source, pocket_id=pocket.pocket_id,
-                        pocket_unique_id=pocket.unique_id, pose_num=pose_num,
-                        pocket_center=pocket.center,
-                        pose_centroid=_sdf_centroid(final_sdf),
-                        sdf_path=final_sdf, success=True,
-                    ))
+                vpaths = _variant_final_paths(final_sdf)
+                if CFG.skip_existing and all(vp.exists() for vp in vpaths):
+                    for vp, (_, clab, rk) in zip(vpaths, _variant_specs()):
+                        local_cached.append(GuidedPoseResult(
+                            protein_name=pname, ligand_name=lname,
+                            mode=pocket.source, pocket_id=pocket.pocket_id,
+                            pocket_unique_id=pocket.unique_id, pose_num=pose_num,
+                            pocket_center=pocket.center,
+                            pose_centroid=_sdf_centroid(vp),
+                            sdf_path=vp, success=True,
+                            clamp_variant=clab, refine_variant=rk,
+                        ))
                     continue
                 if conf_idx >= len(confs):
                     break
@@ -623,14 +799,17 @@ def run_pipeline() -> dict:  # noqa: C901  (long but linear)
                 break
             pose_num = unguided_count + 1
             final_sdf = combo_dir / f"unguided_{pose_num:03d}.sdf"
-            if final_sdf.exists() and CFG.skip_existing:
-                local_cached.append(GuidedPoseResult(
-                    protein_name=pname, ligand_name=lname,
-                    mode="unguided", pocket_id=None, pocket_unique_id=None,
-                    pose_num=pose_num, pocket_center=None,
-                    pose_centroid=_sdf_centroid(final_sdf),
-                    sdf_path=final_sdf, success=True,
-                ))
+            vpaths = _variant_final_paths(final_sdf)
+            if CFG.skip_existing and all(vp.exists() for vp in vpaths):
+                for vp, (_, clab, rk) in zip(vpaths, _variant_specs()):
+                    local_cached.append(GuidedPoseResult(
+                        protein_name=pname, ligand_name=lname,
+                        mode="unguided", pocket_id=None, pocket_unique_id=None,
+                        pose_num=pose_num, pocket_center=None,
+                        pose_centroid=_sdf_centroid(vp),
+                        sdf_path=vp, success=True,
+                        clamp_variant=clab, refine_variant=rk,
+                    ))
                 unguided_count += 1
                 continue
             job = _prepare_dock_job(
@@ -715,72 +894,90 @@ def run_pipeline() -> dict:  # noqa: C901  (long but linear)
     phase3_start = time.time()
     monitor.header(f"PHASE 3: CPU POST-PROCESSING \u2014 {n_jobs} TOTAL JOBS")
 
+    n_variants = _variant_count()
+    if n_variants > 1:
+        monitor.info(f"Pose-variant fan-out active: clamp_mode={CFG.clamp_mode}, "
+                     f"refine_mode={CFG.refine_mode} \u2192 {n_variants} output(s)/pose")
+
     new_results: List[GuidedPoseResult] = []
     p3_done_skipped: List[GuidedPoseResult] = []
     p3_todo: List[DockJob] = []
+    variant_specs = _variant_specs()
     for job in all_jobs:
-        if job.final_sdf.exists() and job.final_sdf.stat().st_size > 0:
-            p3_done_skipped.append(_result_success(job, job.final_sdf, 0.0))
+        vpaths = _variant_final_paths(job.final_sdf)
+        if all(p.exists() and p.stat().st_size > 0 for p in vpaths):
+            for p, (_, clab, rk) in zip(vpaths, variant_specs):
+                p3_done_skipped.append(_skipped_variant_result(job, p, clab, rk))
         else:
             p3_todo.append(job)
     if p3_done_skipped:
-        monitor.info(f"Skipping {len(p3_done_skipped)} already-postprocessed jobs")
+        monitor.info(f"Skipping {len(p3_done_skipped)} already-postprocessed pose(s)")
     new_results.extend(p3_done_skipped)
     n_todo = len(p3_todo)
     monitor.info(f"Post-processing {n_todo} new jobs ({len(p3_done_skipped)} skipped)")
 
     if n_todo > 0:
-        n_workers = min(CFG.n_parallel_workers, n_todo)
+        # Each job fans out into one Stage-1 unit per clamp variant (clamping
+        # happens before UFF, so each variant needs its own relaxation).
+        units: List[Tuple[DockJob, str, str]] = [
+            (job, csuf, cbehav)
+            for job in p3_todo for (csuf, cbehav) in _clamp_variants()
+        ]
+        n_units = len(units)
+        n_workers = min(CFG.n_parallel_workers, n_units)
 
         if CFG.uff_minimize:
             prewarm_protein_cache({j.prepared_protein for j in p3_todo})
 
-        # Stage 1 — corrections + pocket enforcement (ThreadPool)
+        # Stage 1 \u2014 corrections + centroid clamp (ThreadPool)
         s1_start = time.time()
-        s1_results: List[Optional[Tuple[Optional[GuidedPoseResult], Optional[P3Intermediate]]]] = [None] * n_todo
+        s1_results: List[Optional[Tuple[Optional[GuidedPoseResult],
+                                        Optional[P3Intermediate]]]] = [None] * n_units
 
-        def _safe_pre_uff(idx: int, job: DockJob):
+        def _safe_stage1(idx: int, job: DockJob, csuf: str, cbehav: str):
             try:
-                return idx, _postprocess_pre_uff(job)
+                return idx, _postprocess_stage1(job, csuf, cbehav)
             except Exception as e:
-                return idx, (_result_failed(job, f"Pre-UFF exception: {e}"), None)
+                return idx, (_result_failed(job, f"Stage1 exception: {e}",
+                                            clamp_variant=_clamp_label(csuf)), None)
 
         if n_workers > 1:
             with ThreadPoolExecutor(max_workers=n_workers) as ex:
-                futures = [ex.submit(_safe_pre_uff, i, j) for i, j in enumerate(p3_todo)]
+                futures = [ex.submit(_safe_stage1, i, j, cs, cb)
+                           for i, (j, cs, cb) in enumerate(units)]
                 for fut in as_completed(futures):
                     idx, res = fut.result()
                     s1_results[idx] = res
         else:
-            for i, job in enumerate(p3_todo):
-                _, s1_results[i] = _safe_pre_uff(i, job)
+            for i, (j, cs, cb) in enumerate(units):
+                _, s1_results[i] = _safe_stage1(i, j, cs, cb)
 
         s1_time = time.time() - s1_start
 
-        uff_tasks: List[Tuple[int, P3Intermediate]] = []
-        for i, (result, intermediate) in enumerate(s1_results):
+        intermediates: List[P3Intermediate] = []
+        for result, intermediate in s1_results:
             if result is not None:
                 new_results.append(result)
             elif intermediate is not None:
-                uff_tasks.append((i, intermediate))
-        n_uff = len(uff_tasks)
-        monitor.info(f"Stage 1 (corrections+SDF): {s1_time:.1f}s \u2014 "
-                     f"{len(new_results) - len(p3_done_skipped)} done, {n_uff} need UFF")
+                intermediates.append(intermediate)
+        n_inter = len(intermediates)
+        monitor.info(f"Stage 1 (corrections+clamp): {s1_time:.1f}s \u2014 "
+                     f"{n_inter} pose(s) to finalize")
 
-        # Stage 2 — UFF in ProcessPool
-        if uff_tasks:
+        # Stage 2 \u2014 UFF in ProcessPool (one relaxation per clamp variant)
+        uff_results: List[Optional[tuple]] = [None] * n_inter
+        if CFG.uff_minimize and intermediates:
             s2_start = time.time()
-            n_uff_workers = min(n_workers, n_uff)
-            monitor.info(f"Stage 2: UFF \u2014 {n_uff} jobs, {n_uff_workers} process workers")
+            n_uff_workers = min(n_workers, n_inter)
+            monitor.info(f"Stage 2: UFF \u2014 {n_inter} poses, {n_uff_workers} process workers")
             mp_ctx = _mp.get_context("fork")
-            uff_results: List[Optional[tuple]] = [None] * n_uff
             with ProcessPoolExecutor(max_workers=n_uff_workers, mp_context=mp_ctx) as pool:
                 futures = {
                     pool.submit(_uff_minimize_timed,
                                 docked_sdf=inter.out_sdf,
                                 protein_pdb=inter.protein_pdb,
                                 output_sdf=inter.minimized_sdf): j
-                    for j, (_, inter) in enumerate(uff_tasks)
+                    for j, inter in enumerate(intermediates)
                 }
                 for fut in as_completed(futures):
                     j = futures[fut]
@@ -790,11 +987,41 @@ def run_pipeline() -> dict:  # noqa: C901  (long but linear)
                         uff_results[j] = (False, 0.0, 0.0, f"UFF process error: {e}", 0.0)
             s2_time = time.time() - s2_start
             monitor.info(f"Stage 2 (UFF): {s2_time:.1f}s "
-                         f"({n_uff / s2_time if s2_time > 0 else 0:.1f} jobs/s)")
+                         f"({n_inter / s2_time if s2_time > 0 else 0:.1f} poses/s)")
 
-            # Stage 3 — finalize
-            for j, (_, inter) in enumerate(uff_tasks):
-                new_results.append(_finalize_uff_result(inter, uff_results[j]))
+        # Stage 3 \u2014 finalize + re-search variants (ThreadPool; smina subprocesses)
+        s3_start = time.time()
+
+        def _safe_emit(idx: int) -> List[GuidedPoseResult]:
+            inter = intermediates[idx]
+            if CFG.uff_minimize:
+                ok, e_before, e_after, _msg, uff_time = (
+                    uff_results[idx] or (False, None, None, "", 0.0))
+                uff_ok = bool(ok) and inter.minimized_sdf.exists()
+                geom = inter.minimized_sdf if uff_ok else inter.out_sdf
+                e_b = e_before if uff_ok else None
+                e_a = e_after if uff_ok else None
+                post = inter.pre_uff_time + uff_time
+            else:
+                geom, uff_ok, e_b, e_a, post = (
+                    inter.out_sdf, False, None, None, inter.pre_uff_time)
+            try:
+                return _emit_variants(inter, geom, post, uff_ok, e_b, e_a)
+            except Exception as e:
+                return [_result_failed_inter(inter, f"emit failed: {e}", post)]
+
+        if n_inter:
+            if n_workers > 1:
+                with ThreadPoolExecutor(max_workers=n_workers) as ex:
+                    futures = [ex.submit(_safe_emit, i) for i in range(n_inter)]
+                    for fut in as_completed(futures):
+                        new_results.extend(fut.result())
+            else:
+                for i in range(n_inter):
+                    new_results.extend(_safe_emit(i))
+        s3_time = time.time() - s3_start
+        if CFG.refine_mode != "off":
+            monitor.info(f"Stage 3 (finalize+re-search): {s3_time:.1f}s")
 
         _save_checkpoint(out_dir, cached_results, new_results)
 
@@ -875,7 +1102,8 @@ def _finalize(*, out_dir: Path, log_path: Path, existing_combos: set,
         combo_dock_times[job.combo_name] += job.dock_time
         combo_n_attempted[job.combo_name] += 1
     for r in new_results:
-        combo_post_times[f"{r.ligand_name}__{r.protein_name}"] += r.post_time_s
+        combo_post_times[f"{r.ligand_name}__{r.protein_name}"] += (
+            r.post_time_s + r.refine_time_s)
 
     for protein, ligand in itertools.product(receptor_files, ligand_files):
         pname, lname = protein.stem, ligand.stem
@@ -964,6 +1192,56 @@ def _finalize(*, out_dir: Path, log_path: Path, existing_combos: set,
     } for t in timing_records]).to_csv(timing_csv, index=False)
     print(f"\n  Timing saved to: {timing_csv}")
 
+    # Per-variant timing CSV — one row per finalized pose variant so the cost of
+    # each axis (clamp on/off, raw vs smina/gnina re-search) is directly comparable
+    # without digging through the per-combo guided_results.json files. prep/dock
+    # are shared across a pose's variants; post is per clamp variant; refine is
+    # per refine variant.
+    variant_csv = out_dir / "pose_variant_timing.csv"
+    pd.DataFrame([{
+        "combo_name": f"{r.ligand_name}__{r.protein_name}",
+        "protein": r.protein_name, "ligand": r.ligand_name,
+        "pocket_source": r.mode, "pocket_id": r.pocket_unique_id,
+        "pose_num": r.pose_num,
+        "clamp_variant": r.clamp_variant, "refine_variant": r.refine_variant,
+        "success": r.success,
+        "prep_time_s": round(r.prep_time_s, 4),
+        "dock_time_s": round(r.dock_time_s, 4),
+        "post_time_s": round(r.post_time_s, 4),
+        "refine_time_s": round(r.refine_time_s, 4),
+        "total_time_s": round(
+            r.prep_time_s + r.dock_time_s + r.post_time_s + r.refine_time_s, 4),
+        "uff_minimized": r.uff_minimized,
+        "refine_affinity": r.refine_affinity,
+        "cnn_score": r.cnn_score,
+        "cnn_affinity": r.cnn_affinity,
+        "sdf_path": str(r.sdf_path) if r.sdf_path else None,
+    } for r in all_results]).to_csv(variant_csv, index=False)
+    print(f"  Per-variant timing saved to: {variant_csv}")
+
+    # Concise per-axis timing summary (freshly computed, successful poses only —
+    # cached/skipped poses carry no timing). Directly answers "how much does
+    # clamping / the smina/gnina re-search cost per pose".
+    def _avg(rows: List[GuidedPoseResult], attr: str) -> float:
+        return sum(getattr(x, attr) for x in rows) / len(rows) if rows else 0.0
+
+    timed = [r for r in new_results if r.success]
+    if timed and _variant_count() > 1:
+        print("\n  PER-VARIANT TIMING (mean per pose, this run):")
+        by_clamp: Dict[str, List[GuidedPoseResult]] = defaultdict(list)
+        for r in timed:
+            by_clamp[r.clamp_variant or "(n/a)"].append(r)
+        for cv, rows in sorted(by_clamp.items()):
+            print(f"    clamp={cv:<9} n={len(rows):<5} "
+                  f"post(correct+clamp+UFF)={_avg(rows, 'post_time_s'):.3f}s  "
+                  f"refine={_avg(rows, 'refine_time_s'):.3f}s")
+        by_refine: Dict[str, List[GuidedPoseResult]] = defaultdict(list)
+        for r in timed:
+            by_refine[r.refine_variant or "(n/a)"].append(r)
+        for rv, rows in sorted(by_refine.items()):
+            print(f"    refine={rv:<8} n={len(rows):<5} "
+                  f"re-search={_avg(rows, 'refine_time_s'):.3f}s")
+
     summary = {
         "timestamp": datetime.now().isoformat(),
         "architecture": "globally decoupled 3-phase pipeline",
@@ -977,6 +1255,10 @@ def _finalize(*, out_dir: Path, log_path: Path, existing_combos: set,
             "uff_minimize": CFG.uff_minimize,
             "n_parallel_workers": CFG.n_parallel_workers,
             "use_protein_cropping": CFG.use_protein_cropping,
+            "clamp_mode": CFG.clamp_mode,
+            "refine_mode": CFG.refine_mode,
+            "refine_tool": CFG.refine_tool,
+            "refine_search": CFG.smina_search,
         },
         "global_timing": {
             "pipeline_wall_time_s": round(pipeline_elapsed, 1),

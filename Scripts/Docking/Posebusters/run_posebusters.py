@@ -18,6 +18,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from multiprocessing import Pool, cpu_count
@@ -30,6 +31,71 @@ import matplotlib.pyplot as plt
 import yaml
 from matplotlib.colors import LinearSegmentedColormap
 from posebusters import PoseBusters
+
+# The receptor-prep step injects this curated cofactor/metal set into the
+# docking PDBQT (see Scripts/Utilities/inject_hetatms.py). Importing it lets
+# the validation strip step auto-derive "keep exactly what the docker saw".
+# Import is best-effort: if the project isn't importable (e.g. run standalone),
+# auto keep-mode is simply unavailable and an explicit keep list is required.
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+try:
+    from Scripts.Utilities.inject_hetatms import (
+        DEFAULT_KEEP_COFACTORS, DEFAULT_KEEP_METALS,
+    )
+    _DEFAULT_KEEP_HETATM: frozenset[str] = frozenset(DEFAULT_KEEP_COFACTORS) | frozenset(DEFAULT_KEEP_METALS)
+except Exception:  # pragma: no cover - optional dependency on repo layout
+    _DEFAULT_KEEP_HETATM = frozenset()
+
+
+# ============================================================================
+# RDKIT LOG NOISE
+# ============================================================================
+
+# PoseBusters loads every pose through RDKit, which emits one warning per
+# molecule for SDFs tagged 2D but carrying real (non-zero Z) coordinates:
+#   "Warning: molecule is tagged as 2D, but at least one Z coordinate is not
+#    zero. Marking the mol as 3D."
+# It is harmless (RDKit just promotes the mol to 3D, which is what we want) but
+# drowns the real progress output. Route RDKit's C++ logs through Python stderr
+# and drop only this one message — every other RDKit warning/error (unparseable
+# elements, sanitization failures, ...) still gets through.
+_RDKIT_SUPPRESS_SUBSTR = "is tagged as 2D, but at least one Z coordinate is not zero"
+
+
+class _RDKitStderrFilter:
+    """stderr wrapper that swallows only the harmless 2D/3D RDKit warning."""
+
+    def __init__(self, stream):
+        self._stream = stream
+
+    def write(self, msg):
+        if _RDKIT_SUPPRESS_SUBSTR not in msg:
+            self._stream.write(msg)
+        return len(msg)
+
+    def flush(self):
+        self._stream.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+def _silence_rdkit_2d3d_warning() -> None:
+    """Install the 2D/3D-warning filter on this process's stderr (idempotent).
+
+    Must run in every process that loads molecules: the main process (PDBQT→SDF
+    conversion) and each Pool worker (where the ``bust`` calls live).
+    """
+    from rdkit import rdBase
+
+    rdBase.LogToPythonStderr()
+    if not isinstance(sys.stderr, _RDKitStderrFilter):
+        sys.stderr = _RDKitStderrFilter(sys.stderr)
+
+
+_silence_rdkit_2d3d_warning()
 
 
 # ============================================================================
@@ -51,6 +117,18 @@ class PipelineConfig:
     ligand_template_dirs: list[Path] = field(default_factory=list)
     make_plots: bool = True
     copy_proved_poses: bool = True
+    # HETATM residue names to strip from each receptor PDB before validation
+    # (e.g. crystallisation artefacts that the docker never saw but PoseBusters
+    # otherwise checks against). Stored as a set of upper-cased 3-letter codes.
+    strip_hetatm_residues: set[str] = field(default_factory=set)
+    # Auto-derive mode: keep ONLY these HETATM residues and strip every other
+    # HETATM from each receptor PDB before validation. Set this to exactly the
+    # residues the docker saw (the injected cofactors/metals) so PoseBusters can
+    # only ever flag clashes against atoms Vina was actually given — eliminating
+    # false clashes from buffers/glycans/cognate-ligand remnants the docker was
+    # blind to. ``None`` disables keep-mode and falls back to
+    # ``strip_hetatm_residues`` (explicit strip list). Takes precedence when set.
+    keep_hetatm_residues: set[str] | None = None
 
     # Derived
     output_dir: Path = field(init=False)
@@ -92,6 +170,26 @@ def load_config(config_path: str | Path) -> PipelineConfig:
 
     template_dirs = [_resolve(p) for p in (raw.get("ligand_template_dirs") or [])]
 
+    strip_raw = raw.get("strip_hetatm_residues") or []
+    strip_set = {str(r).strip().upper() for r in strip_raw if str(r).strip()}
+
+    # keep_hetatm_residues: None/false -> off (use strip list);
+    # True/"auto" -> the injected cofactor+metal set (mirrors the docking
+    # config's `retain_hetatm_residues: true`); explicit list -> those codes.
+    keep_raw = raw.get("keep_hetatm_residues", None)
+    if keep_raw in (None, False):
+        keep_set: set[str] | None = None
+    elif keep_raw is True or (isinstance(keep_raw, str) and keep_raw.strip().lower() == "auto"):
+        if not _DEFAULT_KEEP_HETATM:
+            raise RuntimeError(
+                "keep_hetatm_residues: auto requested but the injected cofactor "
+                "set could not be imported from Scripts/Utilities/inject_hetatms.py. "
+                "Provide an explicit list instead."
+            )
+        keep_set = set(_DEFAULT_KEEP_HETATM)
+    else:
+        keep_set = {str(r).strip().upper() for r in keep_raw if str(r).strip()}
+
     return PipelineConfig(
         receptors_dir=receptors_dir,
         docking_directories=docking_directories,
@@ -104,6 +202,8 @@ def load_config(config_path: str | Path) -> PipelineConfig:
         ligand_template_dirs=template_dirs,
         make_plots=bool(raw.get("make_plots", True)),
         copy_proved_poses=bool(raw.get("copy_proved_poses", True)),
+        strip_hetatm_residues=strip_set,
+        keep_hetatm_residues=keep_set,
     )
 
 
@@ -112,6 +212,86 @@ def load_config(config_path: str | Path) -> PipelineConfig:
 # ============================================================================
 
 _NAME_SUFFIXES = ("_protein", "_clean", "_cleaned", "_receptor")
+
+
+def strip_hetatm_residues_from_pdb(
+    src: Path, dst: Path,
+    drop_resnames: set[str] | None = None,
+    keep_resnames: set[str] | None = None,
+) -> tuple[int, int]:
+    """Write *dst* as a copy of *src* with HETATM records filtered.
+
+    With *keep_resnames*: drop every HETATM whose 3-letter residue name is NOT
+    in the set (keep-mode — mirror the docker's injected receptor).
+    Otherwise with *drop_resnames*: drop HETATM whose residue name IS in the set
+    (legacy explicit-strip mode). ATOM and other records pass through unchanged.
+    Returns (kept_lines, dropped_lines).
+    """
+    kept = dropped = 0
+    out_lines: list[str] = []
+    for line in src.read_text().splitlines(keepends=True):
+        if line.startswith("HETATM"):
+            resn = line[17:20].strip().upper()
+            drop = (resn not in keep_resnames) if keep_resnames is not None \
+                else (resn in (drop_resnames or set()))
+            if drop:
+                dropped += 1
+                continue
+            kept += 1
+        elif line.startswith("ATOM"):
+            kept += 1
+        out_lines.append(line)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_text("".join(out_lines))
+    return kept, dropped
+
+
+def prepare_cleaned_receptor_dir(ctx: PipelineConfig) -> Path:
+    """Write HETATM-filtered copies of every PDB under ``ctx.receptors_dir`` to
+    ``ctx.output_dir / hetatm_cleaned`` and return that directory.
+
+    Keep-mode (``ctx.keep_hetatm_residues`` set) takes precedence: only those
+    residues survive, every other HETATM is stripped — so PoseBusters validates
+    against exactly the atoms the docker saw. Otherwise the legacy explicit
+    strip list (``ctx.strip_hetatm_residues``) is applied. If neither is
+    configured, the original directory is returned unchanged.
+    """
+    keep = ctx.keep_hetatm_residues
+    drop = ctx.strip_hetatm_residues
+    if keep is None and not drop:
+        return ctx.receptors_dir
+
+    cleaned_dir = ctx.output_dir / "hetatm_cleaned"
+    cleaned_dir.mkdir(parents=True, exist_ok=True)
+
+    print("\n" + "=" * 80)
+    if keep is not None:
+        print(f"HETATM keep-mode: keeping ONLY {sorted(keep)}; stripping all other HETATM")
+    else:
+        print(f"Stripping HETATM residues: {sorted(drop)}")
+    print("=" * 80)
+
+    total_kept = total_dropped = 0
+    n_files = 0
+    for src in sorted(Path(ctx.receptors_dir).glob("**/*.pdb")):
+        dst = cleaned_dir / src.relative_to(ctx.receptors_dir)
+        # Always rewrite — the keep/strip set may have changed since last run
+        if keep is not None:
+            kept, dropped = strip_hetatm_residues_from_pdb(
+                src.resolve(), dst, keep_resnames=keep)
+        else:
+            kept, dropped = strip_hetatm_residues_from_pdb(
+                src.resolve(), dst, drop_resnames=drop)
+        total_kept += kept
+        total_dropped += dropped
+        n_files += 1
+        if dropped:
+            print(f"  {src.name}: kept {kept}, dropped {dropped} HETATM atoms")
+
+    print(f"\n  Receptors cleaned: {n_files}  "
+          f"(total atoms kept {total_kept}, dropped {total_dropped})")
+    print(f"  Cleaned receptors → {cleaned_dir}")
+    return cleaned_dir
 
 
 def discover_proteins(receptors_dir: Path) -> tuple[dict[str, str], dict[str, str]]:
@@ -175,6 +355,13 @@ _METADATA_COLS = {
     "method", "docking_method", "protein", "ligand", "pose_rank", "rank",
     "molecule", "mol_name", "name", "complex", "protein_path", "ligand_path",
     "mol_pred", "mol_true", "mol_cond",
+    # EquiBind variant provenance (never a pass/fail test column).
+    "pocket_source", "pocket_id", "clamp_variant", "refine_variant",
+    "smina_affinity",
+    # AutoDock Vina native rank + affinity.
+    "autodock_rank", "autodock_affinity",
+    # DiffDock post-pose optimizer provenance (original / smina / gnina).
+    "optimizer",
 }
 
 _EXCLUDE_COLS = {
@@ -196,9 +383,44 @@ _BOOL_LIKE_VALUES = frozenset({True, False, 1, 0, 1.0, 0.0,
                                "True", "False", "true", "false"})
 _BOOL_STR_MAP = {"True": True, "true": True, "False": False, "false": False}
 
+# The canonical PoseBusters pass/fail tests — the ONLY columns that define a
+# pose's validity verdict. With ``full_report=True`` the result table also
+# carries many diagnostic columns (e.g. ``most_extreme_clash_protein``,
+# ``volume_overlap_<group>``, ``*_maximum_distance_from_plane``); several are
+# boolean and would otherwise be mistaken for tests by the heuristic below —
+# notably ``most_extreme_clash_protein`` (always False) which silently fails
+# every pose. Restricting to this allowlist keeps the verdict correct while
+# the diagnostic columns remain in the CSV for inspection.
+# Protein/cofactor/water columns are only present in 'dock' mode; the
+# intersection with the actual columns handles 'mol' mode automatically.
+CANONICAL_TEST_COLUMNS = (
+    "mol_pred_loaded", "sanitization", "inchi_convertible",
+    "all_atoms_connected", "no_radicals",
+    "bond_lengths", "bond_angles", "internal_steric_clash",
+    "aromatic_ring_flatness", "non-aromatic_ring_non-flatness",
+    "double_bond_flatness", "internal_energy",
+    "minimum_distance_to_protein",
+    "minimum_distance_to_organic_cofactors",
+    "minimum_distance_to_inorganic_cofactors",
+    "minimum_distance_to_waters",
+    "volume_overlap_with_protein",
+    "volume_overlap_with_organic_cofactors",
+    "volume_overlap_with_inorganic_cofactors",
+    "volume_overlap_with_waters",
+)
+
 
 def identify_test_columns(df: pd.DataFrame) -> list[str]:
-    """Return the list of boolean PoseBusters test columns in *df*."""
+    """Return the list of boolean PoseBusters test columns in *df*.
+
+    Prefer the canonical PoseBusters test set (those present in *df*). Only if
+    none are found — e.g. a CSV from a non-PoseBusters tool — fall back to the
+    older boolean-detection heuristic.
+    """
+    canonical = [c for c in CANONICAL_TEST_COLUMNS if c in df.columns]
+    if canonical:
+        return canonical
+
     test_cols = []
     for col in df.columns:
         cl = col.lower().strip()
@@ -284,7 +506,11 @@ def _collect_diffdock_rows(poses_dir: Path) -> list[dict]:
     rows = []
     skip_names = {"prepared_proteins", "converted_pdbqt", "prepared_ligands", "Orai"}
     for subdir in Path(poses_dir).iterdir():
-        if not subdir.is_dir() or "_ligand__" in subdir.name or subdir.name in skip_names:
+        # NB: do NOT skip on "_ligand__" — the benchmark staging labels every
+        # pair <pdb>_ligand__<pdb>_protein (same convention the equibind
+        # collector accepts), so that filter would drop every staged pair.
+        # Real artefact dirs are handled by skip_names above.
+        if not subdir.is_dir() or subdir.name in skip_names:
             continue
         parts = subdir.name.split("__")
         if len(parts) == 2:
@@ -337,22 +563,56 @@ ROW_COLLECTORS = {
 # POSE-FILE EXPANDERS  (row -> per-pose dicts)
 # ============================================================================
 
+def _autodock_affinities_from_pdbqt(pdbqt_path: Path) -> dict[int, float]:
+    """{model_number: Vina affinity (kcal/mol)} from a Vina output PDBQT.
+
+    Vina writes one ``REMARK VINA RESULT:`` line per ``MODEL`` (more-negative =
+    better; models are already sorted best-first, so the model number IS the Vina
+    rank). This is the AutoDock score that never made it into the results CSV —
+    captured here so future runs carry it natively.
+    """
+    out: dict[int, float] = {}
+    cur: int | None = None
+    try:
+        for ln in Path(pdbqt_path).read_text(errors="ignore").splitlines():
+            if ln.startswith("MODEL"):
+                parts = ln.split()
+                cur = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else None
+            elif ln.startswith("REMARK VINA RESULT:") and cur is not None:
+                m = re.search(r"(-?\d+\.\d+)", ln)
+                if m:
+                    out[cur] = float(m.group(1))
+    except (OSError, ValueError):
+        pass
+    return out
+
+
 def _expand_autodock_poses(row: dict, conv_dir: Path, ctx: PipelineConfig) -> list[dict]:
     file_path = Path(row["file_path"])
     if not file_path.exists() or file_path.suffix != ".pdbqt":
         return []
     print(f"  Converting {file_path.name} to SDF...")
     sdf_files = _convert_pdbqt_to_sdf(str(file_path), conv_dir, ctx)
+    affinities = _autodock_affinities_from_pdbqt(file_path)
     poses = []
     for sdf_file in sdf_files:
         sdf_path = Path(sdf_file)
         model_num = sdf_path.stem.split("_model")[-1] if "_model" in sdf_path.stem else "1"
-        poses.append({
+        pose = {
             "method": row["docking_tool"], "protein": row["protein"], "ligand": row["ligand"],
             "pose_file": sdf_file,
             "pose_name": f"{row['protein']}__{row['ligand']}_pose{model_num}",
             "file_format": "sdf",
-        })
+        }
+        try:
+            mn = int(model_num)
+        except ValueError:
+            mn = None
+        if mn is not None:
+            pose["autodock_rank"] = mn               # Vina rank (1 = best)
+            if mn in affinities:
+                pose["autodock_affinity"] = affinities[mn]   # kcal/mol
+        poses.append(pose)
     return poses
 
 
@@ -374,16 +634,97 @@ def _expand_diffdock_poses(row: dict, _conv_dir: Path, _ctx: PipelineConfig) -> 
             rel = str(sdf_file.relative_to(file_path))
         except ValueError:
             rel = sdf_file.name
+        # Optimizer provenance: smina/gnina re-optimised poses are written to
+        # optimized_<tool>/ subfolders next to the original rank*.sdf (see
+        # run_diffdock.optimize_results). Tag each pose with its optimizer so the
+        # downstream reports keep optimised vs original DiffDock poses separable
+        # (mirrors EquiBind's refine_variant) instead of silently pooling them.
+        optimizer = "original"
+        for part in sdf_file.parts:
+            if part.startswith("optimized_"):
+                optimizer = part[len("optimized_"):] or "original"
+                break
         info = {
             "method": row["docking_tool"], "protein": row["protein"], "ligand": row["ligand"],
             "pose_file": str(sdf_file),
             "pose_name": f"{row['ligand']}__{row['protein']}/{rel}",
             "file_format": "sdf",
+            "optimizer": optimizer,
         }
         if confidence is not None:
             info["confidence"] = confidence
         poses.append(info)
     return poses
+
+
+def _equibind_pocket_source(filename: str) -> str:
+    """Derive the EquiBind pose's pocket source from its filename.
+
+    EquiBind emits three kinds of pose per complex, encoded in the file stem:
+      unguided_NNN.sdf            -> "unguided"  (blind EquiBind, no pocket)
+      fpocket_raw_pXXX_poseYY.sdf -> "fpocket"   (guided by an fpocket pocket)
+      p2rank_raw_pXXX_poseYY.sdf  -> "p2rank"    (guided by a p2rank pocket)
+    """
+    n = filename.lower()
+    if n.startswith("unguided"):
+        return "unguided"
+    if n.startswith("p2rank"):
+        return "p2rank"
+    if n.startswith("fpocket"):
+        return "fpocket"
+    return "unknown"
+
+
+# EquiBind embeds per-pose provenance both as a filename suffix
+# (__clampON / __refSMINA / …) and as SDF tags written by
+# equibind_pipeline.pipeline._tag_pose_source. We prefer the SDF tags (the
+# authoritative record) and fall back to the filename so older poses — which
+# carry neither tags nor suffixes (clamp_mode='on', refine_mode='off') — still
+# resolve their pocket source from the filename prefix.
+_EQ_PROVENANCE_TAGS = ("pocket_source", "pocket_id", "clamp_variant",
+                       "refine_variant", "smina_affinity")
+
+
+def _read_sdf_tags(sdf_path: Path, tags: tuple[str, ...]) -> dict[str, str]:
+    """Read selected ``>  <tag>`` SDF properties at the text level (no RDKit).
+
+    Returns {tag: value} for those *tags* present with a non-empty value.
+    """
+    want = set(tags)
+    out: dict[str, str] = {}
+    try:
+        lines = Path(sdf_path).read_text(errors="ignore").splitlines()
+    except OSError:
+        return out
+    for i, line in enumerate(lines):
+        s = line.strip()
+        if s.startswith(">") and "<" in s and s.endswith(">"):
+            tag = s[s.index("<") + 1: s.rindex(">")]
+            if tag in want and i + 1 < len(lines):
+                val = lines[i + 1].strip()
+                if val:
+                    out[tag] = val
+    return out
+
+
+def _equibind_clamp_variant(filename: str) -> str | None:
+    """Centroid-clamp variant from an EquiBind pose filename (clamp_mode='both')."""
+    n = filename.lower()
+    if "__clampoff" in n:
+        return "clampOFF"
+    if "__clampon" in n:
+        return "clampON"
+    return None
+
+
+def _equibind_refine_variant(filename: str) -> str | None:
+    """Docking re-search variant from an EquiBind pose filename (refine_mode='both')."""
+    n = filename.lower()
+    if "__refsmina" in n:
+        return "smina"
+    if "__refraw" in n:
+        return "raw"
+    return None
 
 
 def _expand_equibind_poses(row: dict, _conv_dir: Path, _ctx: PipelineConfig) -> list[dict]:
@@ -396,12 +737,33 @@ def _expand_equibind_poses(row: dict, _conv_dir: Path, _ctx: PipelineConfig) -> 
             rel = str(sdf_file.relative_to(file_path))
         except ValueError:
             rel = sdf_file.name
-        poses.append({
+        fname = sdf_file.name
+        # Full per-pose provenance so every EquiBind variant axis is analysable
+        # downstream without re-parsing filenames: pocket source (fpocket /
+        # p2rank / unguided), centroid-clamp and re-search variants, the matched
+        # pocket id and smina affinity. SDF tags win; the filename is the fallback.
+        tags = _read_sdf_tags(sdf_file, _EQ_PROVENANCE_TAGS)
+        pose = {
             "method": row["docking_tool"], "protein": row["protein"], "ligand": row["ligand"],
             "pose_file": str(sdf_file),
             "pose_name": f"{row['ligand']}__{row['protein']}/{rel}",
             "file_format": "sdf",
-        })
+            "pocket_source": tags.get("pocket_source") or _equibind_pocket_source(fname),
+        }
+        clamp = tags.get("clamp_variant") or _equibind_clamp_variant(fname)
+        refine = tags.get("refine_variant") or _equibind_refine_variant(fname)
+        if clamp:
+            pose["clamp_variant"] = clamp
+        if refine:
+            pose["refine_variant"] = refine
+        if tags.get("pocket_id"):
+            pose["pocket_id"] = tags["pocket_id"]
+        if tags.get("smina_affinity"):
+            try:
+                pose["smina_affinity"] = float(tags["smina_affinity"])
+            except ValueError:
+                pass
+        poses.append(pose)
     return poses
 
 
@@ -449,19 +811,65 @@ def _find_template_mol(ligand_name: str, ctx: PipelineConfig):
         if candidate not in search_dirs:
             search_dirs.append(candidate)
 
+    # Template SDFs may live in per-complex subdirectories (PoseBuster Benchmark
+    # layout), so search recursively. Prefer exact-stem matches over fuzzy globs.
     for sdir in search_dirs:
         if not sdir.exists():
             continue
         for pat in (f"{ligand_name}.sdf", f"{ligand_name}_*.sdf", f"*{ligand_name}*.sdf"):
-            for match in sdir.glob(pat):
+            for match in sdir.rglob(pat):
                 try:
                     mol = Chem.MolFromMolFile(str(match), removeHs=True, sanitize=True)
                     if mol is not None:
-                        print(f"    Using bond-order template: {match.name}")
+                        print(f"    Using bond-order template: {match.relative_to(sdir)}")
                         return mol
                 except Exception:
                     pass
     return None
+
+
+_MK_EXPORT_BIN: str | None | bool = False  # False = not yet looked up
+
+
+def _mk_export_available() -> str | None:
+    """Locate the Meeko ``mk_export.py`` CLI once and cache the result."""
+    global _MK_EXPORT_BIN
+    if _MK_EXPORT_BIN is False:
+        _MK_EXPORT_BIN = shutil.which("mk_export.py") or shutil.which("mk_export")
+    return _MK_EXPORT_BIN
+
+
+def _mk_export_model(model_pdbqt: Path, output_sdf: Path) -> bool:
+    """Convert a single-model PDBQT to *output_sdf* with Meeko ``mk_export``.
+
+    Returns True only if a chemically sane, radical-free molecule was written;
+    otherwise removes any partial output and returns False so the caller can
+    fall back to the template/obabel strategies.
+    """
+    mk_bin = _mk_export_available()
+    if not mk_bin:
+        return False
+    from rdkit import Chem
+
+    try:
+        res = subprocess.run(
+            [mk_bin, str(model_pdbqt), "-s", str(output_sdf)],
+            capture_output=True, text=True,
+        )
+    except OSError:
+        return False
+    if res.returncode != 0 or not output_sdf.exists():
+        output_sdf.unlink(missing_ok=True)
+        return False
+
+    # Meeko reconstructs bond orders from the embedded SMILES, but guard anyway:
+    # reject anything that won't sanitize or carries radicals (the exact failure
+    # mode obabel exhibits) so a bad export can't masquerade as a valid pose.
+    mol = next(iter(Chem.SDMolSupplier(str(output_sdf), removeHs=False, sanitize=True)), None)
+    if mol is None or any(a.GetNumRadicalElectrons() for a in mol.GetAtoms()):
+        output_sdf.unlink(missing_ok=True)
+        return False
+    return True
 
 
 def _convert_pdbqt_to_sdf(pdbqt_file: str, out_dir: Path, ctx: PipelineConfig) -> list[str]:
@@ -493,6 +901,18 @@ def _convert_pdbqt_to_sdf(pdbqt_file: str, out_dir: Path, ctx: PipelineConfig) -
             f.write(model_content)
 
         mol_final = None
+
+        # Strategy 0 (preferred): Meeko mk_export. Ligand prep embeds the input
+        # SMILES (`REMARK SMILES`) in the PDBQT, so Meeko rebuilds the exact
+        # bond orders and formal charges instead of guessing. This avoids the
+        # radical / valence artefacts obabel produces when it has to infer bond
+        # orders from coordinates alone (see _mk_export_model). Falls through to
+        # the template/obabel strategies when the SMILES header is absent (e.g.
+        # a non-Meeko-prepped ligand) or mk_export is unavailable.
+        if "REMARK SMILES" in model_content and _mk_export_model(temp_pdbqt, output_sdf):
+            converted.append(str(output_sdf))
+            temp_pdbqt.unlink(missing_ok=True)
+            continue
 
         # Strategy 1: obabel PDBQT -> PDB -> RDKit + template
         if template_mol is not None:
@@ -592,6 +1012,8 @@ def _init_worker(config_mode: str, protein_cache: dict[str, str | None]) -> None
     global _worker_buster_dock, _worker_buster_mol, _worker_protein_cache, _worker_config_mode
     from posebusters import PoseBusters as _PB
 
+    _silence_rdkit_2d3d_warning()  # workers run bust(); install the filter here too
+
     _worker_config_mode = config_mode
     _worker_protein_cache = protein_cache or {}
     if config_mode == "dock":
@@ -633,6 +1055,22 @@ def _process_single_pose(pose_info: dict):
         df["posebusters_mode"] = used_mode
         if "confidence" in pose_info:
             df["diffdock_confidence"] = pose_info["confidence"]
+        # DiffDock optimizer provenance (original / smina / gnina) so optimised
+        # poses stay distinguishable from the raw DiffDock output downstream.
+        if "optimizer" in pose_info:
+            df["optimizer"] = pose_info["optimizer"]
+        # AutoDock Vina rank + affinity (kcal/mol). Vina produces them natively but
+        # they were never propagated to the CSV; carry them through so AutoDock is
+        # rankable from the results table like DiffDock/EquiBind.
+        for key in ("autodock_rank", "autodock_affinity"):
+            if key in pose_info:
+                df[key] = pose_info[key]
+        # Carry EquiBind variant provenance through to the results CSV so every
+        # pose axis (pocket source, clamp, re-search, pocket id, smina affinity)
+        # is analysable without re-parsing filenames.
+        for key in _EQ_PROVENANCE_TAGS:
+            if key in pose_info:
+                df[key] = pose_info[key]
         return df, None
 
     except Exception as e:
@@ -661,6 +1099,12 @@ def analyze_poses_with_posebusters(
 ) -> pd.DataFrame:
     """Run PoseBusters on *poses_list* using multiprocessing.Pool."""
     if not poses_list:
+        # No new poses — either nothing was discovered or every complex was
+        # already validated and skipped upstream. Return the existing results so
+        # downstream steps (copy-proved-poses, plots) still run on the full set.
+        if output_file is not None and output_file.exists() and not overwrite:
+            print("No new poses to analyze — all complexes already validated.")
+            return pd.read_csv(output_file)
         print("No poses to analyze!")
         return pd.DataFrame()
 
@@ -875,6 +1319,68 @@ def filter_common_combos(filtered_poses_df: pd.DataFrame) -> pd.DataFrame:
     print(totals_str)
     print(f"\nFinal filtered_poses_df shape: {filtered_poses_df.shape}")
     return filtered_poses_df
+
+
+def filter_already_processed_complexes(
+    filtered_poses_df: pd.DataFrame,
+    results_csv_path: Path,
+    overwrite: bool = False,
+) -> pd.DataFrame:
+    """Drop complex rows already fully validated in a previous run.
+
+    A "complex" is a (docking_tool, protein, ligand) triple. The per-pose resume
+    in ``analyze_poses_with_posebusters`` only skips the (cheap) ``bust()`` call
+    for poses already in the results CSV — the costly pose-file collection and
+    PDBQT->SDF conversion in ``collect_all_pose_files`` still runs for every
+    complex. Removing complexes that are already complete here lets the pipeline
+    skip that work entirely so only never-validated complexes are processed.
+
+    A complex counts as done when the number of its poses already present in
+    *results_csv_path* is >= the ``pose_count`` discovered for it, so a complex
+    that was only partially validated (e.g. an interrupted run) is still
+    reprocessed. With *overwrite* the CSV is about to be rebuilt, so nothing is
+    skipped.
+    """
+    if overwrite or filtered_poses_df.empty or not results_csv_path.exists():
+        return filtered_poses_df
+
+    key_cols = ["docking_method", "protein", "ligand"]
+    try:
+        prev = pd.read_csv(results_csv_path, usecols=lambda c: c in set(key_cols))
+    except (ValueError, pd.errors.EmptyDataError):
+        return filtered_poses_df  # no key columns / empty file -> nothing to skip
+    if prev.empty or not set(key_cols) <= set(prev.columns):
+        return filtered_poses_df
+
+    # done_counts maps (docking_tool, protein, ligand) -> #poses already in CSV.
+    done_counts = (
+        prev.dropna(subset=key_cols)
+            .astype({c: str for c in key_cols})
+            .groupby(key_cols).size().to_dict()
+    )
+
+    def _is_done(row) -> bool:
+        key = (str(row["docking_tool"]), str(row["protein"]), str(row["ligand"]))
+        return done_counts.get(key, 0) >= row["pose_count"]
+
+    done_mask = filtered_poses_df.apply(_is_done, axis=1)
+    n_done = int(done_mask.sum())
+
+    print("\n" + "=" * 80)
+    print("SKIPPING ALREADY-VALIDATED COMPLEXES")
+    print("=" * 80)
+    if n_done:
+        done_keys = sorted(
+            {(t, p, l) for t, p, l in zip(
+                filtered_poses_df.loc[done_mask, "docking_tool"],
+                filtered_poses_df.loc[done_mask, "protein"],
+                filtered_poses_df.loc[done_mask, "ligand"])}
+        )
+        for tool, protein, ligand in done_keys:
+            print(f"  ✓ done: {tool:>22}  {protein} + {ligand}")
+    print(f"\n  {n_done}/{len(filtered_poses_df)} complex rows already complete "
+          f"→ {len(filtered_poses_df) - n_done} remaining to process")
+    return filtered_poses_df.loc[~done_mask].copy()
 
 
 def resolve_protein_files(
@@ -1173,10 +1679,9 @@ def make_plots(ctx: PipelineConfig) -> None:
     # FIGURE 2: stacked bars
     fig2, ax2 = plt.subplots(figsize=(max(7, len(methods) * 2), 5))
     counts = df.groupby("docking_method")["all_passed"].value_counts().unstack(fill_value=0)
-    for val in (True, False):
-        if val not in counts.columns:
-            counts[val] = 0
-    counts = counts[[True, False]].rename(columns={True: "Passed All", False: "Failed >=1"})
+    counts = counts.reindex(columns=[True, False], fill_value=0).rename(
+        columns={True: "Passed All", False: "Failed >=1"}
+    )
 
     ax2.bar(range(len(counts)), counts["Passed All"],
             color=[method_colors.get(m, "#888") for m in counts.index],
@@ -1297,20 +1802,30 @@ def print_bottleneck_diagnostics(ctx: PipelineConfig) -> None:
     csv_path = ctx.output_dir / "posebusters_filtered_results.csv"
     if not csv_path.exists():
         return
-    df_pb = pd.read_csv(csv_path)
+    df_pb = pd.read_csv(csv_path, low_memory=False)
     for test in ("no_radicals", "non-aromatic_ring_non-flatness", "internal_steric_clash"):
         if test in df_pb.columns:
             print(f"\n{test} pass rate by method:")
-            print(df_pb.groupby("docking_method")[test].mean().round(3) * 100)
+            series = pd.to_numeric(df_pb[test], errors="coerce")
+            print(series.groupby(df_pb["docking_method"]).mean().round(3) * 100)
 
 
 # ============================================================================
 # TOP-LEVEL ENTRY POINT
 # ============================================================================
 
-def run_pipeline(config_path: str | Path) -> pd.DataFrame:
-    """Run the full PoseBusters validation pipeline driven by a YAML config."""
+def run_pipeline(config_path: str | Path, overwrite: bool | None = None) -> pd.DataFrame:
+    """Run the full PoseBusters validation pipeline driven by a YAML config.
+
+    *overwrite* overrides the value from the config file when provided.
+    """
     ctx = load_config(config_path)
+    if overwrite is not None:
+        ctx.overwrite = overwrite
+
+    # Optional: write cleaned receptor PDBs (HETATM artefacts removed) and
+    # validate against those instead of the originals.
+    ctx.receptors_dir = prepare_cleaned_receptor_dir(ctx)
 
     file_map, normalized_map = discover_proteins(ctx.receptors_dir)
 
@@ -1329,8 +1844,13 @@ def run_pipeline(config_path: str | Path) -> pd.DataFrame:
         print("\nERROR: No filtered poses available!")
         return pd.DataFrame()
 
+    # Skip complexes already fully validated so the expensive pose collection /
+    # PDBQT->SDF conversion below only touches complexes not yet run.
+    filtered_poses_df = filter_already_processed_complexes(
+        filtered_poses_df, results_csv_path, overwrite=ctx.overwrite)
+
     print(f"\nFiltered subset: {len(filtered_poses_df)} combinations, "
-          f"~{filtered_poses_df['pose_count'].sum():,} poses")
+          f"~{filtered_poses_df['pose_count'].sum() if not filtered_poses_df.empty else 0:,} poses")
 
     print("\n" + "-" * 80 + "\n1. Collecting individual pose files...\n" + "-" * 80)
     all_poses = collect_all_pose_files(filtered_poses_df, ctx)
@@ -1382,9 +1902,13 @@ def _parse_cli() -> argparse.Namespace:
         "--config", "-c", default="config.yaml",
         help="Path to the YAML config file (default: config.yaml)",
     )
+    parser.add_argument(
+        "--overwrite", action="store_true", default=None,
+        help="Overwrite existing PoseBusters results instead of resuming",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = _parse_cli()
-    run_pipeline(args.config)
+    run_pipeline(args.config, overwrite=args.overwrite)

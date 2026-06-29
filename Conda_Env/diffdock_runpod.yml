@@ -1,0 +1,64 @@
+# =============================================================================
+# DiffDock (DiffDock-L) inference environment for RunPod GPU pods
+# =============================================================================
+# Reproduces the verified-working local env:
+#   Python 3.9 · torch 2.4.0+cu124 · PyG 2.6.1 · CUDA 12.4 (wheels bundle CUDA)
+#
+# GPU targets: A100 SXM (sm_80) and RTX 4090 (sm_89) — both supported by
+# torch 2.4.0+cu124. Needs a host NVIDIA driver >= 525 (every current RunPod
+# pod satisfies this); no system CUDA toolkit is required because the pip
+# torch / PyG wheels ship their own CUDA runtime (the nvidia-*-cu12 packages).
+#
+# Create:   conda env create -f diffdock_runpod.yml
+#           conda activate diffdock
+# (or run the companion setup_diffdock_env.sh, which also clones DiffDock,
+#  registers a Jupyter kernel, and verifies the GPU.)
+#
+# Notes
+#  * The chem/bio stack (rdkit, prody, biopython, numpy, scipy, pandas) is
+#    installed from conda-forge — pip-building rdkit/prody on a fresh pod is
+#    fragile. numpy is owned by conda so the pip torch/PyG wheels reuse it
+#    (avoids the classic conda-vs-pip numpy ABI clash); do NOT add numpy to pip.
+#  * torch + the four torch-geometric companion libs come as prebuilt wheels.
+#    --find-links points pip at the cu124 wheel index so torch-scatter/-sparse/
+#    -cluster/-spline-conv resolve to their +pt24cu124 builds (no compilation).
+#  * spyrmsd is vendored inside the DiffDock repo (not a dependency here).
+#    openbabel / graph_tool / wandb are only used by DiffDock's training/eval/
+#    baseline scripts — not the inference path — so they are intentionally omitted.
+# =============================================================================
+name: diffdock
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  # ── interpreter & build tooling ────────────────────────────────────────────
+  - python=3.9
+  - pip
+  - setuptools=69.5.1          # keep <70: older e3nn/fair-esm build metadata
+
+  # ── chem / bio / scientific stack (conda-forge — owns numpy) ───────────────
+  - numpy=1.26.3               # <2 required by torch 2.4 + the PyG wheels
+  - scipy=1.12.0
+  - pandas=2.3.3
+  - rdkit=2025.03.5
+  - prody=2.2.0
+  - biopython=1.85
+  - pyyaml
+  - requests
+
+  # ── GPU stack & DiffDock python deps (pip wheels, bundle their own CUDA) ────
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu124
+      - --find-links https://data.pyg.org/whl/torch-2.4.0+cu124.html
+      - torch==2.4.0+cu124
+      - torch-geometric==2.6.1
+      - torch-scatter==2.1.2
+      - torch-sparse==0.6.18
+      - torch-cluster==1.6.3
+      - torch-spline-conv==1.2.2
+      - e3nn==0.5.1
+      - fair-esm==2.0.0
+      - networkx==3.2.1
+      - tqdm==4.67.1

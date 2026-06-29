@@ -1,0 +1,33 @@
+# PandaMap config — Orai × PoseBuster Benchmark ligands.
+# Run under the vina env (only env with pandamap):
+#   /home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/run_pandamap.py \
+#       --config Scripts/Analysis/pandamap_orai_benchmark_config.yaml
+#   /home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/pandamap_interaction_report.py \
+#       --config Scripts/Analysis/pandamap_orai_benchmark_config.yaml
+#
+# NOTE: Orai has NO crystal reference (benchmark_dir: null) — so there is no
+# native-interaction recovery and no oracle_rmsd metric. --best-equibind-only
+# therefore does not apply here (left false); all EquiBind variants are shown.
+
+work_dir: /home/manndo/master_dev
+
+# ── Input — Mode A (PoseBusters CSV from run_posebusters) ─────────────────
+pb_csv: posebusters_results/orai_benchmark/dock/posebusters_filtered_results.csv
+pb_valid_only: true        # true → only poses that passed every PoseBusters test
+
+# ── Crystal reference: none for Orai ──────────────────────────────────────
+benchmark_dir: null
+
+# ── Output ────────────────────────────────────────────────────────────────
+output_dir: pandamap_results/orai_benchmark
+
+# ── Behaviour ─────────────────────────────────────────────────────────────
+poses_per_combo: 3
+render_images: true
+split_equibind: true
+use_dssp: false
+num_workers: null
+overwrite: false
+
+# ── Best-EquiBind filter — N/A without a crystal/oracle metric ────────────
+best_equibind_only: false

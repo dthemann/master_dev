@@ -1,0 +1,35 @@
+# PoseBusters config — Orai receptors × JKU ligands
+# Validates docked poses produced by AutoDock Vina and EquiBind against the
+# four Orai1WT receptor variants (START-Fr0 + MD snapshots).
+#
+# The driving notebook cell stages the receptors, the AutoDock poses (renamed to
+# strip the "_meeko" converter tag so the receptor stem matches), and per-ligand
+# SDF bond-order templates. DiffDock and EquiBind poses are read straight from
+# their source dirs (their "<ligand>__<receptor>/" folders already match the
+# receptor stem, so no staging/renaming is needed).
+
+work_dir: /home/manndo/master_dev
+
+# Staged folder containing only the 4 Orai receptor PDBs (created by the
+# Master_Docking notebook cell that drives this run).
+receptors_dir: posebusters_results/_orai_jku_staging/receptors
+
+docking_directories:
+  autodock:        posebusters_results/_orai_jku_staging/autodock
+  diffdock:        Dockings/diffdock_results/pdbqt
+  equibind_guided: Dockings/equibind_results/pdbqt
+
+config_mode: dock          # use receptor-aware "dock" PoseBusters profile
+output_base_dir: posebusters_results/orai_jku
+save_interval: 200
+overwrite: false
+num_workers: null          # null -> all available CPU cores
+make_plots: true
+copy_proved_poses: true
+
+# Bond-order template SDFs for AutoDock PDBQT->SDF conversion. The staging dir
+# provides per-ligand symlinks named to match the AutoDock ligand label
+# (e.g. "2abp-nh2-OPT_vina.sdf"); the raw JKU SDF dir is a fallback.
+ligand_template_dirs:
+  - posebusters_results/_orai_jku_staging/ligand_templates
+  - Data/Ligands/JKU/pdbqt
