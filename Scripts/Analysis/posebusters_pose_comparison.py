@@ -1155,6 +1155,35 @@ def _select_best_equibind(df: pd.DataFrame) -> tuple[pd.DataFrame, str | None]:
     return df[keep].reset_index(drop=True), best_variant
 
 
+def _select_best_diffdock(df: pd.DataFrame) -> tuple[pd.DataFrame, str | None]:
+    """Keep non-DiffDock methods plus only the single best DiffDock variant.
+
+    "Best" = the DiffDock optimizer variant (diffdock / diffdock_smina /
+    diffdock_gnina) with the highest oracle RMSD ≤ 2 Å success rate
+    (``oracle_rmsd_le_2.0A_%``). The winner is relabelled to the canonical
+    ``diffdock`` method so it stays a ranking tool; the original variant key is
+    returned (for the 'DiffDock*' label / print). AutoDock/EquiBind are retained.
+    ``None`` when no DiffDock variant is present (``df`` unchanged)."""
+    methods = df["method"].astype(str)
+    dd_mask = methods.str.startswith("diffdock")
+    if not dd_mask.any():
+        return df, None
+
+    oracle_sum = aggregate_oracle(df)
+    col = "oracle_rmsd_le_2.0A_%"
+    dd_keys = [m for m in oracle_sum.index if str(m).startswith("diffdock")]
+    scores = (oracle_sum.loc[dd_keys, col].astype(float).dropna()
+              if col in oracle_sum.columns else pd.Series(dtype=float))
+    best_variant = (str(scores.idxmax()) if not scores.empty
+                    else sorted(methods[dd_mask].unique())[0])
+
+    keep = (~dd_mask) | (methods == best_variant)
+    out = df[keep].reset_index(drop=True)
+    # Canonicalise the winner to 'diffdock' so it ranks/colours like the tool.
+    out.loc[out["method"] == best_variant, "method"] = "diffdock"
+    return out, best_variant
+
+
 # ───────────────────────────────────────────────────────────────────
 # Plots — Part A: oracle comparison (all tools)
 # ───────────────────────────────────────────────────────────────────
@@ -2327,7 +2356,9 @@ PB_TEST_LABELS: dict[str, str] = {
 }
 
 
-def _load_pb_test_table(pb_csv: Path, split_equibind: bool = True):
+def _load_pb_test_table(pb_csv: Path, split_equibind: bool = True,
+                        diffdock_variant: str = "diffdock",
+                        select_diffdock: bool = True):
     """Read the per-pose PoseBusters PASS/FAIL columns from the raw CSV.
 
     ``_build_pose_index`` drops the individual test columns (it keeps only the
@@ -2348,6 +2379,12 @@ def _load_pb_test_table(pb_csv: Path, split_equibind: bool = True):
     raw["docking_method"] = raw["docking_method"].astype(str).str.lower()
     if split_equibind:
         raw = _apply_equibind_split(raw)
+    # Split + select the DiffDock variant identically to _build_pose_index, so
+    # this table's method keys match per_pose_metrics (otherwise the selected
+    # variant's rows fail to join in the waterfall).
+    raw = _apply_diffdock_split(raw)
+    if select_diffdock:
+        raw = _select_diffdock_variant(raw, diffdock_variant)
     table = pd.DataFrame({
         "method": raw["docking_method"],
         "protein": raw["protein"],
@@ -2630,13 +2667,39 @@ def _apply_diffdock_split(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _select_diffdock_variant(df: pd.DataFrame, variant: str = "diffdock") -> pd.DataFrame:
+    """Keep ONLY the chosen DiffDock optimizer variant and treat it as the
+    canonical ``diffdock`` tool; drop the other variants.
+
+    Run AFTER _apply_diffdock_split (methods are diffdock / diffdock_smina /
+    diffdock_gnina). With the default ``"diffdock"`` this drops the optimised
+    copies and keeps raw DiffDock. Selecting ``"diffdock_smina"`` /
+    ``"diffdock_gnina"`` keeps that variant and relabels it to ``diffdock`` so it
+    is ranked and compared like the docking tool (one DiffDock entry per run,
+    mirroring the EquiBind variant selection)."""
+    if variant == "all":               # keep every variant as a separate method
+        return df
+    is_dd = df["docking_method"].str.startswith("diffdock")
+    if not is_dd.any():
+        return df
+    sel = df["docking_method"] == variant
+    if not sel.any():
+        print(f"  [warn] --diffdock-variant {variant!r} not present in this CSV; "
+              f"available: {sorted(df.loc[is_dd, 'docking_method'].unique())}")
+    df = df[~is_dd | sel].copy()
+    df.loc[df["docking_method"].str.startswith("diffdock"), "docking_method"] = "diffdock"
+    return df
+
+
 def _load_allowed_ids(path: Path) -> set[str]:
     """Load '<PDBID>_<LIG>' complex ids (one per line; '#' comments ignored)."""
     return {ln.strip() for ln in Path(path).read_text().splitlines()
             if ln.strip() and not ln.lstrip().startswith("#")}
 
 
-def _build_pose_index(pb_csv: Path, split_equibind: bool = True) -> pd.DataFrame:
+def _build_pose_index(pb_csv: Path, split_equibind: bool = True,
+                      diffdock_variant: str = "diffdock",
+                      select_diffdock: bool = True) -> pd.DataFrame:
     df = pd.read_csv(pb_csv, low_memory=False)
     needed = {"docking_method", "protein", "ligand", "pose_file", "pose_name"}
     missing = needed - set(df.columns)
@@ -2648,8 +2711,12 @@ def _build_pose_index(pb_csv: Path, split_equibind: bool = True) -> pd.DataFrame
     df["docking_method"] = df["docking_method"].astype(str).str.lower()
     if split_equibind:
         df = _apply_equibind_split(df)
-    # Always separate DiffDock optimizer variants (no-op without optimised poses).
+    # Split DiffDock optimizer variants, then (unless we keep all three for
+    # --best-diffdock-only) keep only the selected one (raw 'diffdock' by default)
+    # as the canonical DiffDock entry.
     df = _apply_diffdock_split(df)
+    if select_diffdock:
+        df = _select_diffdock_variant(df, diffdock_variant)
     keep = ["docking_method", "protein", "ligand", "pose_file", "pose_name", "pb_valid"]
     keep += [c for c in EQ_PROVENANCE_COLS if c in df.columns]
     if "optimizer" in df.columns:          # DiffDock optimizer provenance, for drill-down
@@ -2698,10 +2765,12 @@ def _per_pose_signature(args) -> dict:
     signature is reusable across different --top-n values.
     """
     return {
-        "schema": 2,
+        "schema": 3,
         "pb_csv": _file_fingerprint(Path(args.pb_csv)),
         "ids_file": str(args.ids_file) if args.ids_file else None,
         "split_equibind": bool(args.split_equibind),
+        "diffdock_variant": str(args.diffdock_variant),
+        "best_diffdock_only": bool(args.best_diffdock_only),
         "limit_pairs": int(args.limit_pairs),
     }
 
@@ -2821,6 +2890,21 @@ def main() -> None:
                          "(highest oracle_rmsd_le_2.0A_%%) in all summaries and "
                          "plots, relabelled 'EquiBind*'. AutoDock/DiffDock are "
                          "unaffected. Most useful with --split-equibind (default).")
+    ap.add_argument("--diffdock-variant", default="diffdock",
+                    choices=("diffdock", "diffdock_smina", "diffdock_gnina", "all"),
+                    help="Which DiffDock variant represents 'diffdock' in the "
+                         "comparison: 'diffdock' (raw docking output, default) | "
+                         "'diffdock_smina' | 'diffdock_gnina'. The chosen variant "
+                         "is analysed as the canonical DiffDock tool; the others "
+                         "are dropped (one DiffDock entry per run). 'all' keeps all "
+                         "three as separate methods — use it to write an oracle_summary "
+                         "that --best-diffdock-only (in the other reports) can rank.")
+    ap.add_argument("--best-diffdock-only", action="store_true",
+                    help="Keep only the single best-performing DiffDock optimizer "
+                         "variant (raw/smina/gnina, highest oracle_rmsd_le_2.0A_%%) "
+                         "in all summaries/plots, relabelled 'DiffDock*'. Scores all "
+                         "three then picks the best, so it OVERRIDES --diffdock-variant. "
+                         "AutoDock/EquiBind are unaffected.")
     args = ap.parse_args()
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -2840,7 +2924,9 @@ def main() -> None:
 
     if df is None:
         print(f"Loading pose index from: {args.pb_csv}")
-        idx = _build_pose_index(args.pb_csv, split_equibind=args.split_equibind)
+        idx = _build_pose_index(args.pb_csv, split_equibind=args.split_equibind,
+                                diffdock_variant=args.diffdock_variant,
+                                select_diffdock=not args.best_diffdock_only)
         # Restrict to the official benchmark-set ids (the complex id is the
         # 'protein' column, == '<PDBID>_<LIG>' for the benchmark staging).
         if args.ids_file:
@@ -2905,6 +2991,18 @@ def main() -> None:
                   f"by oracle_rmsd_le_2.0A_% — keeping only it (shown as 'EquiBind*').")
         else:
             print("best-equibind-only: no EquiBind variants present — nothing filtered.")
+
+    # ── Optional: restrict the report to the single best DiffDock variant ──
+    # Scores all three optimizer variants (kept because select_diffdock was off),
+    # collapses to the best, relabelled 'DiffDock*'.
+    if args.best_diffdock_only:
+        df, best_dd = _select_best_diffdock(df)
+        if best_dd:
+            _LABEL_OVERRIDES["diffdock"] = "DiffDock*"
+            print(f"best-diffdock-only: '{best_dd}' is the top DiffDock variant by "
+                  f"oracle_rmsd_le_2.0A_% — keeping only it as 'diffdock' (shown as 'DiffDock*').")
+        else:
+            print("best-diffdock-only: no DiffDock variants present — nothing filtered.")
 
     # ── Aggregation ──────────────────────────────────────────────
     oracle_sum = aggregate_oracle(df)
@@ -2995,7 +3093,9 @@ def main() -> None:
         print("  Skipping pocket localization (no ranking-tool data).")
 
     # ── PoseBusters test-failure waterfall (paper-style cascade), per method ──
-    pb_tests = _load_pb_test_table(args.pb_csv, split_equibind=args.split_equibind)
+    pb_tests = _load_pb_test_table(args.pb_csv, split_equibind=args.split_equibind,
+                                   diffdock_variant=args.diffdock_variant,
+                                   select_diffdock=not args.best_diffdock_only)
     if pb_tests is not None:
         test_table, test_cols = pb_tests
         cascades = aggregate_pb_waterfall(df, test_table, test_cols, args.top_n)

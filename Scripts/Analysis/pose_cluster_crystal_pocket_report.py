@@ -245,10 +245,10 @@ def _ensemble_stats(C: np.ndarray, tools: List[str], crystal: Optional[np.ndarra
 # IO
 # ════════════════════════════════════════════════════════════════════════
 
-def _map_tool(method: str, eq_variant: str) -> Optional[str]:
+def _map_tool(method: str, eq_variant: str, dd_variant: str = "diffdock") -> Optional[str]:
     if method == "autodock":
         return "autodock"
-    if method == "diffdock":
+    if method == dd_variant:                 # diffdock | diffdock_smina | diffdock_gnina
         return "diffdock"
     if method == eq_variant:
         return "equibind"
@@ -256,15 +256,17 @@ def _map_tool(method: str, eq_variant: str) -> Optional[str]:
 
 
 def load_poses(csv: Path, eq_variant: str, ids: Optional[set],
-               pb_valid_only: bool) -> pd.DataFrame:
+               pb_valid_only: bool, dd_variant: str = "diffdock") -> pd.DataFrame:
     df = pd.read_csv(csv, low_memory=False)
-    df["tool"] = df["method"].map(lambda m: _map_tool(m, eq_variant))
+    df["tool"] = df["method"].map(lambda m: _map_tool(m, eq_variant, dd_variant))
     df = df[df["tool"].notna()].copy()
     # DiffDock writes its top pose twice — a bare ``rank1.sdf`` that duplicates
-    # ``rank1_confidence-*.sdf``. Drop the bare copy so it doesn't double-count
-    # the rank-1 pose (which otherwise makes rank1 == rank2 in per-rank stats).
+    # ``rank1_confidence-*.sdf`` (and their optimised copies rank1_<tool>.sdf).
+    # Drop the bare copy so it doesn't double-count the rank-1 pose (which
+    # otherwise makes rank1 == rank2 in per-rank stats).
     bare = (df["tool"].eq("diffdock")
-            & df["pose_file"].astype(str).str.contains(r"rank\d+\.sdf$", regex=True))
+            & df["pose_file"].astype(str).str.contains(
+                r"rank\d+(?:_(?:smina|gnina))?\.sdf$", regex=True))
     df = df[~bare].copy()
     if pb_valid_only and "pb_valid" in df.columns:
         df = df[df["pb_valid"].astype(str).str.lower().isin(("true", "1", "1.0"))].copy()
@@ -1158,6 +1160,9 @@ def main(argv=None) -> int:
     ap.add_argument("--p2rank-dir", default="pocket_results/p2rank_results")
     ap.add_argument("--ids-file", default=None)
     ap.add_argument("--equibind-variant", default="equibind_unguided_smina_clampOFF")
+    ap.add_argument("--diffdock-variant", default="diffdock",
+                    help="Which DiffDock variant to cluster: 'diffdock' (raw) | "
+                         "'diffdock_smina' | 'diffdock_gnina'.")
     ap.add_argument("--distance-mode", choices=("centroid", "hybrid", "both"),
                     default="both")
     ap.add_argument("--hybrid-weight", type=float, default=0.5)
@@ -1183,16 +1188,17 @@ def main(argv=None) -> int:
     ids = _load_ids(Path(args.ids_file)) if args.ids_file else None
     out_dir = Path(args.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
 
-    df = load_poses(csv, args.equibind_variant, ids, args.pb_valid_only)
+    df = load_poses(csv, args.equibind_variant, ids, args.pb_valid_only, args.diffdock_variant)
     if df.empty:
-        print("No poses after filtering (check --equibind-variant / --ids-file).")
+        print("No poses after filtering (check --equibind-variant / --diffdock-variant / --ids-file).")
         return 1
     complexes = sorted(df["protein"].unique())
     if args.limit:
         complexes = complexes[:args.limit]
         df = df[df["protein"].isin(complexes)].copy()
     print(f"Complexes: {len(complexes)} | poses: {len(df)} | "
-          f"tools: {sorted(df['tool'].unique())} | equibind={args.equibind_variant}")
+          f"tools: {sorted(df['tool'].unique())} | equibind={args.equibind_variant} | "
+          f"diffdock={args.diffdock_variant}")
 
     # ── parallel centroid extraction ─────────────────────────────────────
     files = sorted(df["pose_file"].unique())
@@ -1457,6 +1463,7 @@ def main(argv=None) -> int:
     summary = {
         "n_complexes": int(n), "match_thr_A": args.match_thr,
         "equibind_variant": args.equibind_variant,
+        "diffdock_variant": args.diffdock_variant,
         "median_oracle_dist": {s: (float(pd.to_numeric(dc[oc], errors="coerce").median())
                                     if oc in dc else None)
                                for s, (oc, _) in src_cols.items()},

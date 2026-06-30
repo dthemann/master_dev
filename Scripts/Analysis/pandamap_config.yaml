@@ -33,6 +33,7 @@ output_dir: pandamap_results/benchmark_best_equi
 poses_per_combo: 3          # top-N ranked poses per (method, protein, ligand)
 render_images: true         # 2D PNG maps (slow). false → fingerprints only (fast)
 split_equibind: true        # fpocket/p2rank/clamp/refine as distinct methods
+split_diffdock: true        # raw / smina-opt / gnina-opt as distinct methods
 use_dssp: false             # PandaMap solvent accessibility via DSSP (needs mkdssp)
 num_workers: null           # null → (CPU count − 1)
 overwrite: false            # false → resume (skip poses already in the summary CSV)
@@ -44,6 +45,7 @@ overwrite: false            # false → resume (skip poses already in the summar
 # oracle_summary.csv. CLI --best-equibind-only / --oracle-summary override these.
 # (Run the report with --best-equibind-only too, to label the variant "EquiBind*".)
 best_equibind_only: false   # CLI --best-equibind-only sets this true
+best_diffdock_only: false   # CLI --best-diffdock-only sets this true (best raw/smina/gnina)
 oracle_summary: posebusters_results/benchmark/dock/pose_comparison_report/oracle_summary.csv
 
 # ── Orai variant (swap the block above) ───────────────────────────────────

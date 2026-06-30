@@ -26,7 +26,7 @@ the pose filename for older CSVs that lack them:
   pocket axis  (pocket_source)     unguided   -> blind EquiBind (no pocket)
                                    fpocket    -> guided by an fpocket pocket
                                    p2rank     -> guided by a p2rank pocket
-  re-search    (refine_variant)    smina (__refSMINA) | raw (__refRAW) | None
+  re-search    (refine_variant)    smina (__refSMINA) | gnina (__refGNINA) | raw (__refRAW) | None
   clamp axis   (clamp_variant)     clampON (__clampON) | clampOFF (__clampOFF) | None
 
 So e.g. ``fpocket_raw_p001_pose01__clampOFF__refSMINA.sdf`` becomes the method
@@ -36,7 +36,7 @@ default single-variant runs) simply collapse to ``equibind_fpocket`` /
 ``equibind_p2rank`` / ``equibind_unguided``.
 NOTE: refine_mode='on' rewrites the pose in place with no suffix/tag, so an
 unsuffixed pose is reported under its base label (the smina split is only
-visible for refine_mode='both' runs, which emit __refRAW/__refSMINA).
+visible for refine_mode='both' runs, which emit __refRAW/__refSMINA/__refGNINA).
 
 Quick usage:
     # Run with defaults
@@ -94,7 +94,7 @@ CRITICAL_CHECKS: list[str] = list(CANONICAL_TEST_COLUMNS)
 # Token orderings used to sort EquiBind variants consistently.
 # "guided" is kept for back-compat with older, unsplit CSVs.
 _POCKET_ORDER = {"unguided": 0, "fpocket": 1, "p2rank": 2, "guided": 3}
-_REFINE_ORDER = {None: 0, "raw": 1, "smina": 2}
+_REFINE_ORDER = {None: 0, "raw": 1, "smina": 2, "gnina": 3}
 _CLAMP_ORDER = {None: 0, "clampON": 1, "clampOFF": 2}
 
 # Green family for EquiBind variants (cycled if more than this many appear).
@@ -118,7 +118,7 @@ def _eq_tokens(method: str) -> tuple[str | None, str | None, str | None]:
     for t in method.split("_")[1:]:          # drop the leading "equibind"
         if t in ("unguided", "fpocket", "p2rank", "guided"):
             pocket = t
-        elif t in ("raw", "smina"):
+        elif t in ("raw", "smina", "gnina"):
             refine = t
         elif t in ("clampON", "clampOFF"):
             clamp = t
@@ -144,7 +144,7 @@ def _pretty_method(m: str) -> str:
     if pocket:
         parts.append(pocket)
     if refine:
-        parts.append("smina-opt" if refine == "smina" else "raw")
+        parts.append({"smina": "smina-opt", "gnina": "gnina-opt"}.get(refine, "raw"))
     if clamp:
         parts.append("clamp on" if clamp == "clampON" else "clamp off")
     return f"EquiBind ({', '.join(parts)})" if parts else "EquiBind"
@@ -224,7 +224,7 @@ def _classify_equibind(row) -> tuple[str, str | None, str | None]:
     pose SDF tags); falls back to parsing the pose filename for older CSVs.
 
     pocket : "unguided" (blind) | "fpocket" | "p2rank" (| "guided" legacy)
-    refine : "smina" (__refSMINA) | "raw" (__refRAW) | None (unsuffixed)
+    refine : "smina" (__refSMINA) | "gnina" (__refGNINA) | "raw" (__refRAW) | None (unsuffixed)
     clamp  : "clampON" (__clampON) | "clampOFF" (__clampOFF) | None
     """
     name = Path(str(row.get("pose_name", ""))).name.lower()   # strip "lig__prot/" prefix
@@ -241,8 +241,9 @@ def _classify_equibind(row) -> tuple[str, str | None, str | None]:
             pocket = "guided"          # legacy / unrecognised → coarse bucket
 
     refine = _col_value(row, "refine_variant")
-    if refine not in ("smina", "raw"):
+    if refine not in ("smina", "raw", "gnina"):
         refine = ("smina" if "__refsmina" in name
+                  else "gnina" if "__refgnina" in name
                   else "raw" if "__refraw" in name else None)
 
     clamp = _col_value(row, "clamp_variant")
@@ -403,6 +404,45 @@ def select_best_equibind(df: pd.DataFrame, oracle_csv: Path) -> tuple[pd.DataFra
 
     best = max(cand, key=cand.get)
     keep = (~eq_mask) | (methods == best)
+    return df[keep].reset_index(drop=True), best
+
+
+def select_best_diffdock(df: pd.DataFrame, oracle_csv: Path) -> tuple[pd.DataFrame, str | None]:
+    """Keep non-DiffDock rows + only the single best DiffDock optimizer variant.
+
+    "Best" = the DiffDock variant (diffdock / diffdock_smina / diffdock_gnina)
+    with the highest ``oracle_rmsd_le_2.0A_%`` in *oracle_csv*. Mirrors
+    select_best_equibind; AutoDock/EquiBind rows are always kept. Returns
+    (filtered_df, best_variant_key), or the inputs unchanged with ``None`` when no
+    DiffDock variant is present, the summary is missing/unreadable, or no present
+    variant has an oracle score."""
+    methods = df["docking_method"].astype(str)
+    dd_mask = methods.str.startswith("diffdock")
+    if not dd_mask.any():
+        return df, None
+    if not oracle_csv or not Path(oracle_csv).exists():
+        print(f"  [best-diffdock-only] oracle summary not found at {oracle_csv} — "
+              "keeping all DiffDock variants.")
+        return df, None
+
+    col = "oracle_rmsd_le_2.0A_%"
+    osum = pd.read_csv(oracle_csv, index_col=0)
+    if col not in osum.columns:
+        print(f"  [best-diffdock-only] '{col}' missing from {oracle_csv} — "
+              "keeping all DiffDock variants.")
+        return df, None
+
+    scores = pd.to_numeric(osum[col], errors="coerce")
+    dd_present = sorted(methods[dd_mask].unique())
+    cand = {m: float(scores[m]) for m in dd_present
+            if m in scores.index and pd.notna(scores[m])}
+    if not cand:
+        print("  [best-diffdock-only] none of the present DiffDock variants have an "
+              f"oracle score in {oracle_csv} — keeping all DiffDock variants.")
+        return df, None
+
+    best = max(cand, key=cand.get)
+    keep = (~dd_mask) | (methods == best)
     return df[keep].reset_index(drop=True), best
 
 
@@ -639,7 +679,7 @@ def main() -> None:
     ap.add_argument("--top-n-bars", type=int, default=30)
     ap.add_argument("--split-equibind", action=argparse.BooleanOptionalAction,
                     default=True,
-                    help="Split EquiBind into fpocket/p2rank/unguided x smina/raw "
+                    help="Split EquiBind into fpocket/p2rank/unguided x raw/smina/gnina "
                          "x clamp variants from the CSV provenance columns "
                          "(filename fallback) (default: on).")
     ap.add_argument("--best-equibind-only", action="store_true",
@@ -650,8 +690,13 @@ def main() -> None:
                          "default --oracle-summary borrows the benchmark ranking.")
     ap.add_argument("--oracle-summary", type=Path, default=DEFAULT_ORACLE_SUMMARY,
                     help="oracle_summary.csv from posebusters_pose_comparison.py used "
-                         "to pick the best EquiBind variant for --best-equibind-only "
-                         "(default: %(default)s).")
+                         "to pick the best EquiBind/DiffDock variant for "
+                         "--best-equibind-only / --best-diffdock-only (default: %(default)s).")
+    ap.add_argument("--best-diffdock-only", action="store_true",
+                    help="Keep only the single best-performing DiffDock optimizer "
+                         "variant (raw/smina/gnina, highest oracle_rmsd_le_2.0A_%%, read "
+                         "from --oracle-summary) in all plots/CSVs, relabelled "
+                         "'DiffDock*'. AutoDock/EquiBind are unaffected.")
     args = ap.parse_args()
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -673,6 +718,14 @@ def main() -> None:
             _LABEL_OVERRIDES[best_eq] = "EquiBind*"
             print(f"best-equibind-only: '{best_eq}' is the top EquiBind variant by "
                   f"oracle_rmsd_le_2.0A_% — keeping only it (shown as 'EquiBind*').")
+
+    # Optionally restrict to the single best DiffDock optimizer variant.
+    if args.best_diffdock_only:
+        df, best_dd = select_best_diffdock(df, args.oracle_summary)
+        if best_dd:
+            _LABEL_OVERRIDES[best_dd] = "DiffDock*"
+            print(f"best-diffdock-only: '{best_dd}' is the top DiffDock variant by "
+                  f"oracle_rmsd_le_2.0A_% — keeping only it (shown as 'DiffDock*').")
 
     order = _method_order(df)
     colors = _method_colors(order)

@@ -96,11 +96,13 @@ class PandaMapConfig:
     poses_per_combo: int = 3
     render_images: bool = True
     split_equibind: bool = True
+    split_diffdock: bool = True
     use_dssp: bool = False
     num_workers: int | None = None
     overwrite: bool = False
-    # best-EquiBind filter (map only the single best EquiBind variant)
+    # best-EquiBind / best-DiffDock filter (map only the single best variant)
     best_equibind_only: bool = False
+    best_diffdock_only: bool = False
     oracle_summary: Path | None = None
     # restrict to an explicit '<PDBID>_<LIG>' id allow-list (one per line)
     ids_file: Path | None = None
@@ -135,10 +137,12 @@ def load_config(path: str | Path) -> PandaMapConfig:
         poses_per_combo=int(raw.get("poses_per_combo", 3)),
         render_images=bool(raw.get("render_images", True)),
         split_equibind=bool(raw.get("split_equibind", True)),
+        split_diffdock=bool(raw.get("split_diffdock", True)),
         use_dssp=bool(raw.get("use_dssp", False)),
         num_workers=raw.get("num_workers"),
         overwrite=bool(raw.get("overwrite", False)),
         best_equibind_only=bool(raw.get("best_equibind_only", False)),
+        best_diffdock_only=bool(raw.get("best_diffdock_only", False)),
         oracle_summary=_resolve(raw["oracle_summary"]) if raw.get("oracle_summary") else None,
         ids_file=_resolve(raw["ids_file"]) if raw.get("ids_file") else None,
     )
@@ -186,6 +190,32 @@ def equibind_label(row) -> str:
     return lab
 
 
+def classify_diffdock(row) -> str | None:
+    """Optimizer backend for a DiffDock pose: 'smina' | 'gnina' | None (raw).
+
+    Prefers the ``optimizer`` provenance column (written by run_posebusters from
+    each pose's ``optimized_<tool>/`` subfolder); falls back to the path in
+    ``pose_name``.
+    """
+    opt = _col(row, "optimizer")
+    if opt in ("smina", "gnina"):
+        return opt
+    if opt == "original":
+        return None
+    name = str(row.get("pose_name", "")).lower()
+    if "optimized_smina" in name:
+        return "smina"
+    if "optimized_gnina" in name:
+        return "gnina"
+    return None
+
+
+def diffdock_label(row) -> str:
+    """``diffdock`` (raw) | ``diffdock_smina`` | ``diffdock_gnina``."""
+    o = classify_diffdock(row)
+    return f"diffdock_{o}" if o else "diffdock"
+
+
 def parse_rank(method: str, pose_name: str) -> int:
     """Pose rank from the filename (1 = top). Unranked tools → 999."""
     name = Path(pose_name).name
@@ -203,7 +233,7 @@ def parse_rank(method: str, pose_name: str) -> int:
 # Pose loading
 # ──────────────────────────────────────────────────────────────────────────
 
-_PROVENANCE = ("pocket_source", "clamp_variant", "refine_variant", "smina_affinity", "pocket_id")
+_PROVENANCE = ("pocket_source", "clamp_variant", "refine_variant", "smina_affinity", "pocket_id", "optimizer")
 
 
 def _load_allowed_ids(path: Path) -> set[str]:
@@ -233,6 +263,8 @@ def load_poses_from_csv(cfg: PandaMapConfig) -> list[dict]:
         method = r["docking_method"]
         if cfg.split_equibind and method.startswith("equibind"):
             method = equibind_label(r)
+        elif cfg.split_diffdock and method.startswith("diffdock"):
+            method = diffdock_label(r)
         pose_file = str(r["pose_file"])
         pose_name = str(r.get("pose_name", Path(pose_file).stem))
         rec = {
@@ -279,6 +311,8 @@ def load_poses_from_dirs(cfg: PandaMapConfig) -> list[dict]:
                 method = p["method"]
                 if cfg.split_equibind and method.startswith("equibind"):
                     method = equibind_label(p)
+                elif cfg.split_diffdock and method.startswith("diffdock"):
+                    method = diffdock_label(p)
                 poses.append({
                     "method": method, "protein": p["protein"], "ligand": p["ligand"],
                     "pose_file": p["pose_file"], "pose_name": p["pose_name"],
@@ -287,6 +321,7 @@ def load_poses_from_dirs(cfg: PandaMapConfig) -> list[dict]:
                     "pocket_source": p.get("pocket_source"),
                     "clamp_variant": p.get("clamp_variant"),
                     "refine_variant": p.get("refine_variant"),
+                    "optimizer": p.get("optimizer"),
                 })
     return poses
 
@@ -340,6 +375,46 @@ def filter_best_equibind(poses: list[dict],
     best = max(cand, key=cand.get)
     kept = [p for p in poses
             if not str(p["method"]).startswith("equibind") or str(p["method"]) == best]
+    return kept, best
+
+
+def filter_best_diffdock(poses: list[dict],
+                         oracle_csv: Path | None) -> tuple[list[dict], str | None]:
+    """Keep non-DiffDock poses + only the single best DiffDock optimizer variant.
+
+    "Best" = the DiffDock variant (diffdock / diffdock_smina / diffdock_gnina)
+    with the highest ``oracle_rmsd_le_2.0A_%`` in *oracle_csv*. Mirrors
+    filter_best_equibind; AutoDock/EquiBind poses are always kept. Returns
+    (kept_poses, best_variant_key); ``None`` when no DiffDock variant is present,
+    the summary is missing/unreadable, or no present variant has an oracle score.
+    """
+    dd_present = sorted({str(p["method"]) for p in poses
+                         if str(p["method"]).startswith("diffdock")})
+    if not dd_present:
+        return poses, None
+    if not oracle_csv or not Path(oracle_csv).exists():
+        print(f"  [best-diffdock-only] oracle summary not found at {oracle_csv} — "
+              "keeping all DiffDock variants.")
+        return poses, None
+
+    col = "oracle_rmsd_le_2.0A_%"
+    osum = pd.read_csv(oracle_csv, index_col=0)
+    if col not in osum.columns:
+        print(f"  [best-diffdock-only] '{col}' missing from {oracle_csv} — "
+              "keeping all DiffDock variants.")
+        return poses, None
+
+    scores = pd.to_numeric(osum[col], errors="coerce")
+    cand = {m: float(scores[m]) for m in dd_present
+            if m in scores.index and pd.notna(scores[m])}
+    if not cand:
+        print("  [best-diffdock-only] none of the present DiffDock variants have an "
+              f"oracle score in {oracle_csv} — keeping all DiffDock variants.")
+        return poses, None
+
+    best = max(cand, key=cand.get)
+    kept = [p for p in poses
+            if not str(p["method"]).startswith("diffdock") or str(p["method"]) == best]
     return kept, best
 
 
@@ -577,6 +652,10 @@ def main() -> None:
                     help="Map only the single best EquiBind variant (highest "
                          "oracle_rmsd_le_2.0A_%%, from --oracle-summary) alongside "
                          "AutoDock/DiffDock. Overrides config 'best_equibind_only'.")
+    ap.add_argument("--best-diffdock-only", action="store_true", default=None,
+                    help="Map only the single best DiffDock optimizer variant "
+                         "(highest oracle_rmsd_le_2.0A_%%, from --oracle-summary) "
+                         "alongside AutoDock/EquiBind. Overrides config 'best_diffdock_only'.")
     ap.add_argument("--oracle-summary", type=Path, default=None,
                     help="oracle_summary.csv (from posebusters_pose_comparison.py) "
                          "used to rank EquiBind variants for --best-equibind-only. "
@@ -606,6 +685,8 @@ def main() -> None:
         cfg.overwrite = args.overwrite
     if args.best_equibind_only is not None:
         cfg.best_equibind_only = args.best_equibind_only
+    if args.best_diffdock_only is not None:
+        cfg.best_diffdock_only = args.best_diffdock_only
     if args.oracle_summary is not None:
         cfg.oracle_summary = args.oracle_summary.resolve()
     if args.ids_file is not None:
@@ -640,6 +721,15 @@ def main() -> None:
             print(f"best-equibind-only: keeping '{best_eq}' (top EquiBind by "
                   f"oracle_rmsd_le_2.0A_%); {before} → {len(poses)} poses. "
                   "Run the report with --best-equibind-only to label it 'EquiBind*'.")
+
+    if cfg.best_diffdock_only:
+        oracle_csv = cfg.oracle_summary or (cfg.work_dir / DEFAULT_ORACLE_SUMMARY)
+        before = len(poses)
+        poses, best_dd = filter_best_diffdock(poses, oracle_csv)
+        if best_dd:
+            print(f"best-diffdock-only: keeping '{best_dd}' (top DiffDock by "
+                  f"oracle_rmsd_le_2.0A_%); {before} → {len(poses)} poses. "
+                  "Run the report with --best-diffdock-only to label it 'DiffDock*'.")
 
     selected = select_top_n(poses, cfg.poses_per_combo)
     if args.limit_pairs:

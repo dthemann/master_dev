@@ -131,6 +131,10 @@ def pretty_method(m: str) -> str:
         return "AutoDock Vina"
     if m == "diffdock":
         return "DiffDock"
+    if m == "diffdock_smina":
+        return "DiffDock (smina-opt)"
+    if m == "diffdock_gnina":
+        return "DiffDock (gnina-opt)"
     if m == "crystal":
         return "Crystal (native)"
     if not m.startswith("equibind"):
@@ -148,8 +152,8 @@ def method_sort_key(m: str):
         return (-1, 0, 0)
     if m == "autodock":
         return (0, 0, 0)
-    if m == "diffdock":
-        return (1, 0, 0)
+    if m.startswith("diffdock"):
+        return (1, {"diffdock": 0, "diffdock_smina": 1, "diffdock_gnina": 2}.get(m, 3), 0)
     if m.startswith("equibind"):
         p, r, c = _eq_tokens(m)
         return (2, _POCKET_ORDER.get(p, 9), {None: 0, "raw": 1, "smina": 2}.get(r, 0))
@@ -212,6 +216,49 @@ def select_best_equibind(summary: pd.DataFrame, inter: pd.DataFrame,
     def _keep(df: pd.DataFrame) -> pd.DataFrame:
         m = df["method"].astype(str)
         return df[(~m.str.startswith("equibind")) | (m == best)].reset_index(drop=True)
+
+    return _keep(summary), _keep(inter), best
+
+
+def select_best_diffdock(summary: pd.DataFrame, inter: pd.DataFrame,
+                         oracle_csv: Path) -> tuple[pd.DataFrame, pd.DataFrame, str | None]:
+    """Drop every DiffDock optimizer variant except the single best-performing one.
+
+    "Best" = the DiffDock variant (diffdock / diffdock_smina / diffdock_gnina)
+    with the highest ``oracle_rmsd_le_2.0A_%`` in *oracle_csv*. Mirrors
+    select_best_equibind; AutoDock/EquiBind/crystal rows are always kept. Returns
+    the filtered (summary, inter) frames and the chosen variant key, or the inputs
+    unchanged with ``None`` when no DiffDock variant is present, the summary is
+    missing/unreadable, or no present variant has an oracle score."""
+    dd_present = sorted({m for m in summary["method"].astype(str).unique()
+                         if m.startswith("diffdock")})
+    if not dd_present:
+        return summary, inter, None
+    if not oracle_csv or not Path(oracle_csv).exists():
+        print(f"  [best-diffdock-only] oracle summary not found at {oracle_csv} — "
+              "keeping all DiffDock variants.")
+        return summary, inter, None
+
+    col = "oracle_rmsd_le_2.0A_%"
+    osum = pd.read_csv(oracle_csv, index_col=0)
+    if col not in osum.columns:
+        print(f"  [best-diffdock-only] '{col}' missing from {oracle_csv} — "
+              "keeping all DiffDock variants.")
+        return summary, inter, None
+
+    scores = pd.to_numeric(osum[col], errors="coerce")
+    cand = {m: float(scores[m]) for m in dd_present
+            if m in scores.index and pd.notna(scores[m])}
+    if not cand:
+        print("  [best-diffdock-only] none of the present DiffDock variants have an "
+              f"oracle score in {oracle_csv} — keeping all DiffDock variants.")
+        return summary, inter, None
+
+    best = max(cand, key=cand.get)
+
+    def _keep(df: pd.DataFrame) -> pd.DataFrame:
+        m = df["method"].astype(str)
+        return df[(~m.str.startswith("diffdock")) | (m == best)].reset_index(drop=True)
 
     return _keep(summary), _keep(inter), best
 
@@ -568,6 +615,12 @@ def main() -> None:
                          "in all charts/CSVs, relabelled 'EquiBind*'. "
                          "AutoDock/DiffDock/crystal are unaffected. "
                          "Overrides config 'best_equibind_only'.")
+    ap.add_argument("--best-diffdock-only", action="store_true", default=None,
+                    help="Keep only the single best-performing DiffDock optimizer "
+                         "variant (highest oracle_rmsd_le_2.0A_%%, read from "
+                         "--oracle-summary) in all charts/CSVs, relabelled "
+                         "'DiffDock*'. AutoDock/EquiBind/crystal are unaffected. "
+                         "Overrides config 'best_diffdock_only'.")
     ap.add_argument("--oracle-summary", type=Path, default=None,
                     help="oracle_summary.csv from posebusters_pose_comparison.py, used "
                          "to pick the best EquiBind variant for --best-equibind-only. "
@@ -593,6 +646,8 @@ def main() -> None:
                      or Path("Data/PoseBuster Benchmark Set"))
     best_equibind_only = (args.best_equibind_only if args.best_equibind_only is not None
                           else (cfg.best_equibind_only if cfg else False))
+    best_diffdock_only = (args.best_diffdock_only if args.best_diffdock_only is not None
+                          else (getattr(cfg, "best_diffdock_only", False) if cfg else False))
     oracle_summary = (args.oracle_summary or (cfg.oracle_summary if cfg else None)
                       or DEFAULT_ORACLE_SUMMARY)
     ids_file = args.ids_file or (cfg.ids_file if cfg else None)
@@ -626,6 +681,14 @@ def main() -> None:
             _LABEL_OVERRIDES[best_eq] = "EquiBind*"
             print(f"best-equibind-only: '{best_eq}' is the top EquiBind variant by "
                   f"oracle_rmsd_le_2.0A_% — keeping only it (shown as 'EquiBind*').")
+
+    # Optionally restrict every chart/CSV to the single best DiffDock variant.
+    if best_diffdock_only:
+        summary, inter, best_dd = select_best_diffdock(summary, inter, oracle_summary)
+        if best_dd:
+            _LABEL_OVERRIDES[best_dd] = "DiffDock*"
+            print(f"best-diffdock-only: '{best_dd}' is the top DiffDock variant by "
+                  f"oracle_rmsd_le_2.0A_% — keeping only it (shown as 'DiffDock*').")
 
     order = ordered_methods(summary["method"].unique())
     print(f"Loaded {len(summary)} poses, {len(inter)} interaction rows, "
