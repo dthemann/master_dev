@@ -9,10 +9,16 @@ The reference axes are therefore different:
      poses from all tools (AutoDock Vina, DiffDock, EquiBind) by 3D centroid to find
      the candidate binding sites the tools collectively propose.
   2. CROSS-TOOL HOMOGENEITY — do the tools agree on *where* the ligand binds? For
-     each pair we take each tool's consensus site (its largest cluster's centroid)
-     and measure the pairwise inter-tool distances; small = the tools converge.
+     each pair we take each tool's own site (its largest cluster's centroid) and
+     measure the pairwise inter-tool distances; small = the tools converge. The
+     pair's **consensus site** is the geometric median of those per-tool sites
+     (one point per tool), NOT the largest cluster's centre — so a high-throughput
+     tool can no longer pull the reference toward wherever it sampled most. With
+     only one tool present the consensus falls back to that tool's largest cluster
+     (flagged ``consensus_source='single_tool'``).
   3. POSEBUSTERS SURVIVORS vs FAILURES — are the poses that pass PoseBusters
      spatially different from those that fail (tighter, nearer the consensus)?
+     Evaluated on multi-tool pairs only (where the consensus is throughput-robust).
   4. DISTRIBUTION ACROSS THE ORAI MD SIMULATIONS — the four receptors are MD
      snapshots of the same channel (START-Fr0 + Fr300/400/499). We compare per-frame
      validity, cluster tightness and tool-agreement, and (with a coordinate-frame
@@ -57,7 +63,8 @@ if str(_HERE) not in sys.path:
 # Reuse the clustering machinery from the crystal-pose report and the pocket parsers.
 from pose_cluster_crystal_pocket_report import (   # noqa: E402
     load_heavy_atom_mol, centroid_from_mol, _extract_centroid,
-    SimpleKMedoids, _select_k, _centroid_dm, pockets_from_labels, _dist,
+    SimpleKMedoids, _select_k, cluster_sites, _centroid_dm,
+    pockets_from_labels, _dist,
 )
 try:
     from pocket_comparison_report import _label_panels  # noqa: E402
@@ -182,8 +189,32 @@ def frame_axis(frame: str, fpocket_dir: Path) -> Optional[Tuple[np.ndarray, np.n
 # Per-(frame, ligand) analysis
 # ════════════════════════════════════════════════════════════════════════
 
+def _geometric_median(pts: np.ndarray, n_iter: int = 64, eps: float = 1e-6) -> np.ndarray:
+    """Weiszfeld geometric median — a translation-robust centre that, unlike a
+    pose-weighted mean, gives every input point equal pull (here: one point per
+    tool). For <=2 points it is the mean/midpoint."""
+    pts = np.asarray(pts, dtype=float)
+    if len(pts) <= 2:
+        return pts.mean(axis=0)
+    g = pts.mean(axis=0)
+    for _ in range(n_iter):
+        d = np.linalg.norm(pts - g, axis=1)
+        nz = d > eps
+        if not nz.any():
+            break
+        w = 1.0 / d[nz]
+        g_new = (pts[nz] * w[:, None]).sum(axis=0) / w.sum()
+        if np.linalg.norm(g_new - g) < eps:
+            g = g_new
+            break
+        g = g_new
+    return g
+
+
 def analyze_pair(frame: str, ligand: str, sub: pd.DataFrame, thr: float,
-                 axis: Optional[Tuple[np.ndarray, np.ndarray]]) -> Tuple[dict, List[dict]]:
+                 axis: Optional[Tuple[np.ndarray, np.ndarray]],
+                 site_method: str = "threshold",
+                 pocket_radius: float = 8.0) -> Tuple[dict, List[dict]]:
     C = np.vstack(sub["_cent"].to_numpy())
     tools = sub["tool"].to_numpy()
     pbv = sub["pb_valid"].to_numpy()
@@ -192,24 +223,25 @@ def analyze_pair(frame: str, ligand: str, sub: pd.DataFrame, thr: float,
     if n < 2:
         return {"frame": frame, "ligand": ligand, "n_poses": n, "skipped": True}, []
 
+    # k=1-capable site clustering; largest cluster kept only as a COUNT-concentration
+    # diagnostic (dominant_cluster_frac), NOT as the consensus reference.
     dm = _centroid_dm(C)
-    labels, k, sil = _select_k(dm, "kmedoids")
-    pockets = pockets_from_labels(C, labels, list(tools))
-    big = pockets[0]                                   # largest cluster
-    consensus = big["center"]
+    labels, k, sil = cluster_sites(dm, C, site_method, pocket_radius)
+    pockets = pockets_from_labels(C, labels, list(tools))   # size-ranked
+    big = pockets[0]                                   # largest cluster (count only)
     dom_frac = big["size"] / n
 
-    # per-tool consensus site (largest cluster of that tool's poses)
+    # per-tool site (largest cluster of that tool's poses)
     tool_site: Dict[str, Optional[np.ndarray]] = {}
     tool_spread: Dict[str, float] = {}
     for t in set(tools):
         ti = np.where(tools == t)[0]
         ct = C[ti]
         tool_spread[t] = float(np.linalg.norm(ct - ct.mean(0), axis=1).mean()) if len(ct) > 1 else 0.0
-        if len(ct) < 3:
+        if len(ct) < 2:
             tool_site[t] = ct.mean(0)
         else:
-            tl, _, _ = _select_k(_centroid_dm(ct), "kmedoids")
+            tl, _, _ = cluster_sites(_centroid_dm(ct), ct, site_method, pocket_radius)
             lab = Counter(tl.tolist()).most_common(1)[0][0]
             tool_site[t] = ct[np.where(tl == lab)[0]].mean(0)
 
@@ -221,7 +253,17 @@ def analyze_pair(frame: str, ligand: str, sub: pd.DataFrame, thr: float,
             inter[f"{a[:2]}_{b[:2]}_dist"] = round(_dist(tool_site[a], tool_site[b]), 3)
     inter_vals = list(inter.values())
 
-    # dist of each pose to the global consensus (for outliers + pb comparison + depth)
+    # CONSENSUS SITE = geometric median of the per-tool sites (one point per tool,
+    # throughput-invariant). Single-tool pairs fall back to the largest cluster.
+    if len(present) >= 2:
+        consensus = _geometric_median(np.vstack([tool_site[t] for t in present]))
+        consensus_source = "tool_median"
+    else:
+        consensus = big["center"]
+        consensus_source = "single_tool"
+    consensus_multitool = consensus_source == "tool_median"
+
+    # dist of each pose to the consensus (for outliers + pb comparison + depth)
     pose_rows = []
     dists = np.linalg.norm(C - consensus, axis=1)
     if axis is not None:
@@ -236,6 +278,7 @@ def analyze_pair(frame: str, ligand: str, sub: pd.DataFrame, thr: float,
             "cluster": int(labels[i]), "dist_to_consensus": round(float(dists[i]), 3),
             "axis_depth": (round(float(depth[i]), 3) if depth[i] == depth[i] else np.nan),
             "is_outlier": bool(dists[i] > thr * 2),
+            "consensus_multitool": bool(consensus_multitool),
             "pose_file": files[i],
         })
 
@@ -247,7 +290,9 @@ def analyze_pair(frame: str, ligand: str, sub: pd.DataFrame, thr: float,
         "frame": frame, "ligand": ligand, "skipped": False,
         "n_poses": n, "n_tools": len(present), "tools": ",".join(present),
         "n_clusters": len(pockets), "silhouette": round(sil, 3) if sil == sil else np.nan,
-        "dominant_cluster_frac": round(dom_frac, 3),
+        "dominant_cluster_frac": round(dom_frac, 3),   # largest-cluster count share (diagnostic only)
+        "consensus_source": consensus_source,
+        "consensus_multitool": bool(consensus_multitool),
         "consensus_x": round(float(consensus[0]), 2),
         "consensus_y": round(float(consensus[1]), 2),
         "consensus_z": round(float(consensus[2]), 2),
@@ -331,8 +376,12 @@ def fig_overview(pairs: pd.DataFrame, poses: pd.DataFrame, thr: float, out_dir: 
     h1, l1 = ax[0, 2].get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels()
     ax[0, 2].legend(h1 + h2, l1 + l2, fontsize=8, loc="upper right")
 
-    # (D) PoseBusters survivors vs failures — distance to the pair consensus
+    # (D) PoseBusters survivors vs failures — distance to the pair consensus.
+    # Multi-tool pairs only: for single-tool pairs the consensus is just that
+    # tool's own cluster centre, so "nearer the consensus" would be circular.
     dd = poses[poses["pb_valid"].notna()]
+    if "consensus_multitool" in dd:
+        dd = dd[dd["consensus_multitool"] == True]  # noqa: E712
     vv = pd.to_numeric(dd[dd["pb_valid"] == True]["dist_to_consensus"], errors="coerce").dropna()  # noqa: E712
     iv = pd.to_numeric(dd[dd["pb_valid"] == False]["dist_to_consensus"], errors="coerce").dropna()  # noqa: E712
     bins = np.linspace(0, 30, 31)
@@ -342,7 +391,7 @@ def fig_overview(pairs: pd.DataFrame, poses: pd.DataFrame, thr: float, out_dir: 
     if len(iv):
         ax[1, 0].hist(iv, bins=bins, density=True, alpha=0.55, color="#D95F0E",
                       label=f"fails PoseBusters (med {iv.median():.1f} Å)")
-    ax[1, 0].set_title("Are valid poses nearer the consensus site?")
+    ax[1, 0].set_title("Are valid poses nearer the consensus site?\n(multi-tool pairs)")
     ax[1, 0].set_xlabel("Pose distance to its pair's consensus site (Å)")
     ax[1, 0].set_ylabel("Probability density"); ax[1, 0].legend(fontsize=8)
 
@@ -540,6 +589,12 @@ def main(argv=None) -> int:
     ap.add_argument("--ids-file", default="Data/PoseBuster Benchmark Set/posebusters_pdb_ccd_ids.txt")
     ap.add_argument("--match-thr", type=float, default=5.0,
                     help="Å threshold for tool agreement / pocket match.")
+    ap.add_argument("--site-cluster", choices=("threshold", "gap", "silhouette"),
+                    default="threshold",
+                    help="Site clustering: 'threshold' (default, complete-linkage cut "
+                         "at --pocket-radius, k>=1) | 'gap' | 'silhouette' (legacy).")
+    ap.add_argument("--pocket-radius", type=float, default=8.0,
+                    help="Distance-threshold (Å) for the 'threshold' site cut.")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--limit", type=int, default=0, help="Cap #pairs (smoke test).")
     ap.add_argument("--out-dir", default="posebusters_results/orai_benchmark/pose_clusters")
@@ -579,7 +634,8 @@ def main(argv=None) -> int:
     for (frame, ligand), sub in groups:
         if frame not in axis_cache:
             axis_cache[frame] = frame_axis(frame, fp_dir)
-        rec, prows = analyze_pair(frame, ligand, sub, args.match_thr, axis_cache[frame])
+        rec, prows = analyze_pair(frame, ligand, sub, args.match_thr, axis_cache[frame],
+                                  args.site_cluster, args.pocket_radius)
         records.append(rec)
         if prows:
             # attach centroids for the 3D example figure
@@ -631,10 +687,12 @@ def main(argv=None) -> int:
           f"mean dominant-cluster fraction: {pairs['dominant_cluster_frac'].mean():.0%}")
 
     pk = poses[poses["pb_valid"].notna()]
+    if "consensus_multitool" in pk:                    # throughput-robust pairs only
+        pk = pk[pk["consensus_multitool"] == True]     # noqa: E712
     if len(pk):
         mv = pd.to_numeric(pk[pk.pb_valid == True]["dist_to_consensus"], errors="coerce").median()  # noqa: E712
         mi = pd.to_numeric(pk[pk.pb_valid == False]["dist_to_consensus"], errors="coerce").median()  # noqa: E712
-        print(f"  PoseBusters: valid poses sit {mv:.1f} Å from consensus vs "
+        print(f"  PoseBusters (multi-tool pairs): valid poses sit {mv:.1f} Å from consensus vs "
               f"{mi:.1f} Å for invalid (median) → "
               f"{'valid are tighter' if mv < mi else 'no tightness advantage'}")
 

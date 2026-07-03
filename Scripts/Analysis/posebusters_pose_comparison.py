@@ -102,6 +102,15 @@ Output plots (in --out-dir):
                                        unranked EquiBind), drop RMSD > 2 Å then each
                                        canonical PoseBusters test in turn — each red bar
                                        is the poses that test removes; green = passing all
+    18_topn_within_thresholds.png    — Fine-grained RMSD sweep (ranking tools): how many
+                                       of the top-N ranked poses of AutoDock Vina / DiffDock
+                                       land within 1, 1.25, 1.5 … Å of the crystal
+                                       (--fine-rmsd-thresholds). Two panels — (A) % of
+                                       complexes whose rank-1 pose (solid) / any of the
+                                       top-N poses (best-of-top-N, dashed) is within each
+                                       threshold; (B) % of ALL pooled top-N ranked poses
+                                       within each threshold. Denser than the 2 Å success
+                                       line so the sub-2 Å accuracy of the top poses shows.
 
 PB-valid definition: a pose must pass EVERY canonical PoseBusters test
     (PB_CRITICAL_CHECKS = run_posebusters.CANONICAL_TEST_COLUMNS — the full 20-test
@@ -137,6 +146,11 @@ Output CSVs:
                                 in-pocket context numbers, n_complexes, pocket_cutoff_A)
     pb_test_waterfall.csv     — Per method × cascade step: poses_removed / remaining /
                                 remaining_pct for the PoseBusters failure waterfall
+    topn_within_thresholds.csv — Per ranking tool × RMSD threshold (fine grid): how many
+                                of the top-N ranked poses land within it — top1_within_%,
+                                best_topN_within_% (any of top-N), pose_within_% (of all
+                                pooled top-N poses), each with its raw count + n_pairs /
+                                n_poses_topN denominators
 
 Per-pose cache (so re-runs that only change --top-n stay cheap)
     The heavy per-pose scoring is written to per_pose_metrics.csv alongside a
@@ -272,6 +286,12 @@ _DEFAULT_VDW = 1.70
 CLASH_SCALE = 0.75
 CONTACT_CUTOFF = 4.0
 RMSD_THRESHOLDS = (1.0, 2.0, 5.0)
+# Fine-grained RMSD grid (Å) for the "how close is the top-ranked pose" sweep —
+# a denser set than RMSD_THRESHOLDS, stepped by 0.25 Å around the canonical 2 Å
+# docking-success line, so the sub-2 Å accuracy of the ranking tools' top poses
+# is resolved (how many of the top-N ranked poses land within 1, 1.25, 1.5 … Å).
+# Overridable via --fine-rmsd-thresholds.
+FINE_RMSD_THRESHOLDS = (1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0)
 CENTROID_THRESHOLD = 4.0
 # A pose counts as being in the experimentally validated pocket if its centroid is
 # within this distance (Å) of the crystal ligand centroid. Looser than
@@ -1129,6 +1149,70 @@ def aggregate_by_rank(df: pd.DataFrame, top_n: int) -> pd.DataFrame:
     return pd.DataFrame(rows).round(2)
 
 
+def aggregate_topn_within_thresholds(
+        df: pd.DataFrame, top_n: int,
+        thresholds: tuple[float, ...] = FINE_RMSD_THRESHOLDS) -> pd.DataFrame:
+    """Fine-grained RMSD sweep of the top-ranked poses (ranking tools only).
+
+    Answers "how many of the top-N ranked poses of AutoDock Vina / DiffDock are
+    within 1, 1.25, 1.5 … Å of the crystal ligand" from three complementary
+    angles. For each ranking tool × threshold t (long-form, one row each):
+
+      top1_within_%       — % of the tool's complexes whose RANK-1 pose is within
+                            t Å (the everyday "did the top pick land close?")
+      best_topN_within_%  — % of complexes where ANY of the first ``top_n`` ranked
+                            poses is within t (best-of-top-N / oracle within the
+                            ranked set — the ceiling a perfect rescorer could hit)
+      pose_within_%       — % of ALL pooled rank ≤ N poses within t (the literal
+                            "how many of the n top-ranked poses are within t")
+
+    Denominators: the two complex-level columns use the tool's full pair count
+    (``n_pairs`` — every complex it produced a pose for, matching
+    ``aggregate_by_rank``); the pose-level column uses the pooled top-N pose count
+    (``n_poses_topN``). RMSD is the symmetry-corrected heavy-atom ``rmsd`` (no
+    superposition), consistent with the rest of Part B. DiffDock's duplicated top
+    pose is de-duplicated first (see ``_dedup_ranked_poses``) so it isn't counted
+    twice. Raw counts accompany each percentage for direct "how many" reporting.
+    """
+    thresholds = tuple(thresholds)
+    rows = []
+    for method, sub in df[df["method"].isin(RANKING_TOOLS)].groupby("method"):
+        sub = sub.copy()
+        sub["rank"] = pd.to_numeric(sub["rank"], errors="coerce")
+        sub = _dedup_ranked_poses(sub)          # collapse DiffDock's duplicate top pose
+        n_pairs = sub.groupby(["protein", "ligand"]).ngroups
+
+        ranked = sub[sub["rank"] <= top_n]
+        top1 = (ranked[ranked["rank"] == 1]
+                .groupby(["protein", "ligand"]).first().reset_index())
+        top1_rmsd = top1["rmsd"].dropna()
+
+        rk_valid = ranked.dropna(subset=["rmsd"])
+        best_topn = (rk_valid.groupby(["protein", "ligand"])["rmsd"].min()
+                     if len(rk_valid) else pd.Series(dtype=float))
+
+        pose_rmsd = ranked["rmsd"].dropna()
+        n_poses = len(pose_rmsd)
+
+        for t in thresholds:
+            top1_n = int((top1_rmsd <= t).sum())
+            best_n = int((best_topn <= t).sum())
+            pose_n = int((pose_rmsd <= t).sum())
+            rows.append({
+                "method": method,
+                "rmsd_threshold_A": float(t),
+                "n_pairs": n_pairs,
+                "n_poses_topN": n_poses,
+                "top1_within_n": top1_n,
+                "top1_within_%": (100.0 * top1_n / n_pairs if n_pairs else float("nan")),
+                "best_topN_within_n": best_n,
+                "best_topN_within_%": (100.0 * best_n / n_pairs if n_pairs else float("nan")),
+                "pose_within_n": pose_n,
+                "pose_within_%": (100.0 * pose_n / n_poses if n_poses else float("nan")),
+            })
+    return pd.DataFrame(rows).round(2)
+
+
 def _select_best_equibind(df: pd.DataFrame) -> tuple[pd.DataFrame, str | None]:
     """Keep non-EquiBind methods plus only the single best EquiBind variant.
 
@@ -1776,6 +1860,75 @@ def plot_cumulative_oracle_curve(rank_df: pd.DataFrame, top_n: int, out: Path) -
                      "(gap to 100 % = poses the method cannot produce within top-k)"))
     ax.legend(); ax.grid(alpha=0.3)
     fig.tight_layout(); fig.savefig(out, dpi=160); plt.close(fig)
+
+
+def plot_topn_within_thresholds(within_df: pd.DataFrame, top_n: int,
+                                thresholds: tuple[float, ...], out: Path) -> None:
+    """How many of the top-ranked poses land within a fine RMSD grid.
+
+    Ranking tools only (AutoDock Vina / DiffDock), two panels sharing the x-axis
+    (RMSD threshold t ∈ {1, 1.25, 1.5, …} Å):
+      (A) complex level — % of complexes whose RANK-1 pose is within t (solid) and
+          % with ANY of the first ``top_n`` ranked poses within t (best-of-top-N,
+          dashed). The vertical gap between a tool's two curves is the accuracy its
+          ranking leaves on the table below that threshold.
+      (B) pose level — % of ALL the tool's pooled top-N ranked poses within t, the
+          literal "how many of the n top-ranked poses are within t Å".
+    Dotted vertical line marks the 2 Å canonical docking-success threshold.
+    """
+    if within_df is None or within_df.empty:
+        return
+    methods = sorted(m for m in within_df["method"].unique() if m in RANKING_TOOLS)
+    if not methods:
+        return
+    thr = [float(t) for t in thresholds]
+
+    fig, (axA, axB) = plt.subplots(1, 2, figsize=(13.5, 5.8))
+    for method in methods:
+        sub = within_df[within_df["method"] == method].sort_values("rmsd_threshold_A")
+        if sub.empty:
+            continue
+        color = TOOL_COLORS.get(method, "grey")
+        label = TOOL_LABEL.get(method, method)
+        n_pairs = int(sub["n_pairs"].iloc[0])
+        n_poses = int(sub["n_poses_topN"].iloc[0])
+        axA.plot(sub["rmsd_threshold_A"], sub["top1_within_%"],
+                 marker="o", lw=2, color=color,
+                 label=f"{label} — top-1 (n={n_pairs})")
+        axA.plot(sub["rmsd_threshold_A"], sub["best_topN_within_%"],
+                 marker="s", ls="--", lw=2, color=color, alpha=0.75,
+                 label=f"{label} — best of top-{top_n}")
+        axB.plot(sub["rmsd_threshold_A"], sub["pose_within_%"],
+                 marker="o", lw=2, color=color,
+                 label=f"{label} (≤{n_poses} poses)")
+
+    for ax in (axA, axB):
+        ax.axvline(2.0, color="grey", ls=":", alpha=0.7, lw=1.2)
+        ax.set_xticks(thr)
+        ax.set_xticklabels([f"{t:g}" for t in thr], rotation=45, ha="right")
+        ax.set_xlabel("RMSD threshold vs crystal ligand (Å)")
+        ax.set_ylim(0, 100)
+        ax.grid(alpha=0.3)
+    axA.set_ylabel("% of complexes with a pose within the threshold")
+    axA.set_title("Top-ranked pose accuracy vs distance threshold\n"
+                  "(rank-1 solid, best-of-top-N dashed)")
+    axA.legend(fontsize=8)
+    axB.set_ylabel("% of the top-N ranked poses within the threshold")
+    axB.set_title(f"How many of the top-{top_n} ranked poses are within t Å")
+    axB.legend(fontsize=8)
+
+    _label_panels([axA, axB])
+    fig.suptitle(_vt(f"Top-ranked pose accuracy across {thr[0]:g}–{thr[-1]:g} Å "
+                     f"(ranking tools, top-{top_n})"), fontsize=13, fontweight="bold")
+    footnote = "\n".join([
+        "Denominators — (A) top-1 & best-of-top-N are % of each tool's complexes (n pairs); (B) is % of that tool's pooled rank ≤ N poses.",
+        "Best-of-top-N = the closest of the tool's first N ranked poses per complex (the oracle within the ranked set). Dotted line = 2 Å,",
+        "the canonical docking-success threshold. RMSD = symmetry-corrected heavy-atom RMSD vs the crystal ligand, no superposition.",
+    ])
+    fig.text(0.5, 0.015, footnote, ha="center", va="bottom", fontsize=7.5,
+             color="0.30", linespacing=1.35)
+    fig.tight_layout(rect=(0, 0.11, 1, 0.95))
+    fig.savefig(out, dpi=160); plt.close(fig)
 
 
 def plot_top1_vs_oracle_scatter(df: pd.DataFrame, out: Path) -> None:
@@ -2841,6 +2994,14 @@ def _write_per_pose_cache(args, df: pd.DataFrame, sig: dict) -> Path:
 # ───────────────────────────────────────────────────────────────────
 
 
+def _parse_threshold_list(s: str) -> tuple[float, ...]:
+    """Parse a comma/space-separated list of RMSD thresholds into a sorted tuple."""
+    vals = tuple(sorted({float(x) for x in str(s).replace(",", " ").split() if x}))
+    if not vals:
+        raise argparse.ArgumentTypeError("no thresholds parsed from %r" % s)
+    return vals
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--pb-csv", type=Path,
@@ -2861,6 +3022,12 @@ def main() -> None:
     ap.add_argument("--top-n", type=int, default=DEFAULT_TOP_N,
                     help="Ranked poses per pair to include in ranking analysis "
                          "(default %(default)s).")
+    ap.add_argument("--fine-rmsd-thresholds", type=_parse_threshold_list,
+                    default=FINE_RMSD_THRESHOLDS,
+                    help="Comma/space-separated RMSD thresholds (Å) for the "
+                         "top-ranked-pose within-distance sweep (figure 18 / "
+                         "topn_within_thresholds.csv). Default: "
+                         + ",".join(f"{t:g}" for t in FINE_RMSD_THRESHOLDS) + ".")
     ap.add_argument("--force", action="store_true",
                     help="Force a full recompute of the per-pose metrics even when "
                          "a cached per_pose_metrics.csv matching the inputs exists. "
@@ -3064,6 +3231,20 @@ def main() -> None:
         plot_oracle_rank_distribution(odist, args.top_n,
                                       args.out_dir / "15_oracle_rank_distribution.png")
         print("  wrote oracle-rank distribution → oracle_rank_distribution.csv")
+
+        # How many of the top-N ranked poses land within 1, 1.25, 1.5 … Å?
+        within_df = aggregate_topn_within_thresholds(
+            df, args.top_n, args.fine_rmsd_thresholds)
+        if not within_df.empty:
+            within_df.to_csv(args.out_dir / "topn_within_thresholds.csv", index=False)
+            plot_topn_within_thresholds(within_df, args.top_n,
+                                        args.fine_rmsd_thresholds,
+                                        args.out_dir / "18_topn_within_thresholds.png")
+            thr_str = ", ".join(f"{t:g}" for t in args.fine_rmsd_thresholds)
+            print(f"\nTop-ranked poses within RMSD thresholds ({thr_str} Å):")
+            print(within_df.pivot_table(index="method", columns="rmsd_threshold_A",
+                                        values="top1_within_%").to_string())
+            print("  wrote within-threshold sweep → topn_within_thresholds.csv")
     else:
         print("  Skipping ranking plots (no ranking tool data found).")
 

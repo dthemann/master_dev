@@ -185,25 +185,347 @@ def _centroid_dm(cents: np.ndarray) -> np.ndarray:
     return squareform(pdist(cents, metric="euclidean"))
 
 
-def pockets_from_labels(cents: np.ndarray, labels: np.ndarray,
-                        tools: List[str]) -> List[dict]:
-    """Cluster -> candidate-pocket records, ranked by size (n poses)."""
+def _safe_silhouette(dm: np.ndarray, labels: np.ndarray) -> float:
+    """Silhouette only where it is defined (2 <= k <= n-1); NaN otherwise (e.g. k=1)."""
+    from sklearn.metrics import silhouette_score
+    k = len(set(labels.tolist()))
+    if k < 2 or k >= len(labels):
+        return float("nan")
+    try:
+        return float(silhouette_score(dm, labels, metric="precomputed"))
+    except Exception:
+        return float("nan")
+
+
+def _gap_statistic(dm: np.ndarray, cents: np.ndarray, max_k: int = 10,
+                   n_ref: int = 10, seed: int = 0) -> int:
+    """Tibshirani gap statistic; returns the chosen k, WHICH MAY BE 1.
+
+    Within-cluster dispersion W_k uses the sum of intra-cluster pairwise
+    distances / (2 n_c); the null is a uniform cloud in the centroid bounding
+    box. Picks the smallest k with Gap(k) >= Gap(k+1) - s_{k+1}.
+    """
+    n = cents.shape[0]
+
+    def _Wk(d: np.ndarray, lab: np.ndarray) -> float:
+        w = 0.0
+        for l in set(lab.tolist()):
+            idx = np.where(lab == l)[0]
+            if len(idx) > 1:
+                sub = d[np.ix_(idx, idx)]
+                w += float(sub.sum()) / (2.0 * len(idx))
+        return w
+
+    ks = list(range(1, min(max_k, n - 1) + 1))
+    if len(ks) <= 1:
+        return 1
+    logW = []
+    for k in ks:
+        lab = np.zeros(n, dtype=int) if k == 1 else SimpleKMedoids(n_clusters=k).fit(dm).labels_
+        logW.append(np.log(_Wk(dm, lab) + 1e-12))
+    lo, hi = cents.min(axis=0), cents.max(axis=0)
+    rng = np.random.RandomState(seed)
+    ref = np.zeros((n_ref, len(ks)))
+    for b in range(n_ref):
+        rc = rng.uniform(lo, hi, size=cents.shape)
+        rdm = _centroid_dm(rc)
+        for ik, k in enumerate(ks):
+            lab = np.zeros(n, dtype=int) if k == 1 else SimpleKMedoids(n_clusters=k).fit(rdm).labels_
+            ref[b, ik] = np.log(_Wk(rdm, lab) + 1e-12)
+    gap = ref.mean(axis=0) - np.asarray(logW)
+    sk = ref.std(axis=0) * np.sqrt(1.0 + 1.0 / n_ref)
+    for ik in range(len(ks) - 1):
+        if gap[ik] >= gap[ik + 1] - sk[ik + 1]:
+            return ks[ik]
+    return ks[-1]
+
+
+def cluster_sites(dm: np.ndarray, cents: np.ndarray, method: str = "threshold",
+                  pocket_radius: float = 8.0, max_k: int = 10):
+    """Partition poses into spatial sites, ALLOWING k=1 (unlike _select_k).
+
+    Returns (labels, k, silhouette-or-NaN).
+      * 'threshold'  : complete-linkage cut at ``pocket_radius`` — k is discovered
+                       (k>=1), every cluster's max internal spread <= pocket_radius,
+                       deterministic, encodes the physical pocket scale.
+      * 'gap'        : gap statistic picks k (may be 1), then KMedoids at that k.
+      * 'silhouette' : legacy silhouette-max KMedoids (never returns k=1).
+    """
+    n = dm.shape[0]
+    if n < 2:
+        return np.zeros(n, dtype=int), 1, float("nan")
+    if method == "silhouette":
+        return _select_k(dm, "kmedoids", max_k)
+    if method == "gap":
+        k = _gap_statistic(dm, cents, max_k)
+        if k <= 1:
+            return np.zeros(n, dtype=int), 1, float("nan")
+        labels = SimpleKMedoids(n_clusters=k).fit(dm).labels_
+        _, labels = np.unique(labels, return_inverse=True)
+        return labels, len(set(labels.tolist())), _safe_silhouette(dm, labels)
+    # default: distance-threshold complete-linkage cut (k discovered, k>=1)
+    from sklearn.cluster import AgglomerativeClustering
+    labels = AgglomerativeClustering(
+        n_clusters=None, distance_threshold=pocket_radius,
+        metric="precomputed", linkage="complete").fit_predict(dm)
+    _, labels = np.unique(labels, return_inverse=True)      # contiguous 0..k-1
+    return labels, len(set(labels.tolist())), _safe_silhouette(dm, labels)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Placement-aware (in-place RMSD) binding-MODE clustering
+# ════════════════════════════════════════════════════════════════════════
+# The centroid axis answers WHERE a pose sits; this answers HOW it sits. In-place
+# symmetry-aware RMSD (rdMolAlign.CalcRMS — NO re-superposition) folds translation +
+# orientation + conformation into one Å distance, so two poses in different pockets,
+# or flipped 180° in the same pocket, are correctly far apart (GetBestRMS would call
+# them identical). All poses are the same ligand in the same receptor frame, so the
+# raw coordinates are directly comparable and CalcRMS always applies.
+
+def _inplace_rmsd(a: Optional[Chem.Mol], b: Optional[Chem.Mol]) -> float:
+    if a is None or b is None:
+        return float("nan")
+    try:
+        return float(rdMolAlign.CalcRMS(a, b))          # in-place, symmetry-aware
+    except Exception:
+        try:                                            # atom-count mismatch fallback
+            return float(np.linalg.norm(centroid_from_mol(a) - centroid_from_mol(b)))
+        except Exception:
+            return float("nan")
+
+
+def _inplace_rmsd_dm(mols: List[Optional[Chem.Mol]]) -> np.ndarray:
+    n = len(mols)
+    dm = np.zeros((n, n))
+    for i in range(n):
+        for j in range(i + 1, n):
+            dm[i, j] = dm[j, i] = _inplace_rmsd(mols[i], mols[j])
+    return dm
+
+
+def cluster_modes(rmsd_dm: np.ndarray, thr: float = 2.0):
+    """Placement-aware binding-mode partition: complete-linkage cut of the in-place
+    RMSD matrix at ``thr`` Å (the near-native cutoff), k>=1 (a set of poses that are
+    all one mode stays one cluster). Returns (labels, k, silhouette-or-NaN)."""
+    n = rmsd_dm.shape[0]
+    if n < 2:
+        return np.zeros(n, dtype=int), 1, float("nan")
+    dm = rmsd_dm.copy()
+    if not np.isfinite(dm).all():                       # substitute failed pairs
+        finite = dm[np.isfinite(dm)]
+        dm[~np.isfinite(dm)] = float(finite.max()) if finite.size else 0.0
+    from sklearn.cluster import AgglomerativeClustering
+    labels = AgglomerativeClustering(
+        n_clusters=None, distance_threshold=thr,
+        metric="precomputed", linkage="complete").fit_predict(dm)
+    _, labels = np.unique(labels, return_inverse=True)
+    return labels, len(set(labels.tolist())), _safe_silhouette(dm, labels)
+
+
+def _mode_quality(rmsd_dm: np.ndarray, labels: np.ndarray) -> dict:
+    """Compactness (mean within-mode median RMSD) and separation (nearest inter-mode
+    medoid RMSD) on the in-place RMSD matrix."""
+    labs = sorted(set(labels.tolist()))
+    spreads, medoids = [], []
+    for l in labs:
+        idx = np.where(labels == l)[0]
+        if len(idx) > 1:
+            sub = rmsd_dm[np.ix_(idx, idx)]
+            spreads.append(float(np.nanmedian(sub[np.triu_indices(len(idx), 1)])))
+            medoids.append(int(idx[np.argmin(np.nansum(sub, axis=1))]))
+        else:
+            spreads.append(0.0)
+            medoids.append(int(idx[0]))
+    out = dict(compactness=round(float(np.mean(spreads)), 3), separation=np.nan)
+    if len(medoids) > 1:
+        md = rmsd_dm[np.ix_(medoids, medoids)]
+        vals = md[np.triu_indices(len(medoids), 1)]
+        vals = vals[np.isfinite(vals)]
+        if vals.size:
+            out["separation"] = round(float(vals.min()), 3)
+    return out
+
+
+# Ranking rules for candidate pockets. 'size' is the legacy throughput-biased key
+# (kept for the ablation and for backward-compatible callers, e.g. the Orai script);
+# 'consensus' ranks by distinct-tool agreement first, so the highest-throughput
+# tool can no longer win a site by ballot-stuffing.
+_POCKET_SORT_KEYS = {
+    "size":       lambda p: (-p["size"],),
+    "consensus":  lambda p: (-p["n_tools"], -p["conf_weight"], p["spread"], -p["size"]),
+    "tight":      lambda p: (0 if p["size"] >= 2 else 1, p["spread"], -p["size"]),
+    "confidence": lambda p: (-p["conf_weight"], -p["size"]),
+}
+
+
+def _sort_pockets(pockets: List[dict], rank_by: str) -> None:
+    pockets.sort(key=_POCKET_SORT_KEYS.get(rank_by, _POCKET_SORT_KEYS["size"]))
+
+
+def pockets_from_labels(cents: np.ndarray, labels: np.ndarray, tools: List[str],
+                        files: Optional[List[str]] = None,
+                        pose_weights: Optional[Dict[str, float]] = None,
+                        rank_by: str = "size") -> List[dict]:
+    """Cluster -> candidate-pocket records.
+
+    Each pocket carries both a mean ``center`` and a robust ``medoid_center``
+    (outlier-resistant), a ``radius`` (max) and a robust ``spread`` (median), the
+    distinct-tool count, and a ``conf_weight`` (sum of member pose confidences,
+    from ``pose_weights``; falls back to pose count). ``rank_by`` selects the
+    ordering (default 'size' keeps legacy/Orai behaviour; the main pipeline
+    passes 'consensus').
+    """
     out = []
     for lab in sorted(set(labels.tolist())):
         idx = np.where(labels == lab)[0]
         c = cents[idx]
         center = c.mean(axis=0)
-        radius = float(np.linalg.norm(c - center, axis=1).max()) if len(c) > 1 else 0.0
+        d_to_center = np.linalg.norm(c - center, axis=1)
+        radius = float(d_to_center.max()) if len(c) > 1 else 0.0
+        spread = float(np.median(d_to_center)) if len(c) > 1 else 0.0
+        if len(c) > 1:
+            sub = _centroid_dm(c)
+            medoid_center = c[int(np.argmin(sub.sum(axis=1)))]
+        else:
+            medoid_center = center
         tl = [tools[i] for i in idx]
+        if files is not None and pose_weights is not None:
+            conf = float(sum(pose_weights.get(files[i], 0.0) for i in idx))
+        else:
+            conf = float(len(idx))
         out.append({
-            "center": center, "size": int(len(idx)), "radius": round(radius, 2),
+            "center": center, "medoid_center": medoid_center,
+            "size": int(len(idx)), "radius": round(radius, 2),
+            "spread": round(spread, 2), "conf_weight": round(conf, 3),
             "tools": sorted(set(tl)), "n_tools": len(set(tl)),
             "tool_counts": dict(Counter(tl)),
             "label": int(lab), "members": idx,
         })
-    out.sort(key=lambda p: p["size"], reverse=True)
+    _sort_pockets(out, rank_by)
     for i, p in enumerate(out, 1):
         p["rank"] = i
+    return out
+
+
+def _pose_weights(files: List[str], eff_rank: Dict[str, int]) -> Dict[str, float]:
+    """Per-pose confidence weight = 1/effective-rank (rank-1 pose weighted most)."""
+    w: Dict[str, float] = {}
+    for f in files:
+        r = eff_rank.get(f)
+        w[f] = 1.0 / float(r) if (r is not None and r > 0) else 0.25
+    return w
+
+
+def _internal_indices(C: np.ndarray, labels: np.ndarray) -> dict:
+    """Internal cluster-validity indices on the 3D centroid cloud.
+
+    Calinski-Harabasz / Davies-Bouldin need k>=2 (NaN at k=1); compactness (mean
+    within-cluster median spread, lower=tighter) and separation (nearest inter-
+    cluster-center distance, higher=better) are defined for any k.
+    """
+    out = dict(ch_score=np.nan, db_score=np.nan, compactness=np.nan, separation=np.nan)
+    labs = sorted(set(labels.tolist()))
+    k = len(labs)
+    centers, spreads = [], []
+    for lab in labs:
+        cc = C[np.where(labels == lab)[0]]
+        ctr = cc.mean(axis=0)
+        centers.append(ctr)
+        spreads.append(float(np.median(np.linalg.norm(cc - ctr, axis=1))) if len(cc) > 1 else 0.0)
+    out["compactness"] = round(float(np.mean(spreads)), 3)
+    if k > 1:
+        cen = np.asarray(centers)
+        dc = _centroid_dm(cen)
+        iu = np.triu_indices(k, 1)
+        out["separation"] = round(float(dc[iu].min()), 3)
+    if 2 <= k < len(labels):
+        from sklearn.metrics import calinski_harabasz_score, davies_bouldin_score
+        try:
+            out["ch_score"] = round(float(calinski_harabasz_score(C, labels)), 3)
+        except Exception:
+            pass
+        try:
+            out["db_score"] = round(float(davies_bouldin_score(C, labels)), 3)
+        except Exception:
+            pass
+    return out
+
+
+def _bootstrap_stability(C: np.ndarray, base_labels: np.ndarray, method: str,
+                         pocket_radius: float, n_boot: int = 25,
+                         seed: int = 0) -> Tuple[float, int]:
+    """Clusterboot-style stability: mean over base clusters of their best Jaccard
+    to a bootstrap-resampled clustering (>0.75 stable, <0.5 dissolved)."""
+    n = len(C)
+    if n < 4 or n_boot <= 0:
+        return float("nan"), int(len(set(base_labels.tolist())))
+    base = [set(np.where(base_labels == l)[0].tolist()) for l in sorted(set(base_labels.tolist()))]
+    rng = np.random.RandomState(seed)
+    jacc = np.zeros(len(base))
+    used = 0
+    for _ in range(n_boot):
+        uniq = np.unique(rng.choice(n, n, replace=True))
+        if len(uniq) < 2:
+            continue
+        used += 1
+        lab = cluster_sites(_centroid_dm(C[uniq]), C[uniq], method, pocket_radius)[0]
+        boot = [set(uniq[np.where(lab == l)[0]].tolist()) for l in set(lab.tolist())]
+        present = set(uniq.tolist())
+        for ci, oc in enumerate(base):
+            oc_p = oc & present
+            best = 0.0
+            for bc in boot:
+                u = len(oc_p | bc)
+                if u:
+                    best = max(best, len(oc_p & bc) / u)
+            jacc[ci] += best
+    if used == 0:
+        return float("nan"), len(base)
+    return round(float((jacc / used).mean()), 3), len(base)
+
+
+def _cluster_purity(cp: dict, C: np.ndarray, crystal: np.ndarray,
+                    files: List[str], rmsd_map: Dict[str, float],
+                    thr: float) -> Tuple[float, float, float]:
+    """For the crystal-closest cluster: fraction of members within thr (centroid)
+    and within 2 A RMSD of the crystal, plus the best (min) member RMSD. A tight
+    correct cluster scores high; a diffuse one that only averages near the site
+    scores low."""
+    idx = cp["members"]
+    d = np.linalg.norm(C[idx] - crystal, axis=1)
+    purity_centroid = round(float(np.mean(d <= thr)), 3)
+    rmsds = [rmsd_map.get(files[i]) for i in idx]
+    rmsds = [float(x) for x in rmsds if x is not None and np.isfinite(x)]
+    best_rmsd = round(float(min(rmsds)), 3) if rmsds else np.nan
+    purity_rmsd = round(float(np.mean([x <= 2.0 for x in rmsds])), 3) if rmsds else np.nan
+    return purity_centroid, purity_rmsd, best_rmsd
+
+
+def _precision_at_1(pockets: List[dict], crystal: np.ndarray, thr: float) -> dict:
+    """Rank-1 pocket under each ranking rule vs crystal — the ablation that shows
+    whether a better ranking recovers the true site more often than raw size."""
+    out: dict = {}
+
+    def pick(key, eligible=None):
+        pool = [p for p in pockets if eligible(p)] if eligible else list(pockets)
+        pool = pool or list(pockets)
+        return sorted(pool, key=key)[0]
+
+    picks = {
+        "size":       pick(_POCKET_SORT_KEYS["size"]),
+        "ntools":     pick(_POCKET_SORT_KEYS["consensus"]),
+        "tight":      pick(_POCKET_SORT_KEYS["tight"], eligible=lambda p: p["size"] >= 2),
+        "confidence": pick(_POCKET_SORT_KEYS["confidence"]),
+    }
+    for name, p in picks.items():
+        dd = _dist(p["center"], crystal)
+        out[f"p1_{name}_dist"] = round(dd, 3)
+        out[f"p1_{name}_hit"] = bool(dd <= thr)
+    # medoid-centered: the consensus pick but measured from its robust medoid center
+    pm = picks["ntools"]
+    dmd = _dist(pm.get("medoid_center", pm["center"]), crystal)
+    out["p1_medoid_dist"] = round(dmd, 3)
+    out["p1_medoid_hit"] = bool(dmd <= thr)
     return out
 
 
@@ -217,24 +539,30 @@ ENSEMBLES = {
 
 
 def _ensemble_stats(C: np.ndarray, tools: List[str], crystal: Optional[np.ndarray],
-                    subset: Tuple[str, ...], thr: float) -> dict:
-    """For one tool-combination: pose-level oracle + cluster top1 vs crystal."""
+                    subset: Tuple[str, ...], thr: float,
+                    site_method: str = "threshold", pocket_radius: float = 8.0) -> dict:
+    """For one tool-combination: pose-level oracle + cluster top1 vs crystal.
+
+    The subset is clustered with the k=1-capable site method and 'top1' is the
+    consensus-ranked pocket (distinct-tool agreement first), not the largest
+    cluster — so a high-throughput tool no longer wins the pick by pose count.
+    """
     idx = [i for i, t in enumerate(tools) if t in subset]
     if not idx or crystal is None:
         return dict(n_poses=len(idx), oracle_dist=np.nan, oracle_hit=np.nan,
                     top1_dist=np.nan, top1_hit=np.nan, n_clusters=np.nan)
     sc = C[idx]
+    st = [tools[i] for i in idx]
     pose_d = np.linalg.norm(sc - crystal, axis=1)
     oracle = float(pose_d.min())
-    # cluster the subset -> "top1" = largest cluster (what you'd actually pick)
-    if len(sc) < 3:
+    if len(sc) < 2:
         top1_center = sc.mean(axis=0)
         n_clusters = 1
     else:
-        lab, _, _ = _select_k(_centroid_dm(sc), "kmedoids")
-        big = Counter(lab.tolist()).most_common(1)[0][0]
-        top1_center = sc[np.where(lab == big)[0]].mean(axis=0)
-        n_clusters = len(set(lab.tolist()))
+        lab, _, _ = cluster_sites(_centroid_dm(sc), sc, site_method, pocket_radius)
+        pk = pockets_from_labels(sc, lab, st, rank_by="consensus")
+        top1_center = pk[0]["center"]
+        n_clusters = len(pk)
     top1 = _dist(top1_center, crystal)
     return dict(n_poses=len(idx), oracle_dist=round(oracle, 3),
                 oracle_hit=bool(oracle <= thr), top1_dist=round(top1, 3),
@@ -433,8 +761,10 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
                     cents: Dict[str, Tuple[float, float, float]],
                     crystal: Optional[np.ndarray],
                     fp_pockets: List[dict], pr_pockets: List[dict],
-                    thr: float, do_hybrid: bool, hybrid_w: float,
-                    rmsd_cap: int) -> dict:
+                    thr: float, do_placement: bool, mode_rmsd_thr: float,
+                    rmsd_cap: int, site_method: str = "threshold",
+                    pocket_radius: float = 8.0, rank_by: str = "consensus",
+                    n_boot: int = 25) -> dict:
     # ── pose centroid array (drop poses with no centroid) ────────────────
     rows = [(r["pose_file"], r["tool"]) for _, r in sub.iterrows()
             if cents.get(r["pose_file"]) is not None]
@@ -443,25 +773,45 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
     files = [f for f, _ in rows]
     tools = [t for _, t in rows]
     C = np.asarray([cents[f] for f in files])
+    rmsd_map = (dict(zip(sub["pose_file"], pd.to_numeric(sub.get("rmsd"), errors="coerce")))
+                if "rmsd" in sub else {})
 
-    # ── primary: centroid clustering -> candidate pockets ────────────────
+    # ── primary: centroid clustering (k=1-capable) -> candidate pockets ──
+    # cluster_sites allows a single cluster when the tools converge on one site
+    # (silhouette-max KMedoids never could), and pockets are ranked by cross-tool
+    # consensus rather than raw pose count.
+    eff_rank, rank_src = _effective_ranks(sub)
+    pose_w = _pose_weights(files, eff_rank)
     dm = _centroid_dm(C)
-    labels, k, sil = _select_k(dm, "kmedoids")
+    labels, k, sil = cluster_sites(dm, C, site_method, pocket_radius)
+    km_labels, km_k, km_sil = _select_k(dm, "kmedoids")        # legacy, for agreement
     hi_labels, hi_k, hi_sil = _select_k(dm, "agglomerative")
-    pockets = pockets_from_labels(C, labels, tools)
+    pockets = pockets_from_labels(C, labels, tools, files=files,
+                                  pose_weights=pose_w, rank_by=rank_by)
+
+    # ── cluster-quality metrics on the primary partition ─────────────────
+    internal = _internal_indices(C, labels)
+    boot_stab, boot_nc = _bootstrap_stability(C, labels, site_method, pocket_radius, n_boot)
+    from sklearn.metrics import adjusted_rand_score as _ari
+    ari_pk = (float(_ari(labels, km_labels))
+              if len(set(labels)) > 1 and len(set(km_labels)) > 1 else np.nan)
 
     # ── rank of each tool's poses in the crystal-closest cluster ─────────
     # The cluster whose center is nearest the crystal is the "correct" site.
     # For each tool we report the best (lowest) rank it assigns to a pose that
     # landed in that cluster — i.e. does the tool prioritize its near-native pose?
-    eff_rank, rank_src = _effective_ranks(sub)
     correct_dist = correct_is_hit = np.nan
+    pur_centroid = pur_rmsd = best_rmsd_in_correct = np.nan
+    p1 = {}
     rank_in_correct: Dict[str, Optional[int]] = {}
     n_in_correct: Dict[str, int] = {}
     if crystal is not None and pockets:
         cp = min(pockets, key=lambda p: _dist(p["center"], crystal))
         correct_dist = round(_dist(cp["center"], crystal), 3)
         correct_is_hit = bool(correct_dist <= thr)
+        pur_centroid, pur_rmsd, best_rmsd_in_correct = _cluster_purity(
+            cp, C, crystal, files, rmsd_map, thr)
+        p1 = _precision_at_1(pockets, crystal, thr)
         for t in TOOLS:
             rk = [eff_rank.get(files[i]) for i in cp["members"]
                   if tools[i] == t and eff_rank.get(files[i]) is not None]
@@ -473,29 +823,39 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
     per_rank_rows, top5 = _top5_analysis(sub, eff_rank, file_idx, labels, C, crystal)
 
     # ── tool-combination ensemble exploration (which tools to combine) ───
-    ensembles = {name: _ensemble_stats(C, tools, crystal, subset, thr)
+    ensembles = {name: _ensemble_stats(C, tools, crystal, subset, thr,
+                                       site_method, pocket_radius)
                  for name, subset in ENSEMBLES.items()}
 
-    # ── secondary: hybrid clustering (bounded) ───────────────────────────
-    hy_k = hy_sil = ari = nmi = np.nan
-    if do_hybrid and len(files) <= rmsd_cap:
+    # ── secondary: placement-aware binding-MODE analysis (bounded) ───────
+    # A SEPARATE clustering on the in-place RMSD matrix (translation+orientation+
+    # conformation), reported alongside — not blended into — the centroid sites.
+    # ari/nmi_site_vs_mode = do poses that share a spatial site also share a mode?
+    # modes_in_top_site = how many distinct modes live inside the biggest site
+    # (>1 means the centroid axis is hiding e.g. flipped poses within one pocket).
+    n_modes = mode_sil = mode_compact = mode_sep = np.nan
+    ari_sm = nmi_sm = modes_in_top_site = np.nan
+    mode_oracle_rmsd = mode_top_site_best_rmsd = np.nan
+    if do_placement and len(files) <= rmsd_cap:
         from sklearn.metrics import adjusted_rand_score, normalized_mutual_info_score
         mols = [load_heavy_atom_mol(f) for f in files]
-        n = len(files)
-        rdm = np.zeros((n, n))
-        for i in range(n):
-            for j in range(i + 1, n):
-                if mols[i] is None or mols[j] is None:
-                    rdm[i, j] = rdm[j, i] = np.nan
-                else:
-                    r = compute_heavy_atom_rmsd(mols[i], mols[j])
-                    rdm[i, j] = rdm[j, i] = r
-        hyb = hybrid_w * _normalise(rdm) + (1 - hybrid_w) * _normalise(dm)
-        hyb[~np.isfinite(hyb)] = np.nanmax(hyb[np.isfinite(hyb)]) if np.isfinite(hyb).any() else 0.0
-        hyl, hy_k, hy_sil = _select_k(hyb, "kmedoids")
-        if len(set(labels)) > 1 and len(set(hyl)) > 1:
-            ari = float(adjusted_rand_score(labels, hyl))
-            nmi = float(normalized_mutual_info_score(labels, hyl))
+        rdm = _inplace_rmsd_dm(mols)
+        mode_labels, n_modes, mode_sil = cluster_modes(rdm, mode_rmsd_thr)
+        mq = _mode_quality(rdm, mode_labels)
+        mode_compact, mode_sep = mq["compactness"], mq["separation"]
+        if len(set(labels)) > 1 and len(set(mode_labels)) > 1:
+            ari_sm = float(adjusted_rand_score(labels, mode_labels))
+            nmi_sm = float(normalized_mutual_info_score(labels, mode_labels))
+        big_site = Counter(labels.tolist()).most_common(1)[0][0]
+        smembers = np.where(labels == big_site)[0]
+        if len(smembers):
+            modes_in_top_site = int(len(set(mode_labels[smembers].tolist())))
+        # crystal (RMSD axis): best pose RMSD overall, and within the biggest site
+        rm_all = np.array([rmsd_map.get(files[i], np.nan) for i in range(len(files))], dtype=float)
+        if np.isfinite(rm_all).any():
+            mode_oracle_rmsd = round(float(np.nanmin(rm_all)), 3)
+        if len(smembers) and np.isfinite(rm_all[smembers]).any():
+            mode_top_site_best_rmsd = round(float(np.nanmin(rm_all[smembers])), 3)
 
     # ── per-tool primary site (largest cluster of that tool's centroids) ──
     tool_site: Dict[str, Optional[np.ndarray]] = {}
@@ -505,10 +865,10 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
             tool_site[t] = None
             continue
         ct = C[ti]
-        if len(ct) < 3:
+        if len(ct) < 2:
             tool_site[t] = ct.mean(axis=0)
         else:
-            tl, _, _ = _select_k(_centroid_dm(ct), "kmedoids")
+            tl, _, _ = cluster_sites(_centroid_dm(ct), ct, site_method, pocket_radius)
             big = Counter(tl.tolist()).most_common(1)[0][0]
             tool_site[t] = ct[np.where(tl == big)[0]].mean(axis=0)
 
@@ -554,12 +914,32 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
     return {
         "protein": cid, "skipped": False,
         "n_poses": len(files), "n_tools": len(set(tools)),
+        "site_method": site_method, "rank_by": rank_by, "k_is_one": bool(k == 1),
         "n_clusters": len(pockets), "silhouette": round(sil, 3) if sil == sil else np.nan,
+        # legacy silhouette-KMedoids (never k=1) kept for method-agreement comparison
+        "km_n_clusters": int(km_k), "km_silhouette": round(km_sil, 3) if km_sil == km_sil else np.nan,
+        "ari_primary_vs_kmedoids": round(ari_pk, 3) if ari_pk == ari_pk else np.nan,
         "hier_n_clusters": int(len(set(hi_labels))), "hier_silhouette": round(hi_sil, 3) if hi_sil == hi_sil else np.nan,
-        "hybrid_n_clusters": hy_k, "hybrid_silhouette": round(hy_sil, 3) if hy_sil == hy_sil else np.nan,
-        "ari_centroid_vs_hybrid": round(ari, 3) if ari == ari else np.nan,
-        "nmi_centroid_vs_hybrid": round(nmi, 3) if nmi == nmi else np.nan,
+        # placement-aware (in-place RMSD) binding-MODE analysis, alongside centroid sites
+        "n_modes": n_modes, "mode_silhouette": round(mode_sil, 3) if mode_sil == mode_sil else np.nan,
+        "mode_compactness": mode_compact, "mode_separation": mode_sep,
+        "ari_site_vs_mode": round(ari_sm, 3) if ari_sm == ari_sm else np.nan,
+        "nmi_site_vs_mode": round(nmi_sm, 3) if nmi_sm == nmi_sm else np.nan,
+        "modes_in_top_site": modes_in_top_site,
+        "mode_oracle_rmsd": mode_oracle_rmsd,
+        "mode_top_site_best_rmsd": mode_top_site_best_rmsd,
+        # internal validity indices on the primary partition
+        "ch_score": internal["ch_score"], "db_score": internal["db_score"],
+        "compactness": internal["compactness"], "separation": internal["separation"],
+        # bootstrap cluster stability (mean best-Jaccard of base clusters)
+        "boot_stability": boot_stab, "boot_n_clusters": boot_nc,
         "has_crystal": crystal is not None,
+        # crystal-closest-cluster purity + best member RMSD (tight-vs-diffuse)
+        "correct_cluster_purity_centroid": pur_centroid,
+        "correct_cluster_purity_rmsd": pur_rmsd,
+        "correct_cluster_best_rmsd": best_rmsd_in_correct,
+        # precision@1: rank-1 pocket vs crystal under each ranking rule
+        **p1,
         # ensemble-cluster vs crystal
         "ens_top1_dist": ens["top1_dist"], "ens_top1_hit": ens["top1_hit"],
         "ens_oracle_dist": ens["oracle_dist"], "ens_oracle_rank": ens["oracle_rank"],
@@ -1016,6 +1396,77 @@ def _fig_top5(df_rank, df, out_dir):
     return p
 
 
+def _fig_placement(df, mode_thr, out_dir):
+    """Centroid SITES vs placement-aware MODES: how the two geometry axes compare."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    if "n_modes" not in df:
+        return None
+    d = df[pd.to_numeric(df["n_modes"], errors="coerce").notna()].copy()
+    if d.empty:
+        return None
+    ns = pd.to_numeric(d["n_clusters"], errors="coerce")
+    nm = pd.to_numeric(d["n_modes"], errors="coerce")
+    fig, ax = plt.subplots(2, 2, figsize=(13, 10))
+
+    # (A) #sites vs #modes per complex — modes >= sites means a site holds >1 mode
+    hi = int(np.nanmax([ns.max(), nm.max(), 1])) + 1
+    ax[0, 0].scatter(ns + np.random.RandomState(0).uniform(-0.15, 0.15, len(ns)),
+                     nm + np.random.RandomState(1).uniform(-0.15, 0.15, len(nm)),
+                     s=18, alpha=0.5, color="#4C72B0", edgecolors="none")
+    ax[0, 0].plot([0, hi], [0, hi], "k--", lw=0.8, label="modes = sites")
+    ax[0, 0].set_xlim(0, hi); ax[0, 0].set_ylim(0, hi)
+    ax[0, 0].set_xlabel("Number of centroid sites (where)")
+    ax[0, 0].set_ylabel("Number of placement-aware modes (how)")
+    ax[0, 0].set_title("Sites vs binding modes per complex\n(above line ⇒ a site splits into modes)")
+    ax[0, 0].legend(fontsize=8); ax[0, 0].grid(alpha=0.25); ax[0, 0].set_axisbelow(True)
+
+    # (B) modes inside the single biggest site
+    mits = pd.to_numeric(d.get("modes_in_top_site"), errors="coerce").dropna()
+    if len(mits):
+        vc = mits.clip(upper=5).value_counts().sort_index()
+        ax[0, 1].bar(vc.index, vc.values / vc.sum(), color="#55A868", width=0.8)
+        ax[0, 1].set_xticks(sorted(vc.index))
+        ax[0, 1].set_xlabel("Distinct binding modes inside the biggest site (≥5 binned)")
+        ax[0, 1].set_ylabel("Fraction of complexes")
+        ax[0, 1].set_title(f"Does one spatial site hold several modes?\n"
+                           f">1 mode in {(mits > 1).mean():.0%} of complexes")
+        ax[0, 1].grid(axis="y", alpha=0.25); ax[0, 1].set_axisbelow(True)
+
+    # (C) site-vs-mode agreement (ARI) — low ⇒ the axes disagree
+    ari = pd.to_numeric(d.get("ari_site_vs_mode"), errors="coerce").dropna()
+    if len(ari):
+        ax[1, 0].hist(ari, bins=np.linspace(0, 1, 21), color="#8172B3", alpha=0.85)
+        ax[1, 0].axvline(float(ari.median()), color="k", ls="--", lw=1,
+                         label=f"median {ari.median():.2f}")
+        ax[1, 0].set_xlabel("ARI(centroid sites, placement modes)")
+        ax[1, 0].set_ylabel("Number of complexes")
+        ax[1, 0].set_title("Do co-located poses share a binding mode?\n(1 = identical partitions)")
+        ax[1, 0].legend(fontsize=8); ax[1, 0].grid(alpha=0.25); ax[1, 0].set_axisbelow(True)
+
+    # (D) mode compactness vs separation (are modes tight and well-separated?)
+    comp = pd.to_numeric(d.get("mode_compactness"), errors="coerce")
+    sep = pd.to_numeric(d.get("mode_separation"), errors="coerce")
+    m = comp.notna() & sep.notna()
+    if m.any():
+        ax[1, 1].scatter(comp[m], sep[m], s=18, alpha=0.5, color="#C44E52", edgecolors="none")
+        ax[1, 1].axhline(mode_thr, color="k", ls="--", lw=0.8,
+                         label=f"mode threshold {mode_thr:g} Å")
+        ax[1, 1].set_xlabel("Within-mode RMSD spread (Å, lower = tighter)")
+        ax[1, 1].set_ylabel("Nearest inter-mode RMSD (Å, higher = better separated)")
+        ax[1, 1].set_title("Binding-mode compactness vs separation")
+        ax[1, 1].legend(fontsize=8); ax[1, 1].grid(alpha=0.25); ax[1, 1].set_axisbelow(True)
+
+    _label_panels(ax)
+    fig.suptitle("Placement-aware binding modes (in-place RMSD) vs centroid sites  "
+                 f"(n={len(d)} complexes, mode-thr={mode_thr:g} Å)", fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    p = out_dir / "placement_vs_centroid.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    return p
+
+
 # ════════════════════════════════════════════════════════════════════════
 # Driver
 # ════════════════════════════════════════════════════════════════════════
@@ -1164,9 +1615,32 @@ def main(argv=None) -> int:
                     help="Which DiffDock variant to cluster: 'diffdock' (raw) | "
                          "'diffdock_smina' | 'diffdock_gnina'.")
     ap.add_argument("--distance-mode", choices=("centroid", "hybrid", "both"),
-                    default="both")
-    ap.add_argument("--hybrid-weight", type=float, default=0.5)
+                    default="both",
+                    help="'centroid' = site clustering only; 'hybrid'/'both' also run "
+                         "the placement-aware (in-place RMSD) binding-MODE analysis.")
+    ap.add_argument("--mode-rmsd-thr", type=float, default=2.0,
+                    help="RMSD (Å) threshold for the placement-aware mode cut "
+                         "(2 Å = the near-native / same-pose cutoff).")
+    ap.add_argument("--hybrid-weight", type=float, default=0.5,
+                    help="(Deprecated; the old centroid+shape blend was replaced by "
+                         "the placement-aware mode analysis. Unused.)")
     ap.add_argument("--match-thr", type=float, default=4.0)
+    ap.add_argument("--site-cluster", choices=("threshold", "gap", "silhouette"),
+                    default="threshold",
+                    help="Primary site clustering. 'threshold' (default): complete-"
+                         "linkage cut at --pocket-radius, k discovered incl. k=1. "
+                         "'gap': gap statistic (admits k=1) then KMedoids. "
+                         "'silhouette': legacy silhouette-max KMedoids (never k=1).")
+    ap.add_argument("--pocket-radius", type=float, default=8.0,
+                    help="Distance-threshold (Å) for the 'threshold' site cut "
+                         "(≈ one pocket diameter; separate from --match-thr).")
+    ap.add_argument("--rank-by", choices=("consensus", "size", "tight", "confidence"),
+                    default="consensus",
+                    help="How the rank-1 ('top1') pocket is chosen. 'consensus' "
+                         "(default): distinct-tool agreement first; 'size': legacy "
+                         "raw pose count.")
+    ap.add_argument("--stability-boot", type=int, default=25,
+                    help="Bootstrap resamples for cluster-stability Jaccard (0=off).")
     ap.add_argument("--top-n-pockets", type=int, default=3)
     ap.add_argument("--pb-valid-only", action="store_true")
     ap.add_argument("--outlier-dist", type=float, default=100.0)
@@ -1223,7 +1697,7 @@ def main(argv=None) -> int:
                 keep_idx.append(i)
     df = df.loc[keep_idx].copy()
 
-    do_hybrid = args.distance_mode in ("hybrid", "both")
+    do_placement = args.distance_mode in ("hybrid", "both")
     results = []
     for ci, cid in enumerate(complexes, 1):
         sub = df[df["protein"] == cid]
@@ -1236,8 +1710,9 @@ def main(argv=None) -> int:
         fp_pockets = parse_fpocket(fp_out)[:args.top_n_pockets] if fp_out.exists() else []
         pr_pockets = parse_p2rank(pr_csv)[:args.top_n_pockets] if pr_csv.exists() else []
         res = analyze_complex(cid, sub, cents, crystal, fp_pockets, pr_pockets,
-                              args.match_thr, do_hybrid, args.hybrid_weight,
-                              args.rmsd_pose_cap)
+                              args.match_thr, do_placement, args.mode_rmsd_thr,
+                              args.rmsd_pose_cap, args.site_cluster,
+                              args.pocket_radius, args.rank_by, args.stability_boot)
         results.append(res)
         if ci % 50 == 0:
             print(f"  analyzed {ci}/{len(complexes)}")
@@ -1260,11 +1735,14 @@ def main(argv=None) -> int:
             crows.append({
                 "protein": r["protein"], "cluster_rank": p["rank"], "size": p["size"],
                 "n_tools": p["n_tools"], "tools": ",".join(p["tools"]),
-                "radius_A": p["radius"],
+                "radius_A": p["radius"], "spread_A": p.get("spread"),
+                "conf_weight": p.get("conf_weight"),
                 "center_x": round(float(p["center"][0]), 3),
                 "center_y": round(float(p["center"][1]), 3),
                 "center_z": round(float(p["center"][2]), 3),
                 "dist_to_crystal": round(_dist(p["center"], cr), 3) if cr is not None else np.nan,
+                "medoid_dist_to_crystal": (round(_dist(p.get("medoid_center", p["center"]), cr), 3)
+                                           if cr is not None else np.nan),
             })
     pd.DataFrame(crows).to_csv(out_dir / "per_cluster.csv", index=False)
 
@@ -1367,6 +1845,60 @@ def main(argv=None) -> int:
         _, thit = med_hit(tc)
         print(f"  {s:<20}{med:>16.2f}{ohit:>11.0%}{thit:>12.0%}")
 
+    # ── clustering-quality metrics (primary partition) ───────────────────
+    def _mean(df, col):
+        v = pd.to_numeric(df.get(col), errors="coerce").dropna() if col in df else pd.Series(dtype=float)
+        return float(v.mean()) if len(v) else np.nan
+    print(f"\n  CLUSTERING QUALITY  (site-cluster={args.site_cluster}, "
+          f"pocket-radius={args.pocket_radius:g} Å, rank-by={args.rank_by}):")
+    k1_frac = float(pd.to_numeric(df_complex.get("k_is_one"), errors="coerce").mean()) \
+        if "k_is_one" in df_complex else np.nan
+    print(f"    mean #sites {_mean(df_complex,'n_clusters'):.2f}  "
+          f"(legacy silhouette-KMedoids {_mean(df_complex,'km_n_clusters'):.2f}); "
+          f"single-site (k=1) complexes {k1_frac:.0%}")
+    print(f"    silhouette {_mean(df_complex,'silhouette'):.3f} (k≥2 only) | "
+          f"Calinski-Harabasz {_mean(df_complex,'ch_score'):.1f} | "
+          f"Davies-Bouldin {_mean(df_complex,'db_score'):.2f}")
+    print(f"    compactness (median intra-spread) {_mean(df_complex,'compactness'):.2f} Å | "
+          f"separation (nearest-site) {_mean(df_complex,'separation'):.2f} Å")
+    if args.stability_boot > 0:
+        print(f"    bootstrap stability (mean best-Jaccard, {args.stability_boot} resamples) "
+              f"{_mean(df_complex,'boot_stability'):.2f}  (>0.75 stable, <0.5 dissolved)")
+    print(f"    primary-vs-KMedoids agreement (ARI) {_mean(df_complex,'ari_primary_vs_kmedoids'):.2f}")
+
+    # ── precision@1 ablation: does a better ranking recover the true site? ─
+    print(f"\n  PRECISION@1 — rank-1 pocket within {args.match_thr:g} Å of crystal, per ranking rule:")
+    print(f"    (oracle ceiling = ens_oracle_hit {_mean(dc,'ens_oracle_hit'):.0%})")
+    for rule, lab in [("size", "size (legacy)"), ("ntools", "consensus (n_tools)"),
+                      ("tight", "tightest"), ("confidence", "confidence-wtd"),
+                      ("medoid", "consensus+medoid ctr")]:
+        col = f"p1_{rule}_hit"
+        if col in dc:
+            print(f"    {lab:<24}{_mean(dc, col):>7.0%}")
+
+    # ── crystal-closest-cluster purity (tight correct vs diffuse) ─────────
+    print(f"\n  CRYSTAL-CLOSEST CLUSTER purity (are its members really near-native?):")
+    print(f"    within {args.match_thr:g} Å (centroid) {_mean(dc,'correct_cluster_purity_centroid'):.0%} of members | "
+          f"≤2 Å RMSD {_mean(dc,'correct_cluster_purity_rmsd'):.0%} of members | "
+          f"best member RMSD median "
+          f"{pd.to_numeric(dc.get('correct_cluster_best_rmsd'), errors='coerce').median():.2f} Å")
+
+    # ── placement-aware (in-place RMSD) binding-MODE analysis, vs centroid sites ─
+    if "n_modes" in df_complex and pd.to_numeric(df_complex["n_modes"], errors="coerce").notna().any():
+        print(f"\n  PLACEMENT-AWARE binding modes  (in-place RMSD, mode-thr={args.mode_rmsd_thr:g} Å; "
+              "translation+orientation+conformation):")
+        print(f"    mean #modes/complex {_mean(df_complex,'n_modes'):.2f}  vs  "
+              f"mean #sites {_mean(df_complex,'n_clusters'):.2f} (centroid)")
+        mits = pd.to_numeric(df_complex.get('modes_in_top_site'), errors='coerce').dropna()
+        if len(mits):
+            print(f"    modes inside the biggest site: mean {mits.mean():.2f} | "
+                  f">1 mode (site hides distinct orientations) in {(mits > 1).mean():.0%} of complexes")
+        print(f"    mode compactness (median intra-mode RMSD) {_mean(df_complex,'mode_compactness'):.2f} Å | "
+              f"separation {_mean(df_complex,'mode_separation'):.2f} Å")
+        print(f"    site-vs-mode agreement: ARI {_mean(df_complex,'ari_site_vs_mode'):.2f} | "
+              f"NMI {_mean(df_complex,'nmi_site_vs_mode'):.2f}  "
+              "(low ⇒ one site holds several modes)")
+
     # pose-quality (RMSD) for the 3 tools
     print("\n  Pose quality vs crystal (RMSD, oracle over poses):")
     for t in TOOLS:
@@ -1460,10 +1992,86 @@ def main(argv=None) -> int:
             print(f"  {t:<10}{mf.mean():>16.2f}{nc.mean():>16.2f}"
                   f"{(br == 1).mean():>17.0%}")
 
+    # ── ranking ablation (precision@1 per rule) + ranking enrichment ─────
+    ablation = []
+    for rule, desc in [("size", "size (legacy raw count)"),
+                       ("ntools", "consensus (distinct tools)"),
+                       ("tight", "tightest (robust spread)"),
+                       ("confidence", "confidence-weighted"),
+                       ("medoid", "consensus + medoid center"),
+                       ("oracle", "oracle ceiling (best cluster)")]:
+        if rule == "oracle":
+            hcol, dcol = "ens_oracle_hit", "ens_oracle_dist"
+        else:
+            hcol, dcol = f"p1_{rule}_hit", f"p1_{rule}_dist"
+        hv = (pd.to_numeric(dc[hcol].map({True: 1.0, False: 0.0}), errors="coerce")
+              if hcol in dc else pd.Series(dtype=float))
+        dv = pd.to_numeric(dc.get(dcol), errors="coerce") if dcol in dc else pd.Series(dtype=float)
+        ablation.append({
+            "rule": rule, "description": desc,
+            "precision_at_1": round(float(hv.mean()), 4) if len(hv.dropna()) else None,
+            "median_top1_dist": round(float(dv.median()), 3) if dv.notna().any() else None,
+        })
+    pd.DataFrame(ablation).to_csv(out_dir / "ranking_ablation.csv", index=False)
+
+    # pooled ranking enrichment: Spearman(cluster rank, distance-to-crystal);
+    # per complex there are too few clusters, so pool all clusters together.
+    from scipy.stats import spearmanr
+    rr, ddc = [], []
+    for r in ok:
+        cr = r.get("_crystal")
+        if cr is None:
+            continue
+        for p in r["_pockets"]:
+            rr.append(p["rank"]); ddc.append(_dist(p["center"], cr))
+    ranking_rho = None
+    if len(rr) > 10 and len(set(rr)) > 1:
+        ranking_rho = float(spearmanr(rr, ddc)[0])
+    print("\n  RANKING ENRICHMENT (pooled Spearman of cluster rank vs distance-to-crystal): "
+          + (f"ρ={ranking_rho:.3f}  (positive = better-ranked clusters are nearer the crystal)"
+             if ranking_rho is not None else "n/a (too few clusters)"))
+
     summary = {
         "n_complexes": int(n), "match_thr_A": args.match_thr,
         "equibind_variant": args.equibind_variant,
         "diffdock_variant": args.diffdock_variant,
+        "clustering": {
+            "site_method": args.site_cluster, "pocket_radius": args.pocket_radius,
+            "rank_by": args.rank_by,
+            "mean_n_clusters": _mean(df_complex, "n_clusters"),
+            "mean_n_clusters_legacy_kmedoids": _mean(df_complex, "km_n_clusters"),
+            "frac_single_site": (float(pd.to_numeric(df_complex["k_is_one"], errors="coerce").mean())
+                                 if "k_is_one" in df_complex else None),
+            "mean_silhouette": _mean(df_complex, "silhouette"),
+            "mean_calinski_harabasz": _mean(df_complex, "ch_score"),
+            "mean_davies_bouldin": _mean(df_complex, "db_score"),
+            "mean_compactness_A": _mean(df_complex, "compactness"),
+            "mean_separation_A": _mean(df_complex, "separation"),
+            "mean_bootstrap_stability": _mean(df_complex, "boot_stability"),
+            "mean_ari_primary_vs_kmedoids": _mean(df_complex, "ari_primary_vs_kmedoids"),
+        },
+        "ranking_ablation": ablation,
+        "ranking_enrichment_spearman": ranking_rho,
+        "crystal_closest_cluster_purity": {
+            "mean_purity_centroid": _mean(dc, "correct_cluster_purity_centroid"),
+            "mean_purity_rmsd": _mean(dc, "correct_cluster_purity_rmsd"),
+            "median_best_rmsd": (float(pd.to_numeric(dc["correct_cluster_best_rmsd"],
+                                                     errors="coerce").median())
+                                 if "correct_cluster_best_rmsd" in dc else None),
+        },
+        "placement_modes": {
+            "mode_rmsd_thr_A": args.mode_rmsd_thr,
+            "mean_n_modes": _mean(df_complex, "n_modes"),
+            "mean_n_sites": _mean(df_complex, "n_clusters"),
+            "mean_modes_in_top_site": _mean(df_complex, "modes_in_top_site"),
+            "frac_top_site_multimode": (float((pd.to_numeric(df_complex["modes_in_top_site"],
+                                                             errors="coerce") > 1).mean())
+                                        if "modes_in_top_site" in df_complex else None),
+            "mean_mode_compactness_A": _mean(df_complex, "mode_compactness"),
+            "mean_mode_separation_A": _mean(df_complex, "mode_separation"),
+            "mean_ari_site_vs_mode": _mean(df_complex, "ari_site_vs_mode"),
+            "mean_nmi_site_vs_mode": _mean(df_complex, "nmi_site_vs_mode"),
+        },
         "median_oracle_dist": {s: (float(pd.to_numeric(dc[oc], errors="coerce").median())
                                     if oc in dc else None)
                                for s, (oc, _) in src_cols.items()},
@@ -1499,6 +2107,7 @@ def main(argv=None) -> int:
                 _fig_top5(df_rank, df_complex, out_dir),
                 _fig_rank_in_correct(df_complex, args.match_thr, out_dir),
                 _fig_ensembles(df_complex, args.match_thr, out_dir),
+                _fig_placement(df_complex, args.mode_rmsd_thr, out_dir),
                 _fig_descriptor_quality(df_complex, args.features_csv, out_dir)]
         for f in figs:
             if f:

@@ -54,6 +54,11 @@ Quick usage:
     # read from --oracle-summary), relabelled "EquiBind*". For crystal-free sets
     # (Orai) the default --oracle-summary borrows the benchmark ranking.
     python Scripts/Analysis/posebusters_validity_report.py --best-equibind-only
+
+    # Keep only poses within 5 Å of the crystal (RMSD joined from per_pose_metrics.csv,
+    # written by posebusters_pose_comparison.py — run that first). Every CSV/figure
+    # then reflects the filtered set, and the figures are titled accordingly.
+    python Scripts/Analysis/posebusters_validity_report.py --max-rmsd 5
 """
 
 from __future__ import annotations
@@ -110,6 +115,10 @@ _BASE_COLORS = {"autodock": "#1f77b4", "diffdock": "#ff7f0e"}
 # shown as "EquiBind*". Honoured by _pretty_method, so every plot/axis label picks
 # it up with no further changes.
 _LABEL_OVERRIDES: dict[str, str] = {}
+
+# Appended to every figure title when --max-rmsd is active, so a filtered report's
+# figures can never be mistaken for the unfiltered one. Set once in main().
+_RMSD_FILTER_NOTE: str = ""
 
 
 def _eq_tokens(method: str) -> tuple[str | None, str | None, str | None]:
@@ -364,6 +373,100 @@ def load_and_score(csv_path: Path, split_equibind: bool = True) -> pd.DataFrame:
 DEFAULT_ORACLE_SUMMARY = Path(
     "posebusters_results/benchmark/dock/pose_comparison_report/oracle_summary.csv")
 
+# The PoseBusters filtered-results CSV carries no RMSD; the only place per-pose
+# RMSD-to-crystal exists is per_pose_metrics.csv, written by
+# posebusters_pose_comparison.py. --max-rmsd joins that column in from here (same
+# dir as DEFAULT_ORACLE_SUMMARY). Crystal-free sets (Orai) have no RMSD, so
+# --max-rmsd is not meaningful there and errors out rather than emptying the report.
+DEFAULT_PER_POSE_METRICS = Path(
+    "posebusters_results/benchmark/dock/pose_comparison_report/per_pose_metrics.csv")
+
+# RMSD columns in per_pose_metrics.csv that --max-rmsd may filter on:
+#   rmsd           — symmetry-corrected heavy-atom RMSD, NO superposition (docking
+#                    accuracy; the column the oracle RMSD ≤ 2 Å metric uses). Default.
+#   pb_rmsd        — PoseBusters' canonical check_rmsd (also no superposition).
+#   pb_kabsch_rmsd — after optimal superposition (conformer similarity, not placement).
+_RMSD_COLUMNS = ("rmsd", "pb_rmsd", "pb_kabsch_rmsd")
+
+
+def apply_rmsd_filter(df: pd.DataFrame, metrics_csv: Path, max_rmsd: float,
+                      rmsd_col: str, out_dir: Path) -> pd.DataFrame:
+    """Keep only poses whose RMSD-to-crystal (``rmsd_col``) is ≤ ``max_rmsd`` Å.
+
+    The PoseBusters filtered-results CSV has no RMSD, so the per-pose RMSD-to-crystal
+    is joined in from *metrics_csv* (per_pose_metrics.csv, written by
+    posebusters_pose_comparison.py) on the globally-unique (protein, ligand,
+    pose_name) key — sidestepping any method-label differences between the two files.
+    Poses with no RMSD value — absent from the metrics file or scored NaN — cannot be
+    confirmed ≤ threshold and are dropped and counted, the same as poses above it.
+    Writes a per-method rmsd_filter_summary.csv next to the plots.
+
+    Exits with a clear message (rather than silently emptying the report) when the
+    metrics file is missing, lacks ``rmsd_col``/the join keys, or matches no pose —
+    e.g. a crystal-free set (Orai) where RMSD-to-crystal is undefined.
+    """
+    if not metrics_csv or not Path(metrics_csv).exists():
+        sys.exit(f"[rmsd-filter] --max-rmsd {max_rmsd} requested but per-pose metrics "
+                 f"not found at {metrics_csv}. Run posebusters_pose_comparison.py first "
+                 f"(it writes per_pose_metrics.csv), or pass --per-pose-metrics.")
+
+    metrics = pd.read_csv(metrics_csv, low_memory=False)
+    if rmsd_col not in metrics.columns:
+        sys.exit(f"[rmsd-filter] column '{rmsd_col}' not in {metrics_csv} "
+                 f"(available: {[c for c in _RMSD_COLUMNS if c in metrics.columns]}).")
+    key = ["protein", "ligand", "pose_name"]
+    if any(k not in metrics.columns for k in key):
+        sys.exit(f"[rmsd-filter] {metrics_csv} lacks join columns {key}.")
+
+    m = metrics[key + [rmsd_col]].copy()
+    for k in key:
+        m[k] = m[k].astype(str)
+    n_dup = int(m.duplicated(subset=key).sum())
+    if n_dup:
+        print(f"[rmsd-filter] warning: {n_dup} duplicate (protein,ligand,pose_name) "
+              "rows in the metrics file — keeping the first of each.")
+        m = m.drop_duplicates(subset=key)
+
+    d = df.copy()
+    for k in key:
+        d[k] = d[k].astype(str)
+    n_in = len(d)
+    # left + validate='m:1' keeps every report row exactly once (never multiplies).
+    d = d.merge(m.rename(columns={rmsd_col: "rmsd_to_crystal"}), on=key,
+                how="left", validate="m:1")
+    d["rmsd_to_crystal"] = pd.to_numeric(d["rmsd_to_crystal"], errors="coerce")
+
+    d["_has_rmsd"] = d["rmsd_to_crystal"].notna()
+    d["_kept"] = d["_has_rmsd"] & (d["rmsd_to_crystal"] <= max_rmsd)
+    n_with = int(d["_has_rmsd"].sum())
+    n_kept = int(d["_kept"].sum())
+    n_no_rmsd = n_in - n_with
+    n_over = n_with - n_kept
+
+    if n_kept == 0:
+        sys.exit(f"[rmsd-filter] no pose has {rmsd_col} ≤ {max_rmsd} Å joined from "
+                 f"{metrics_csv} (matched {n_with}/{n_in}). Nothing to report — is this "
+                 "the right metrics file, and a crystal-bearing set?")
+
+    rep = (d.groupby("docking_method")
+             .agg(total_in=("_kept", "size"),
+                  with_rmsd=("_has_rmsd", "sum"),
+                  kept=("_kept", "sum")))
+    rep["dropped_no_rmsd"] = rep["total_in"] - rep["with_rmsd"]
+    rep["dropped_over_thresh"] = rep["with_rmsd"] - rep["kept"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+    rep.to_csv(out_dir / "rmsd_filter_summary.csv")
+
+    print(f"[rmsd-filter] source: {metrics_csv} (column '{rmsd_col}', ≤ {max_rmsd:g} Å)")
+    print(f"[rmsd-filter] poses in: {n_in:,} | with RMSD: {n_with:,} | kept: {n_kept:,} "
+          f"| dropped >thr: {n_over:,} | dropped no-RMSD: {n_no_rmsd:,}")
+    if n_no_rmsd:
+        print(f"[rmsd-filter] note: {n_no_rmsd:,} pose(s) had no RMSD in the metrics "
+              "file (unscored, or absent — e.g. DiffDock optimizer variants the "
+              "comparison collapsed) and were dropped. See rmsd_filter_summary.csv.")
+
+    return d[d["_kept"]].drop(columns=["_has_rmsd", "_kept"]).reset_index(drop=True)
+
 
 def select_best_equibind(df: pd.DataFrame, oracle_csv: Path) -> tuple[pd.DataFrame, str | None]:
     """Keep non-EquiBind rows + only the single best EquiBind variant.
@@ -516,7 +619,7 @@ def plot_per_tool(summary: pd.DataFrame, out: Path) -> None:
                        rotation=20, ha="right")
     ax.set_ylabel("Number of poses")
     ax.set_title("PoseBusters Benchmark — Pose validity per docking method\n"
-                 "(valid = passes all canonical PB checks)")
+                 "(valid = passes all canonical PB checks)" + _RMSD_FILTER_NOTE)
     ax.legend()
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
@@ -535,7 +638,8 @@ def plot_heatmap(valid_mat: pd.DataFrame, out: Path, top_n: int = 60) -> None:
                 linewidths=0.3, linecolor="white", ax=ax)
     ax.set_xlabel("Docking method")
     ax.set_ylabel("Receptor / Ligand")
-    ax.set_title(f"Valid poses per receptor-ligand pair (top {len(mat)})")
+    ax.set_title(f"Valid poses per receptor-ligand pair (top {len(mat)})"
+                 + _RMSD_FILTER_NOTE)
     fig.tight_layout()
     fig.savefig(out, dpi=160)
     plt.close(fig)
@@ -567,7 +671,8 @@ def plot_grouped_bars(valid_mat: pd.DataFrame, out: Path, colors: dict,
     ax.set_yticks(y)
     ax.set_yticklabels(pairs, fontsize=8)
     ax.set_xlabel("Valid poses")
-    ax.set_title(f"Valid poses per docking method — top {len(pairs)} receptor-ligand pairs")
+    ax.set_title(f"Valid poses per docking method — top {len(pairs)} receptor-ligand pairs"
+                 + _RMSD_FILTER_NOTE)
     ax.legend(fontsize=8)
     ax.grid(axis="x", alpha=0.3); ax.set_axisbelow(True)
     fig.tight_layout()
@@ -589,7 +694,8 @@ def plot_validity_distribution(df: pd.DataFrame, out: Path, order: list[str]) ->
     ax.set_xticks(range(1, len(cols) + 1))
     ax.set_xticklabels([_pretty_method(c) for c in cols], rotation=20, ha="right")
     ax.set_ylabel("Valid poses per receptor-ligand pair")
-    ax.set_title("Distribution of valid poses across receptor-ligand pairs")
+    ax.set_title("Distribution of valid poses across receptor-ligand pairs"
+                 + _RMSD_FILTER_NOTE)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
     fig.savefig(out, dpi=160)
@@ -612,7 +718,7 @@ def plot_check_passrate(df: pd.DataFrame, out: Path, order: list[str]) -> None:
     fig, ax = plt.subplots(figsize=(max(8, 1.1 * len(pr.columns)), 6))
     sns.heatmap(pr * 100, annot=True, fmt=".1f", cmap="RdYlGn", vmin=0, vmax=100,
                 cbar_kws={"label": "Pass rate (%)"}, ax=ax)
-    ax.set_title("Per-check pass rate (%) per docking method")
+    ax.set_title("Per-check pass rate (%) per docking method" + _RMSD_FILTER_NOTE)
     ax.set_xlabel("")
     ax.set_ylabel("PoseBusters critical check")
     fig.tight_layout()
@@ -644,7 +750,8 @@ def plot_equibind_variants(summary: pd.DataFrame, out: Path, colors: dict) -> bo
     ax.set_ylabel("PB-Valid poses (%)")
     ax.set_ylim(0, max(5, eq["valid_fraction"].max() * 100 * 1.25))
     ax.set_title("EquiBind — PB-validity per variant\n"
-                 "(fpocket / p2rank / unguided, smina re-search, centroid clamp)")
+                 "(fpocket / p2rank / unguided, smina re-search, centroid clamp)"
+                 + _RMSD_FILTER_NOTE)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
     fig.savefig(out, dpi=160)
@@ -697,6 +804,20 @@ def main() -> None:
                          "variant (raw/smina/gnina, highest oracle_rmsd_le_2.0A_%%, read "
                          "from --oracle-summary) in all plots/CSVs, relabelled "
                          "'DiffDock*'. AutoDock/EquiBind are unaffected.")
+    ap.add_argument("--max-rmsd", type=float, default=None, metavar="A",
+                    help="Keep only poses whose RMSD-to-crystal is ≤ this many Å "
+                         "(e.g. 5.0) before scoring/plotting. Off by default. RMSD is "
+                         "joined in from --per-pose-metrics; poses with no RMSD value "
+                         "are dropped (and counted). Not meaningful for crystal-free "
+                         "sets (Orai).")
+    ap.add_argument("--per-pose-metrics", type=Path, default=DEFAULT_PER_POSE_METRICS,
+                    help="per_pose_metrics.csv from posebusters_pose_comparison.py — "
+                         "the source of the per-pose RMSD used by --max-rmsd "
+                         "(default: %(default)s).")
+    ap.add_argument("--rmsd-column", choices=_RMSD_COLUMNS, default="rmsd",
+                    help="Which per_pose_metrics RMSD column --max-rmsd filters on "
+                         "(default: %(default)s — symmetry-corrected, no superposition, "
+                         "matching the oracle RMSD ≤ 2 Å metric).")
     args = ap.parse_args()
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
@@ -710,6 +831,16 @@ def main() -> None:
         df = df[df["protein"].astype(str).isin(allowed)].copy()
         print(f"Restricted to {len(allowed)} ids from {args.ids_file.name}: "
               f"{n0} → {df['protein'].nunique()} receptor-ligand pairs")
+
+    # Optionally keep only poses within --max-rmsd Å of the crystal. Done before the
+    # best-variant selection and all scoring so every downstream CSV/figure reflects
+    # the filtered set (which is also flagged in each figure title via _RMSD_FILTER_NOTE).
+    if args.max_rmsd is not None:
+        global _RMSD_FILTER_NOTE
+        df = apply_rmsd_filter(df, args.per_pose_metrics, args.max_rmsd,
+                               args.rmsd_column, args.out_dir)
+        _RMSD_FILTER_NOTE = (f"\n(poses filtered to {args.rmsd_column} "
+                             f"≤ {args.max_rmsd:g} Å vs crystal)")
 
     # Optionally restrict every plot/CSV to the single best EquiBind variant.
     if args.best_equibind_only:

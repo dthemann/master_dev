@@ -419,7 +419,10 @@ def get_ligand_properties_from_pdbqt(pdbqt_path: Path) -> Dict:
                     rotatable += 1
         props["lig_total_atoms"] = atom_count
         props["lig_heavy_atoms"] = heavy_count if heavy_count > 0 else None
-        props["lig_rotatable_bonds"] = rotatable // 2 if rotatable > 0 else None
+        # Each rotatable bond is one BRANCH/ENDBRANCH pair, but only "BRANCH"
+        # lines are counted above ("ENDBRANCH".startswith("BRANCH") is False),
+        # so the raw count already equals the number of active torsions.
+        props["lig_rotatable_bonds"] = rotatable if rotatable > 0 else None
     except Exception as e:
         print(f"  ⚠ Could not parse PDBQT ligand {pdbqt_path.name}: {e}")
     return props
@@ -466,11 +469,12 @@ def precompute_properties(
         futures = {pool.submit(get_ligand_properties, lig): lig for lig in ligands}
         for fut in as_completed(futures):
             lig = futures[fut]
+            key = lig.resolve()  # match the resolved paths used at lookup time
             try:
-                lig_props_cache[lig] = fut.result()
+                lig_props_cache[key] = fut.result()
             except Exception as e:
                 print(f"  ⚠ Failed computing props for {lig.name}: {e}")
-                lig_props_cache[lig] = get_ligand_properties_from_pdbqt(lig)
+                lig_props_cache[key] = get_ligand_properties_from_pdbqt(lig)
     print(f"  {len(lig_props_cache)} ligands analysed")
 
     print("Pre-computing protein properties...")
@@ -478,11 +482,12 @@ def precompute_properties(
         futures = {pool.submit(get_protein_properties, prot): prot for prot in proteins}
         for fut in as_completed(futures):
             prot = futures[fut]
+            key = prot.resolve()  # match the resolved paths used at lookup time
             try:
-                prot_props_cache[prot] = fut.result()
+                prot_props_cache[key] = fut.result()
             except Exception as e:
                 print(f"  ⚠ Failed computing props for {prot.name}: {e}")
-                prot_props_cache[prot] = {"prot_num_residues": None, "prot_num_atoms": None, "prot_num_chains": None}
+                prot_props_cache[key] = {"prot_num_residues": None, "prot_num_atoms": None, "prot_num_chains": None}
     print(f"  {len(prot_props_cache)} proteins analysed")
 
     return lig_props_cache, prot_props_cache
@@ -540,35 +545,60 @@ def append_log_rows(
     cpu_model: str,
     overwrite: bool = False,
 ) -> None:
+    """Append log rows for `results` to the docking-log CSV.
+
+    Always appends (O(1) amortised). Stale rows for re-docked combos (overwrite
+    mode) are left in place and superseded by the freshly-appended rows, then
+    collapsed in a single pass by compact_docking_log() at the end of the run.
+    This replaces the former per-result full-file read+filter+rewrite, which was
+    O(N^2) across a run and ran while holding the log lock.
+    """
     rows = []
-    replaced = 0
     for r in results:
         combo = f"{r.ligand_name}__{r.protein_name}"
         if combo in existing_combos and not overwrite:
             continue
-        lig_props = lig_props_cache.get(r.ligand_path, get_ligand_properties(r.ligand_path))
-        prot_props = prot_props_cache.get(r.protein_path, get_protein_properties(r.protein_path))
+        lig_props = lig_props_cache.get(r.ligand_path)
+        if lig_props is None:
+            lig_props = get_ligand_properties(r.ligand_path)
+        prot_props = prot_props_cache.get(r.protein_path)
+        if prot_props is None:
+            prot_props = get_protein_properties(r.protein_path)
         rows.append(_build_log_row(r, lig_props, prot_props, cfg, cpu_model))
-        if combo in existing_combos:
-            replaced += 1
         existing_combos.add(combo)
 
     if not rows:
         return
 
-    if replaced > 0 and log_path.exists():
-        df_existing = pd.read_csv(log_path)
-        replace_combos = {row["combo_name"] for row in rows}
-        df_existing = df_existing[~df_existing["combo_name"].isin(replace_combos)]
-        df_new = pd.DataFrame(rows, columns=DOCKING_LOG_COLUMNS)
-        frames = [df for df in (df_existing, df_new) if not df.empty]
-        df_all = pd.concat(frames, ignore_index=True) if frames else df_new
-        df_all.to_csv(log_path, index=False)
-        print(f"  📝 Replaced {replaced} + appended {len(rows) - replaced} entries in {log_path.name}")
-    else:
-        df = pd.DataFrame(rows, columns=DOCKING_LOG_COLUMNS)
-        df.to_csv(log_path, mode="a", header=False, index=False)
-        print(f"  📝 Appended {len(rows)} entries to {log_path.name}")
+    # The CSV header is written once by init_docking_log(); always append.
+    df = pd.DataFrame(rows, columns=DOCKING_LOG_COLUMNS)
+    df.to_csv(log_path, mode="a", header=False, index=False)
+
+
+def compact_docking_log(log_path: Path) -> None:
+    """Collapse the docking-log CSV to one row per combo, keeping the most
+    recent. Run once at the end of a docking run so stale/duplicate rows left
+    by append-only writes and overwrite re-docks are removed in a single O(N)
+    pass instead of the former per-result O(N^2) rewrite.
+
+    "Keep last" is correct for both modes: on overwrite the new row is appended
+    after the stale one; without overwrite an already-logged combo is never
+    re-appended, so its single row is preserved unchanged.
+    """
+    if not log_path.exists():
+        return
+    try:
+        df = pd.read_csv(log_path)
+    except Exception as e:
+        print(f"  ⚠ Could not compact docking log {log_path.name}: {e}")
+        return
+    if df.empty or "combo_name" not in df.columns:
+        return
+    before = len(df)
+    df = df.drop_duplicates(subset="combo_name", keep="last")
+    if len(df) != before:
+        df.to_csv(log_path, index=False)
+        print(f"  📝 Compacted {log_path.name}: {before} → {len(df)} rows")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -967,6 +997,7 @@ def _dock_batch_job(
     )
     t0 = time.time()
     timed_out = False
+    retcode: int | None = None  # stays None if open()/Popen() raises before wait()
     try:
         with open(batch_log_path, "w") as log_f:
             proc = subprocess.Popen(cmd, stdout=log_f, stderr=subprocess.STDOUT)
@@ -1039,7 +1070,11 @@ def _dock_batch_job(
             n_sub = min(4, len(remaining_ligs))
             sub_size = max(1, len(remaining_ligs) // n_sub)
             sub_batches = [remaining_ligs[i:i + sub_size] for i in range(0, len(remaining_ligs), sub_size)]
-            sub_timeout = max(effective_timeout or (timeout * len(remaining_ligs)), timeout) if timeout > 0 else 0
+            # We only reach this split-retry after a real timeout fired, so
+            # effective_timeout is guaranteed to be a positive number. Base the
+            # sub-batch timeout on it and never fall back to 0 — a 0/None timeout
+            # would make the recursive proc.wait() block forever on a stuck ligand.
+            sub_timeout = max(effective_timeout, timeout) if timeout > 0 else effective_timeout
             print(f"    Retrying {len(remaining_ligs)} remaining ligands in {len(sub_batches)} sub-batches")
 
             common_kwargs = dict(
@@ -1082,8 +1117,10 @@ def _dock_batch_job(
                 modes = parse_pdbqt_affinities(pose_text)
             except Exception:
                 pass
-            if not modes:
-                modes = parse_vina_affinities(batch_output)
+            # Do NOT fall back to parsing batch_output here: it is the shared
+            # batch log covering every ligand, so parse_vina_affinities would
+            # return all ligands' modes and attribute them to this one. The
+            # per-ligand pose file's REMARK VINA RESULT records are authoritative.
             n_poses = len(modes)
             best_aff = modes[0]["affinity"] if modes else None
 
@@ -1099,7 +1136,12 @@ def _dock_batch_job(
             raw = {"receptor": str(rec_path), "ligand": str(lig_path),
                    "output": str(final_out), "log": str(per_lig_log), "status": "ok"}
         else:
-            err_msg = f"Batch docking failed (rc={retcode})" if not batch_ok else "No output produced"
+            if batch_ok:
+                err_msg = "No output produced"
+            elif retcode is not None:
+                err_msg = f"Batch docking failed (rc={retcode})"
+            else:
+                err_msg = f"Batch docking failed to launch: {batch_output[:200]}"
             r = DockingResult(
                 protein_name=rec_name, ligand_name=lig_name,
                 protein_path=rec_path, ligand_path=lig_path,
@@ -1385,7 +1427,9 @@ def run_autodock_vina(
 
         if r.status == "failed":
             with log_lock:
-                record_failure(effective_output_dir, combo_name, r)
+                # error_log (in-memory) is authoritative; update it and persist
+                # write-only. Avoids record_failure()'s per-failure full re-read
+                # + rewrite (O(N^2) over a run) and the duplicate dict update.
                 error_log[combo_name] = {
                     "error": r.error_message,
                     "timestamp": datetime.now().isoformat(),
@@ -1393,6 +1437,7 @@ def run_autodock_vina(
                     "ligand": r.ligand_name,
                     "elapsed_time": round(r.elapsed_time, 2),
                 }
+                save_error_log(effective_output_dir, error_log)
 
         icon = "✓" if r.status == "success" else ("⊘" if r.status == "skipped" else "✗")
         aff_str = f"{r.best_affinity:.2f} kcal/mol" if r.best_affinity is not None else "N/A"
@@ -1501,6 +1546,7 @@ def run_autodock_vina(
     print(f"  Success: {n_success}  |  Failed: {n_failed}  |  Skipped: {n_skipped}")
 
     save_error_log(effective_output_dir, error_log)
+    compact_docking_log(csv_log_path)
 
     results_df = pd.DataFrame(raw_results)
     return results_df, docking_results
@@ -1612,9 +1658,9 @@ def main():
     output_base.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    protein_pdbqt_dir = get_pdbqt_dir(receptors_dir)
-
-    # ── Validate directories ──
+    # ── Validate input directories BEFORE creating any pdbqt subdirs. get_pdbqt_dir()
+    # does mkdir(parents=True), which would silently materialise a mistyped
+    # receptors_dir and make the existence check below unreachable. ──
     for d in ligand_dirs:
         if not d.exists():
             print(f"ERROR: Ligand directory missing: {d}")
@@ -1622,6 +1668,8 @@ def main():
     if not receptors_dir.exists():
         print(f"ERROR: Receptor directory missing: {receptors_dir}")
         sys.exit(1)
+
+    protein_pdbqt_dir = get_pdbqt_dir(receptors_dir)
 
     print_config(cfg)
 

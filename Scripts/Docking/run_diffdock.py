@@ -147,15 +147,10 @@ def collect_files(root: Path, extensions: List[str]) -> List[Path]:
 
 
 def extract_confidence_from_filename(filename: str) -> float:
-    try:
-        if "confidence" in filename.lower():
-            parts = filename.lower().split("confidence")
-            if len(parts) > 1:
-                conf_str = parts[1].replace("-", "").replace("_", "").replace(".sdf", "")
-                return float(conf_str)
-    except Exception:
-        pass
-    return 0.0
+    # DiffDock encodes the (usually negative) confidence directly in the name,
+    # e.g. rank1_confidence-1.65.sdf → -1.65. Keep the sign.
+    m = re.search(r"confidence(-?\d+(?:\.\d+)?)", filename.lower())
+    return float(m.group(1)) if m else 0.0
 
 
 def extract_rank_from_filename(filename: str) -> int:
@@ -650,8 +645,14 @@ def _build_diffdock_config(
 
 
 def _collect_ranked_poses(output_dir: Path) -> List[Path]:
-    output_sdfs = list(output_dir.rglob("rank*_confidence*.sdf"))
-    output_sdfs = [s for s in output_sdfs if s.stat().st_size > 0]
+    # rglob (not glob) because single-complex mode nests poses under a
+    # DiffDock-named subdir (complex_0/). Exclude optimized_<tool>/ subfolders,
+    # whose re-scored poses (rank1_confidence-1.65_smina.sdf) also match the
+    # pattern — otherwise a re-run would double-count and re-optimize them.
+    output_sdfs = [
+        s for s in output_dir.rglob("rank*_confidence*.sdf")
+        if s.stat().st_size > 0 and not s.parent.name.startswith("optimized_")
+    ]
     return sorted(output_sdfs, key=lambda p: extract_rank_from_filename(p.name))
 
 
