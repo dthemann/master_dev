@@ -327,49 +327,97 @@ def load_poses_from_dirs(cfg: PandaMapConfig) -> list[dict]:
 
 
 # Default location of the oracle summary written by posebusters_pose_comparison.py
-# (the only place the oracle_rmsd_le_2.0A_% metric exists). Used to rank EquiBind
-# variants for --best-equibind-only when no explicit path is configured.
+# (the only place the per-variant success metrics exist). Used to rank EquiBind/DiffDock
+# variants for --best-*-only (by PB-Valid AND RMSD ≤ 2 Å) when no explicit path is configured.
 DEFAULT_ORACLE_SUMMARY = Path(
     "posebusters_results/benchmark/dock/pose_comparison_report/oracle_summary.csv")
+
+
+def _resolve_variant_oracle(oracle_csv: Path | None) -> Path | None:
+    """Prefer the ``*_all_variants.csv`` sibling of an oracle summary for per-variant ranking.
+
+    posebusters_pose_comparison.py writes oracle_summary.csv with each tool COLLAPSED to a
+    single row (``diffdock`` / ``equibind_unguided_gnina`` — its own best variant, relabelled
+    to the bare tool name). PandaMap ranks per-variant labels (``diffdock_smina`` /
+    ``diffdock_gnina`` / …); against the collapsed file only the bare ``diffdock`` row matches,
+    so the other variants are dropped (``m in scores.index`` is False) and raw DiffDock "wins"
+    as the sole candidate.
+
+    The comparison also writes an ``oracle_summary_all_variants.csv`` sibling with one row per
+    variant; when it exists we rank against that instead. Falls back to the given path (older
+    runs / crystal-free sets lacking the sibling); a path already ending in ``_all_variants.csv``
+    is returned unchanged.
+    """
+    if not oracle_csv:
+        return oracle_csv
+    p = Path(oracle_csv)
+    if p.name.endswith("_all_variants.csv"):
+        return p
+    sibling = p.with_name(f"{p.stem}_all_variants{p.suffix}")
+    return sibling if sibling.exists() else p
+
+
+# Metric the best-variant filters rank on: the combined docking-success criterion
+# PB-Valid AND RMSD ≤ 2 Å (a pose must be BOTH near-native AND physically valid), written
+# per variant by posebusters_pose_comparison.py. Older summaries that predate the combined
+# column fall back to the RMSD-only rate.
+BEST_VARIANT_METRIC = "oracle_pb_valid_and_rmsd2_%"
+BEST_VARIANT_METRIC_FALLBACK = "oracle_rmsd_le_2.0A_%"
+
+
+def _variant_ranking_scores(oracle_csv: Path, tag: str) -> tuple[pd.Series | None, str | None]:
+    """Per-variant ranking scores and the metric column used, read from *oracle_csv*.
+
+    Ranks on ``oracle_pb_valid_and_rmsd2_%`` (PB-Valid AND RMSD ≤ 2 Å — the combined
+    docking-success criterion), falling back to ``oracle_rmsd_le_2.0A_%`` when a summary
+    predates the combined column. Returns (scores, metric) or (None, None) — with a ``[tag]``
+    note — when the file carries neither column. The caller has already resolved *oracle_csv*
+    to its ``*_all_variants.csv`` sibling (see _resolve_variant_oracle)."""
+    osum = pd.read_csv(oracle_csv, index_col=0)
+    col = (BEST_VARIANT_METRIC if BEST_VARIANT_METRIC in osum.columns
+           else BEST_VARIANT_METRIC_FALLBACK if BEST_VARIANT_METRIC_FALLBACK in osum.columns
+           else None)
+    if col is None:
+        print(f"  [{tag}] neither '{BEST_VARIANT_METRIC}' nor "
+              f"'{BEST_VARIANT_METRIC_FALLBACK}' in {oracle_csv} — keeping all variants.")
+        return None, None
+    return pd.to_numeric(osum[col], errors="coerce"), col
 
 
 def filter_best_equibind(poses: list[dict],
                          oracle_csv: Path | None) -> tuple[list[dict], str | None]:
     """Keep non-EquiBind poses + only the single best EquiBind variant.
 
-    "Best" = the EquiBind variant with the highest oracle RMSD ≤ 2 Å success rate
-    (``oracle_rmsd_le_2.0A_%``) in *oracle_csv* — the oracle_summary.csv written by
-    posebusters_pose_comparison.py (PandaMap carries no RMSD of its own). The
-    chosen variant is selected among the EquiBind variants actually present in
-    *poses*; AutoDock/DiffDock poses are always kept.
+    "Best" = the EquiBind variant with the highest PB-Valid AND RMSD ≤ 2 Å rate
+    (``oracle_pb_valid_and_rmsd2_%``, falling back to ``oracle_rmsd_le_2.0A_%`` for older
+    summaries — see _variant_ranking_scores) in *oracle_csv* — the oracle_summary.csv written
+    by posebusters_pose_comparison.py (PandaMap carries no RMSD of its own). The chosen variant
+    is selected among the EquiBind variants actually present in *poses*; AutoDock/DiffDock poses
+    are always kept.
 
     Returns (kept_poses, best_variant_key). ``best`` is ``None`` and *poses* is
     returned unchanged when filtering can't be applied: no EquiBind variants
     present, missing/unreadable oracle summary, or no overlap between the present
-    variants and the oracle metric.
+    variants and the ranking metric.
     """
     eq_present = sorted({str(p["method"]) for p in poses
                          if str(p["method"]).startswith("equibind")})
     if not eq_present:
         return poses, None
+    oracle_csv = _resolve_variant_oracle(oracle_csv)
     if not oracle_csv or not Path(oracle_csv).exists():
         print(f"  [best-equibind-only] oracle summary not found at {oracle_csv} — "
               "keeping all EquiBind variants.")
         return poses, None
 
-    col = "oracle_rmsd_le_2.0A_%"
-    osum = pd.read_csv(oracle_csv, index_col=0)
-    if col not in osum.columns:
-        print(f"  [best-equibind-only] '{col}' missing from {oracle_csv} — "
-              "keeping all EquiBind variants.")
+    scores, _ = _variant_ranking_scores(oracle_csv, "best-equibind-only")
+    if scores is None:
         return poses, None
-
-    scores = pd.to_numeric(osum[col], errors="coerce")
     cand = {m: float(scores[m]) for m in eq_present
             if m in scores.index and pd.notna(scores[m])}
     if not cand:
-        print("  [best-equibind-only] none of the present EquiBind variants have an "
-              f"oracle score in {oracle_csv} — keeping all EquiBind variants.")
+        print("  [best-equibind-only] none of the present EquiBind variants have a "
+              f"score in {oracle_csv} — keeping all EquiBind variants.")
         return poses, None
 
     best = max(cand, key=cand.get)
@@ -382,34 +430,31 @@ def filter_best_diffdock(poses: list[dict],
                          oracle_csv: Path | None) -> tuple[list[dict], str | None]:
     """Keep non-DiffDock poses + only the single best DiffDock optimizer variant.
 
-    "Best" = the DiffDock variant (diffdock / diffdock_smina / diffdock_gnina)
-    with the highest ``oracle_rmsd_le_2.0A_%`` in *oracle_csv*. Mirrors
-    filter_best_equibind; AutoDock/EquiBind poses are always kept. Returns
+    "Best" = the DiffDock variant (diffdock / diffdock_smina / diffdock_gnina) with the
+    highest PB-Valid AND RMSD ≤ 2 Å rate (``oracle_pb_valid_and_rmsd2_%``, falling back to
+    ``oracle_rmsd_le_2.0A_%`` for older summaries — see _variant_ranking_scores) in *oracle_csv*.
+    Mirrors filter_best_equibind; AutoDock/EquiBind poses are always kept. Returns
     (kept_poses, best_variant_key); ``None`` when no DiffDock variant is present,
-    the summary is missing/unreadable, or no present variant has an oracle score.
+    the summary is missing/unreadable, or no present variant has a score.
     """
     dd_present = sorted({str(p["method"]) for p in poses
                          if str(p["method"]).startswith("diffdock")})
     if not dd_present:
         return poses, None
+    oracle_csv = _resolve_variant_oracle(oracle_csv)
     if not oracle_csv or not Path(oracle_csv).exists():
         print(f"  [best-diffdock-only] oracle summary not found at {oracle_csv} — "
               "keeping all DiffDock variants.")
         return poses, None
 
-    col = "oracle_rmsd_le_2.0A_%"
-    osum = pd.read_csv(oracle_csv, index_col=0)
-    if col not in osum.columns:
-        print(f"  [best-diffdock-only] '{col}' missing from {oracle_csv} — "
-              "keeping all DiffDock variants.")
+    scores, _ = _variant_ranking_scores(oracle_csv, "best-diffdock-only")
+    if scores is None:
         return poses, None
-
-    scores = pd.to_numeric(osum[col], errors="coerce")
     cand = {m: float(scores[m]) for m in dd_present
             if m in scores.index and pd.notna(scores[m])}
     if not cand:
-        print("  [best-diffdock-only] none of the present DiffDock variants have an "
-              f"oracle score in {oracle_csv} — keeping all DiffDock variants.")
+        print("  [best-diffdock-only] none of the present DiffDock variants have a "
+              f"score in {oracle_csv} — keeping all DiffDock variants.")
         return poses, None
 
     best = max(cand, key=cand.get)
@@ -649,13 +694,14 @@ def main() -> None:
                     help="render 2D PNG maps (slow). Default from config.")
     ap.add_argument("--overwrite", action="store_true", default=None)
     ap.add_argument("--best-equibind-only", action="store_true", default=None,
-                    help="Map only the single best EquiBind variant (highest "
-                         "oracle_rmsd_le_2.0A_%%, from --oracle-summary) alongside "
-                         "AutoDock/DiffDock. Overrides config 'best_equibind_only'.")
+                    help="Map only the single best EquiBind variant (highest PB-Valid AND "
+                         "RMSD ≤ 2 Å = oracle_pb_valid_and_rmsd2_%%, from --oracle-summary) "
+                         "alongside AutoDock/DiffDock. Overrides config 'best_equibind_only'.")
     ap.add_argument("--best-diffdock-only", action="store_true", default=None,
                     help="Map only the single best DiffDock optimizer variant "
-                         "(highest oracle_rmsd_le_2.0A_%%, from --oracle-summary) "
-                         "alongside AutoDock/EquiBind. Overrides config 'best_diffdock_only'.")
+                         "(highest PB-Valid AND RMSD ≤ 2 Å = oracle_pb_valid_and_rmsd2_%%, "
+                         "from --oracle-summary) alongside AutoDock/EquiBind. Overrides config "
+                         "'best_diffdock_only'.")
     ap.add_argument("--oracle-summary", type=Path, default=None,
                     help="oracle_summary.csv (from posebusters_pose_comparison.py) "
                          "used to rank EquiBind variants for --best-equibind-only. "
@@ -719,7 +765,7 @@ def main() -> None:
         poses, best_eq = filter_best_equibind(poses, oracle_csv)
         if best_eq:
             print(f"best-equibind-only: keeping '{best_eq}' (top EquiBind by "
-                  f"oracle_rmsd_le_2.0A_%); {before} → {len(poses)} poses. "
+                  f"PB-Valid AND RMSD ≤ 2 Å); {before} → {len(poses)} poses. "
                   "Run the report with --best-equibind-only to label it 'EquiBind*'.")
 
     if cfg.best_diffdock_only:
@@ -728,7 +774,7 @@ def main() -> None:
         poses, best_dd = filter_best_diffdock(poses, oracle_csv)
         if best_dd:
             print(f"best-diffdock-only: keeping '{best_dd}' (top DiffDock by "
-                  f"oracle_rmsd_le_2.0A_%); {before} → {len(poses)} poses. "
+                  f"PB-Valid AND RMSD ≤ 2 Å); {before} → {len(poses)} poses. "
                   "Run the report with --best-diffdock-only to label it 'DiffDock*'.")
 
     selected = select_top_n(poses, cfg.poses_per_combo)

@@ -79,7 +79,7 @@ METHODS = {
 PER_POSE_METHOD = {
     "autodock": "autodock",
     "diffdock": "diffdock",
-    "equibind": "equibind_unguided_smina_clampOFF",
+    "equibind": "equibind_unguided_smina",   # clamp-off runs drop the clamp token
 }
 # EquiBind per-pose timing fields, classified by the hardware that does the work
 EQ_GPU_FIELD = "dock_time_s"                                   # model inference (GPU)
@@ -104,13 +104,35 @@ def _autodock_time(cid: str, root: Path, prep: str) -> Optional[float]:
 
 
 def _diffdock_time(cid: str, root: Path) -> Optional[float]:
+    """Real per-complex DiffDock docking wall-clock.
+
+    Prefer docking_log.csv's elapsed_time_s (recorded on the FIRST real dock of
+    each complex, e.g. the 2026-05-30 production run). docking_summary.json's
+    overall.total_time_seconds is 0.0 for skip-runs (a complex re-visited after
+    it was already docked), so it under-reports; only fall back to it when the
+    log has no positive time. Multiple rows (appended skip-runs write 0.0) -> take
+    the max, i.e. the one real dock.
+    """
+    log = root / cid / "docking_log.csv"
+    if log.exists():
+        try:
+            import csv
+            with open(log) as f:
+                ts = [float(r.get("elapsed_time_s") or 0) for r in csv.DictReader(f)]
+            mx = max(ts) if ts else 0.0
+            if mx > 0:
+                return mx
+        except Exception:
+            pass
     p = root / cid / "docking_summary.json"
-    if not p.exists():
-        return None
-    try:
-        return float(json.loads(p.read_text())["overall"]["total_time_seconds"])
-    except Exception:
-        return None
+    if p.exists():
+        try:
+            t = float(json.loads(p.read_text())["overall"]["total_time_seconds"])
+            if t > 0:
+                return t
+        except Exception:
+            pass
+    return None
 
 
 def _equibind_time(cid: str, root: Path, eq_mode: str, eq_refine: str,
@@ -384,7 +406,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--per-pose-csv",
-                    default="posebusters_results/benchmark/dock_best_equi_top5/"
+                    default="posebusters_results/benchmark/dock/"
                             "pose_comparison_report/per_pose_metrics.csv")
     ap.add_argument("--autodock-dir", default="Dockings/Benchmark")
     ap.add_argument("--autodock-prep", default="meeko", choices=("meeko", "mgl_tools"))
@@ -395,7 +417,10 @@ def main(argv=None) -> int:
     ap.add_argument("--equibind-dir", default="Dockings/Benchmark_Equibind")
     ap.add_argument("--eq-mode", default="unguided")
     ap.add_argument("--eq-refine", default="smina")
-    ap.add_argument("--eq-clamp", default="clampOFF")
+    ap.add_argument("--eq-clamp", default=None,
+                    help="EquiBind clamp variant (clampON/clampOFF). Leave unset for "
+                         "clamp-off runs, whose poses carry no clamp token "
+                         "(clamp_variant=None in pipeline_summary.json).")
     ap.add_argument("--ids-file", default="Data/PoseBuster Benchmark Set/"
                                           "posebusters_pdb_ccd_ids.txt")
     ap.add_argument("--out-dir", default="posebusters_results/benchmark/docking_effort")
@@ -415,8 +440,9 @@ def main(argv=None) -> int:
 
     # ── console report ───────────────────────────────────────────────────
     print("\n" + "=" * 100)
+    _eq_cfg = f"{args.eq_mode}+{args.eq_refine}" + (f"+{args.eq_clamp}" if args.eq_clamp else "")
     print("DOCKING COMPUTATIONAL EFFORT — benchmark set "
-          f"(EquiBind best config: {args.eq_mode}+{args.eq_refine}+{args.eq_clamp})")
+          f"(EquiBind best config: {_eq_cfg})")
     print("=" * 100)
     print("WALL-CLOCK (time-to-result):")
     print(f"  {'method':<26}{'dev':>8}{'cplx':>6}{'total h':>9}{'gen':>9}"

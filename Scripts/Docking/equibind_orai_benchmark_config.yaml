@@ -5,10 +5,13 @@
 # runs keep their own settings.
 #
 # BEST-BENCHMARK SETTINGS (per-variant PoseBusters analysis of the benchmark poses):
-#   unguided + smina refinement was ~3x more PB-valid (23%) than any guided
-#   fpocket/p2rank variant (6-10%), and clampON vs clampOFF were identical for
-#   unguided (clamping is a no-op without a guiding pocket). So we keep only that
-#   one variant:  n_top_pockets: 0 (no guided) · refine_mode: on (smina) · clamp_mode: off.
+#   unguided refinement was ~3x more PB-valid than any guided fpocket/p2rank
+#   variant (6-10%), and clampON vs clampOFF were identical for unguided (clamping
+#   is a no-op without a guiding pocket). Among unguided refiners, gnina was the
+#   single best variant by the benchmark's own --best-equibind-only ranking
+#   (oracle RMSD<=2A: gnina 17.4% > smina 16.1% > raw 13.4%; gnina also leads pose
+#   PB-validity 24.2% > smina 23.3% > raw 21.4%). So we keep only that one variant:
+#   n_top_pockets: 0 (no guided) · refine_mode: on · refine_tool: gnina · clamp_mode: off.
 #
 # 10 unguided poses = 10 rdkit_seeds x conformers_per_seed:1 = 10 conformers
 # (n_unguided_poses is capped by the number of conformers, so 10 seeds suffice).
@@ -31,8 +34,8 @@ pocket_match_threshold: 8.0
 force_pocket: true
 clamp_pose_to_pocket: true
 clamp_mode: "off"          # no-op for unguided poses (clampON == clampOFF on benchmark); quoted so YAML keeps the string
-refine_mode: "on"          # smina-refined only (smina > raw: 23% vs 21% PB-valid); quoted so YAML keeps the string
-refine_tool: smina         # smina | gnina | both (gnina adds a CNN rescore on top of physics)
+refine_mode: "on"          # single refined variant only (the benchmark-best refiner below); quoted so YAML keeps the string
+refine_tool: smina         # smina | gnina | both — gnina is the benchmark-best unguided variant (physics + CNN rescore)
 smina_search: local_only
 smina_autobox_add: 4.0
 smina_cpu: 1
@@ -40,7 +43,7 @@ smina_seed: 0
 smina_timeout_s: 300
 smina_receptor_ext: .pdb
 smina_executable: ''
-gnina_executable: ''       # '' = autodetect on PATH (or set via EQ_GNINA); only used when refine_tool is gnina/both
+gnina_executable: /home/manndo/docking_tools/gnina   # shared wrapper (equibind env has no gnina on PATH); required since refine_tool: gnina
 gnina_use_gpu: false       # run gnina's CNN on the GPU (off: --no_gpu, since the GPU runs EquiBind)
 use_protein_cropping: true
 pocket_crop_radius: 8.0
@@ -57,7 +60,9 @@ rdkit_seeds:
 - 8675
 - 9999
 conformers_per_seed: 1
-uff_minimize: true
+uff_minimize: false        # matches the benchmark set: the protein-fixed UFF mangles
+                           # bond angles to relieve clash; gnina relieves the clash
+                           # anyway, so UFF off ~doubles PB-validity (unguided_gnina).
 uff_max_iters: 200
 uff_energy_tol: 0.0001
 uff_force_tol: 0.001
@@ -68,4 +73,8 @@ uff_vdw_thresh: 10.0
 gpu_batch_size: 8
 n_parallel_workers: 0
 parallel_conformer_gen: true
-skip_existing: true
+skip_existing: true       # TEMP: force full re-dock so the June smina poses are regenerated
+                           # with gnina refinement. In refine_mode:on both refiners write the
+                           # SAME filename (unguided_NNN.sdf, no suffix), so skip_existing:true
+                           # sees the existing smina file and skips. Revert to true once the
+                           # gnina poses exist, or every future run re-docks all 1232 combos.

@@ -27,7 +27,65 @@ config_mode: dock
 
 save_interval: 200
 overwrite: false
-num_workers: null
+num_workers: 0
+
+# ---------------------------------------------------------------------------
+# Performance / stability (added to stop long runs stalling after a few 1000
+# poses). Every key below is optional; the value shown is the built-in default,
+# so leaving them out keeps the same behaviour.
+# ---------------------------------------------------------------------------
+
+# Suppress warning chatter — all Python warnings (incl. the repeated pandas
+# "DataFrame concatenation with all-NA columns" FutureWarning) and every RDKit
+# log line — plus the verbose per-file listings (HETATM strip table, the full
+# protein-file dump, per-model conversion notes). Progress, checkpoint and
+# summary lines are kept. Same as passing --quiet / -q on the command line.
+quiet: true
+
+# Cap intra-worker thread fan-out so N Pool workers don't oversubscribe the CPU.
+# PoseBusters' internal-energy check embeds + UFF-minimises a 50-conformer
+# ensemble per pose using ALL cores (RDKit num_threads=0); with one worker per
+# core that is N x cores threads fighting over N cores, which is the main reason
+# a run crawls to a halt under load. We already parallelise at the pose level,
+# so each worker is forced single-threaded instead. Leave true unless you run a
+# single worker and want RDKit to parallelise internally.
+limit_worker_threads: true
+
+# Recycle each worker process after this many poses. Bounds the RDKit conformer
+# cache / memory growth that otherwise accumulates over a long run and tips into
+# swap thrashing (the classic "stalls after a few thousand poses"). Set to 0 or
+# null to keep workers alive for the whole run. CLI: --max-tasks-per-child.
+worker_maxtasks: 200
+
+# Per-pose wall-clock cap (seconds) for a single PoseBusters bust() call. A
+# pathological ligand can otherwise send the 50-conformer ensemble into an
+# effectively unbounded compute and stall a worker. A timed-out pose is counted
+# separately, skipped (NOT written to the results CSV, so a resume run retries
+# it), and its path is appended to posebusters_timeouts.txt next to the results
+# CSV. Set to 0 or null to disable. CLI: --pose-timeout.
+pose_timeout: 180
+
+# Stall recovery. A dead worker — e.g. OOM-killed under memory pressure, which
+# this WSL2 box is prone to (swap already heavily used) — makes the Pool's
+# result iterator block FOREVER waiting for a result that never comes. That is
+# the true "stuck after a few thousand busts with no error". If no pose
+# completes for `stall_timeout` seconds the pool is declared wedged, terminated,
+# and restarted on the not-yet-done poses, halving the worker count each time to
+# relieve memory, up to `max_restarts` times. Poses already written to the CSV
+# are never re-run. null -> auto = max(pose_timeout, 300) x 3; 0 -> disable.
+stall_timeout: null
+max_restarts: 5
+
+# Live resource monitor (diagnostic; off by default). A background thread prints
+# a snapshot every `monitor_interval` seconds — system CPU / load / RAM / swap,
+# then the worker pool's aggregate CPU%, thread count and RSS, the derived
+# "cores busy", and pose throughput — and flags oversubscription, swap / memory
+# pressure, under-utilisation and busy-but-no-progress. Use it to SEE which
+# bottleneck is biting. Needs psutil for per-process detail (installed here);
+# without it, still reports load average + memory / swap. CLI: --monitor,
+# --monitor-interval.
+monitor: true
+monitor_interval: 30
 
 # All PoseBusters CSVs / PNGs land here:
 output_base_dir: posebusters_results/benchmark

@@ -20,18 +20,36 @@ Inputs (all already on disk — nothing re-docked):
   * pockets       : pocket_results/{fpocket_results,p2rank_results}  (reuses the
                     parsers in pocket_comparison_report.py)
 
-EquiBind is collapsed to one representative variant (``--equibind-variant``).
+Each of the three tool slots is filled by ONE docking-mode variant, chosen from
+the CSV:
+  * EquiBind  : pick the pocket source, refiner, and clamp independently
+                (``--equibind-pocket``/``--equibind-refine``/``--equibind-clamp``),
+                or pass a full method string with ``--equibind-variant``.
+  * DiffDock  : pick the refiner (``--diffdock-refine {raw,smina,gnina}``) or a
+                full method string with ``--diffdock-variant``.
+The refiner axis is what lets you compare e.g. gnina- vs smina-refined poses.
+Note the gnina EquiBind method names OMIT the ``gnina`` token (e.g.
+``equibind_fpocket_clampON`` IS the gnina refine of fpocket/clampON); the
+component selectors resolve that quirk from the CSV so you don't have to.
 
 Run in the analysis env (conda env ``vina`` — rdkit + sklearn + scipy + matplotlib;
 do NOT rely on sklearn_extra, it is broken under NumPy 2.x):
 
+    # default: EquiBind unguided/smina/clampOFF + raw DiffDock
     python Scripts/Analysis/pose_cluster_crystal_pocket_report.py \
         --ids-file "Data/PoseBuster Benchmark Set/posebusters_pdb_ccd_ids.txt"
+
+    # gnina-refined EquiBind (fpocket-guided) vs gnina-refined DiffDock
+    python Scripts/Analysis/pose_cluster_crystal_pocket_report.py \
+        --equibind-pocket fpocket --equibind-refine gnina \
+        --diffdock-refine gnina
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import pickle
 import sys
 import warnings
 from collections import Counter, defaultdict
@@ -573,6 +591,95 @@ def _ensemble_stats(C: np.ndarray, tools: List[str], crystal: Optional[np.ndarra
 # IO
 # ════════════════════════════════════════════════════════════════════════
 
+# Friendly refiner keywords accepted for both EquiBind and DiffDock. 'raw' = the
+# unrefined docked pose; 'smina'/'gnina' = the smina-/gnina-minimised pose.
+_REFINERS = ("raw", "smina", "gnina")
+_DECOMP_COLS = ("pocket_source", "refine_variant", "clamp_variant")
+
+
+def _variant_catalog(csv: Path) -> pd.DataFrame:
+    """Light read of just the variant-defining columns (``method`` + the
+    pocket/refine/clamp decomposition), de-duplicated. Lets the CLI resolve and
+    validate a variant selection without parsing the whole ~190k-row per-pose CSV
+    at full width first."""
+    want = ("method",) + _DECOMP_COLS
+    cat = pd.read_csv(csv, usecols=lambda c: c in want, low_memory=False)
+    return cat.drop_duplicates().reset_index(drop=True)
+
+
+def resolve_equibind_variant(cat: pd.DataFrame, variant: Optional[str],
+                             pocket: str, refine: str, clamp: str) -> str:
+    """Resolve the exact ``equibind_*`` method string for the EquiBind tool slot.
+
+    An explicit full ``--equibind-variant`` method string wins (validated against
+    the CSV); otherwise the (pocket, refine, clamp) components are matched. This
+    is what makes ``--equibind-refine gnina`` selectable even though the gnina
+    method names omit the ``gnina`` token (e.g. ``equibind_fpocket_clampON`` IS
+    the gnina refine of fpocket/clampON) — the decomposition columns carry the
+    true refiner, so we match on those rather than on the folded name.
+    """
+    eq = cat[cat["method"].astype(str).str.startswith("equibind")]
+    methods = sorted(eq["method"].astype(str).unique())
+    if not methods:
+        raise SystemExit("No 'equibind' poses in the per-pose CSV.")
+    if variant:
+        if variant in methods:
+            return variant
+        raise SystemExit(
+            f"--equibind-variant '{variant}' is not in the CSV. Available:\n    "
+            + "\n    ".join(methods))
+    if set(_DECOMP_COLS) <= set(cat.columns):
+        mask = ((eq["pocket_source"].astype(str) == pocket)
+                & (eq["refine_variant"].astype(str) == refine)
+                & (eq["clamp_variant"].astype(str) == clamp))
+        cand = sorted(eq[mask]["method"].astype(str).unique())
+    else:                                    # older CSV: compose by naming rule
+        mid = "" if refine == "gnina" else f"_{refine}"   # gnina omits the token
+        cand = [m for m in methods if m == f"equibind_{pocket}{mid}_{clamp}"]
+    sel = f"pocket={pocket}, refine={refine}, clamp={clamp}"
+    if len(cand) == 1:
+        return cand[0]
+    if not cand:
+        avail = ""
+        if set(_DECOMP_COLS) <= set(cat.columns):
+            avail = ("\n  pockets={} refiners={} clamps={}".format(
+                sorted(eq["pocket_source"].dropna().unique()),
+                sorted(eq["refine_variant"].dropna().unique()),
+                sorted(eq["clamp_variant"].dropna().unique())))
+        raise SystemExit(f"No equibind variant matches ({sel})." + avail)
+    raise SystemExit(f"Ambiguous equibind selection ({sel}) -> {cand}. Narrow it down.")
+
+
+def resolve_diffdock_variant(cat: pd.DataFrame, variant: Optional[str],
+                             refine: str) -> str:
+    """Resolve the exact DiffDock method string for the DiffDock tool slot.
+
+    DiffDock encodes its refiner in the method NAME (unlike EquiBind's
+    decomposition columns): raw -> ``diffdock``, smina -> ``diffdock_smina``,
+    gnina -> ``diffdock_gnina``. ``--diffdock-variant`` accepts either a full
+    method string or a bare refiner keyword; ``--diffdock-refine`` is the tidy
+    way to say the same thing.
+    """
+    methods = sorted(m for m in cat["method"].astype(str).unique()
+                     if m == "diffdock" or m.startswith("diffdock_"))
+    if not methods:
+        raise SystemExit("No 'diffdock' poses in the per-pose CSV.")
+    if variant:
+        if variant in methods:
+            return variant
+        if variant in _REFINERS:             # shorthand: --diffdock-variant gnina
+            refine = variant
+        else:
+            raise SystemExit(
+                f"--diffdock-variant '{variant}' not recognised (want a full method "
+                f"name or one of {_REFINERS}). Available: {methods}")
+    cand = "diffdock" if refine == "raw" else f"diffdock_{refine}"
+    if cand not in methods:
+        raise SystemExit(
+            f"No DiffDock '{refine}' variant ('{cand}') in the CSV. Available: {methods}")
+    return cand
+
+
 def _map_tool(method: str, eq_variant: str, dd_variant: str = "diffdock") -> Optional[str]:
     if method == "autodock":
         return "autodock"
@@ -805,6 +912,7 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
     p1 = {}
     rank_in_correct: Dict[str, Optional[int]] = {}
     n_in_correct: Dict[str, int] = {}
+    correct_members: List[Tuple[str, Optional[int]]] = []
     if crystal is not None and pockets:
         cp = min(pockets, key=lambda p: _dist(p["center"], crystal))
         correct_dist = round(_dist(cp["center"], crystal), 3)
@@ -817,6 +925,11 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
                   if tools[i] == t and eff_rank.get(files[i]) is not None]
             rank_in_correct[t] = int(min(rk)) if rk else None
             n_in_correct[t] = len(rk)
+        # Every member pose of the crystal-closest cluster as (tool, effective rank),
+        # for the near-native-cluster composition figure (rank make-up + tool consensus).
+        correct_members = [(tools[i],
+                            (int(eff_rank[files[i]]) if eff_rank.get(files[i]) is not None else None))
+                           for i in cp["members"]]
 
     # ── top-5 ranked poses: per-rank distance + cluster consistency ──────
     file_idx = {f: i for i, f in enumerate(files)}
@@ -972,7 +1085,7 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
         "_pockets": pockets, "_centroids": C, "_labels": labels, "_tools": tools,
         "_fp": fp_pockets, "_pr": pr_pockets, "_crystal": crystal,
         "_rank_in_correct": rank_in_correct, "_correct_is_hit": correct_is_hit,
-        "_rank_src": rank_src, "_ensembles": ensembles,
+        "_correct_members": correct_members, "_rank_src": rank_src, "_ensembles": ensembles,
         "_per_rank": [(cid, t, rp, cd, rm) for (t, rp, cd, rm) in per_rank_rows],
     }
 
@@ -1182,6 +1295,114 @@ def _fig_rank_in_correct(df, thr, out_dir):
     return p
 
 
+_TOOL_DISPLAY = {"autodock": "AutoDock Vina", "diffdock": "DiffDock", "equibind": "EquiBind"}
+# Rank bands for the near-native-cluster composition figure (ordinal -> sequential ramp).
+_RANK_BANDS = [("rank 1", 1, 1), ("rank 2–5", 2, 5), ("rank 6–15", 6, 15), ("rank ≥ 16", 16, 10 ** 9)]
+_RANK_BAND_COLORS = ["#08519c", "#3182bd", "#6baed6", "#c6dbef"]   # dark→light blue
+_CONSENSUS_COLORS = {1: "#bdbdbd", 2: "#737373", 3: "#252525"}     # 1→3 tools, light→dark
+
+
+def _fig_near_native_composition(results, thr, out_dir):
+    """Composition of the near-native cluster.
+
+    The near-native cluster is the crystal-closest cluster that actually holds a pose
+    ≤ 2 Å from the crystal (i.e. contains near-native poses). Across those complexes:
+      (left)  which RANKED poses of each tool land in that cluster — mean number of a
+              tool's poses in it, stacked by rank band (does a tool put its TOP poses
+              on the true site, or only deep ones?);
+      (right) CONSENSUS — how many distinct tools have ≥ 1 pose in that cluster.
+    EquiBind is ranked by smina affinity (see _effective_ranks) when that variant is used.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    nn = [r for r in results
+          if not r.get("skipped") and r.get("has_crystal") and r.get("_correct_members")
+          and r.get("correct_cluster_best_rmsd") == r.get("correct_cluster_best_rmsd")
+          and float(r["correct_cluster_best_rmsd"]) <= 2.0]
+    if not nn:
+        return None
+    N = len(nn)
+
+    band_sum = {t: [0.0] * len(_RANK_BANDS) for t in TOOLS}   # summed poses per band
+    coverage = {t: 0 for t in TOOLS}                          # complexes where present
+    consensus = {1: 0, 2: 0, 3: 0}
+    for r in nn:
+        present = set()
+        per_tool = {t: [0] * len(_RANK_BANDS) for t in TOOLS}
+        for tool, rk in r["_correct_members"]:
+            if tool not in TOOLS:
+                continue
+            present.add(tool)
+            if rk is None:
+                continue
+            for bi, (_lbl, lo, hi) in enumerate(_RANK_BANDS):
+                if lo <= rk <= hi:
+                    per_tool[tool][bi] += 1
+                    break
+        for t in TOOLS:
+            for bi in range(len(_RANK_BANDS)):
+                band_sum[t][bi] += per_tool[t][bi]
+            if t in present:
+                coverage[t] += 1
+        nt = len(present & set(TOOLS))
+        if nt in consensus:
+            consensus[nt] += 1
+    band_mean = {t: [s / N for s in band_sum[t]] for t in TOOLS}
+    subtitle = (f"near-native cluster = crystal-closest cluster holding a ≤ 2 Å pose  "
+                f"(n={N} complexes; PB-valid poses; EquiBind rank = smina affinity)")
+    saved = []
+
+    # ── (1) rank composition per tool (stacked by rank band) — own figure ──
+    fig, ax = plt.subplots(figsize=(7.2, 5.4))
+    x = np.arange(len(TOOLS))
+    bottom = np.zeros(len(TOOLS))
+    for bi, (lbl, _lo, _hi) in enumerate(_RANK_BANDS):
+        vals = np.array([band_mean[t][bi] for t in TOOLS])
+        ax.bar(x, vals, 0.6, bottom=bottom, color=_RANK_BAND_COLORS[bi],
+               edgecolor="white", linewidth=0.6, label=lbl, zorder=3)
+        bottom += vals
+    for xi, t in zip(x, TOOLS):
+        tot = float(sum(band_mean[t]))
+        ax.text(xi, tot + 0.04,
+                f"{tot:.2f} poses\n{100 * coverage[t] / N:.0f}% of complexes",
+                ha="center", va="bottom", fontsize=8, fontweight="bold")
+    ax.set_xticks(x)
+    ax.set_xticklabels([_TOOL_DISPLAY.get(t, t) for t in TOOLS])
+    ax.set_ylabel("mean # of a tool's poses in the near-native cluster")
+    ax.set_ylim(0, max(0.5, float(bottom.max()) * 1.3))
+    ax.set_title("Which ranked poses of each tool reach the near-native cluster")
+    ax.legend(title="pose rank", fontsize=8, loc="upper right")
+    ax.grid(axis="y", ls="--", lw=0.5, alpha=0.5); ax.set_axisbelow(True)
+    fig.suptitle(subtitle, fontsize=9)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    p = out_dir / "near_native_cluster_rank_composition.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    saved.append(p)
+
+    # ── (2) cross-tool consensus in the near-native cluster — own figure ──
+    fig, ax = plt.subplots(figsize=(6.4, 5.0))
+    cx = [1, 2, 3]
+    cy = [100 * consensus[k] / N for k in cx]
+    bars = ax.bar(cx, cy, 0.6, color=[_CONSENSUS_COLORS[k] for k in cx],
+                  edgecolor="black", zorder=3)
+    for b, val in zip(bars, cy):
+        ax.text(b.get_x() + b.get_width() / 2, val + 1.2, f"{val:.0f}%",
+                ha="center", va="bottom", fontsize=10, fontweight="bold")
+    ax.set_xticks(cx); ax.set_xticklabels(["1 tool", "2 tools", "3 tools"])
+    ax.set_ylim(0, max(cy) * 1.25 if cy else 100)
+    ax.set_ylabel("% of near-native-cluster complexes")
+    ax.set_title("How many tools have poses in the near-native cluster")
+    ax.grid(axis="y", ls="--", lw=0.5, alpha=0.5); ax.set_axisbelow(True)
+    fig.suptitle(subtitle, fontsize=9)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    p = out_dir / "near_native_cluster_consensus.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    saved.append(p)
+    return saved
+
+
 def _fig_ensembles(df, thr, out_dir):
     """Which tool combination best covers the true site."""
     import matplotlib
@@ -1325,75 +1546,136 @@ def _fig_ecdf_split(df, thr, out_dir):
 
 
 def _fig_top5(df_rank, df, out_dir):
-    """Per-rank distance profile (top-5) + top-5 cluster consistency, per tool."""
+    """Top-5 ranked poses — one standalone PNG per graph. Returns the list of
+    written paths (skipping any figure that had no data):
+      * top5_centroid_distance_by_rank.png — per-rank centroid distance to crystal
+      * top5_rmsd_by_rank.png              — per-rank RMSD to crystal
+      * top5_pose_concentration.png        — how concentrated the top-5 are (was a bar)
+      * top5_distinct_sites.png            — # distinct sites in the top-5 (was a bar)
+      * top5_best_rank.png                 — which of the top-5 is closest to crystal
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    if df_rank.empty:
-        return None
-    d = df[df["has_crystal"]]
-    fig, ax = plt.subplots(2, 2, figsize=(14, 10))
+    saved = []
     ranks = list(range(1, 6))
-    # (0,0) centroid distance vs rank ; (0,1) RMSD vs rank.
-    # Median is the primary (solid) line — robust to EquiBind's far/garbage poses
-    # that otherwise blow the scale; mean (dashed) is overlaid and clipped.
+
+    # ── per-rank distance / RMSD to the crystal ligand ───────────────────
+    # Median is the primary (solid) line — robust to EquiBind's far/garbage
+    # poses that otherwise blow the scale; mean (dashed) is overlaid and clipped.
     caps = {"centroid_dist": 15.0, "rmsd": 15.0}
-    for col_name, axi, lab in [("centroid_dist", ax[0, 0], "centroid distance"),
-                               ("rmsd", ax[0, 1], "RMSD")]:
-        cap = caps[col_name]
+    if not df_rank.empty:
+        for col_name, lab, fname in (
+                ("centroid_dist", "centroid distance",
+                 "top5_centroid_distance_by_rank.png"),
+                ("rmsd", "RMSD", "top5_rmsd_by_rank.png")):
+            cap = caps[col_name]
+            fig, ax = plt.subplots(figsize=(6.6, 4.7))
+            for t in TOOLS:
+                g = df_rank[df_rank.tool == t]
+                means, meds = [], []
+                for k in ranks:
+                    vk = pd.to_numeric(g[g["rank"] == k][col_name],
+                                       errors="coerce").dropna()
+                    means.append(vk.mean() if len(vk) else np.nan)
+                    meds.append(vk.median() if len(vk) else np.nan)
+                clip = lambda xs: [x if (x == x and x <= cap) else np.nan for x in xs]
+                ax.plot(ranks, clip(meds), "-o", color=TOOL_COLORS[t], lw=2.2,
+                        label=f"{t} (median)")
+                ax.plot(ranks, clip(means), "--", color=TOOL_COLORS[t], lw=1,
+                        alpha=0.55)
+            ax.set_xticks(ranks); ax.set_ylim(0, cap)
+            ax.set_xlabel("Pose rank (1 = tool's top pose)")
+            ax.set_ylabel(f"{lab} to crystal (Å)")
+            ax.set_title(f"Top-5 {lab} from the crystal ligand\n"
+                         f"(solid = median, dashed = mean; capped at {cap:g} Å)")
+            ax.grid(alpha=0.25); ax.set_axisbelow(True); ax.legend(fontsize=8)
+            fig.tight_layout()
+            p = out_dir / fname
+            fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+            saved.append(p)
+
+    # ── pose concentration & distinct sites — box + strip per tool.
+    # These replace the old grouped bar-of-means: showing the full per-complex
+    # distribution (not just a mean) is the point of "how concentrated".
+    d = df[df["has_crystal"]] if "has_crystal" in df else df
+    rng = np.random.default_rng(0)
+
+    def _dist_fig(col_suffix, fname, title, ylabel, ylim, pct):
+        series = [(pd.to_numeric(d.get(f"{t}_{col_suffix}"), errors="coerce")
+                   .dropna().to_numpy() if f"{t}_{col_suffix}" in d else np.array([]))
+                  for t in TOOLS]
+        if not any(len(s) for s in series):
+            return
+        fig, ax = plt.subplots(figsize=(6.4, 4.7))
+        positions = np.arange(1, len(TOOLS) + 1)
+        bp = ax.boxplot([s if len(s) else [np.nan] for s in series],
+                        positions=positions, widths=0.55, showfliers=False,
+                        patch_artist=True, medianprops=dict(color="k", lw=1.5),
+                        whiskerprops=dict(color="#888"), capprops=dict(color="#888"))
+        for patch, t in zip(bp["boxes"], TOOLS):
+            patch.set_facecolor(TOOL_COLORS[t]); patch.set_alpha(0.35)
+            patch.set_edgecolor(TOOL_COLORS[t])
+        mean_labeled = False
+        for pos, vals, t in zip(positions, series, TOOLS):
+            if not len(vals):
+                continue
+            jit = rng.uniform(-0.16, 0.16, size=len(vals))
+            ax.scatter(pos + jit, vals, s=10, color=TOOL_COLORS[t], alpha=0.45,
+                       edgecolor="none")
+            ax.scatter([pos], [np.mean(vals)], marker="D", s=42, color="k",
+                       zorder=5, label=None if mean_labeled else "mean")
+            mean_labeled = True
+            ax.text(pos, ylim[1] * 0.97,
+                    (f"{np.mean(vals):.0%}" if pct else f"{np.mean(vals):.1f}"),
+                    ha="center", va="top", fontsize=9, fontweight="bold")
+        ax.set_xticks(positions); ax.set_xticklabels(TOOLS)
+        ax.set_ylim(*ylim); ax.set_ylabel(ylabel); ax.set_title(title)
+        ax.grid(alpha=0.25, axis="y"); ax.set_axisbelow(True)
+        ax.legend(fontsize=8, loc="lower right")
+        fig.tight_layout()
+        p = out_dir / fname
+        fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+        saved.append(p)
+
+    _dist_fig("top5_modal_frac", "top5_pose_concentration.png",
+              "Pose concentration — fraction of a tool's top-5 in one cluster\n"
+              "(higher = poses agree on one site; diamond = mean)",
+              "Fraction of top-5 poses in the modal cluster", (0, 1.08), pct=True)
+    _dist_fig("top5_n_clusters", "top5_distinct_sites.png",
+              "Number of distinct sites among a tool's top-5 poses\n"
+              "(higher = poses spread across more sites; diamond = mean)",
+              "Distinct clusters among the top-5", (0, 5.4), pct=False)
+
+    # ── which of the top-5 is closest to the crystal (a rank distribution,
+    #    ordinal in rank -> a line per tool reads the trend more directly) ──
+    if not d.empty:
+        fig, ax = plt.subplots(figsize=(6.6, 4.7))
+        any_data = False
         for t in TOOLS:
-            g = df_rank[df_rank.tool == t]
-            means, meds = [], []
-            for k in ranks:
-                vk = pd.to_numeric(g[g["rank"] == k][col_name], errors="coerce").dropna()
-                means.append(vk.mean() if len(vk) else np.nan)
-                meds.append(vk.median() if len(vk) else np.nan)
-            clip = lambda xs: [x if (x == x and x <= cap) else np.nan for x in xs]
-            axi.plot(ranks, clip(meds), "-o", color=TOOL_COLORS[t], lw=2.2,
-                     label=f"{t} (median)")
-            axi.plot(ranks, clip(means), "--", color=TOOL_COLORS[t], lw=1, alpha=0.55)
-        axi.set_xticks(ranks); axi.set_ylim(0, cap)
-        axi.set_xlabel("pose rank (1 = tool's top pose)")
-        axi.set_ylabel(f"{lab} to crystal (Å)")
-        axi.set_title(f"Top-5 {lab} from crystal (solid=median, dashed=mean; ≤{cap:g} Å)")
-        axi.legend(fontsize=8); axi.grid(alpha=0.25)
-    # (1,0) top-5 cluster consistency: mean modal fraction + mean #clusters
-    x = np.arange(len(TOOLS)); w = 0.38
-    mf = [pd.to_numeric(d.get(f"{t}_top5_modal_frac"), errors="coerce").mean()
-          if f"{t}_top5_modal_frac" in d else np.nan for t in TOOLS]
-    nc = [pd.to_numeric(d.get(f"{t}_top5_n_clusters"), errors="coerce").mean()
-          if f"{t}_top5_n_clusters" in d else np.nan for t in TOOLS]
-    ax[1, 0].bar(x - w / 2, mf, w, label="modal-cluster fraction",
-                 color=[TOOL_COLORS[t] for t in TOOLS])
-    ax[1, 0].bar(x + w / 2, [v / 5 for v in nc], w, alpha=0.4,
-                 color=[TOOL_COLORS[t] for t in TOOLS],
-                 label="#distinct clusters ÷ 5")
-    for xi, v in zip(x, mf):
-        if v == v:
-            ax[1, 0].text(xi - w / 2, v + 0.01, f"{v:.0%}", ha="center", fontsize=8)
-    ax[1, 0].set_xticks(x); ax[1, 0].set_xticklabels(TOOLS); ax[1, 0].set_ylim(0, 1.1)
-    ax[1, 0].set_title("Are a tool's top-5 in one cluster? (modal fraction)")
-    ax[1, 0].set_ylabel("fraction"); ax[1, 0].legend(fontsize=8)
-    # (1,1) which of the top-5 is closest to crystal (distribution of best rank)
-    width = 0.25
-    for ti, t in enumerate(TOOLS):
-        br = pd.to_numeric(d.get(f"{t}_top5_best_rank"), errors="coerce").dropna() \
-            if f"{t}_top5_best_rank" in d else pd.Series(dtype=float)
-        counts = [float((br == k).mean()) if len(br) else 0 for k in ranks]
-        ax[1, 1].bar(np.array(ranks) + (ti - 1) * width, counts, width,
-                     color=TOOL_COLORS[t], label=t)
-    ax[1, 1].set_xticks(ranks)
-    ax[1, 1].set_xlabel("rank of the top-5 pose closest to crystal")
-    ax[1, 1].set_ylabel("fraction of complexes")
-    ax[1, 1].set_title("Which of the top-5 is closest to the crystal?")
-    ax[1, 1].legend(fontsize=8)
-    _label_panels(ax)
-    fig.suptitle("Top-5 ranked poses: per-rank accuracy and cluster consistency",
-                 fontsize=14)
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    p = out_dir / "top5_rank_distance.png"
-    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
-    return p
+            br = (pd.to_numeric(d.get(f"{t}_top5_best_rank"), errors="coerce").dropna()
+                  if f"{t}_top5_best_rank" in d else pd.Series(dtype=float))
+            any_data = any_data or bool(len(br))
+            fracs = [float((br == k).mean()) if len(br) else np.nan for k in ranks]
+            ax.plot(ranks, fracs, "-o", color=TOOL_COLORS[t], lw=2.2, markersize=7,
+                    markeredgecolor="black", markeredgewidth=0.5,
+                    label=f"{t} (n={len(br)})")
+        if any_data:
+            ax.set_xticks(ranks)
+            ax.set_xlabel("Rank of the top-5 pose closest to the crystal")
+            ax.set_ylabel("Fraction of complexes")
+            ax.set_ylim(0, None)
+            ax.set_title("Which of the top-5 poses is closest to the crystal?")
+            ax.grid(alpha=0.25); ax.set_axisbelow(True)
+            ax.legend(fontsize=8)
+            fig.tight_layout()
+            p = out_dir / "top5_best_rank.png"
+            fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+            saved.append(p)
+        else:
+            plt.close(fig)
+
+    return saved
 
 
 def _fig_placement(df, mode_thr, out_dir):
@@ -1471,9 +1753,20 @@ def _fig_placement(df, mode_thr, out_dir):
 # Driver
 # ════════════════════════════════════════════════════════════════════════
 
-def _fig_descriptor_quality(df_complex, features_csv, out_dir):
+def _fig_descriptor_quality(df_complex, features_csv, out_dir,
+                            per_pose_csv=None, dd_variant="diffdock",
+                            eq_variant="equibind_unguided_smina"):
     """Which ligand types dock well? Pose accuracy (oracle RMSD to crystal) vs the
-    ligand's Lipinski Ro5 compliance, physicochemical descriptors, and PCA space."""
+    ligand's Lipinski Ro5 compliance, physicochemical descriptors, and PCA space.
+
+    Every success measure is reported for TWO categories: ``near-native`` (a pose
+    RMSD <= 2 A, any validity) and ``PB-valid & <= 2 A`` (the near-native pose is
+    also PoseBusters-valid) — the gap is the fraction of near-native poses lost to
+    physical invalidity. Both oracles are recomputed from the raw per-pose CSV (over
+    autodock + the chosen DiffDock/EquiBind variants) so the comparison holds
+    regardless of any --pb-valid-only clustering filter. One PNG per measure; returns
+    the list of written paths.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -1486,52 +1779,116 @@ def _fig_descriptor_quality(df_complex, features_csv, out_dir):
     if desc is None:
         print("  (ligand feature CSV not found; skipping descriptor-quality figure)")
         return None
-    d = df_complex[df_complex["has_crystal"]].copy() if "has_crystal" in df_complex else df_complex.copy()
-    rcols = [f"{t}_oracle_rmsd" for t in TOOLS if f"{t}_oracle_rmsd" in d.columns]
-    if not rcols or d.empty:
+    d = (df_complex[df_complex["has_crystal"]].copy()
+         if "has_crystal" in df_complex else df_complex.copy())
+    if d.empty:
         return None
-    for c in rcols:
-        d[c] = pd.to_numeric(d[c], errors="coerce")
-    d["best_oracle_rmsd"] = d[rcols].min(axis=1)        # closest any tool got to crystal
-    d = d.set_index("protein").join(desc, how="inner")
-    d = d[np.isfinite(d["best_oracle_rmsd"])]
+    NEAR = 2.0
+    tool_method = {"autodock": "autodock", "diffdock": dd_variant, "equibind": eq_variant}
+
+    # ── per-complex oracle RMSD, near-native (any validity) vs PB-valid, recomputed
+    #    from the raw per-pose CSV over the analysed methods (so it is independent of
+    #    any --pb-valid-only clustering filter and can show BOTH categories) ──
+    oracle_all = oracle_valid = None
+    oracle_all_tool: dict = {}
+    if per_pose_csv and Path(per_pose_csv).exists():
+        pp = pd.read_csv(per_pose_csv, low_memory=False)
+        pp = pp[pp["method"].astype(str).isin(set(tool_method.values()))].copy()
+        pp["rmsd"] = pd.to_numeric(pp["rmsd"], errors="coerce")
+        pp = pp.dropna(subset=["rmsd"])
+        pbv_col = pp.get("pb_valid")
+        pbv = (pbv_col.astype(str).str.lower().isin(("true", "1", "1.0"))
+               if pbv_col is not None else pd.Series(False, index=pp.index))
+        oracle_all = pp.groupby("protein")["rmsd"].min()
+        oracle_valid = pp[pbv].groupby("protein")["rmsd"].min()
+        for t, m in tool_method.items():
+            oracle_all_tool[t] = pp[pp["method"].astype(str) == m].groupby("protein")["rmsd"].min()
+
+    if oracle_all is None:
+        rcols = [f"{t}_oracle_rmsd" for t in TOOLS if f"{t}_oracle_rmsd" in d.columns]
+        if not rcols:
+            return None
+        for c in rcols:
+            d[c] = pd.to_numeric(d[c], errors="coerce")
+        d = d.set_index("protein")
+        d["oracle_all"] = d[rcols].min(axis=1)
+        d["oracle_valid"] = d["oracle_all"]          # no unfiltered baseline available
+    else:
+        d = d.set_index("protein")
+        d["oracle_all"] = d.index.map(oracle_all)
+        d["oracle_valid"] = d.index.map(oracle_valid)
+        for t in TOOLS:
+            d[f"{t}_oracle_all"] = d.index.map(oracle_all_tool.get(t, pd.Series(dtype=float)))
+
+    d = d.join(desc, how="inner")
+    d["oracle_all"] = pd.to_numeric(d["oracle_all"], errors="coerce")
+    d["oracle_valid"] = pd.to_numeric(d["oracle_valid"], errors="coerce")
+    d = d[np.isfinite(d["oracle_all"])]
     if len(d) < 12:
         return None
-    d["success"] = d["best_oracle_rmsd"] <= 2.0
+    d["best_oracle_rmsd"] = d["oracle_all"]          # correlations / PCA use geometry
+    d["success_near"] = d["oracle_all"] <= NEAR
+    d["success_valid"] = d["oracle_valid"] <= NEAR   # NaN oracle_valid -> False
     d, loadings, evr, _ = add_pca(d)
     bins, labs = [-0.1, 2, 5, 8, 11, 100], ["0–2", "3–5", "6–8", "9–11", "12+"]
     d["_rb"] = pd.cut(pd.to_numeric(d["rot_bonds"], errors="coerce"), bins=bins, labels=labs)
     d.reset_index().to_csv(out_dir / "descriptor_vs_quality.csv", index=False)
 
-    fig, ax = plt.subplots(2, 3, figsize=(18, 11))
+    NEAR_C, VALID_C = "#4C72B0", "#2ca02c"           # near-native (blue), PB-valid&2A (green)
+    n = len(d)
+    sub = (f"n={n} complexes with crystal · oracle = closest pose any tool produced · "
+           "near-native = RMSD ≤ 2 Å; PB-valid & ≤ 2 Å = also PoseBusters-valid")
+    saved = []
 
-    # (A) accuracy by Lipinski Rule-of-Five
-    grp = [("Ro5 pass\n(≤1 viol.)", d[d.ro5_pass]["best_oracle_rmsd"].dropna()),
-           ("Ro5 fail\n(≥2 viol.)", d[~d.ro5_pass]["best_oracle_rmsd"].dropna())]
-    ax[0, 0].boxplot([g.clip(upper=20) for _, g in grp], labels=[n for n, _ in grp], showfliers=False)
-    for i, (_n, g) in enumerate(grp, 1):
-        sr = (g <= 2).mean() * 100 if len(g) else np.nan
-        ax[0, 0].text(i, 0.4, f"{sr:.0f}% ≤2Å\nn={len(g)}", ha="center", va="bottom", fontsize=8)
-    ax[0, 0].axhline(2, color="green", ls="--", lw=1)
-    ax[0, 0].set_title("Pose accuracy vs Lipinski \n Rule-of-Five compliance")
-    ax[0, 0].set_ylabel("Best oracle RMSD to crystal (Å)")
+    def _save(fig, fname):
+        fig.suptitle(sub, fontsize=8, y=0.995)
+        fig.tight_layout(rect=(0, 0, 1, 0.96))
+        p = out_dir / fname
+        fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+        saved.append(p)
 
-    # (B) success vs flexibility (rotatable bonds) — a trend across ordinal bins,
-    # so a line reads the monotonic decline more directly than bars.
-    sr = d.groupby("_rb")["success"].agg(["mean", "size"])
-    ax[0, 1].plot(range(len(sr)), sr["mean"] * 100, marker="o", color="#4C72B0",
-                  lw=2, markersize=7, markeredgecolor="black", markeredgewidth=0.6)
-    for i, (m, nn) in enumerate(zip(sr["mean"], sr["size"])):
+    # (A) accuracy vs Lipinski Ro5 — boxplot of near-native RMSD + dual success rates
+    fig, ax = plt.subplots(figsize=(6.8, 5.2))
+    grp = [("Ro5 pass\n(≤1 viol.)", d[d.ro5_pass]),
+           ("Ro5 fail\n(≥2 viol.)", d[~d.ro5_pass])]
+    ax.boxplot([g["oracle_all"].dropna().clip(upper=20) for _, g in grp],
+               labels=[nm for nm, _ in grp], showfliers=False)
+    for i, (_nm, g) in enumerate(grp, 1):
+        near = 100 * g["success_near"].mean() if len(g) else np.nan
+        val = 100 * g["success_valid"].mean() if len(g) else np.nan
+        ax.text(i, 0.4, f"≤2Å: {near:.0f}%\nPB-valid&≤2Å: {val:.0f}%\nn={len(g)}",
+                ha="center", va="bottom", fontsize=8)
+    ax.axhline(2, color="green", ls="--", lw=1)
+    ax.set_title("Pose accuracy vs Lipinski Rule-of-Five compliance")
+    ax.set_ylabel("Best oracle RMSD to crystal (Å)")
+    ax.grid(alpha=0.2); ax.set_axisbelow(True)
+    _save(fig, "descriptor_accuracy_vs_ro5.png")
+
+    # (B) docking success vs flexibility — near-native + PB-valid&2A lines
+    fig, ax = plt.subplots(figsize=(7.0, 5.2))
+    gn = d.groupby("_rb")["success_near"].agg(["mean", "size"])
+    gv = d.groupby("_rb")["success_valid"].agg(["mean", "size"])
+    xs = range(len(gn))
+    ax.plot(xs, gn["mean"] * 100, "-o", color=NEAR_C, lw=2, markersize=7,
+            markeredgecolor="black", markeredgewidth=0.6, label="near-native (≤ 2 Å)")
+    ax.plot(xs, gv["mean"] * 100, "--s", color=VALID_C, lw=2, markersize=6,
+            label="PB-valid & ≤ 2 Å")
+    for i, (m, nn) in enumerate(zip(gn["mean"], gn["size"])):
         if nn:
-            ax[0, 1].text(i, m * 100 + 4, f"{m*100:.0f}%\nn={int(nn)}",
-                          ha="center", va="bottom", fontsize=8)
-    ax[0, 1].set_xticks(range(len(sr))); ax[0, 1].set_xticklabels(sr.index)
-    ax[0, 1].set_title("Docking success vs ligand flexibility")
-    ax[0, 1].set_xlabel("Rotatable bonds")
-    ax[0, 1].set_ylabel("Complexes with a pose ≤2 Å (percent)"); ax[0, 1].set_ylim(0, 105)
-    ax[0, 1].grid(alpha=0.3); ax[0, 1].set_axisbelow(True)
+            ax.text(i, m * 100 + 3.5, f"{m*100:.0f}%\nn={int(nn)}", ha="center",
+                    va="bottom", fontsize=8, color=NEAR_C)
+    for i, m in enumerate(gv["mean"]):
+        if m == m:
+            ax.text(i, m * 100 - 5, f"{m*100:.0f}%", ha="center", va="top",
+                    fontsize=8, color=VALID_C, fontweight="bold")
+    ax.set_xticks(list(xs)); ax.set_xticklabels(gn.index)
+    ax.set_title("Docking success vs ligand flexibility")
+    ax.set_xlabel("Rotatable bonds")
+    ax.set_ylabel("Complexes with a pose (percent)")
+    ax.set_ylim(0, 105); ax.grid(alpha=0.3); ax.set_axisbelow(True); ax.legend(fontsize=9)
+    _save(fig, "descriptor_success_vs_flexibility.png")
 
-    # (C) Spearman correlation of each property (+ PCs) with pose error
+    # (C) Spearman correlation of each property (+ PCs) with pose error (geometry)
     feats = [f for f in PCA_FEATURES if f in d.columns] + [c for c in ("PC1", "PC2", "PC3") if c in d.columns]
     rhos = []
     for f in feats:
@@ -1540,65 +1897,158 @@ def _fig_descriptor_quality(df_complex, features_csv, out_dir):
         if m.sum() > 10:
             rho, _ = spearmanr(v[m], d["best_oracle_rmsd"][m])
             rhos.append((f, rho))
-    rhos.sort(key=lambda x: x[1])
-    vals = [r for _, r in rhos]
-    ax[0, 2].barh(range(len(vals)), vals, color=["#C44E52" if r > 0 else "#4C72B0" for r in vals])
-    ax[0, 2].set_yticks(range(len(vals))); ax[0, 2].set_yticklabels([nice(f) for f, _ in rhos], fontsize=7)
-    ax[0, 2].axvline(0, color="k", lw=0.8)
-    ax[0, 2].set_title("Which properties track pose error?\n(Spearman ρ vs RMSD\n red = worse, blue = better)")
-    ax[0, 2].set_xlabel("Spearman correlation with best oracle RMSD")
+    if rhos:
+        rhos.sort(key=lambda x: x[1])
+        vals = [r for _, r in rhos]
+        fig, ax = plt.subplots(figsize=(6.8, 5.4))
+        ax.barh(range(len(vals)), vals, color=["#C44E52" if r > 0 else "#4C72B0" for r in vals])
+        ax.set_yticks(range(len(vals))); ax.set_yticklabels([nice(f) for f, _ in rhos], fontsize=8)
+        ax.axvline(0, color="k", lw=0.8)
+        ax.set_title("Which properties track pose error?\n(Spearman ρ vs RMSD; red = worse, blue = better)")
+        ax.set_xlabel("Spearman correlation with best oracle RMSD")
+        ax.grid(alpha=0.2, axis="x"); ax.set_axisbelow(True)
+        _save(fig, "descriptor_property_correlations.png")
 
-    # (D) PCA chemical space coloured by accuracy
+    # (D) PCA chemical space coloured by accuracy (geometry)
     if "PC1" in d and "PC2" in d:
-        sc = ax[1, 0].scatter(d["PC1"], d["PC2"], c=d["best_oracle_rmsd"].clip(upper=10),
-                              cmap="viridis_r", s=22, edgecolors="k", linewidths=0.2)
-        plt.colorbar(sc, ax=ax[1, 0], label="Best oracle RMSD (Å, clipped 10)")
+        fig, ax = plt.subplots(figsize=(6.8, 5.4))
+        sc = ax.scatter(d["PC1"], d["PC2"], c=d["best_oracle_rmsd"].clip(upper=10),
+                        cmap="viridis_r", s=24, edgecolors="k", linewidths=0.2)
+        plt.colorbar(sc, ax=ax, label="Best oracle RMSD (Å, clipped 10)")
         e1 = evr[0] * 100 if len(evr) > 0 else 0
         e2 = evr[1] * 100 if len(evr) > 1 else 0
-        ax[1, 0].set_xlabel(f"Principal Component 1 ({e1:.0f}% of variance)")
-        ax[1, 0].set_ylabel(f"Principal Component 2 ({e2:.0f}% of variance)")
-        ax[1, 0].set_title("Ligand chemical space (PCA) \ncoloured by pose accuracy")
+        ax.set_xlabel(f"Principal Component 1 ({e1:.0f}% of variance)")
+        ax.set_ylabel(f"Principal Component 2 ({e2:.0f}% of variance)")
+        ax.set_title("Ligand chemical space (PCA) coloured by pose accuracy")
+        ax.grid(alpha=0.2); ax.set_axisbelow(True)
+        _save(fig, "descriptor_pca_accuracy.png")
 
-    # (E) success across PCA space (tertile heat-map)
+    # (E) success across PCA space (tertile heat-map) — near-native shaded, each cell
+    #     annotated 'near-native% / PB-valid&≤2Å%'
     if "PC1" in d and "PC2" in d and d["PC1"].notna().sum() > 20:
         d["_p1"] = pd.qcut(d["PC1"], 3, labels=["low", "mid", "high"], duplicates="drop")
         d["_p2"] = pd.qcut(d["PC2"], 3, labels=["low", "mid", "high"], duplicates="drop")
-        piv = d.pivot_table(index="_p2", columns="_p1", values="success", aggfunc="mean") * 100
-        im = ax[1, 1].imshow(piv.values, cmap="RdYlGn", vmin=0, vmax=100, origin="lower", aspect="auto")
-        ax[1, 1].set_xticks(range(piv.shape[1])); ax[1, 1].set_xticklabels(piv.columns)
-        ax[1, 1].set_yticks(range(piv.shape[0])); ax[1, 1].set_yticklabels(piv.index)
-        for i in range(piv.shape[0]):
-            for j in range(piv.shape[1]):
-                vv = piv.values[i, j]
-                if vv == vv:
-                    ax[1, 1].text(j, i, f"{vv:.0f}%", ha="center", va="center", fontsize=9)
-        plt.colorbar(im, ax=ax[1, 1], label="Pose ≤2 Å (percent)")
-        ax[1, 1].set_xlabel("Principal Component 1 tertile")
-        ax[1, 1].set_ylabel("Principal Component 2 tertile")
-        ax[1, 1].set_title("Docking success across\nligand chemical space")
+        piv_n = d.pivot_table(index="_p2", columns="_p1", values="success_near", aggfunc="mean") * 100
+        piv_v = d.pivot_table(index="_p2", columns="_p1", values="success_valid", aggfunc="mean") * 100
+        fig, ax = plt.subplots(figsize=(6.6, 5.4))
+        im = ax.imshow(piv_n.values, cmap="RdYlGn", vmin=0, vmax=100, origin="lower", aspect="auto")
+        ax.set_xticks(range(piv_n.shape[1])); ax.set_xticklabels(piv_n.columns)
+        ax.set_yticks(range(piv_n.shape[0])); ax.set_yticklabels(piv_n.index)
+        for i in range(piv_n.shape[0]):
+            for j in range(piv_n.shape[1]):
+                a = piv_n.values[i, j]
+                b = piv_v.values[i, j] if (i < piv_v.shape[0] and j < piv_v.shape[1]) else np.nan
+                if a == a:
+                    ax.text(j, i, f"{a:.0f}%\n{b:.0f}%" if b == b else f"{a:.0f}%",
+                            ha="center", va="center", fontsize=9)
+        plt.colorbar(im, ax=ax, label="near-native ≤ 2 Å (percent)")
+        ax.set_xlabel("Principal Component 1 tertile")
+        ax.set_ylabel("Principal Component 2 tertile")
+        ax.set_title("Docking success across ligand chemical space\n"
+                     "(cell = near-native% / PB-valid & ≤2Å%)")
+        _save(fig, "descriptor_success_pca.png")
 
-    # (F) per-tool success vs flexibility
+    # (F) per-tool success vs flexibility (near-native) + PB-valid&≤2Å (any tool)
+    fig, ax = plt.subplots(figsize=(7.0, 5.2))
     for t in TOOLS:
-        col = f"{t}_oracle_rmsd"
+        col = f"{t}_oracle_all" if f"{t}_oracle_all" in d else f"{t}_oracle_rmsd"
         if col not in d:
             continue
-        rate = (pd.to_numeric(d[col], errors="coerce") <= 2.0).groupby(d["_rb"]).mean() * 100
-        ax[1, 2].plot(range(len(rate)), rate.values, "-o", color=TOOL_COLORS[t], label=t)
-    ax[1, 2].set_xticks(range(len(labs))); ax[1, 2].set_xticklabels(labs)
-    ax[1, 2].set_title("Per-tool success vs ligand flexibility")
-    ax[1, 2].set_xlabel("Rotatable bonds"); ax[1, 2].set_ylabel("Pose ≤2 Å (percent)")
-    ax[1, 2].set_ylim(0, 105); ax[1, 2].legend(fontsize=8)
+        rate = (pd.to_numeric(d[col], errors="coerce") <= NEAR).groupby(d["_rb"]).mean() * 100
+        ax.plot(range(len(rate)), rate.values, "-o", color=TOOL_COLORS[t],
+                label=f"{_TOOL_DISPLAY.get(t, t)} (near-native)")
+    valrate = d.groupby("_rb")["success_valid"].mean() * 100
+    ax.plot(range(len(valrate)), valrate.values, "--", color="black", lw=2,
+            marker="s", markersize=5, label="any tool: PB-valid & ≤ 2 Å")
+    ax.set_xticks(range(len(labs))); ax.set_xticklabels(labs)
+    ax.set_title("Per-tool success vs ligand flexibility")
+    ax.set_xlabel("Rotatable bonds"); ax.set_ylabel("Pose ≤ 2 Å (percent)")
+    ax.set_ylim(0, 105); ax.legend(fontsize=8); ax.grid(alpha=0.25); ax.set_axisbelow(True)
+    _save(fig, "descriptor_per_tool_success_vs_flexibility.png")
 
-    for a in ax.ravel():
-        a.grid(alpha=0.2)
-    _label_panels(ax)
-    fig.suptitle("Which ligands dock well? Pose accuracy vs ligand physicochemistry "
-                 f"(n={len(d)} benchmark complexes with crystal). "
-                 "Oracle RMSD = closest pose any tool produced.", fontsize=13)
-    fig.tight_layout(rect=(0, 0, 1, 0.96))
-    p = out_dir / "descriptor_vs_quality.png"
-    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
-    return p
+    return saved
+
+# ════════════════════════════════════════════════════════════════════════
+# Analysis cache — the per-complex analysis (clustering / placement / bootstrap)
+# is the expensive part; the CSVs + figures are cheap to regenerate from it. We
+# pickle the analysed complexes keyed by a fingerprint of the inputs, so a re-run
+# with unchanged inputs skips straight to (re)writing CSVs + figures.
+# ════════════════════════════════════════════════════════════════════════
+_CACHE_SCHEMA = 2
+
+
+def _file_fp(path) -> Optional[dict]:
+    """Content fingerprint (size + sha256) of a file, or None if it is absent."""
+    p = Path(path)
+    if not p.exists() or not p.is_file():
+        return None
+    h = hashlib.sha256()
+    with open(p, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return {"size": p.stat().st_size, "sha256": h.hexdigest()}
+
+
+def _analysis_signature(args, eq_variant: str, dd_variant: str) -> dict:
+    """Fingerprint of everything the per-complex analysis (``ok``) depends on.
+
+    Deliberately excludes figure-only inputs (``--features-csv``) and plotting code,
+    so changing a figure and re-running still reuses the cached analysis. Pocket /
+    crystal directories are keyed by path only (their contents are cheap to change
+    but expensive to fingerprint) — pass ``--force`` if you regenerate those.
+    """
+    return {
+        "schema": _CACHE_SCHEMA,
+        "per_pose_csv": _file_fp(args.per_pose_csv),
+        "ids_file": _file_fp(args.ids_file) if args.ids_file else None,
+        "eq_variant": eq_variant, "dd_variant": dd_variant,
+        "pb_valid_only": bool(args.pb_valid_only),
+        "limit": int(args.limit),
+        "outlier_dist": float(args.outlier_dist),
+        "distance_mode": args.distance_mode,
+        "match_thr": float(args.match_thr),
+        "mode_rmsd_thr": float(args.mode_rmsd_thr),
+        "rmsd_pose_cap": int(args.rmsd_pose_cap),
+        "site_cluster": args.site_cluster,
+        "pocket_radius": float(args.pocket_radius),
+        "rank_by": args.rank_by,
+        "stability_boot": int(args.stability_boot),
+        "top_n_pockets": int(args.top_n_pockets),
+        "benchmark_dir": str(args.benchmark_dir),
+        "fpocket_dir": str(args.fpocket_dir),
+        "p2rank_dir": str(args.p2rank_dir),
+    }
+
+
+def _load_analysis_cache(cache_path: Path, sig: dict):
+    """Return the cached ``ok`` list if the cache matches ``sig``, else None."""
+    if not cache_path.exists():
+        return None
+    try:
+        with open(cache_path, "rb") as f:
+            blob = pickle.load(f)
+    except Exception as e:
+        print(f"  (analysis cache unreadable — recomputing: {e})")
+        return None
+    if not isinstance(blob, dict) or blob.get("sig") != sig:
+        return None
+    ok = blob.get("ok")
+    return ok if ok else None
+
+
+def _save_analysis_cache(cache_path: Path, sig: dict, ok: list) -> None:
+    tmp = cache_path.with_suffix(cache_path.suffix + ".tmp")
+    try:
+        with open(tmp, "wb") as f:
+            pickle.dump({"schema": _CACHE_SCHEMA, "sig": sig, "ok": ok},
+                        f, protocol=pickle.HIGHEST_PROTOCOL)
+        tmp.replace(cache_path)
+    except Exception as e:
+        print(f"  (warning: could not write analysis cache: {e})")
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
 
 
 def main(argv=None) -> int:
@@ -1610,10 +2060,30 @@ def main(argv=None) -> int:
     ap.add_argument("--fpocket-dir", default="pocket_results/fpocket_results")
     ap.add_argument("--p2rank-dir", default="pocket_results/p2rank_results")
     ap.add_argument("--ids-file", default=None)
-    ap.add_argument("--equibind-variant", default="equibind_unguided_smina_clampOFF")
-    ap.add_argument("--diffdock-variant", default="diffdock",
-                    help="Which DiffDock variant to cluster: 'diffdock' (raw) | "
-                         "'diffdock_smina' | 'diffdock_gnina'.")
+    # ── EquiBind tool slot: choose the variant by component, or by full name ──
+    ap.add_argument("--equibind-variant", default=None,
+                    help="Full equibind method string (e.g. "
+                         "'equibind_fpocket_smina_clampON'). Overrides the "
+                         "--equibind-pocket/-refine/-clamp components below. "
+                         "Default: compose from the components.")
+    ap.add_argument("--equibind-pocket", choices=("unguided", "fpocket", "p2rank"),
+                    default="unguided",
+                    help="EquiBind pocket source (default: unguided).")
+    ap.add_argument("--equibind-refine", choices=_REFINERS, default="smina",
+                    help="EquiBind pose refiner: 'raw' (unrefined) | 'smina' | "
+                         "'gnina' (default: smina). The gnina method names omit "
+                         "the token in the CSV; this resolves it for you.")
+    ap.add_argument("--equibind-clamp", choices=("clampON", "clampOFF"),
+                    default="clampOFF",
+                    help="EquiBind clamp variant (default: clampOFF).")
+    # ── DiffDock tool slot: choose the refiner, or a full name ────────────────
+    ap.add_argument("--diffdock-variant", default=None,
+                    help="Full DiffDock method string ('diffdock' | 'diffdock_smina' "
+                         "| 'diffdock_gnina') or a bare refiner keyword. Overrides "
+                         "--diffdock-refine. Default: compose from --diffdock-refine.")
+    ap.add_argument("--diffdock-refine", choices=_REFINERS, default="raw",
+                    help="DiffDock pose refiner: 'raw' -> diffdock | 'smina' -> "
+                         "diffdock_smina | 'gnina' -> diffdock_gnina (default: raw).")
     ap.add_argument("--distance-mode", choices=("centroid", "hybrid", "both"),
                     default="both",
                     help="'centroid' = site clustering only; 'hybrid'/'both' also run "
@@ -1653,6 +2123,9 @@ def main(argv=None) -> int:
                     default="PoseBusters_Benchmark_Analysis/ligand_protein_features.csv",
                     help="Per-ligand RDKit descriptors (from PoseBusters_DataSet_Analysis.ipynb).")
     ap.add_argument("--no-plot", action="store_true")
+    ap.add_argument("--force", action="store_true",
+                    help="Recompute the per-complex analysis even if a matching "
+                         "cache (analysis_cache.pkl) exists for the current inputs.")
     args = ap.parse_args(argv)
 
     csv = Path(args.per_pose_csv)
@@ -1662,65 +2135,84 @@ def main(argv=None) -> int:
     ids = _load_ids(Path(args.ids_file)) if args.ids_file else None
     out_dir = Path(args.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
 
-    df = load_poses(csv, args.equibind_variant, ids, args.pb_valid_only, args.diffdock_variant)
-    if df.empty:
-        print("No poses after filtering (check --equibind-variant / --diffdock-variant / --ids-file).")
-        return 1
-    complexes = sorted(df["protein"].unique())
-    if args.limit:
-        complexes = complexes[:args.limit]
-        df = df[df["protein"].isin(complexes)].copy()
-    print(f"Complexes: {len(complexes)} | poses: {len(df)} | "
-          f"tools: {sorted(df['tool'].unique())} | equibind={args.equibind_variant} | "
-          f"diffdock={args.diffdock_variant}")
+    # Resolve which docking-mode variant fills each tool slot (exits with a helpful
+    # list of what's available if the selection can't be matched in the CSV).
+    cat = _variant_catalog(csv)
+    eq_variant = resolve_equibind_variant(
+        cat, args.equibind_variant, args.equibind_pocket,
+        args.equibind_refine, args.equibind_clamp)
+    dd_variant = resolve_diffdock_variant(cat, args.diffdock_variant, args.diffdock_refine)
 
-    # ── parallel centroid extraction ─────────────────────────────────────
-    files = sorted(df["pose_file"].unique())
-    cents: Dict[str, Tuple[float, float, float]] = {}
-    print(f"Extracting centroids for {len(files)} pose SDFs ({args.workers} workers)...")
-    with ProcessPoolExecutor(max_workers=max(1, args.workers)) as ex:
-        for path, cx, cy, cz, na in ex.map(_extract_centroid, files, chunksize=64):
-            if cx is not None:
-                cents[path] = (cx, cy, cz)
-    print(f"  loaded {len(cents)}/{len(files)} centroids")
+    # ── reuse the cached per-complex analysis when the inputs are unchanged ──
+    sig = _analysis_signature(args, eq_variant, dd_variant)
+    cache_path = out_dir / "analysis_cache.pkl"
+    ok = None if args.force else _load_analysis_cache(cache_path, sig)
+    if ok is not None:
+        print(f"Reusing cached analysis: {len(ok)} complexes (inputs unchanged; "
+              f"skipping re-analysis — use --force to recompute). "
+              f"equibind={eq_variant} | diffdock={dd_variant}")
+    else:
+        df = load_poses(csv, eq_variant, ids, args.pb_valid_only, dd_variant)
+        if df.empty:
+            print("No poses after filtering (check --equibind-* / --diffdock-* / --ids-file).")
+            return 1
+        complexes = sorted(df["protein"].unique())
+        if args.limit:
+            complexes = complexes[:args.limit]
+            df = df[df["protein"].isin(complexes)].copy()
+        print(f"Complexes: {len(complexes)} | poses: {len(df)} | "
+              f"tools: {sorted(df['tool'].unique())} | equibind={eq_variant} | "
+              f"diffdock={dd_variant}")
 
-    # ── per-complex outlier removal (>outlier-dist from median) ──────────
-    keep_idx = []
-    for cid, sub in df.groupby("protein"):
-        cc = np.asarray([cents[f] for f in sub["pose_file"] if f in cents])
-        if len(cc) == 0:
-            continue
-        med = np.median(cc, axis=0)
-        for i, f in zip(sub.index, sub["pose_file"]):
-            c = cents.get(f)
-            if c is not None and np.linalg.norm(np.asarray(c) - med) <= args.outlier_dist:
-                keep_idx.append(i)
-    df = df.loc[keep_idx].copy()
+        # ── parallel centroid extraction ─────────────────────────────────
+        files = sorted(df["pose_file"].unique())
+        cents: Dict[str, Tuple[float, float, float]] = {}
+        print(f"Extracting centroids for {len(files)} pose SDFs ({args.workers} workers)...")
+        with ProcessPoolExecutor(max_workers=max(1, args.workers)) as ex:
+            for path, cx, cy, cz, na in ex.map(_extract_centroid, files, chunksize=64):
+                if cx is not None:
+                    cents[path] = (cx, cy, cz)
+        print(f"  loaded {len(cents)}/{len(files)} centroids")
 
-    do_placement = args.distance_mode in ("hybrid", "both")
-    results = []
-    for ci, cid in enumerate(complexes, 1):
-        sub = df[df["protein"] == cid]
-        if sub.empty:
-            continue
-        crystal = crystal_centroid(Path(args.benchmark_dir), cid)
-        stem = f"{cid}_protein"
-        fp_out = Path(args.fpocket_dir) / f"{stem}_out"
-        pr_csv = Path(args.p2rank_dir) / f"{stem}.pdb_predictions.csv"
-        fp_pockets = parse_fpocket(fp_out)[:args.top_n_pockets] if fp_out.exists() else []
-        pr_pockets = parse_p2rank(pr_csv)[:args.top_n_pockets] if pr_csv.exists() else []
-        res = analyze_complex(cid, sub, cents, crystal, fp_pockets, pr_pockets,
-                              args.match_thr, do_placement, args.mode_rmsd_thr,
-                              args.rmsd_pose_cap, args.site_cluster,
-                              args.pocket_radius, args.rank_by, args.stability_boot)
-        results.append(res)
-        if ci % 50 == 0:
-            print(f"  analyzed {ci}/{len(complexes)}")
+        # ── per-complex outlier removal (>outlier-dist from median) ──────
+        keep_idx = []
+        for cid, sub in df.groupby("protein"):
+            cc = np.asarray([cents[f] for f in sub["pose_file"] if f in cents])
+            if len(cc) == 0:
+                continue
+            med = np.median(cc, axis=0)
+            for i, f in zip(sub.index, sub["pose_file"]):
+                c = cents.get(f)
+                if c is not None and np.linalg.norm(np.asarray(c) - med) <= args.outlier_dist:
+                    keep_idx.append(i)
+        df = df.loc[keep_idx].copy()
 
-    ok = [r for r in results if not r.get("skipped")]
-    if not ok:
-        print("No complex had >=2 usable poses.")
-        return 1
+        do_placement = args.distance_mode in ("hybrid", "both")
+        results = []
+        for ci, cid in enumerate(complexes, 1):
+            sub = df[df["protein"] == cid]
+            if sub.empty:
+                continue
+            crystal = crystal_centroid(Path(args.benchmark_dir), cid)
+            stem = f"{cid}_protein"
+            fp_out = Path(args.fpocket_dir) / f"{stem}_out"
+            pr_csv = Path(args.p2rank_dir) / f"{stem}.pdb_predictions.csv"
+            fp_pockets = parse_fpocket(fp_out)[:args.top_n_pockets] if fp_out.exists() else []
+            pr_pockets = parse_p2rank(pr_csv)[:args.top_n_pockets] if pr_csv.exists() else []
+            res = analyze_complex(cid, sub, cents, crystal, fp_pockets, pr_pockets,
+                                  args.match_thr, do_placement, args.mode_rmsd_thr,
+                                  args.rmsd_pose_cap, args.site_cluster,
+                                  args.pocket_radius, args.rank_by, args.stability_boot)
+            results.append(res)
+            if ci % 50 == 0:
+                print(f"  analyzed {ci}/{len(complexes)}")
+
+        ok = [r for r in results if not r.get("skipped")]
+        if not ok:
+            print("No complex had >=2 usable poses.")
+            return 1
+        _save_analysis_cache(cache_path, sig, ok)
+        print(f"  cached analysis → {cache_path} (re-run reuses it unless inputs change)")
 
     # ── per-complex CSV (drop figure payloads) ───────────────────────────
     df_complex = pd.DataFrame([{k: v for k, v in r.items() if not k.startswith("_")}
@@ -2033,8 +2525,8 @@ def main(argv=None) -> int:
 
     summary = {
         "n_complexes": int(n), "match_thr_A": args.match_thr,
-        "equibind_variant": args.equibind_variant,
-        "diffdock_variant": args.diffdock_variant,
+        "equibind_variant": eq_variant,
+        "diffdock_variant": dd_variant,
         "clustering": {
             "site_method": args.site_cluster, "pocket_radius": args.pocket_radius,
             "rank_by": args.rank_by,
@@ -2104,14 +2596,19 @@ def main(argv=None) -> int:
         figs = [_fig_examples(ok, args.match_thr, out_dir),
                 _fig_summary(df_complex, args.match_thr, out_dir),
                 _fig_ecdf_split(df_complex, args.match_thr, out_dir),
-                _fig_top5(df_rank, df_complex, out_dir),
+                _fig_top5(df_rank, df_complex, out_dir),   # returns a list of paths
                 _fig_rank_in_correct(df_complex, args.match_thr, out_dir),
+                _fig_near_native_composition(ok, args.match_thr, out_dir),
                 _fig_ensembles(df_complex, args.match_thr, out_dir),
                 _fig_placement(df_complex, args.mode_rmsd_thr, out_dir),
-                _fig_descriptor_quality(df_complex, args.features_csv, out_dir)]
+                _fig_descriptor_quality(df_complex, args.features_csv, out_dir,
+                                        per_pose_csv=args.per_pose_csv,
+                                        dd_variant=dd_variant, eq_variant=eq_variant)]
         for f in figs:
-            if f:
-                print(f"  Figure: {f}")
+            if not f:
+                continue
+            for pth in (f if isinstance(f, (list, tuple)) else [f]):
+                print(f"  Figure: {pth}")
     return 0
 
 

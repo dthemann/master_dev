@@ -1,15 +1,9 @@
 """PoseBusters Parallel Pose Validation Pipeline.
 
 Validates docked poses from one or more docking methods using PoseBusters.
-Supports AutoDock Vina, DiffDock, and EquiBind outputs.
+Supports AutoDock Vina, DiffDock, and EquiBind outputs."""
 
-Run as a script:
-    python pose_busters_para_refactored.py --config config.yaml
 
-Use as a library:
-    from pose_busters_para_refactored import run_pipeline
-    run_pipeline("config.yaml")
-"""
 
 from __future__ import annotations
 
@@ -17,11 +11,18 @@ import argparse
 import os
 import re
 import shutil
+import pickle
+import select
+import signal
+import struct
 import subprocess
 import sys
+import threading
+import time
+import warnings
 from collections import Counter
 from dataclasses import dataclass, field
-from multiprocessing import Pool, cpu_count
+from multiprocessing import Pool, TimeoutError as MPTimeoutError, cpu_count, get_context
 from pathlib import Path
 from typing import Any
 
@@ -99,6 +100,76 @@ _silence_rdkit_2d3d_warning()
 
 
 # ============================================================================
+# QUIET MODE  (suppress warning chatter) + WORKER THREAD LIMITS
+# ============================================================================
+
+# Module-global set once at startup (main process) and re-applied in each Pool
+# worker via _init_worker. Gates the pipeline's own verbose per-file listings.
+_QUIET = False
+
+
+def _apply_quiet_mode(quiet: bool) -> None:
+    """Silence Python warnings and *all* RDKit logging when *quiet* is set.
+
+    Complements _silence_rdkit_2d3d_warning (which drops only the one harmless
+    2D/3D message): quiet mode drops every Python warning and every RDKit
+    warning/error log line. Runs in the main process and in every Pool worker.
+    Idempotent; a no-op when *quiet* is False.
+    """
+    global _QUIET
+    _QUIET = bool(quiet)
+    if not quiet:
+        return
+    warnings.filterwarnings("ignore")
+    os.environ.setdefault("PYTHONWARNINGS", "ignore")
+    try:
+        from rdkit import RDLogger
+
+        RDLogger.DisableLog("rdApp.*")
+    except Exception:  # pragma: no cover - RDKit always present in this env
+        pass
+
+
+def _limit_worker_threads() -> None:
+    """Constrain per-worker thread fan-out so N Pool workers don't oversubscribe.
+
+    Two independent sources of hidden intra-worker parallelism blow up CPU
+    contention when the pipeline already runs one worker per core:
+
+    1. NumPy/pandas/BLAS honour OMP/MKL/OPENBLAS/NUMEXPR thread-count env vars.
+    2. PoseBusters' ``internal_energy`` check embeds + UFF-minimises an ensemble
+       of 50 conformers per pose (posebusters/modules/energy_ratio.py) with
+       ``num_threads=0`` — RDKit's "use every core" — so each of N workers spawns
+       an all-core RDKit thread pool. That is N x cores threads fighting over
+       cores, which degrades throughput catastrophically under load.
+
+    We already parallelise at the pose level, so each worker should stay
+    single-threaded. Env caps handle (1); a guarded monkeypatch forcing RDKit's
+    conformer generation to one thread handles (2). Both fail safe.
+    """
+    for var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+                "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+        os.environ.setdefault(var, "1")
+
+    try:
+        from posebusters.modules import energy_ratio as _er
+
+        _orig_new_conformation = _er.new_conformation
+
+        def _single_thread_new_conformation(mol, n_confs=1, num_threads=0,
+                                            energy_minimization=True):
+            # Force one RDKit thread regardless of what PoseBusters requests.
+            return _orig_new_conformation(mol, n_confs, 1, energy_minimization)
+
+        # get_energies() looks up new_conformation as a module global, so
+        # replacing the attribute is picked up on the next call.
+        if getattr(_er.new_conformation, "__name__", "") != "_single_thread_new_conformation":
+            _er.new_conformation = _single_thread_new_conformation
+    except Exception:  # pragma: no cover - posebusters internals may change
+        pass
+
+
+# ============================================================================
 # CONFIG
 # ============================================================================
 
@@ -129,6 +200,35 @@ class PipelineConfig:
     # blind to. ``None`` disables keep-mode and falls back to
     # ``strip_hetatm_residues`` (explicit strip list). Takes precedence when set.
     keep_hetatm_residues: set[str] | None = None
+
+    # Suppress warning chatter (Python warnings + all RDKit logs) and the
+    # verbose per-file listings (HETATM strip table, protein file dump,
+    # per-model conversion notes). Progress / checkpoint / summary lines stay.
+    quiet: bool = False
+    # Recycle each Pool worker after this many poses so RDKit conformer-cache /
+    # RSS growth over a long run can't accumulate into swap thrashing — the
+    # classic "stalls after a few thousand poses". None -> workers live forever.
+    worker_maxtasks: int | None = 200
+    # Per-pose wall-clock cap (seconds) for a single bust() call. A pathological
+    # ligand can otherwise send the 50-conformer UFF ensemble into an effectively
+    # unbounded compute and stall a worker. 0/None disables the guard.
+    pose_timeout: int | None = 600
+    # Cap intra-worker thread fan-out (BLAS + RDKit conformer generation) so N
+    # Pool workers don't each try to use every core. See _limit_worker_threads.
+    limit_worker_threads: bool = True
+    # Live resource monitor: a background thread prints core utilisation per
+    # process + memory/swap every ``monitor_interval`` seconds and flags
+    # oversubscription / swap pressure / stalls. Off by default (diagnostic).
+    monitor: bool = False
+    monitor_interval: int = 30
+    # Stall recovery. A dead worker (e.g. OOM-killed under memory pressure) makes
+    # Pool.imap_unordered hang forever waiting for a result that never comes — the
+    # "stuck after a few thousand busts" with no error. If no pose completes for
+    # ``stall_timeout`` seconds the pool is declared stuck, terminated, and a
+    # fresh pool is restarted on the not-yet-done poses (up to ``max_restarts``
+    # times). None -> auto (max(pose_timeout, 300) x 3). 0 disables detection.
+    stall_timeout: int | None = None
+    max_restarts: int = 5
 
     # Derived
     output_dir: Path = field(init=False)
@@ -204,6 +304,17 @@ def load_config(config_path: str | Path) -> PipelineConfig:
         copy_proved_poses=bool(raw.get("copy_proved_poses", True)),
         strip_hetatm_residues=strip_set,
         keep_hetatm_residues=keep_set,
+        quiet=bool(raw.get("quiet", False)),
+        worker_maxtasks=(None if raw.get("worker_maxtasks", 200) in (None, 0, False)
+                         else int(raw.get("worker_maxtasks", 200))),
+        pose_timeout=(None if raw.get("pose_timeout", 600) in (None, 0, False)
+                      else int(raw.get("pose_timeout", 600))),
+        limit_worker_threads=bool(raw.get("limit_worker_threads", True)),
+        monitor=bool(raw.get("monitor", False)),
+        monitor_interval=int(raw.get("monitor_interval", 30)),
+        stall_timeout=(None if raw.get("stall_timeout", None) is None
+                       else int(raw.get("stall_timeout"))),
+        max_restarts=int(raw.get("max_restarts", 5)),
     )
 
 
@@ -285,7 +396,7 @@ def prepare_cleaned_receptor_dir(ctx: PipelineConfig) -> Path:
         total_kept += kept
         total_dropped += dropped
         n_files += 1
-        if dropped:
+        if dropped and not _QUIET:
             print(f"  {src.name}: kept {kept}, dropped {dropped} HETATM atoms")
 
     print(f"\n  Receptors cleaned: {n_files}  "
@@ -300,11 +411,12 @@ def discover_proteins(receptors_dir: Path) -> tuple[dict[str, str], dict[str, st
     file_map = {p.stem: str(p) for p in pdbs}
     normalized_map = {stem.replace("-", "_").lower(): path for stem, path in file_map.items()}
 
-    print("=" * 80)
-    print("AVAILABLE PROTEIN PDB FILES")
-    print("=" * 80)
-    for stem, path in sorted(file_map.items()):
-        print(f"  {stem}  →  {path}")
+    if not _QUIET:
+        print("=" * 80)
+        print("AVAILABLE PROTEIN PDB FILES")
+        print("=" * 80)
+        for stem, path in sorted(file_map.items()):
+            print(f"  {stem}  →  {path}")
     print(f"\nTotal: {len(file_map)} PDB files found in {receptors_dir}")
     return file_map, normalized_map
 
@@ -591,7 +703,8 @@ def _expand_autodock_poses(row: dict, conv_dir: Path, ctx: PipelineConfig) -> li
     file_path = Path(row["file_path"])
     if not file_path.exists() or file_path.suffix != ".pdbqt":
         return []
-    print(f"  Converting {file_path.name} to SDF...")
+    if not _QUIET:
+        print(f"  Converting {file_path.name} to SDF...")
     sdf_files = _convert_pdbqt_to_sdf(str(file_path), conv_dir, ctx)
     affinities = _autodock_affinities_from_pdbqt(file_path)
     poses = []
@@ -821,7 +934,8 @@ def _find_template_mol(ligand_name: str, ctx: PipelineConfig):
                 try:
                     mol = Chem.MolFromMolFile(str(match), removeHs=True, sanitize=True)
                     if mol is not None:
-                        print(f"    Using bond-order template: {match.relative_to(sdir)}")
+                        if not _QUIET:
+                            print(f"    Using bond-order template: {match.relative_to(sdir)}")
                         return mol
                 except Exception:
                     pass
@@ -1006,43 +1120,220 @@ _worker_buster_dock: PoseBusters | None = None
 _worker_buster_mol: PoseBusters | None = None
 _worker_protein_cache: dict[str, str | None] = {}
 _worker_config_mode: str = "mol"
+_worker_pose_timeout: int | None = None
+# Shared across workers (a Manager dict, keyed by ligand): once one pose of a
+# ligand times out, every remaining pose of that same molecule is skipped
+# instead of re-hanging for another full timeout — EquiBind emits up to 540
+# poses per ligand, so one poison molecule would otherwise cost 540 x timeout.
+_worker_poison: Any = None
 
 
-def _init_worker(config_mode: str, protein_cache: dict[str, str | None]) -> None:
-    global _worker_buster_dock, _worker_buster_mol, _worker_protein_cache, _worker_config_mode
+def _init_worker(
+    config_mode: str,
+    protein_cache: dict[str, str | None],
+    quiet: bool = False,
+    pose_timeout: int | None = None,
+    limit_threads: bool = True,
+    poison=None,
+) -> None:
+    global _worker_buster_dock, _worker_buster_mol, _worker_protein_cache
+    global _worker_config_mode, _worker_pose_timeout, _worker_poison
     from posebusters import PoseBusters as _PB
 
     _silence_rdkit_2d3d_warning()  # workers run bust(); install the filter here too
+    _apply_quiet_mode(quiet)       # and drop all warning chatter if requested
+    if limit_threads:
+        _limit_worker_threads()    # one BLAS/RDKit thread per worker
+    if _LIBC is not None:          # die with the main process, so an interrupted
+        try:                        # run (killed/crashed main) leaves no orphaned
+            _LIBC.prctl(_PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0)  # workers behind
+        except Exception:
+            pass
 
     _worker_config_mode = config_mode
     _worker_protein_cache = protein_cache or {}
+    _worker_pose_timeout = pose_timeout
+    _worker_poison = poison
     if config_mode == "dock":
         _worker_buster_dock = _PB(config="dock")
     _worker_buster_mol = _PB(config="mol")
 
 
+class _PoseTimeout(Exception):
+    """Raised when a single bust() call exceeds the per-pose wall-clock cap."""
+
+
+# A single bust() can hang inside RDKit's C++ conformer generation (the
+# 50-conformer internal-energy ensemble): all workers pin a core at 100% and
+# complete nothing. A SIGALRM cannot break that — the Python handler only runs
+# when control returns to the interpreter, which a tight C++ loop never does.
+# So we run each bust() in a FORKED grandchild and hard-kill it on timeout:
+# SIGTERM/SIGKILL to a child is actioned by the kernel no matter what C++ code it
+# is stuck in, so the wedged pose is dropped and the worker moves to the next.
+# The grandchild inherits the constructed PoseBusters objects via fork (no
+# re-construction) and, being a separate process, still uses exactly one core.
+# NB: multiprocessing.Process can't be used here — Pool workers are daemonic and
+# "daemonic processes are not allowed to have children". The raw os.fork() syscall
+# has no such restriction, so we fork by hand and talk over an os.pipe().
+_PR_SET_PDEATHSIG = 1
+try:
+    import ctypes as _ctypes
+    _LIBC = _ctypes.CDLL("libc.so.6", use_errno=True)
+except Exception:  # pragma: no cover - non-glibc platform
+    _LIBC = None
+
+
+def _run_bust(use_dock, pose_file, protein_file):
+    """Direct bust() in this process — used when no per-pose timeout is set."""
+    buster = _worker_buster_dock if use_dock else _worker_buster_mol
+    return buster.bust(pose_file, None, protein_file, full_report=True)
+
+
+def _write_all(fd, data: bytes) -> None:
+    while data:
+        data = data[os.write(fd, data):]
+
+
+def _read_exact(fd, n: int, deadline: float) -> bytes | None:
+    """Read exactly *n* bytes from *fd* before *deadline* (monotonic); None if not."""
+    buf = b""
+    while len(buf) < n:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        if not select.select([fd], [], [], remaining)[0]:
+            return None
+        chunk = os.read(fd, n - len(buf))
+        if not chunk:                      # EOF: child died without full payload
+            return None
+        buf += chunk
+    return buf
+
+
+def _reap(pid: int, killed: bool) -> None:
+    """Reap the forked child *pid*.
+
+    On the success path (*killed* False) the child has already sent its result
+    and is calling os._exit, so a blocking waitpid returns in microseconds — no
+    polling/sleeping (the old WNOHANG+sleep loop idled the worker ~50 ms per pose
+    on a busy box, throttling throughput). On timeout, force-kill it.
+    """
+    try:
+        if not killed:
+            os.waitpid(pid, 0)
+            return
+    except (ChildProcessError, OSError):
+        return
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.kill(pid, sig)
+        except OSError:
+            return
+        for _ in range(30):                # up to ~1.5s per signal
+            time.sleep(0.05)
+            try:
+                if os.waitpid(pid, os.WNOHANG)[0]:
+                    return
+            except (ChildProcessError, OSError):
+                return
+
+
+def _bust_with_timeout(use_dock, pose_file, protein_file, timeout):
+    """Run bust() in a hand-forked child, hard-killed if it exceeds *timeout* (s).
+
+    Returns the result DataFrame, or raises _PoseTimeout if the child had to be
+    killed (an effectively-infinite RDKit computation). The child inherits the
+    constructed PoseBusters objects via fork, so there is no re-construction cost.
+    """
+    r, w = os.pipe()
+    pid = os.fork()
+    if pid == 0:                           # ---- child ----
+        try:
+            os.close(r)
+            if _LIBC is not None:          # die if the worker (parent) dies
+                try:
+                    _LIBC.prctl(_PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0)
+                except Exception:
+                    pass
+            try:
+                buster = _worker_buster_dock if use_dock else _worker_buster_mol
+                df = buster.bust(pose_file, None, protein_file, full_report=True)
+                blob = pickle.dumps(("ok", df), protocol=pickle.HIGHEST_PROTOCOL)
+            except Exception as e:
+                blob = pickle.dumps(("err", f"{type(e).__name__}: {e}"))
+            _write_all(w, struct.pack(">Q", len(blob)))
+            _write_all(w, blob)
+        except Exception:
+            pass
+        finally:
+            os._exit(0)                    # no atexit — parent already has the result
+
+    # ---- parent ----
+    os.close(w)
+    deadline = time.monotonic() + timeout
+    got = False
+    try:
+        header = _read_exact(r, 8, deadline)
+        if header is None:
+            raise _PoseTimeout()
+        (n,) = struct.unpack(">Q", header)
+        body = _read_exact(r, n, deadline)
+        if body is None:
+            raise _PoseTimeout()
+        status, payload = pickle.loads(body)
+        got = True
+    finally:
+        os.close(r)
+        _reap(pid, killed=not got)
+    if status == "err":
+        raise RuntimeError(payload)
+    return payload
+
+
 def _process_single_pose(pose_info: dict):
-    """Validate one pose; returns (result_df | None, error_msg | None)."""
+    """Validate one pose; returns (pose_file, result_df | None, error_msg | None).
+
+    The pose_file is always returned (even on error) so the caller can track
+    exactly which poses a pool pass consumed — needed to compute the remaining
+    set when a stalled pool is terminated and restarted.
+    """
     pose_file = pose_info["pose_file"]
     protein_name = pose_info["protein"]
+    lig_key = f"{protein_name}||{pose_info.get('ligand', '')}"
 
     if not os.path.exists(pose_file):
-        return None, f"File not found: {pose_file}"
+        return pose_file, None, f"File not found: {pose_file}"
+
+    # Skip poses of a ligand already known to hang bust() (a sibling pose timed
+    # out) — re-running would just burn another full timeout on the same molecule.
+    if _worker_poison is not None:
+        try:
+            poisoned = lig_key in _worker_poison
+        except Exception:
+            poisoned = False
+        if poisoned:
+            return pose_file, None, f"POISON-SKIP ({lig_key}): {pose_file}"
 
     try:
         protein_file = None
         used_mode = _worker_config_mode
+        timeout = _worker_pose_timeout
+        guarded = bool(timeout and timeout > 0)
+
+        def _bust(use_dock, prot):
+            return (_bust_with_timeout(use_dock, pose_file, prot, timeout)
+                    if guarded else _run_bust(use_dock, pose_file, prot))
 
         if _worker_config_mode == "dock":
             protein_file = _worker_protein_cache.get(protein_name)
             if protein_file and Path(protein_file).exists():
-                df = _worker_buster_dock.bust(pose_file, None, protein_file, full_report=True)
+                df = _bust(True, protein_file)
                 used_mode = "dock"
             else:
-                df = _worker_buster_mol.bust(pose_file, None, None, full_report=True)
+                df = _bust(False, None)
                 used_mode = "mol (fallback)"
         else:
-            df = _worker_buster_mol.bust(pose_file, None, None, full_report=True)
+            df = _bust(False, None)
             used_mode = "mol"
 
         df["docking_method"] = pose_info["method"]
@@ -1071,10 +1362,250 @@ def _process_single_pose(pose_info: dict):
         for key in _EQ_PROVENANCE_TAGS:
             if key in pose_info:
                 df[key] = pose_info[key]
-        return df, None
+        return pose_file, df, None
 
+    except _PoseTimeout:
+        # Mark the whole ligand poison so its remaining poses are skipped, then
+        # report. Sentinel prefix "TIMEOUT" lets the main loop tally these
+        # separately and record the pose path; the pose is NOT written to the
+        # results CSV, so a resume run retries it unless the caller excludes it.
+        if _worker_poison is not None:
+            try:
+                _worker_poison[lig_key] = True
+            except Exception:
+                pass
+        return pose_file, None, f"TIMEOUT (>{_worker_pose_timeout}s): {pose_file}"
     except Exception as e:
-        return None, f"Error processing {Path(pose_file).name}: {e}"
+        return pose_file, None, f"Error processing {Path(pose_file).name}: {e}"
+
+
+# ============================================================================
+# RESOURCE MONITOR  (core utilisation + bottleneck detection)
+# ============================================================================
+
+def _fmt_gb(nbytes: float) -> str:
+    return f"{nbytes / 1024 ** 3:.1f}G"
+
+
+class _ResourceMonitor:
+    """Background sampler: per-process core utilisation + bottleneck flags.
+
+    Runs as a daemon thread in the main process while the Pool loop blocks on
+    results, printing one snapshot every *interval* seconds: system CPU / load /
+    RAM / swap, then the worker pool's aggregate CPU%, thread count and RSS, the
+    derived "cores busy", and pose throughput. Heuristics flag the failure modes
+    that stall a long run — CPU oversubscription, swap / memory pressure, core
+    under-utilisation, and busy-but-no-progress (the slow / dead-worker
+    signature). Uses psutil for per-process detail; without it, still reports
+    load average + system memory / swap, which already expose the two main
+    bottlenecks. Never raises into the run — a sampling error just prints a note.
+    """
+
+    _CPU_BUSY_PCT = 20.0   # a worker above this counts as "busy" this tick
+
+    def __init__(self, interval, ncores, progress_getter=None):
+        self.interval = max(2, int(interval))
+        self.ncores = ncores or (os.cpu_count() or 1)
+        self._get_progress = progress_getter or (lambda: None)
+        self._stop = threading.Event()
+        self._thread = None
+        self._t0 = 0.0
+        self._main = None
+        self._proc_cache = {}          # pid -> psutil.Process (reused for cpu deltas)
+        self._prev_done = 0
+        self._prev_swap = None
+        self._peak_swap = 0
+        self._peak_load = 0.0
+        self._min_rate = None
+        self._stall_ticks = 0
+        try:
+            import psutil
+            self._psutil = psutil
+        except Exception:
+            self._psutil = None
+
+    def start(self):
+        self._t0 = time.monotonic()
+        if self._psutil is not None:
+            self._psutil.cpu_percent(interval=None)            # prime system CPU
+            try:
+                self._main = self._psutil.Process()
+                self._main.cpu_percent(interval=None)          # prime main CPU
+                self._proc_cache[self._main.pid] = self._main
+            except Exception:
+                self._main = None
+        self._thread = threading.Thread(target=self._run, name="pb-monitor", daemon=True)
+        self._thread.start()
+        detail = "per-process" if self._psutil is not None else "system-only (no psutil)"
+        print(f"  [MON] resource monitor on — every {self.interval}s, "
+              f"{self.ncores} logical cores, {detail}")
+
+    def stop(self):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=self.interval + 2)
+        self._final_summary()
+
+    # --- internals ----------------------------------------------------------
+    def _run(self):
+        # wait() -> True when stop is set (exit); False on timeout (sample)
+        while not self._stop.wait(self.interval):
+            try:
+                self._sample()
+            except Exception as e:  # a monitor bug must never take down the run
+                print(f"  [MON] sample failed: {e}")
+
+    def _elapsed(self):
+        return int(time.monotonic() - self._t0)
+
+    def _sample(self):
+        done = self._get_progress()
+        t = self._elapsed()
+        if self._psutil is None:
+            self._sample_basic(t, done)
+            return
+
+        ps = self._psutil
+        vm = ps.virtual_memory()
+        sw = ps.swap_memory()
+        sys_cpu = ps.cpu_percent(interval=None)
+        try:
+            load1 = os.getloadavg()[0]
+        except OSError:
+            load1 = float("nan")
+
+        main = self._main or ps.Process()
+        try:
+            children = main.children(recursive=True)
+        except Exception:
+            children = []
+
+        live = {main.pid} | {c.pid for c in children}
+        for pid in list(self._proc_cache):
+            if pid not in live:
+                self._proc_cache.pop(pid, None)
+
+        try:
+            main_cpu = main.cpu_percent(interval=None)
+        except Exception:
+            main_cpu = 0.0
+
+        worker_cpu, worker_thr, worker_rss, busy = [], 0, 0, 0
+        for c in children:
+            p = self._proc_cache.get(c.pid)
+            first = p is None
+            if first:                              # first time we see this worker
+                self._proc_cache[c.pid] = c
+                p = c
+            try:
+                # cpu_percent needs a prior call to form a delta; threads/RSS
+                # are instantaneous, so collect those even on a worker's 1st tick.
+                cpu = None if first else p.cpu_percent(interval=None)
+                if first:
+                    p.cpu_percent(interval=None)   # prime for the next tick
+                worker_thr += p.num_threads()
+                worker_rss += p.memory_info().rss
+            except Exception:
+                continue
+            if cpu is not None:
+                worker_cpu.append(cpu)
+                if cpu > self._CPU_BUSY_PCT:
+                    busy += 1
+
+        n_procs = len(children)
+        # Cores busy from SYSTEM CPU, not per-process summation: each bust runs in
+        # a short-lived forked grandchild that the per-process sampler can't catch
+        # a CPU delta for, which made this read ~0 even at full tilt. sys_cpu is
+        # robust to that churn.
+        cores_busy = sys_cpu / 100.0 * self.ncores
+
+        delta = (done - self._prev_done) if done is not None else None
+        thr_str = ""
+        if done is not None:
+            rate = delta / self.interval
+            thr_str = f"  |  poses {done} (+{delta}, {rate:.1f}/s)"
+            self._prev_done = done
+            if delta > 0:
+                self._min_rate = rate if self._min_rate is None else min(self._min_rate, rate)
+
+        self._peak_swap = max(self._peak_swap, sw.used)
+        if load1 == load1:
+            self._peak_load = max(self._peak_load, load1)
+
+        print(
+            f"  [MON t+{t}s] cores~{cores_busy:.1f}/{self.ncores} (sys-CPU {sys_cpu:.0f}%)  "
+            f"load {load1:.1f}/{self.ncores}  "
+            f"RAM {vm.percent:.0f}% ({_fmt_gb(vm.used)}/{_fmt_gb(vm.total)})  "
+            f"swap {_fmt_gb(sw.used)}\n"
+            f"             procs {n_procs}  threads {worker_thr}  "
+            f"RSS {_fmt_gb(worker_rss)}  main-CPU {main_cpu:.0f}%{thr_str}"
+        )
+        self._flag(load1, vm, sw, cores_busy, delta)
+
+    def _flag(self, load1, vm, sw, cores_busy, delta):
+        out = []
+        if load1 == load1 and load1 > self.ncores * 1.5:
+            out.append(f"HIGH LOAD {load1:.0f} vs {self.ncores} cores — CPU oversubscribed"
+                       " (use fewer workers, or check limit_worker_threads)")
+
+        if self._prev_swap is not None and sw.used > self._prev_swap + 256 * 1024 ** 2:
+            out.append(f"SWAP GROWING +{_fmt_gb(sw.used - self._prev_swap)} this tick"
+                       " — memory-driven stall risk; lower num_workers / worker_maxtasks")
+        elif vm.percent >= 92:
+            out.append(f"MEMORY PRESSURE: {vm.percent:.0f}% RAM used — recycle workers sooner")
+        self._prev_swap = sw.used
+
+        if delta is not None and delta == 0 and cores_busy > self.ncores * 0.25:
+            self._stall_ticks += 1
+            out.append(f"BUSY BUT 0 POSES DONE for {self._stall_ticks * self.interval}s"
+                       " — a pose is hanging; it will be killed at pose_timeout")
+        else:
+            self._stall_ticks = 0
+            if delta is not None and cores_busy < self.ncores * 0.4:
+                out.append(f"UNDER-UTILISED: only ~{cores_busy:.1f}/{self.ncores} cores busy"
+                           " — too few workers (num_workers 0/blank = all cores), a hang"
+                           " holding workers, or main-process/I/O serialisation")
+
+        for f in out:
+            print(f"             ⚠ {f}")
+
+    def _sample_basic(self, t, done):
+        try:
+            load1 = os.getloadavg()[0]
+        except OSError:
+            load1 = float("nan")
+        thr_str = ""
+        if done is not None:
+            delta = done - self._prev_done
+            thr_str = f"  |  poses {done} (+{delta}, {delta / self.interval:.1f}/s)"
+            self._prev_done = done
+        print(f"  [MON t+{t}s] load {load1:.1f}/{self.ncores}  {self._read_meminfo()}{thr_str}")
+        if load1 == load1 and load1 > self.ncores * 1.5:
+            print(f"             ⚠ HIGH LOAD: {load1:.0f} vs {self.ncores} cores — oversubscribed")
+
+    @staticmethod
+    def _read_meminfo():
+        try:
+            info = {}
+            for line in Path("/proc/meminfo").read_text().splitlines():
+                k, _, rest = line.partition(":")
+                info[k] = int(rest.strip().split()[0]) * 1024   # kB -> bytes
+            used = info["MemTotal"] - info.get("MemAvailable", info["MemTotal"])
+            swap_used = info.get("SwapTotal", 0) - info.get("SwapFree", 0)
+            return f"RAM {_fmt_gb(used)}/{_fmt_gb(info['MemTotal'])}  swap {_fmt_gb(swap_used)}"
+        except Exception:
+            return "mem n/a"
+
+    def _final_summary(self):
+        bits = []
+        if self._peak_load:
+            bits.append(f"peak load {self._peak_load:.0f}/{self.ncores}")
+        if self._peak_swap:
+            bits.append(f"peak swap {_fmt_gb(self._peak_swap)}")
+        if self._min_rate is not None:
+            bits.append(f"slowest {self._min_rate:.1f} poses/s")
+        if bits:
+            print(f"  [MON] monitor off — {' | '.join(bits)}")
 
 
 # ============================================================================
@@ -1096,8 +1627,27 @@ def analyze_poses_with_posebusters(
     save_interval: int = 100,
     overwrite: bool = False,
     num_workers: int | None = None,
+    quiet: bool = False,
+    worker_maxtasks: int | None = 200,
+    pose_timeout: int | None = 600,
+    limit_threads: bool = True,
+    monitor: bool = False,
+    monitor_interval: int = 30,
+    stall_timeout: int | None = None,
+    max_restarts: int = 5,
 ) -> pd.DataFrame:
-    """Run PoseBusters on *poses_list* using multiprocessing.Pool."""
+    """Run PoseBusters on *poses_list* using multiprocessing.Pool.
+
+    *worker_maxtasks* recycles each worker after that many poses (bounds RDKit
+    memory growth); *pose_timeout* caps a single bust() call; *limit_threads*
+    keeps each worker single-threaded so N workers don't oversubscribe the CPU.
+
+    Stall recovery: if no pose completes for *stall_timeout* seconds the pool is
+    assumed wedged (a dead / OOM-killed worker makes imap_unordered block
+    forever), so it is terminated and restarted on the remaining poses — halving
+    the worker count each time to relieve memory pressure — up to *max_restarts*
+    times. *monitor* starts a background resource sampler for the run.
+    """
     if not poses_list:
         # No new poses — either nothing was discovered or every complex was
         # already validated and skipped upstream. Return the existing results so
@@ -1128,13 +1678,18 @@ def analyze_poses_with_posebusters(
         print("  All poses already inspected.")
         return previous_results
 
-    n_workers = num_workers if num_workers is not None else cpu_count()
+    # num_workers None/0/negative all mean "use every core" (0 is the common
+    # 'auto' spelling; before, 0 silently ran the whole job on ONE worker).
+    n_workers = num_workers if (num_workers and num_workers > 0) else cpu_count()
     n_workers = min(n_workers, len(pending))
     print(f"\n  Workers: {n_workers} ({cpu_count()} CPUs available)")
 
     new_frames: list[pd.DataFrame] = []
+    timeout_msgs: list[str] = []
     total = len(pending)
-    n_new = n_errors = n_dock = n_mol_fb = 0
+    consumed: set[str] = set()          # pose_files fully processed across all passes
+    progress = {"n": 0}                  # live counter the monitor reads
+    n_new = n_errors = n_timeout = n_poison = n_dock = n_mol_fb = 0
     print(f"  {total} poses to process (checkpoint every {save_interval})...\n")
 
     def _checkpoint(final: bool = False) -> None:
@@ -1143,33 +1698,167 @@ def analyze_poses_with_posebusters(
         frames = ([previous_results] if not previous_results.empty else []) + new_frames
         if frames:
             _save_checkpoint(frames, output_file, n_new, total, final=final)
+            # Collapse the growing list of 1-row frames into one so the next
+            # checkpoint and the final concat stay O(N) instead of O(N^2) — a
+            # thousands-of-tiny-frames concat every interval is a real slowdown.
+            if not final and len(new_frames) > 1:
+                new_frames[:] = [pd.concat(new_frames, ignore_index=True)]
 
-    with Pool(processes=n_workers, initializer=_init_worker,
-              initargs=(config, dict(protein_cache))) as pool:
-        for result_df, error_msg in pool.imap_unordered(_process_single_pose, pending):
-            if error_msg:
+    maxtasks = worker_maxtasks if (worker_maxtasks and worker_maxtasks > 0) else None
+    if maxtasks:
+        print(f"  Recycling each worker every {maxtasks} poses"
+              f"{f'; per-pose timeout {pose_timeout}s' if pose_timeout else ''}")
+
+    # No-result-for-this-long => the pool is wedged (dead/OOM-killed worker makes
+    # imap_unordered block forever). Default to comfortably longer than a single
+    # legit slow pose so only a real stall trips it. 0 disables detection.
+    if stall_timeout is None:
+        stall_secs = max(pose_timeout or 0, 300) * 3
+    elif stall_timeout <= 0:
+        stall_secs = 0
+    else:
+        stall_secs = stall_timeout
+    if stall_secs:
+        print(f"  Stall watchdog: restart the pool if no pose completes for {stall_secs}s "
+              f"(up to {max_restarts} restarts)")
+
+    # Shared poison-ligand registry so a molecule that hangs bust() is validated
+    # at most once, not once per (up to 540) sibling pose. Best-effort: if a
+    # Manager can't start, the skip is simply disabled.
+    poison_mgr = poison = None
+    if pose_timeout and pose_timeout > 0:
+        try:
+            poison_mgr = get_context("fork").Manager()
+            poison = poison_mgr.dict()
+        except Exception as e:
+            print(f"  (poison-ligand skip unavailable: {e})")
+            poison_mgr = poison = None
+
+    def _handle(pose_file, result_df, error_msg) -> None:
+        nonlocal n_new, n_errors, n_timeout, n_poison, n_dock, n_mol_fb
+        consumed.add(str(pose_file))
+        progress["n"] = len(consumed)
+        if error_msg:
+            es = str(error_msg)
+            if es.startswith("TIMEOUT"):
+                n_timeout += 1
+                timeout_msgs.append(es)
+                print(f"  {es}")
+            elif es.startswith("POISON-SKIP"):
+                n_poison += 1          # many per poison ligand — tally silently
+            else:
                 n_errors += 1
-                print(f"  {error_msg}")
-                continue
-            if result_df is not None:
-                mode_val = result_df["posebusters_mode"].iloc[0] if "posebusters_mode" in result_df.columns else ""
-                if mode_val == "dock":
-                    n_dock += 1
-                elif "fallback" in str(mode_val):
-                    n_mol_fb += 1
-                new_frames.append(result_df)
-                n_new += 1
-
+                print(f"  {es}")
+            return
+        if result_df is not None:
+            mode_val = result_df["posebusters_mode"].iloc[0] if "posebusters_mode" in result_df.columns else ""
+            if mode_val == "dock":
+                n_dock += 1
+            elif "fallback" in str(mode_val):
+                n_mol_fb += 1
+            new_frames.append(result_df)
+            n_new += 1
             if n_new % 10 == 0 or n_new == 1:
                 print(f"  Processed {n_new}/{total}  (overall {len(already_done) + n_new}/{len(poses_list)})")
-            if n_new > 0 and n_new % save_interval == 0:
+            if n_new % save_interval == 0:
                 _checkpoint()
+
+    def _run_one_pass(work: list[dict]) -> bool:
+        """Run one Pool over *work*; return True if it stalled and needs a restart."""
+        procs = max(1, min(n_workers, len(work)))
+        stalled = False
+        mon = (_ResourceMonitor(monitor_interval, cpu_count(), lambda: progress["n"])
+               if monitor else None)
+        pool = Pool(processes=procs, maxtasksperchild=maxtasks,
+                    initializer=_init_worker,
+                    initargs=(config, dict(protein_cache), quiet, pose_timeout,
+                              limit_threads, poison))
+        if mon:
+            mon.start()
+        try:
+            it = pool.imap_unordered(_process_single_pose, work)
+            seen = 0
+            while seen < len(work):
+                try:
+                    pose_file, result_df, error_msg = (
+                        it.next(stall_secs) if stall_secs else next(it))
+                except StopIteration:
+                    break
+                except MPTimeoutError:
+                    stalled = True
+                    print(f"\n  [STALL] no pose completed in {stall_secs}s — a worker likely "
+                          f"died (OOM?) or is wedged in an uninterruptible call. "
+                          f"Terminating the pool and restarting on the remainder.")
+                    break
+                seen += 1
+                _handle(pose_file, result_df, error_msg)
+        finally:
+            if stalled:
+                pool.terminate()
+            else:
+                pool.close()
+            pool.join()
+            if mon:
+                mon.stop()
+        return stalled
+
+    remaining = list(pending)
+    restart = 0
+    while remaining:
+        stalled = _run_one_pass(remaining)
+        remaining = [p for p in pending if str(p["pose_file"]) not in consumed]
+        if not stalled:
+            break
+        restart += 1
+        if restart > max_restarts:
+            print(f"  [STALL] gave up after {max_restarts} restarts; {len(remaining)} pose(s) "
+                  f"left unprocessed — they are not in the CSV, so the next run resumes them.")
+            break
+        old = n_workers
+        n_workers = max(1, n_workers // 2)
+        _checkpoint()  # persist what we have before retrying
+        print(f"  [STALL] restart {restart}/{max_restarts} on {len(remaining)} remaining pose(s)"
+              + (f"; workers {old}->{n_workers} to ease memory pressure" if n_workers != old else ""))
 
     _checkpoint(final=True)
 
-    print(f"\n  Done:  new={n_new}  prev={n_skipped}  total={len(already_done)+n_new}  errors={n_errors}")
+    poison_ligands = sorted(poison.keys()) if poison is not None else []
+    if poison_mgr is not None:
+        try:
+            poison_mgr.shutdown()
+        except Exception:
+            pass
+
+    print(f"\n  Done:  new={n_new}  prev={n_skipped}  total={len(already_done)+n_new}"
+          f"  errors={n_errors}  timeouts={n_timeout}"
+          + (f"  poison_skipped={n_poison}" if n_poison else "")
+          + (f"  stalls={restart}" if restart else ""))
     if config == "dock":
         print(f"    dock mode: {n_dock}  |  mol fallback: {n_mol_fb}")
+    if poison_ligands:
+        # A molecule whose conformer generation hangs bust(); every pose of it was
+        # dropped after the first timeout. Log so they can be inspected/excluded.
+        print(f"\n  {len(poison_ligands)} ligand(s) hung bust() (conformer generation) and had "
+              f"all their poses skipped after the first {pose_timeout}s timeout:")
+        for lk in poison_ligands:
+            print(f"    ✗ {lk}")
+        if output_file is not None:
+            pf = output_file.with_name("posebusters_poison_ligands.txt")
+            pf.write_text("\n".join(poison_ligands) + "\n")
+            print(f"  Poison ligands logged to: {pf}")
+    if timeout_msgs:
+        # Timed-out poses were skipped (not in the CSV) so a plain resume RETRIES
+        # them next run. Record them so a permanently-pathological pose can be
+        # inspected or excluded instead of retried forever.
+        print(f"\n  {n_timeout} pose(s) exceeded the {pose_timeout}s cap and were "
+              f"skipped — NOT written to the CSV, so the next run will retry them.")
+        if output_file is not None:
+            timeout_file = output_file.with_name("posebusters_timeouts.txt")
+            existing = (timeout_file.read_text().splitlines()
+                        if timeout_file.exists() else [])
+            merged = sorted(set(existing) | set(timeout_msgs))
+            timeout_file.write_text("\n".join(merged) + "\n")
+            print(f"  Timed-out poses logged to: {timeout_file}")
 
     all_frames = ([previous_results] if not previous_results.empty else []) + new_frames
     return pd.concat(all_frames, ignore_index=True) if all_frames else pd.DataFrame()
@@ -1228,10 +1917,14 @@ def collect_pose_rows(ctx: PipelineConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
         df_combined["Total"] = df_combined[method_cols].sum(axis=1)
         df_combined = df_combined.sort_values(["Protein", "Ligand"])
 
-        print("\n" + "=" * 100)
-        print("POSE COUNTS BY PROTEIN-LIGAND COMBINATION")
-        print("=" * 100)
-        print(df_combined.to_string(index=False))
+        # The full per-complex table (one row per protein-ligand) is hundreds of
+        # lines on the benchmark set; under --quiet keep only the summary totals
+        # below (the whole table is still written to pose_counts_overview.csv).
+        if not _QUIET:
+            print("\n" + "=" * 100)
+            print("POSE COUNTS BY PROTEIN-LIGAND COMBINATION")
+            print("=" * 100)
+            print(df_combined.to_string(index=False))
 
         print("\n" + "=" * 100)
         print("SUMMARY STATISTICS")
@@ -1244,10 +1937,11 @@ def collect_pose_rows(ctx: PipelineConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
         print(f"\nUnique proteins: {df_combined['Protein'].nunique()}")
         print(f"Unique ligands: {df_combined['Ligand'].nunique()}")
 
-        print("\n" + "-" * 100 + "\nPOSES BY LIGAND\n" + "-" * 100)
-        print(df_combined.groupby("Ligand")[method_cols + ["Total"]].sum().to_string())
-        print("\n" + "-" * 100 + "\nPOSES BY PROTEIN\n" + "-" * 100)
-        print(df_combined.groupby("Protein")[method_cols + ["Total"]].sum().to_string())
+        if not _QUIET:
+            print("\n" + "-" * 100 + "\nPOSES BY LIGAND\n" + "-" * 100)
+            print(df_combined.groupby("Ligand")[method_cols + ["Total"]].sum().to_string())
+            print("\n" + "-" * 100 + "\nPOSES BY PROTEIN\n" + "-" * 100)
+            print(df_combined.groupby("Protein")[method_cols + ["Total"]].sum().to_string())
 
         out_csv = ctx.output_base_dir / "pose_counts_overview.csv"
         df_combined.to_csv(out_csv, index=False)
@@ -1284,8 +1978,9 @@ def filter_common_combos(filtered_poses_df: pd.DataFrame) -> pd.DataFrame:
         print("\nWARNING: No combinations found in all methods!")
         return filtered_poses_df.iloc[0:0]
 
-    for protein, ligand in sorted(common_combos):
-        print(f"  {protein} + {ligand}")
+    if not _QUIET:
+        for protein, ligand in sorted(common_combos):
+            print(f"  {protein} + {ligand}")
 
     combo_index = pd.MultiIndex.from_arrays(
         [filtered_poses_df["protein"], filtered_poses_df["ligand"]]
@@ -1308,11 +2003,12 @@ def filter_common_combos(filtered_poses_df: pd.DataFrame) -> pd.DataFrame:
     pivot["__total__"] = pivot.sum(axis=1)
 
     header = f"{'Protein':<35} {'Ligand':<30}" + "".join(f" {m:>15}" for m in methods_in_df) + f" {'Total':>10}"
-    print(f"\n{header}\n" + "-" * len(header))
-    for (protein, ligand), row in pivot.iterrows():
-        cells = "".join(f" {int(row[m]):>15,}" for m in methods_in_df)
-        print(f"{protein:<35} {ligand:<30}{cells} {int(row['__total__']):>10,}")
-    print("-" * len(header))
+    if not _QUIET:                     # per-complex rows: hundreds of lines
+        print(f"\n{header}\n" + "-" * len(header))
+        for (protein, ligand), row in pivot.iterrows():
+            cells = "".join(f" {int(row[m]):>15,}" for m in methods_in_df)
+            print(f"{protein:<35} {ligand:<30}{cells} {int(row['__total__']):>10,}")
+        print("-" * len(header))
     grand_totals = pivot[methods_in_df].sum().astype(int)
     grand_all = int(pivot["__total__"].sum())
     totals_str = f"{'TOTAL':<35} {'':<30}" + "".join(f" {grand_totals[m]:>15,}" for m in methods_in_df) + f" {grand_all:>10,}"
@@ -1814,14 +2510,44 @@ def print_bottleneck_diagnostics(ctx: PipelineConfig) -> None:
 # TOP-LEVEL ENTRY POINT
 # ============================================================================
 
-def run_pipeline(config_path: str | Path, overwrite: bool | None = None) -> pd.DataFrame:
+def run_pipeline(
+    config_path: str | Path,
+    overwrite: bool | None = None,
+    quiet: bool | None = None,
+    num_workers: int | None = None,
+    pose_timeout: int | None = None,
+    worker_maxtasks: int | None = None,
+    monitor: bool | None = None,
+    monitor_interval: int | None = None,
+) -> pd.DataFrame:
     """Run the full PoseBusters validation pipeline driven by a YAML config.
 
-    *overwrite* overrides the value from the config file when provided.
+    Any of *overwrite*, *quiet*, *num_workers*, *pose_timeout*, *worker_maxtasks*,
+    *monitor*, *monitor_interval* override the corresponding config value when
+    provided (used by the CLI).
     """
     ctx = load_config(config_path)
     if overwrite is not None:
         ctx.overwrite = overwrite
+    if quiet is not None:
+        ctx.quiet = quiet
+    if num_workers is not None:
+        ctx.num_workers = num_workers
+    if pose_timeout is not None:
+        ctx.pose_timeout = pose_timeout or None
+    if worker_maxtasks is not None:
+        ctx.worker_maxtasks = worker_maxtasks or None
+    if monitor is not None:
+        ctx.monitor = monitor
+    if monitor_interval is not None:
+        ctx.monitor_interval = monitor_interval
+
+    # Apply quiet mode + thread caps in the main process now, before the Pool is
+    # forked, so workers inherit them and the noisy per-file listings below are
+    # already suppressed.
+    _apply_quiet_mode(ctx.quiet)
+    if ctx.limit_worker_threads:
+        _limit_worker_threads()
 
     # Optional: write cleaned receptor PDBs (HETATM artefacts removed) and
     # validate against those instead of the originals.
@@ -1872,6 +2598,14 @@ def run_pipeline(config_path: str | Path, overwrite: bool | None = None) -> pd.D
         save_interval=ctx.save_interval,
         overwrite=ctx.overwrite,
         num_workers=ctx.num_workers,
+        quiet=ctx.quiet,
+        worker_maxtasks=ctx.worker_maxtasks,
+        pose_timeout=ctx.pose_timeout,
+        limit_threads=ctx.limit_worker_threads,
+        monitor=ctx.monitor,
+        monitor_interval=ctx.monitor_interval,
+        stall_timeout=ctx.stall_timeout,
+        max_restarts=ctx.max_restarts,
     )
 
     if not results_df.empty:
@@ -1906,9 +2640,46 @@ def _parse_cli() -> argparse.Namespace:
         "--overwrite", action="store_true", default=None,
         help="Overwrite existing PoseBusters results instead of resuming",
     )
+    parser.add_argument(
+        "--quiet", "-q", action="store_true", default=None,
+        help="Suppress warning chatter (Python + RDKit warnings) and the verbose "
+             "per-file listings; keep progress/checkpoint/summary output",
+    )
+    parser.add_argument(
+        "--workers", "-j", type=int, default=None, metavar="N",
+        help="Number of parallel worker processes (default: all CPUs)",
+    )
+    parser.add_argument(
+        "--pose-timeout", type=int, default=None, metavar="SECONDS",
+        help="Per-pose wall-clock cap for a single bust() call; 0 disables "
+             "(overrides config; default 600s)",
+    )
+    parser.add_argument(
+        "--max-tasks-per-child", type=int, default=None, metavar="N",
+        help="Recycle each worker after N poses to bound memory growth; 0 keeps "
+             "workers for the whole run (overrides config; default 200)",
+    )
+    parser.add_argument(
+        "--monitor", action="store_true", default=None,
+        help="Print a live resource snapshot (per-process core use, RAM, swap) "
+             "and flag bottlenecks during the bust loop",
+    )
+    parser.add_argument(
+        "--monitor-interval", type=int, default=None, metavar="SECONDS",
+        help="Seconds between resource-monitor snapshots (default 30)",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = _parse_cli()
-    run_pipeline(args.config, overwrite=args.overwrite)
+    run_pipeline(
+        args.config,
+        overwrite=args.overwrite,
+        quiet=args.quiet,
+        num_workers=args.workers,
+        pose_timeout=args.pose_timeout,
+        worker_maxtasks=args.max_tasks_per_child,
+        monitor=args.monitor,
+        monitor_interval=args.monitor_interval,
+    )
