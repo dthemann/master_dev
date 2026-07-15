@@ -103,7 +103,16 @@ class PandaMapConfig:
     # best-EquiBind / best-DiffDock filter (map only the single best variant)
     best_equibind_only: bool = False
     best_diffdock_only: bool = False
+    # pin DiffDock to a named optimizer variant ('raw' | 'smina' | 'gnina') instead
+    # of oracle-ranking it; takes precedence over best_diffdock_only when set.
+    diffdock_variant: str | None = None
+    # pin EquiBind to a variant by SPEC tokens (e.g. 'gnina', 'unguided_gnina') instead
+    # of oracle-ranking it; takes precedence over best_equibind_only when set.
+    equibind_variant: str | None = None
     oracle_summary: Path | None = None
+    # per-pose metrics table (posebusters) — source of gnina_affinity used to rank
+    # EquiBind's gnina-optimised poses (the pb_csv carries no gnina column).
+    per_pose_metrics: Path | None = None
     # restrict to an explicit '<PDBID>_<LIG>' id allow-list (one per line)
     ids_file: Path | None = None
 
@@ -143,7 +152,10 @@ def load_config(path: str | Path) -> PandaMapConfig:
         overwrite=bool(raw.get("overwrite", False)),
         best_equibind_only=bool(raw.get("best_equibind_only", False)),
         best_diffdock_only=bool(raw.get("best_diffdock_only", False)),
+        diffdock_variant=(raw.get("diffdock_variant") or None),
+        equibind_variant=(raw.get("equibind_variant") or None),
         oracle_summary=_resolve(raw["oracle_summary"]) if raw.get("oracle_summary") else None,
+        per_pose_metrics=_resolve(raw["per_pose_metrics"]) if raw.get("per_pose_metrics") else None,
         ids_file=_resolve(raw["ids_file"]) if raw.get("ids_file") else None,
     )
 
@@ -172,8 +184,10 @@ def classify_equibind(row) -> tuple[str, str | None, str | None]:
                   else "p2rank" if name.startswith("p2rank")
                   else "fpocket" if name.startswith("fpocket") else "guided")
     refine = _col(row, "refine_variant")
-    if refine not in ("smina", "raw"):
-        refine = ("smina" if "__refsmina" in name else "raw" if "__refraw" in name else None)
+    if refine not in ("smina", "raw", "gnina"):
+        refine = ("smina" if "__refsmina" in name else
+                  "gnina" if "__refgnina" in name else
+                  "raw" if "__refraw" in name else None)
     clamp = _col(row, "clamp_variant")
     if clamp not in ("clampON", "clampOFF"):
         clamp = ("clampOFF" if "__clampoff" in name else "clampON" if "__clampon" in name else None)
@@ -220,7 +234,11 @@ def parse_rank(method: str, pose_name: str) -> int:
     """Pose rank from the filename (1 = top). Unranked tools → 999."""
     name = Path(pose_name).name
     if method == "autodock":
-        m = re.search(r"_?model(\d+)", name)
+        # Vina writes models in ascending affinity order (model N = native rank N).
+        # The pose NAME uses 'poseN', the pose FILE 'modelN' — match either, so the
+        # native rank is used instead of falling through to the 999 sentinel (which
+        # made select_top_n keep the lexicographic, not rank-ordered, top poses).
+        m = re.search(r"_?(?:model|pose)(\d+)", name)
         return int(m.group(1)) if m else 999
     if method == "diffdock":
         m = re.search(r"rank(\d+)", name)
@@ -426,21 +444,64 @@ def filter_best_equibind(poses: list[dict],
     return kept, best
 
 
-def filter_best_diffdock(poses: list[dict],
-                         oracle_csv: Path | None) -> tuple[list[dict], str | None]:
-    """Keep non-DiffDock poses + only the single best DiffDock optimizer variant.
+def filter_equibind_variant(poses: list[dict],
+                            spec: str) -> tuple[list[dict], str | None]:
+    """Keep non-EquiBind poses + only the EquiBind variant(s) matching *spec*.
 
-    "Best" = the DiffDock variant (diffdock / diffdock_smina / diffdock_gnina) with the
-    highest PB-Valid AND RMSD ≤ 2 Å rate (``oracle_pb_valid_and_rmsd2_%``, falling back to
-    ``oracle_rmsd_le_2.0A_%`` for older summaries — see _variant_ranking_scores) in *oracle_csv*.
-    Mirrors filter_best_equibind; AutoDock/EquiBind poses are always kept. Returns
-    (kept_poses, best_variant_key); ``None`` when no DiffDock variant is present,
-    the summary is missing/unreadable, or no present variant has a score.
+    Explicit, oracle-free counterpart to filter_best_equibind (mirrors
+    posebusters_validity_report.select_equibind_variant). *spec* tokens (split on
+    '_' or '/') are matched against the label's pocket/refine/clamp tokens, e.g.
+    'gnina' or 'unguided_gnina'; a token subset constrains only the axes it names.
+    AutoDock/DiffDock poses are always kept. Returns (kept_poses, kept_label) —
+    kept_label is the retained variant when *spec* resolves to exactly one (for the
+    report's 'EquiBind*' relabel), else ``None`` (poses unchanged when nothing
+    matches, still filtered when several variants match).
+    """
+    tokens = [t for t in str(spec).strip().lower().replace("/", "_").split("_") if t]
+    eq_present = sorted({str(p["method"]) for p in poses
+                         if str(p["method"]).startswith("equibind")})
+    if not tokens or not eq_present:
+        return poses, None
+    matched = [m for m in eq_present
+               if all(t in set(m.lower().split("_")[1:]) for t in tokens)]
+    if not matched:
+        print(f"  [equibind-variant] no EquiBind variant matches '{spec}' "
+              f"(present: {eq_present}) — keeping all EquiBind variants.")
+        return poses, None
+    kept = [p for p in poses
+            if not str(p["method"]).startswith("equibind") or str(p["method"]) in matched]
+    return kept, (matched[0] if len(matched) == 1 else None)
+
+
+def filter_best_diffdock(poses: list[dict],
+                         oracle_csv: Path | None,
+                         pin: str | None = None) -> tuple[list[dict], str | None]:
+    """Keep non-DiffDock poses + only one DiffDock optimizer variant.
+
+    When *pin* is given ('raw' | 'smina' | 'gnina') the named variant is kept
+    directly (``diffdock`` for 'raw', else ``diffdock_<pin>``), bypassing the
+    oracle entirely — use this to force gnina regardless of the benchmark ranking.
+
+    Otherwise "best" = the DiffDock variant (diffdock / diffdock_smina / diffdock_gnina)
+    with the highest PB-Valid AND RMSD ≤ 2 Å rate (``oracle_pb_valid_and_rmsd2_%``, falling
+    back to ``oracle_rmsd_le_2.0A_%`` for older summaries — see _variant_ranking_scores) in
+    *oracle_csv*. Mirrors filter_best_equibind; AutoDock/EquiBind poses are always kept. Returns
+    (kept_poses, kept_variant_key); ``None`` when no DiffDock variant is present, a pinned
+    variant is absent, the summary is missing/unreadable, or no present variant has a score.
     """
     dd_present = sorted({str(p["method"]) for p in poses
                          if str(p["method"]).startswith("diffdock")})
     if not dd_present:
         return poses, None
+    if pin:
+        target = "diffdock" if pin == "raw" else f"diffdock_{pin}"
+        if target not in dd_present:
+            print(f"  [diffdock-variant={pin}] '{target}' not among present DiffDock "
+                  f"variants {dd_present} — keeping all DiffDock variants.")
+            return poses, None
+        kept = [p for p in poses
+                if not str(p["method"]).startswith("diffdock") or str(p["method"]) == target]
+        return kept, target
     oracle_csv = _resolve_variant_oracle(oracle_csv)
     if not oracle_csv or not Path(oracle_csv).exists():
         print(f"  [best-diffdock-only] oracle summary not found at {oracle_csv} — "
@@ -473,6 +534,66 @@ def select_top_n(poses: list[dict], n: int) -> list[dict]:
         recs.sort(key=lambda r: (r["pose_rank"], r["pose_name"]))
         out.extend(recs[:n])
     return out
+
+
+# Default source of gnina_affinity for EquiBind ranking (posebusters per-pose table;
+# the pb_csv has no gnina column). Overridable via config 'per_pose_metrics'.
+DEFAULT_PER_POSE_METRICS = Path(
+    "posebusters_results/benchmark/dock/pose_comparison_report/per_pose_metrics.csv")
+
+
+def apply_gnina_ranks(poses: list[dict], per_pose_csv: Path | None,
+                      work_dir: Path | None = None) -> list[dict]:
+    """Rank EquiBind poses by gnina affinity (most-negative = rank 1), overriding pose_rank.
+
+    EquiBind emits no native confidence score; its gnina-optimised poses carry the ranking
+    signal only in their gnina affinity, which lives in the posebusters per_pose_metrics.csv
+    (the pb_csv has no gnina column). This imports that affinity, keyed on
+    (method, protein, ligand, pose_name), and assigns a per-complex 1..N rank so
+    :func:`select_top_n` keeps the true top-N by gnina affinity rather than the arbitrary
+    generation order. Non-EquiBind poses are untouched; an EquiBind complex whose poses have
+    no gnina affinity (raw/smina variants) keeps its existing pose_rank. No-ops if the table
+    is absent so the pipeline still runs without it.
+    """
+    eq = [p for p in poses if str(p["method"]).startswith("equibind")]
+    if not eq:
+        return poses
+    p = Path(per_pose_csv) if per_pose_csv else DEFAULT_PER_POSE_METRICS
+    if not p.is_absolute() and work_dir:
+        p = work_dir / p
+    if not p.exists():
+        print(f"  [gnina-rank] per_pose_metrics not found at {p} — EquiBind keeps filename rank.")
+        return poses
+    ppm = pd.read_csv(p, low_memory=False)
+    need = {"method", "protein", "ligand", "pose_name", "gnina_affinity"}
+    if need - set(ppm.columns):
+        print(f"  [gnina-rank] {p} missing {need - set(ppm.columns)} — EquiBind keeps filename rank.")
+        return poses
+    gaff = pd.to_numeric(ppm["gnina_affinity"], errors="coerce")
+    lookup = {(str(m), str(pr), str(lg), str(nm)): a
+              for m, pr, lg, nm, a in zip(ppm["method"], ppm["protein"],
+                                          ppm["ligand"], ppm["pose_name"], gaff)}
+    groups: dict[tuple, list[dict]] = {}
+    for pose in eq:
+        pose["_gaff"] = lookup.get((str(pose["method"]), str(pose["protein"]),
+                                    str(pose["ligand"]), str(pose["pose_name"])))
+        groups.setdefault((pose["method"], pose["protein"], pose["ligand"]), []).append(pose)
+    n_ranked = 0
+    for grp in groups.values():
+        if not any(pd.notna(x["_gaff"]) for x in grp):
+            continue                       # raw/smina variant — no gnina signal, leave as-is
+        grp.sort(key=lambda x: (pd.isna(x["_gaff"]),
+                                float(x["_gaff"]) if pd.notna(x["_gaff"]) else 0.0,
+                                str(x["pose_name"])))
+        for i, x in enumerate(grp, 1):
+            x["pose_rank"] = i
+            n_ranked += 1
+    for pose in eq:
+        pose.pop("_gaff", None)
+    if n_ranked:
+        print(f"  [gnina-rank] assigned gnina-affinity ranks to {n_ranked} EquiBind poses "
+              f"(from {p.name}).")
+    return poses
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -697,11 +818,20 @@ def main() -> None:
                     help="Map only the single best EquiBind variant (highest PB-Valid AND "
                          "RMSD ≤ 2 Å = oracle_pb_valid_and_rmsd2_%%, from --oracle-summary) "
                          "alongside AutoDock/DiffDock. Overrides config 'best_equibind_only'.")
+    ap.add_argument("--equibind-variant", default=None, metavar="SPEC",
+                    help="Pin EquiBind to the variant matching SPEC (tokens split on '_' or "
+                         "'/', e.g. 'gnina' or 'unguided_gnina') instead of oracle-ranking it. "
+                         "Takes precedence over --best-equibind-only. Overrides config "
+                         "'equibind_variant'.")
     ap.add_argument("--best-diffdock-only", action="store_true", default=None,
                     help="Map only the single best DiffDock optimizer variant "
                          "(highest PB-Valid AND RMSD ≤ 2 Å = oracle_pb_valid_and_rmsd2_%%, "
                          "from --oracle-summary) alongside AutoDock/EquiBind. Overrides config "
                          "'best_diffdock_only'.")
+    ap.add_argument("--diffdock-variant", choices=("raw", "smina", "gnina"), default=None,
+                    help="Pin DiffDock to this optimizer variant (e.g. 'gnina') instead of "
+                         "oracle-ranking it. Takes precedence over --best-diffdock-only. "
+                         "Overrides config 'diffdock_variant'.")
     ap.add_argument("--oracle-summary", type=Path, default=None,
                     help="oracle_summary.csv (from posebusters_pose_comparison.py) "
                          "used to rank EquiBind variants for --best-equibind-only. "
@@ -731,8 +861,12 @@ def main() -> None:
         cfg.overwrite = args.overwrite
     if args.best_equibind_only is not None:
         cfg.best_equibind_only = args.best_equibind_only
+    if args.equibind_variant is not None:
+        cfg.equibind_variant = args.equibind_variant
     if args.best_diffdock_only is not None:
         cfg.best_diffdock_only = args.best_diffdock_only
+    if args.diffdock_variant is not None:
+        cfg.diffdock_variant = args.diffdock_variant
     if args.oracle_summary is not None:
         cfg.oracle_summary = args.oracle_summary.resolve()
     if args.ids_file is not None:
@@ -759,7 +893,14 @@ def main() -> None:
               f"{p0} → {p1} pairs ({len(poses)} poses)")
     print(f"Collected {len(poses)} poses; methods: {sorted({p['method'] for p in poses})}")
 
-    if cfg.best_equibind_only:
+    if cfg.equibind_variant:
+        before = len(poses)
+        poses, best_eq = filter_equibind_variant(poses, cfg.equibind_variant)
+        if best_eq:
+            print(f"equibind-variant={cfg.equibind_variant}: keeping '{best_eq}'; "
+                  f"{before} → {len(poses)} poses. "
+                  "Run the report with the same --equibind-variant to label it 'EquiBind*'.")
+    elif cfg.best_equibind_only:
         oracle_csv = cfg.oracle_summary or (cfg.work_dir / DEFAULT_ORACLE_SUMMARY)
         before = len(poses)
         poses, best_eq = filter_best_equibind(poses, oracle_csv)
@@ -768,7 +909,14 @@ def main() -> None:
                   f"PB-Valid AND RMSD ≤ 2 Å); {before} → {len(poses)} poses. "
                   "Run the report with --best-equibind-only to label it 'EquiBind*'.")
 
-    if cfg.best_diffdock_only:
+    if cfg.diffdock_variant:
+        before = len(poses)
+        poses, best_dd = filter_best_diffdock(poses, None, pin=cfg.diffdock_variant)
+        if best_dd:
+            print(f"diffdock-variant={cfg.diffdock_variant}: keeping '{best_dd}'; "
+                  f"{before} → {len(poses)} poses. "
+                  "Run the report with the same --diffdock-variant to label it 'DiffDock*'.")
+    elif cfg.best_diffdock_only:
         oracle_csv = cfg.oracle_summary or (cfg.work_dir / DEFAULT_ORACLE_SUMMARY)
         before = len(poses)
         poses, best_dd = filter_best_diffdock(poses, oracle_csv)
@@ -776,6 +924,11 @@ def main() -> None:
             print(f"best-diffdock-only: keeping '{best_dd}' (top DiffDock by "
                   f"PB-Valid AND RMSD ≤ 2 Å); {before} → {len(poses)} poses. "
                   "Run the report with --best-diffdock-only to label it 'DiffDock*'.")
+
+    # EquiBind has no native rank; rank its gnina-optimised poses by gnina affinity
+    # (imported from posebusters per_pose_metrics.csv) so select_top_n keeps the true
+    # top-N rather than the arbitrary generation order.
+    poses = apply_gnina_ranks(poses, cfg.per_pose_metrics, cfg.work_dir)
 
     selected = select_top_n(poses, cfg.poses_per_combo)
     if args.limit_pairs:

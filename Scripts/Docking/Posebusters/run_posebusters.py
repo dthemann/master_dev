@@ -469,7 +469,7 @@ _METADATA_COLS = {
     "mol_pred", "mol_true", "mol_cond",
     # EquiBind variant provenance (never a pass/fail test column).
     "pocket_source", "pocket_id", "clamp_variant", "refine_variant",
-    "smina_affinity",
+    "smina_affinity", "gnina_affinity",
     # AutoDock Vina native rank + affinity.
     "autodock_rank", "autodock_affinity",
     # DiffDock post-pose optimizer provenance (original / smina / gnina).
@@ -795,7 +795,7 @@ def _equibind_pocket_source(filename: str) -> str:
 # carry neither tags nor suffixes (clamp_mode='on', refine_mode='off') — still
 # resolve their pocket source from the filename prefix.
 _EQ_PROVENANCE_TAGS = ("pocket_source", "pocket_id", "clamp_variant",
-                       "refine_variant", "smina_affinity")
+                       "refine_variant", "smina_affinity", "gnina_affinity")
 
 
 def _read_sdf_tags(sdf_path: Path, tags: tuple[str, ...]) -> dict[str, str]:
@@ -854,7 +854,7 @@ def _expand_equibind_poses(row: dict, _conv_dir: Path, _ctx: PipelineConfig) -> 
         # Full per-pose provenance so every EquiBind variant axis is analysable
         # downstream without re-parsing filenames: pocket source (fpocket /
         # p2rank / unguided), centroid-clamp and re-search variants, the matched
-        # pocket id and smina affinity. SDF tags win; the filename is the fallback.
+        # pocket id and smina/gnina affinity. SDF tags win; the filename is the fallback.
         tags = _read_sdf_tags(sdf_file, _EQ_PROVENANCE_TAGS)
         pose = {
             "method": row["docking_tool"], "protein": row["protein"], "ligand": row["ligand"],
@@ -871,11 +871,12 @@ def _expand_equibind_poses(row: dict, _conv_dir: Path, _ctx: PipelineConfig) -> 
             pose["refine_variant"] = refine
         if tags.get("pocket_id"):
             pose["pocket_id"] = tags["pocket_id"]
-        if tags.get("smina_affinity"):
-            try:
-                pose["smina_affinity"] = float(tags["smina_affinity"])
-            except ValueError:
-                pass
+        for _aff_tag in ("smina_affinity", "gnina_affinity"):
+            if tags.get(_aff_tag):
+                try:
+                    pose[_aff_tag] = float(tags[_aff_tag])
+                except ValueError:
+                    pass
         poses.append(pose)
     return poses
 

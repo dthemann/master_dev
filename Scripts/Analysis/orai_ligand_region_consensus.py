@@ -1261,7 +1261,8 @@ def _autodock_affinity_lookup(raw_df: pd.DataFrame) -> dict:
 def attach_native_scores(df: pd.DataFrame, score_lookup: dict,
                          autodock_aff: dict) -> np.ndarray:
     """native_score per pose, normalised so LOWER = better and comparable WITHIN a
-    tool: AutoDock = Vina affinity, EquiBind = smina_affinity, DiffDock = -confidence."""
+    tool: AutoDock = Vina affinity, EquiBind = smina_affinity (or gnina_affinity for
+    gnina-refined poses, see _score_lookup), DiffDock = -confidence."""
     out = np.full(len(df), np.nan)
     for i, (m, f) in enumerate(zip(df["method"].to_numpy(), df["pose_file"].to_numpy())):
         if m == "autodock":
@@ -1275,11 +1276,25 @@ def attach_native_scores(df: pd.DataFrame, score_lookup: dict,
 
 
 def _score_lookup(raw_df: pd.DataFrame) -> dict:
-    """pose_file → (diffdock_confidence, smina_affinity) from a raw results CSV."""
+    """pose_file → (diffdock_confidence, equibind_score) from a raw results CSV.
+
+    The EquiBind score is ``smina_affinity``, falling back to ``gnina_affinity`` for
+    gnina-refined poses that carry no smina re-score. This lets gnina-only EquiBind
+    datasets — e.g. Orai×JKU, whose EquiBind was refined with gnina, leaving
+    ``smina_affinity`` empty — still rank EquiBind by its minimisation energy instead
+    of dropping to a NaN native_score (ranked last / by pose count). Both columns use
+    the same LOWER = better (more-negative kcal/mol) convention, so coalescing is
+    scale-consistent within EquiBind."""
     sub = raw_df.drop_duplicates("pose_file").set_index("pose_file")
-    conf = sub["diffdock_confidence"] if "diffdock_confidence" in sub else pd.Series(dtype=float)
-    smina = sub["smina_affinity"] if "smina_affinity" in sub else pd.Series(dtype=float)
-    return {pf: (float(conf.get(pf, np.nan)), float(smina.get(pf, np.nan)))
+
+    def _num(col):
+        return (pd.to_numeric(sub[col], errors="coerce") if col in sub.columns
+                else pd.Series(np.nan, index=sub.index))
+
+    conf = _num("diffdock_confidence")
+    smina = _num("smina_affinity")
+    eq = smina.where(smina.notna(), _num("gnina_affinity"))   # smina, else gnina
+    return {pf: (float(conf.get(pf, np.nan)), float(eq.get(pf, np.nan)))
             for pf in sub.index}
 
 

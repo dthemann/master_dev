@@ -17,9 +17,9 @@ n_unguided_poses: 30
 pocket_match_threshold: 8.0
 force_pocket: true
 clamp_pose_to_pocket: true
-clamp_mode: both
+clamp_mode: 'off'
 refine_mode: both
-refine_tool: smina
+refine_tool: gnina
 smina_search: local_only
 smina_autobox_add: 4.0
 smina_cpu: 1

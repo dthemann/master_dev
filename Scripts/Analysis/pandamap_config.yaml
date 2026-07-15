@@ -27,10 +27,12 @@ pb_valid_only: true        # true → only poses that passed every PoseBusters t
 benchmark_dir: Data/PoseBuster Benchmark Set
 
 # ── Output ────────────────────────────────────────────────────────────────
+# top-5 (poses_per_combo below), PB-valid, best-variant-per-tool set. The older
+# pandamap_results/benchmark_best_equi holds a superseded top-3 run.
 output_dir: pandamap_results/benchmark_best_equi
 
 # ── Behaviour ─────────────────────────────────────────────────────────────
-poses_per_combo: 3          # top-N ranked poses per (method, protein, ligand)
+poses_per_combo: 5          # top-N ranked poses per (method, protein, ligand)
 render_images: true         # 2D PNG maps (slow). false → fingerprints only (fast)
 split_equibind: true        # fpocket/p2rank/clamp/refine as distinct methods
 split_diffdock: true        # raw / smina-opt / gnina-opt as distinct methods

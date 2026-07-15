@@ -112,7 +112,13 @@ def _derive_pb_valid(df: pd.DataFrame) -> pd.Series:
         cl = c.lower().strip()
         if cl in _PB_META or c in _PB_EXCLUDE or cl in _PB_EXCLUDE:
             continue
-        if cl.startswith(("number_", "num_")):
+        # ``number_*``/``num_*`` are counts; ``most_extreme_*`` are per-atom-pair
+        # clash DIAGNOSTICS, not PoseBusters verdict tests. Critically,
+        # ``most_extreme_clash_*`` is INVERTED-polarity (True == a clash is
+        # present), so AND-ing it into an all-True pass verdict demands a clash
+        # to exist — it forced every clash-free pose (all AutoDock Vina poses)
+        # to "invalid" and collapsed the per-frame validity panel to a flat 0 %.
+        if cl.startswith(("number_", "num_", "most_extreme_")):
             continue
         u = set(df[c].dropna().unique())
         if u and u.issubset(_BOOL_LIKE):
@@ -320,31 +326,29 @@ def _style(tool):
     return (tool, _FALLBACK[i], "o")
 
 
-def fig_overview(pairs: pd.DataFrame, poses: pd.DataFrame, thr: float, out_dir: Path):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
+# ── individual panel draws ───────────────────────────────────────────────
+# Each _draw_* renders one panel into a supplied Axes so the SAME code backs
+# both the combined overview grid and the standalone per-panel PNGs.
 
-    tools = sorted(poses["tool"].unique())
-    frames = sorted(pairs["frame"].unique())
-    fig, ax = plt.subplots(2, 3, figsize=(18, 11))
-
-    # (A) cross-tool agreement: inter-tool consensus distance distribution
+def _draw_cross_tool_agreement(ax, pairs, thr, tools):
+    """(A) inter-tool consensus-site distance distribution."""
     pair_cols = [c for c in pairs.columns if c.endswith("_dist")
                  and c not in ("mean_inter_tool_dist", "max_inter_tool_dist")]
     for c in pair_cols:
         v = pd.to_numeric(pairs[c], errors="coerce").dropna().to_numpy()
         if v.size:
-            ax[0, 0].hist(v, bins=np.linspace(0, 40, 21), histtype="step", lw=2,
-                          label=f"{c.replace('_dist','')} (med {np.median(v):.1f} Å)")
-    ax[0, 0].axvline(thr, color="k", ls="--", lw=0.8, label=f"agree ≤ {thr:g} Å")
-    ax[0, 0].set_title("Cross-tool agreement — distance between tools' consensus sites")
-    ax[0, 0].set_xlabel("Inter-tool consensus-site distance (Å)")
-    ax[0, 0].set_ylabel("Number of receptor-ligand pairs")
-    ax[0, 0].legend(fontsize=8)
+            ax.hist(v, bins=np.linspace(0, 40, 21), histtype="step", lw=2,
+                    label=f"{c.replace('_dist','')} (med {np.median(v):.1f} Å)")
+    ax.axvline(thr, color="k", ls="--", lw=0.8, label=f"agree ≤ {thr:g} Å")
+    ax.set_title("Cross-tool agreement — distance between tools' consensus sites")
+    ax.set_xlabel("Inter-tool consensus-site distance (Å)")
+    ax.set_ylabel("Number of receptor-ligand pairs")
+    ax.legend(fontsize=8); ax.grid(alpha=0.25)
 
-    # (B) per-frame PoseBusters validity rate, per tool — frames are ordered MD
-    # snapshots, so a line per tool shows the trajectory across frames directly.
+
+def _draw_pb_validity_per_frame(ax, poses, frames, tools):
+    """(B) per-frame PoseBusters validity rate, one line per tool — frames are
+    ordered MD snapshots, so the line traces validity along the trajectory."""
     d = poses[poses["pb_valid"].notna()]
     x = np.arange(len(frames))
     for t in tools:
@@ -352,33 +356,144 @@ def fig_overview(pairs: pd.DataFrame, poses: pd.DataFrame, thr: float, out_dir: 
         for fr in frames:
             sel = d[(d["frame"] == fr) & (d["tool"] == t)]
             rates.append(float(sel["pb_valid"].mean()) * 100 if len(sel) else np.nan)
-        ax[0, 1].plot(x, rates, marker="o", lw=2, markersize=6,
-                      color=_style(t)[1], label=_style(t)[0],
-                      markeredgecolor="black", markeredgewidth=0.5)
-    ax[0, 1].set_xticks(x)
-    ax[0, 1].set_xticklabels([f.replace("Orai1WT-", "") for f in frames], rotation=20, ha="right")
-    ax[0, 1].set_title("PoseBusters validity rate per Orai MD frame")
-    ax[0, 1].set_ylabel("Valid poses (percent of generated)")
-    ax[0, 1].set_ylim(0, 105); ax[0, 1].legend(fontsize=8)
-    ax[0, 1].grid(alpha=0.3); ax[0, 1].set_axisbelow(True)
+        ax.plot(x, rates, marker="o", lw=2, markersize=6,
+                color=_style(t)[1], label=_style(t)[0],
+                markeredgecolor="black", markeredgewidth=0.5)
+    ax.set_xticks(x)
+    ax.set_xticklabels([f.replace("Orai1WT-", "") for f in frames], rotation=20, ha="right")
+    ax.set_title("PoseBusters validity rate per Orai MD frame")
+    ax.set_ylabel("Valid poses (percent of generated)")
+    ax.set_ylim(0, 105); ax.legend(fontsize=8)
+    ax.grid(alpha=0.3); ax.set_axisbelow(True)
 
-    # (C) per-frame cluster tightness: mean #clusters + mean dominant fraction
+
+def _draw_cluster_structure(ax, pairs, frames):
+    """(C) per-frame cluster tightness: mean #clusters + mean dominant fraction,
+    pooled over all tools (the per-tool breakdown is the next panel)."""
+    x = np.arange(len(frames))
     ncl = [pd.to_numeric(pairs[pairs.frame == fr]["n_clusters"], errors="coerce").mean() for fr in frames]
     dom = [pd.to_numeric(pairs[pairs.frame == fr]["dominant_cluster_frac"], errors="coerce").mean() for fr in frames]
-    ax[0, 2].bar(x - 0.2, ncl, 0.4, color="#8172B3", label="mean number of clusters")
-    ax2 = ax[0, 2].twinx()
+    ax.bar(x - 0.2, ncl, 0.4, color="#8172B3", label="mean number of clusters")
+    ax2 = ax.twinx()
     ax2.bar(x + 0.2, dom, 0.4, color="#CCB974", label="mean dominant-cluster fraction")
-    ax[0, 2].set_xticks(x)
-    ax[0, 2].set_xticklabels([f.replace("Orai1WT-", "") for f in frames], rotation=20, ha="right")
-    ax[0, 2].set_title("Cluster structure per Orai MD frame")
-    ax[0, 2].set_ylabel("Mean number of distinct clusters")
+    ax.set_xticks(x)
+    ax.set_xticklabels([f.replace("Orai1WT-", "") for f in frames], rotation=20, ha="right")
+    ax.set_title("Cluster structure per Orai MD frame")
+    ax.set_ylabel("Mean number of distinct clusters")
     ax2.set_ylabel("Mean dominant-cluster fraction"); ax2.set_ylim(0, 1.05)
-    h1, l1 = ax[0, 2].get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels()
-    ax[0, 2].legend(h1 + h2, l1 + l2, fontsize=8, loc="upper right")
+    h1, l1 = ax.get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, fontsize=8, loc="upper right")
+    ax.grid(alpha=0.25); ax.set_axisbelow(True)
 
-    # (D) PoseBusters survivors vs failures — distance to the pair consensus.
-    # Multi-tool pairs only: for single-tool pairs the consensus is just that
-    # tool's own cluster centre, so "nearer the consensus" would be circular.
+
+def _per_tool_cluster_stats(poses, tools):
+    """Per (frame, tool): mean number of distinct global clusters that tool's
+    poses occupy, and mean fraction of that tool's poses sitting in the pair's
+    DOMINANT (largest) cluster. A per-tool decomposition of the pooled
+    'Cluster structure per frame' panel — it shows which tool multiplies the
+    site count and which concentrates on the main site.
+    Returns {(frame, tool): (mean_n_clusters, mean_dominant_share, n_pairs)}."""
+    out: Dict[tuple, tuple] = {}
+    if "cluster" not in poses.columns:
+        return out
+    acc: Dict[tuple, dict] = defaultdict(lambda: {"ncl": [], "dom": []})
+    for (frame, _ligand), g in poses.groupby(["frame", "ligand"]):
+        if g.empty:
+            continue
+        dom_label = g["cluster"].value_counts().idxmax()      # largest = dominant
+        for t, gt in g.groupby("tool"):
+            acc[(frame, t)]["ncl"].append(int(gt["cluster"].nunique()))
+            acc[(frame, t)]["dom"].append(float((gt["cluster"] == dom_label).mean()))
+    for key, d in acc.items():
+        out[key] = (float(np.mean(d["ncl"])), float(np.mean(d["dom"])), len(d["ncl"]))
+    return out
+
+
+def _draw_tool_cluster_contribution(ax, poses, frames, tools):
+    """(new) per-tool contribution to the cluster structure of each MD frame:
+    grouped bars = mean number of distinct clusters a tool occupies (left axis);
+    markers = mean share of that tool's poses in the pair's dominant cluster
+    (right axis). Together they show how much each docking tool drives the
+    multi-cluster spread vs concentrating on the dominant site."""
+    stats = _per_tool_cluster_stats(poses, tools)
+    x = np.arange(len(frames))
+    nt = max(len(tools), 1)
+    width = 0.8 / nt
+    ax2 = ax.twinx()
+    for k, t in enumerate(tools):
+        off = (k - (nt - 1) / 2) * width
+        ncl = [stats.get((fr, t), (np.nan, np.nan, 0))[0] for fr in frames]
+        dom = [stats.get((fr, t), (np.nan, np.nan, 0))[1] for fr in frames]
+        ax.bar(x + off, ncl, width, color=_style(t)[1], alpha=0.85,
+               edgecolor="black", linewidth=0.3, label=_style(t)[0])
+        ax2.plot(x + off, dom, marker="o", ls="none", markersize=6,
+                 color=_style(t)[1], markeredgecolor="black", markeredgewidth=0.6)
+    ax2.plot([], [], marker="o", ls="none", color="0.4", markeredgecolor="black",
+             label="dominant-cluster share (right axis)")
+    ax.set_xticks(x)
+    ax.set_xticklabels([f.replace("Orai1WT-", "") for f in frames], rotation=20, ha="right")
+    ax.set_title("Per-tool contribution to cluster structure per Orai MD frame")
+    ax.set_ylabel("Mean number of distinct clusters a tool occupies")
+    ax2.set_ylabel("Mean share of a tool's poses in the dominant cluster")
+    ax2.set_ylim(0, 1.05)
+    h1, l1 = ax.get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels()
+    ax.legend(h1 + h2, l1 + l2, fontsize=7, loc="upper right")
+    ax.grid(alpha=0.25); ax.set_axisbelow(True)
+
+
+def _tool_agreement_matrix(pairs, tools, thr):
+    """Symmetric matrix of how often two tools land on the SAME site: fraction of
+    the (frame, ligand) pairs where both tools are present and their per-tool
+    consensus sites lie within ``thr`` Å. Built from the pre-computed inter-tool
+    ``<ab>_<cd>_dist`` columns. Returns (agreement_fraction, n_shared_pairs)."""
+    n = len(tools)
+    frac = np.full((n, n), np.nan)
+    cnt = np.zeros((n, n), dtype=int)
+    for i in range(n):
+        frac[i, i] = 1.0
+        for j in range(i + 1, n):
+            a, b = tools[i], tools[j]
+            col = f"{a[:2]}_{b[:2]}_dist"
+            if col not in pairs.columns:
+                col = f"{b[:2]}_{a[:2]}_dist"
+            if col not in pairs.columns:
+                continue
+            v = pd.to_numeric(pairs[col], errors="coerce").dropna()
+            if len(v):
+                f = float((v <= thr).mean())
+                frac[i, j] = frac[j, i] = f
+                cnt[i, j] = cnt[j, i] = len(v)
+    return frac, cnt
+
+
+def _draw_tool_agreement_matrix(ax, pairs, tools, thr):
+    """(new) heat-map of pairwise tool agreement on the binding site."""
+    frac, cnt = _tool_agreement_matrix(pairs, tools, thr)
+    n = len(tools)
+    im = ax.imshow(np.where(np.isnan(frac), 0.0, frac), cmap="YlGn", vmin=0, vmax=1)
+    ax.set_xticks(range(n)); ax.set_yticks(range(n))
+    labels = [_style(t)[0] for t in tools]
+    ax.set_xticklabels(labels, rotation=20, ha="right"); ax.set_yticklabels(labels)
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                ax.text(j, i, "—", ha="center", va="center", fontsize=11, color="0.4")
+            elif not np.isnan(frac[i, j]):
+                ax.text(j, i, f"{frac[i, j]*100:.0f}%\n(n={cnt[i, j]})",
+                        ha="center", va="center", fontsize=9,
+                        color="black" if frac[i, j] < 0.6 else "white")
+            else:
+                ax.text(j, i, "n/a", ha="center", va="center", fontsize=9, color="0.4")
+    ax.set_title(f"How often do two tools agree on a site?\n(per-tool sites within {thr:g} Å; n = shared pairs)")
+    cbar = ax.figure.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cbar.set_label("Fraction of shared pairs in agreement")
+    ax.grid(False)
+
+
+def _draw_valid_vs_consensus(ax, poses, thr):
+    """(D) PoseBusters survivors vs failures — distance to the pair consensus.
+    Multi-tool pairs only: for single-tool pairs the consensus is just that
+    tool's own cluster centre, so 'nearer the consensus' would be circular."""
     dd = poses[poses["pb_valid"].notna()]
     if "consensus_multitool" in dd:
         dd = dd[dd["consensus_multitool"] == True]  # noqa: E712
@@ -386,45 +501,79 @@ def fig_overview(pairs: pd.DataFrame, poses: pd.DataFrame, thr: float, out_dir: 
     iv = pd.to_numeric(dd[dd["pb_valid"] == False]["dist_to_consensus"], errors="coerce").dropna()  # noqa: E712
     bins = np.linspace(0, 30, 31)
     if len(vv):
-        ax[1, 0].hist(vv, bins=bins, density=True, alpha=0.55, color="#2C7FB8",
-                      label=f"survives PoseBusters (med {vv.median():.1f} Å)")
+        ax.hist(vv, bins=bins, density=True, alpha=0.55, color="#2C7FB8",
+                label=f"survives PoseBusters (med {vv.median():.1f} Å)")
     if len(iv):
-        ax[1, 0].hist(iv, bins=bins, density=True, alpha=0.55, color="#D95F0E",
-                      label=f"fails PoseBusters (med {iv.median():.1f} Å)")
-    ax[1, 0].set_title("Are valid poses nearer the consensus site?\n(multi-tool pairs)")
-    ax[1, 0].set_xlabel("Pose distance to its pair's consensus site (Å)")
-    ax[1, 0].set_ylabel("Probability density"); ax[1, 0].legend(fontsize=8)
+        ax.hist(iv, bins=bins, density=True, alpha=0.55, color="#D95F0E",
+                label=f"fails PoseBusters (med {iv.median():.1f} Å)")
+    ax.set_title("Are valid poses nearer the consensus site?\n(multi-tool pairs)")
+    ax.set_xlabel("Pose distance to its pair's consensus site (Å)")
+    ax.set_ylabel("Probability density"); ax.legend(fontsize=8); ax.grid(alpha=0.25)
 
-    # (E) per-tool homogeneity: how dispersed each tool's own poses are
-    data = [pd.to_numeric(pairs.get(f"{t}_spread"), errors="coerce").dropna().to_numpy()
-            for t in tools]
-    bp = ax[1, 1].boxplot([dd for dd in data if dd.size], positions=np.arange(len(tools)),
-                          widths=0.6, patch_artist=True, showfliers=False,
-                          medianprops=dict(color="black"))
-    for patch, t in zip(bp["boxes"], tools):
-        patch.set_facecolor(_style(t)[1]); patch.set_alpha(0.75)
-    ax[1, 1].set_xticks(np.arange(len(tools)))
-    ax[1, 1].set_xticklabels([_style(t)[0] for t in tools], rotation=15, ha="right")
-    ax[1, 1].set_title("Per-tool pose dispersion (decisiveness)")
-    ax[1, 1].set_ylabel("Mean spread of a tool's poses per pair (Å)")
 
-    # (F) binding position along the receptor principal (≈ pore) axis
+def _draw_tool_dispersion(ax, pairs, tools):
+    """(E) per-tool homogeneity: how dispersed each tool's own poses are."""
+    present = []
+    for t in tools:
+        col = pairs.get(f"{t}_spread")
+        v = (pd.to_numeric(col, errors="coerce").dropna().to_numpy()
+             if col is not None else np.array([]))
+        if v.size:
+            present.append((t, v))
+    if present:
+        bp = ax.boxplot([v for _, v in present], positions=np.arange(len(present)),
+                        widths=0.6, patch_artist=True, showfliers=False,
+                        medianprops=dict(color="black"))
+        for patch, (t, _) in zip(bp["boxes"], present):
+            patch.set_facecolor(_style(t)[1]); patch.set_alpha(0.75)
+        ax.set_xticks(np.arange(len(present)))
+        ax.set_xticklabels([_style(t)[0] for t, _ in present], rotation=15, ha="right")
+    ax.set_title("Per-tool pose dispersion (decisiveness)")
+    ax.set_ylabel("Mean spread of a tool's poses per pair (Å)"); ax.grid(alpha=0.25)
+
+
+def _draw_axis_depth(ax, poses, tools):
+    """(F) binding position along the receptor principal (≈ pore) axis."""
     pd_ = poses.dropna(subset=["axis_depth"])
     for t in tools:
         v = pd.to_numeric(pd_[pd_.tool == t]["axis_depth"], errors="coerce").dropna().to_numpy()
         if v.size:
-            ax[1, 2].hist(v, bins=40, histtype="step", lw=2, color=_style(t)[1],
-                          label=_style(t)[0])
-    ax[1, 2].set_title("Binding position along the receptor principal (≈ pore) axis")
-    ax[1, 2].set_xlabel("Projected position along principal axis (Å, 0 = receptor centre)")
-    ax[1, 2].set_ylabel("Number of poses"); ax[1, 2].legend(fontsize=8)
+            ax.hist(v, bins=40, histtype="step", lw=2, color=_style(t)[1], label=_style(t)[0])
+    ax.set_title("Binding position along the receptor principal (≈ pore) axis")
+    ax.set_xlabel("Projected position along principal axis (Å, 0 = receptor centre)")
+    ax.set_ylabel("Number of poses"); ax.legend(fontsize=8); ax.grid(alpha=0.25)
     allv = pd.to_numeric(pd_["axis_depth"], errors="coerce").dropna().to_numpy()
     if allv.size:                                     # robust window (ignore stray tails)
         lo, hi = np.percentile(allv, [0.5, 99.5])
-        ax[1, 2].set_xlim(lo - 5, hi + 5)
+        ax.set_xlim(lo - 5, hi + 5)
 
-    for a in ax.ravel():
-        a.grid(alpha=0.25)
+
+def fig_overview(pairs: pd.DataFrame, poses: pd.DataFrame, thr: float, out_dir: Path):
+    """Combined 8-panel overview PLUS a standalone PNG per panel in ``panels/``."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    tools = sorted(poses["tool"].unique())
+    frames = sorted(pairs["frame"].unique())
+
+    # (name, draw-fn) — one entry per panel; the draw-fn takes only an Axes so the
+    # same call renders the grid cell and the standalone figure.
+    panels = [
+        ("cross_tool_agreement",     lambda a: _draw_cross_tool_agreement(a, pairs, thr, tools)),
+        ("pb_validity_per_frame",    lambda a: _draw_pb_validity_per_frame(a, poses, frames, tools)),
+        ("cluster_structure",        lambda a: _draw_cluster_structure(a, pairs, frames)),
+        ("tool_cluster_contribution", lambda a: _draw_tool_cluster_contribution(a, poses, frames, tools)),
+        ("tool_agreement_matrix",    lambda a: _draw_tool_agreement_matrix(a, pairs, tools, thr)),
+        ("valid_vs_consensus",       lambda a: _draw_valid_vs_consensus(a, poses, thr)),
+        ("tool_dispersion",          lambda a: _draw_tool_dispersion(a, pairs, tools)),
+        ("axis_depth",               lambda a: _draw_axis_depth(a, poses, tools)),
+    ]
+
+    # combined overview (2 x 4)
+    fig, ax = plt.subplots(2, 4, figsize=(25, 12))
+    for (name, fn), a in zip(panels, ax.ravel()):
+        fn(a)
     _label_panels(ax)
     fig.suptitle("Orai × benchmark-ligand docked poses — clustering, cross-tool agreement, "
                  f"PoseBusters survival & MD-frame distribution (n={len(pairs)} pairs, "
@@ -432,6 +581,141 @@ def fig_overview(pairs: pd.DataFrame, poses: pd.DataFrame, thr: float, out_dir: 
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     p = out_dir / "orai_pose_cluster_overview.png"
     fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+
+    # standalone per-panel PNGs (the split-out individual graphs)
+    panel_dir = out_dir / "panels"; panel_dir.mkdir(parents=True, exist_ok=True)
+    for name, fn in panels:
+        f, a = plt.subplots(figsize=(8, 6.5))
+        fn(a)
+        f.tight_layout()
+        f.savefig(panel_dir / f"orai_{name}.png", dpi=130, bbox_inches="tight")
+        plt.close(f)
+    print(f"  Individual panels: {panel_dir}/ ({len(panels)} PNGs)")
+    return p
+
+
+def _short_frame(f):
+    return str(f).replace("Orai1WT-", "").replace("MDSnap-", "")
+
+
+def _short_lig(l):
+    return (str(l).replace("-OPT-Singlet", "").replace("-prot-OPT", "")
+            .replace("-OPT", ""))
+
+
+# tool-pairs, in the fixed display order, with the pre-computed site-distance
+# column each maps to (see analyze_pair's `<ab>_<cd>_dist` naming).
+_TOOL_PAIRS = [("autodock", "diffdock", "au_di_dist", "AutoDock\n↔ DiffDock"),
+               ("autodock", "equibind", "au_eq_dist", "AutoDock\n↔ EquiBind"),
+               ("diffdock", "equibind", "di_eq_dist", "DiffDock\n↔ EquiBind")]
+
+
+def _min_cross_pose_dist(pose_recs, ta, tb):
+    """Closest distance (Å) between ANY pose of tool ``ta`` and ANY pose of tool
+    ``tb`` in one (frame, ligand) pair — do the two pose CLOUDS ever touch,
+    regardless of where each tool's dominant cluster sits. NaN if either absent."""
+    A = np.array([p["_cent"] for p in pose_recs if p["tool"] == ta and p.get("_cent") is not None])
+    B = np.array([p["_cent"] for p in pose_recs if p["tool"] == tb and p.get("_cent") is not None])
+    if len(A) == 0 or len(B) == 0:
+        return np.nan
+    return float(np.min(np.linalg.norm(A[:, None, :] - B[None, :, :], axis=2)))
+
+
+def _draw_dist_matrix(ax, M, row_labels, col_labels, n_pairs, frames_seq,
+                      norm, cmap, vmax, title, show_yticks):
+    im = ax.imshow(np.ma.masked_invalid(M), cmap=cmap, norm=norm, aspect="auto")
+    ax.set_xticks(range(M.shape[1])); ax.set_xticklabels(col_labels, fontsize=9)
+    ax.set_yticks(range(len(row_labels)))
+    ax.set_yticklabels(row_labels if show_yticks else [""] * len(row_labels), fontsize=8)
+    ax.axvline(M.shape[1] - 1.5, color="black", lw=1.2)          # pairwise | mean divider
+    for i in range(1, n_pairs):                                  # group rows by MD frame
+        if frames_seq[i] != frames_seq[i - 1]:
+            ax.axhline(i - 0.5, color="black", lw=0.8)
+    ax.axhline(n_pairs - 0.5, color="black", lw=2.0)             # summary-row divider
+    for i in range(M.shape[0]):
+        for j in range(M.shape[1]):
+            v = M[i, j]
+            if np.isfinite(v):
+                ax.text(j, i, f"{v:.0f}", ha="center", va="center", fontsize=8,
+                        fontweight="bold" if i == n_pairs else "normal",
+                        color="white" if v >= 0.78 * vmax else "black")
+            else:
+                ax.text(j, i, "n/a", ha="center", va="center", fontsize=7, color="0.4")
+    ax.set_title(title, fontsize=10)
+    return im
+
+
+def fig_divergence_matrix(pairs: pd.DataFrame, poses_by_pair: dict, thr: float, out_dir: Path):
+    """Two matched matrices over every (MD snapshot × ligand) pair (rows) and
+    every tool-pair (cols), sharing one Å colour scale (green ≤ ``thr`` = agree,
+    red = divergent, grey = a tool produced no pose):
+
+      LEFT  — distance between the two tools' DOMINANT sites (largest-cluster
+              centroid): do the tools *prefer* the same spot?
+      RIGHT — closest distance between ANY two of their poses: do the pose
+              *clouds* ever touch, even away from each tool's main site?
+
+    Left red + right green means the clouds graze but the preferences differ;
+    both red means the tools are genuinely working in different regions. A
+    bottom row gives the all-pairs median; a trailing column the per-pair mean
+    over present tool-pairs."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import TwoSlopeNorm
+
+    if pairs.empty:
+        return None
+    dfp = pairs.sort_values(["frame", "ligand"]).reset_index(drop=True)
+    n_pairs = len(dfp)
+    col_labels = [lab for *_, lab in _TOOL_PAIRS] + ["mean of\npresent pairs"]
+
+    # LEFT: dominant-site distance (pre-computed columns) + per-row mean
+    S = np.full((n_pairs, len(_TOOL_PAIRS)), np.nan)
+    for j, (_ta, _tb, col, _lab) in enumerate(_TOOL_PAIRS):
+        if col in dfp.columns:
+            S[:, j] = pd.to_numeric(dfp[col], errors="coerce").to_numpy()
+    S = np.column_stack([S, np.nanmean(S, axis=1)])
+
+    # RIGHT: closest cross-tool pose distance (from raw centroids) + per-row mean
+    D = np.full((n_pairs, len(_TOOL_PAIRS)), np.nan)
+    for i, (_, r) in enumerate(dfp.iterrows()):
+        recs = poses_by_pair.get((r["frame"], r["ligand"]), [])
+        for j, (ta, tb, _col, _lab) in enumerate(_TOOL_PAIRS):
+            D[i, j] = _min_cross_pose_dist(recs, ta, tb)
+    D = np.column_stack([D, np.nanmean(D, axis=1)])
+
+    row_labels = [f"{_short_frame(r.frame)} · {_short_lig(r.ligand)}" for _, r in dfp.iterrows()]
+    frames_seq = list(dfp["frame"])
+    with warnings.catch_warnings():                        # all-NaN column → NaN median
+        warnings.simplefilter("ignore")
+        S = np.vstack([S, np.nanmedian(S, axis=0)])
+        D = np.vstack([D, np.nanmedian(D, axis=0)])
+    row_labels.append("median (all pairs)")
+
+    both = np.concatenate([S[np.isfinite(S)].ravel(), D[np.isfinite(D)].ravel()])
+    vmax = max(float(np.nanmax(both)) if both.size else thr * 2, thr + 1.0)
+    norm = TwoSlopeNorm(vmin=0.0, vcenter=float(thr), vmax=vmax)
+    cmap = plt.get_cmap("RdYlGn_r").copy(); cmap.set_bad("#dddddd")
+
+    fig, axes = plt.subplots(1, 2, figsize=(15.5, max(5.0, 0.5 * len(row_labels) + 2.2)))
+    _draw_dist_matrix(axes[0], S, row_labels, col_labels, n_pairs, frames_seq, norm, cmap, vmax,
+                      "Do the tools prefer the same site?\n"
+                      "distance between each tool's DOMINANT (largest-cluster) site (Å)", True)
+    im = _draw_dist_matrix(axes[1], D, row_labels, col_labels, n_pairs, frames_seq, norm, cmap, vmax,
+                           "Do the tools' pose clouds ever touch?\n"
+                           "closest distance between ANY two poses of the tools (Å)", False)
+    for a, lab in zip(axes, "AB"):                         # panel labels clear of the 2-line titles
+        a.text(-0.02, 1.17, f"({lab})", transform=a.transAxes,
+               fontsize=13, fontweight="bold", va="bottom", ha="right")
+    fig.suptitle("Cross-tool divergence across all Orai MD snapshots × JKU ligands  "
+                 f"(green ≤ {thr:g} Å = agree, red = divergent, grey = tool absent)",
+                 fontsize=12, y=1.0)
+    cbar = fig.colorbar(im, ax=axes, fraction=0.046, pad=0.04, extend="max")
+    cbar.set_label("Distance (Å)")
+    cbar.set_ticks([t for t in sorted({0.0, float(thr), 10.0, 20.0, 30.0, round(vmax)}) if t <= vmax])
+    p = out_dir / "orai_tool_divergence_matrix.png"
+    fig.savefig(p, dpi=140, bbox_inches="tight"); plt.close(fig)
     return p
 
 
@@ -722,6 +1006,9 @@ def main(argv=None) -> int:
     if not args.no_plot:
         f1 = fig_overview(pairs, poses, args.match_thr, out_dir)
         print(f"  Figure: {f1}")
+        fdiv = fig_divergence_matrix(pairs, poses_by_pair, args.match_thr, out_dir)
+        if fdiv:
+            print(f"  Figure: {fdiv}")
         f2 = fig_examples(records, poses_by_pair, args.match_thr, out_dir)
         if f2:
             print(f"  Figure: {f2}")

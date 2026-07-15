@@ -84,6 +84,19 @@ TOOL_COLORS = {"autodock": "#4C72B0", "diffdock": "#55A868", "equibind": "#C44E5
 TOOL_MARKERS = {"autodock": "o", "diffdock": "^", "equibind": "s"}
 
 
+def _equibind_rank_note(eq_variant: Optional[str]) -> str:
+    """Figure-title note stating which docking score actually ranks EquiBind in
+    THIS run (EquiBind has no native rank). The refiner token in the variant name
+    determines the populated affinity column: gnina→gnina_affinity, smina→
+    smina_affinity, raw→pose-generation order (no score). See _effective_ranks."""
+    v = str(eq_variant).lower()
+    if "gnina" in v:
+        return "EquiBind rank = gnina-affinity proxy"
+    if "smina" in v:
+        return "EquiBind rank = smina-affinity proxy"
+    return "EquiBind rank = pose-generation order"
+
+
 # ════════════════════════════════════════════════════════════════════════
 # Ported pose_clustering_v3 helpers (notebook isn't importable)
 # ════════════════════════════════════════════════════════════════════════
@@ -718,9 +731,17 @@ def _effective_ranks(sub: pd.DataFrame) -> Tuple[Dict[str, int], Dict[str, str]]
 
     A tool's native ``rank`` is used when it varies (AutoDock = Vina mode,
     DiffDock = confidence rank). EquiBind has a constant sentinel rank (999) — it
-    does not score poses — so we fall back to ascending ``smina_affinity`` (the
-    only ordering the smina-refined variant has), else pose order. The source is
-    recorded so the report can flag proxy rankings.
+    does not score poses — so we fall back to a docking-score ordering (ascending,
+    most-negative = rank 1), matching the EquiBind ranking convention in
+    ``posebusters_pose_comparison.py``.
+
+    The gnina- and smina-refined EquiBind variants carry MUTUALLY EXCLUSIVE score
+    columns (gnina poses populate only ``gnina_affinity``; smina poses only
+    ``smina_affinity``), so both are tried — ``gnina_affinity`` FIRST, so the gnina
+    variant is ranked by its gnina affinity instead of silently dropping through to
+    pose-generation order (which is what happened when only smina was checked).
+    Pose order is the last resort. The source is recorded so the report can flag
+    proxy rankings.
     """
     eff: Dict[str, int] = {}
     src: Dict[str, str] = {}
@@ -728,11 +749,16 @@ def _effective_ranks(sub: pd.DataFrame) -> Tuple[Dict[str, int], Dict[str, str]]
         r = pd.to_numeric(g.get("rank"), errors="coerce")
         if r.notna().any() and r.nunique(dropna=True) > 1:
             order, how = r, "native"
-        elif "smina_affinity" in g and pd.to_numeric(
-                g["smina_affinity"], errors="coerce").nunique(dropna=True) > 1:
-            order, how = pd.to_numeric(g["smina_affinity"], errors="coerce"), "smina_affinity"
         else:
-            order, how = pd.Series(range(len(g)), index=g.index), "pose_order"
+            order, how = None, None
+            for col in ("gnina_affinity", "smina_affinity"):  # gnina first
+                if col in g:
+                    a = pd.to_numeric(g[col], errors="coerce")
+                    if a.nunique(dropna=True) > 1:
+                        order, how = a, col
+                        break
+            if order is None:
+                order, how = pd.Series(range(len(g)), index=g.index), "pose_order"
         er = order.rank(method="min", ascending=True)
         for f, e in zip(g["pose_file"], er):
             eff[f] = int(e) if e == e else None
@@ -813,17 +839,28 @@ def _tool_pose_stats(sub: pd.DataFrame, crystal: Optional[np.ndarray],
     )
 
 
+# Depth of the per-rank profile written to per_rank_distance.csv and used by the
+# rank-by-rank figures (e.g. rank_in_crystal_cluster_by_rank.png). Independent of
+# the top-5 concentration summary below, which stays fixed at 5.
+_RANK_PROFILE_MAX = 15
+
+
 def _top5_analysis(sub: pd.DataFrame, eff_rank: Dict[str, int],
                    file_idx: Dict[str, int], labels: np.ndarray, C: np.ndarray,
-                   crystal: Optional[np.ndarray], max_rank: int = 5):
-    """Per-tool profile of the top-`max_rank` ranked poses.
+                   crystal: Optional[np.ndarray], correct_label: Optional[int] = None,
+                   max_rank: int = 5, per_rank_max: int = _RANK_PROFILE_MAX):
+    """Per-tool profile of the top ranked poses.
 
     Returns (per_rank_rows, tool_summary):
-      * per_rank_rows: (tool, rank_pos, centroid_dist, rmsd) for the k-th best
-        pose of each tool — the "how far is the rank-k pose from crystal" profile.
-      * tool_summary[tool]: how concentrated the top-5 are (n distinct clusters,
-        modal-cluster fraction) and which of the top-5 is closest to the crystal
-        (top5_best_rank, top5_best_dist).
+      * per_rank_rows: (tool, rank_pos, centroid_dist, rmsd, in_correct_cluster) for
+        the k-th best pose of each tool, up to ``per_rank_max`` ranks — the "how far
+        is the rank-k pose from crystal" profile, plus whether that pose landed in
+        the crystal-closest cluster (``correct_label``; NaN when no crystal / cluster
+        is defined).
+      * tool_summary[tool]: how concentrated the top-``max_rank`` (5) poses are (n
+        distinct clusters, modal-cluster fraction) and which of them is closest to
+        the crystal (top5_best_rank, top5_best_dist). This summary is INDEPENDENT of
+        ``per_rank_max`` — it always covers only the first ``max_rank`` positions.
     """
     file_rmsd = (dict(zip(sub["pose_file"],
                           pd.to_numeric(sub.get("rmsd"), errors="coerce")))
@@ -833,16 +870,20 @@ def _top5_analysis(sub: pd.DataFrame, eff_rank: Dict[str, int],
     for tool, g in sub.groupby("tool"):
         ranked = sorted(((eff_rank[f], f) for f in g["pose_file"]
                          if eff_rank.get(f) is not None), key=lambda x: x[0])
-        top = ranked[:max_rank]
-        dists, clusters = [], []
+        top = ranked[:per_rank_max]
+        rows = []                                       # (centroid_dist, cluster|None)
         for pos, (_rnk, f) in enumerate(top, 1):
             idx = file_idx.get(f)
             cd = _dist(C[idx], crystal) if (idx is not None and crystal is not None) else np.nan
             rm = float(file_rmsd.get(f, np.nan))
-            per_rank.append((tool, pos, cd, rm))
-            dists.append(cd)
-            if idx is not None:
-                clusters.append(int(labels[idx]))
+            clab = int(labels[idx]) if idx is not None else None
+            in_correct = (bool(clab == correct_label)
+                          if (idx is not None and correct_label is not None) else np.nan)
+            per_rank.append((tool, pos, cd, rm, in_correct, clab))
+            rows.append((cd, clab))
+        # ── top-5 concentration summary: first ``max_rank`` positions only ──
+        dists = [cd for cd, _ in rows[:max_rank]]
+        clusters = [cl for _, cl in rows[:max_rank] if cl is not None]
         if clusters:
             cc = Counter(clusters)
             modal_frac = max(cc.values()) / len(clusters)
@@ -855,7 +896,7 @@ def _top5_analysis(sub: pd.DataFrame, eff_rank: Dict[str, int],
         else:
             best_pos = best_dist = np.nan
         tool_summary[tool] = dict(
-            top5_n=len(top),
+            top5_n=min(len(top), max_rank),
             top5_n_clusters=n_clusters,
             top5_modal_frac=round(modal_frac, 3) if modal_frac == modal_frac else np.nan,
             top5_best_rank=best_pos,
@@ -910,11 +951,13 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
     correct_dist = correct_is_hit = np.nan
     pur_centroid = pur_rmsd = best_rmsd_in_correct = np.nan
     p1 = {}
+    correct_label: Optional[int] = None
     rank_in_correct: Dict[str, Optional[int]] = {}
     n_in_correct: Dict[str, int] = {}
     correct_members: List[Tuple[str, Optional[int]]] = []
     if crystal is not None and pockets:
         cp = min(pockets, key=lambda p: _dist(p["center"], crystal))
+        correct_label = int(cp["label"])
         correct_dist = round(_dist(cp["center"], crystal), 3)
         correct_is_hit = bool(correct_dist <= thr)
         pur_centroid, pur_rmsd, best_rmsd_in_correct = _cluster_purity(
@@ -933,7 +976,8 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
 
     # ── top-5 ranked poses: per-rank distance + cluster consistency ──────
     file_idx = {f: i for i, f in enumerate(files)}
-    per_rank_rows, top5 = _top5_analysis(sub, eff_rank, file_idx, labels, C, crystal)
+    per_rank_rows, top5 = _top5_analysis(sub, eff_rank, file_idx, labels, C, crystal,
+                                         correct_label=correct_label)
 
     # ── tool-combination ensemble exploration (which tools to combine) ───
     ensembles = {name: _ensemble_stats(C, tools, crystal, subset, thr,
@@ -1086,7 +1130,8 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
         "_fp": fp_pockets, "_pr": pr_pockets, "_crystal": crystal,
         "_rank_in_correct": rank_in_correct, "_correct_is_hit": correct_is_hit,
         "_correct_members": correct_members, "_rank_src": rank_src, "_ensembles": ensembles,
-        "_per_rank": [(cid, t, rp, cd, rm) for (t, rp, cd, rm) in per_rank_rows],
+        "_per_rank": [(cid, t, rp, cd, rm, ic, cl)
+                      for (t, rp, cd, rm, ic, cl) in per_rank_rows],
     }
 
 
@@ -1137,62 +1182,79 @@ def _fig_examples(results, thr, out_dir):
     return p
 
 
-def _fig_summary(df, thr, out_dir):
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    d = df[df["has_crystal"]]
-    fig, ax = plt.subplots(2, 2, figsize=(14, 10))
+# Oracle-distance columns feeding the ECDF / hit-rate panels, in draw order.
+_SRC_ORACLE = {
+    "autodock": "autodock_oracle_centroid_dist",
+    "diffdock": "diffdock_oracle_centroid_dist",
+    "equibind": "equibind_oracle_centroid_dist",
+    "ensemble": "ens_oracle_dist",
+    "fpocket": "fpocket_oracle_dist",
+    "p2rank": "p2rank_oracle_dist",
+}
 
-    # (0,0) ECDF of oracle center-to-crystal distance per source
-    src_oracle = {
-        "autodock": "autodock_oracle_centroid_dist",
-        "diffdock": "diffdock_oracle_centroid_dist",
-        "equibind": "equibind_oracle_centroid_dist",
-        "ensemble": "ens_oracle_dist",
-        "fpocket": "fpocket_oracle_dist",
-        "p2rank": "p2rank_oracle_dist",
-    }
+
+def _panel_oracle_ecdf(ax, d, thr, detail_xlim=None):
+    """ECDF of oracle center-to-crystal distance per source.
+
+    ``detail_xlim=None`` draws the full 0–40 Å view with the 0–8 Å zoom inset
+    (the combined-figure / standalone Panel-A behaviour). ``detail_xlim=(lo, hi)``
+    draws ONLY the zoomed lo–hi Å view (the standalone detail graph). Returns the
+    per-source ECDF dict so callers can reuse it.
+    """
     ecdf = {}
-    for name, col in src_oracle.items():
+    for name, col in _SRC_ORACLE.items():
         if col not in d:
             continue
         v = np.sort(pd.to_numeric(d[col], errors="coerce").dropna().to_numpy())
         if v.size:
             ecdf[name] = (v, np.linspace(0, 1, v.size))
-            ax[0, 0].plot(v, ecdf[name][1], label=name, lw=2)
-    ax[0, 0].axvline(thr, color="k", ls="--", lw=0.8)
-    ax[0, 0].set_xlim(0, 40)
-    ax[0, 0].set_title("Oracle center-to-crystal distance (ECDF)")
-    ax[0, 0].set_xlabel("distance (Å)"); ax[0, 0].set_ylabel("fraction of complexes")
-    ax[0, 0].legend(fontsize=8)
+    detail = detail_xlim is not None
+    for name, (vx, vy) in ecdf.items():
+        ax.plot(vx, vy, label=name, lw=2)
+    ax.axvline(thr, color="k", ls="--", lw=0.8)
+    ax.set_ylabel("fraction of complexes")
+    ax.set_xlabel("center-to-crystal distance (Å)")
+    ax.legend(fontsize=8)
+    if detail:
+        lo, hi = detail_xlim
+        ax.set_xlim(lo, hi); ax.set_ylim(0, 1)
+        ax.set_title(f"Oracle center-to-crystal distance (ECDF, detail {lo:g}–{hi:g} Å)")
+        ax.grid(alpha=0.25); ax.set_axisbelow(True)
+        return ecdf
+    ax.set_xlim(0, 40)
+    ax.set_title("Oracle center-to-crystal distance (ECDF)")
     # Detail inset: the curves bunch up near 0 Å — zoom the 0–8 Å region so the
     # docking sources (which nearly all sit there) are distinguishable.
-    axin = ax[0, 0].inset_axes([0.46, 0.12, 0.5, 0.55])
+    axin = ax.inset_axes([0.46, 0.12, 0.5, 0.55])
     for name, (vx, vy) in ecdf.items():
         axin.plot(vx, vy, lw=1.6)
     axin.axvline(thr, color="k", ls="--", lw=0.8)
     axin.set_xlim(0, 8); axin.set_ylim(0, 1)
     axin.set_title("detail: 0–8 Å", fontsize=8)
     axin.tick_params(labelsize=7)
-    ax[0, 0].indicate_inset_zoom(axin, edgecolor="grey")
+    ax.indicate_inset_zoom(axin, edgecolor="grey")
+    return ecdf
 
-    # (0,1) hit-rate@thr per source (oracle; + top1 where defined)
+
+def _panel_hit_rate(ax, d, thr):
+    """Hit-rate@thr per source (oracle center within thr Å of the crystal)."""
     def rate(col):
         v = pd.to_numeric(d[col], errors="coerce").dropna()
         return float((v <= thr).mean()) if len(v) else np.nan
-    labels = list(src_oracle)
-    oracle_rates = [rate(src_oracle[s]) for s in labels]
+    labels = list(_SRC_ORACLE)
+    oracle_rates = [rate(_SRC_ORACLE[s]) for s in labels]
     x = np.arange(len(labels))
-    ax[0, 1].bar(x, oracle_rates, color=[TOOL_COLORS.get(s, "#8172B3") for s in labels])
+    ax.bar(x, oracle_rates, color=[TOOL_COLORS.get(s, "#8172B3") for s in labels])
     for xi, v in zip(x, oracle_rates):
         if v == v:
-            ax[0, 1].text(xi, v + 0.01, f"{v:.0%}", ha="center", fontsize=9)
-    ax[0, 1].set_xticks(x); ax[0, 1].set_xticklabels(labels, rotation=30, ha="right")
-    ax[0, 1].set_ylim(0, 1.18); ax[0, 1].set_ylabel("fraction within thr")
-    ax[0, 1].set_title(f"Finds the true site (oracle ≤ {thr:g} Å)")
+            ax.text(xi, v + 0.01, f"{v:.0%}", ha="center", fontsize=9)
+    ax.set_xticks(x); ax.set_xticklabels(labels, rotation=30, ha="right")
+    ax.set_ylim(0, 1.18); ax.set_ylabel("fraction within thr")
+    ax.set_title(f"Finds the true site (oracle ≤ {thr:g} Å)")
 
-    # (1,0) triangulation: who finds the true site
+
+def _panel_triangulation(ax, d, thr):
+    """Triangulation: which of docking / fpocket / p2rank finds the true site."""
     combos = Counter()
     for _, r in d.iterrows():
         key = (bool(r.get("tri_docking_hit")), bool(r.get("tri_fpocket_hit")),
@@ -1204,38 +1266,84 @@ def _fig_summary(df, thr, out_dir):
     keys = sorted(names, key=lambda k: -combos[tuple(map(bool, k))])
     vals = [combos[tuple(map(bool, k))] for k in keys]
     tot = sum(vals) or 1
-    ax[1, 0].bar(range(len(keys)), [v / tot for v in vals], color="#55A868")
-    ax[1, 0].set_xticks(range(len(keys)))
-    ax[1, 0].set_xticklabels([names[k] for k in keys], rotation=30, ha="right", fontsize=8)
-    ax[1, 0].set_title(f"Triangulation — who finds the true site (≤ {thr:g} Å)")
-    ax[1, 0].set_ylabel("fraction of complexes")
+    ax.bar(range(len(keys)), [v / tot for v in vals], color="#55A868")
+    ax.set_xticks(range(len(keys)))
+    ax.set_xticklabels([names[k] for k in keys], rotation=30, ha="right", fontsize=8)
+    ax.set_title(f"Triangulation — who finds the true site (≤ {thr:g} Å)")
+    ax.set_ylabel("fraction of complexes")
     for xi, v in enumerate(vals):
-        ax[1, 0].text(xi, v / tot + 0.005, str(v), ha="center", fontsize=8)
+        ax.text(xi, v / tot + 0.005, str(v), ha="center", fontsize=8)
 
-    # (1,1) cross-tool agreement: inter-tool top-site distances
+
+def _panel_cross_tool(ax, d, thr):
+    """Cross-tool agreement: histogram of inter-tool top-site center distances."""
     for col, name, c in [("au_di_dist", "AD–DD", "#4C72B0"),
                          ("au_eq_dist", "AD–EB", "#55A868"),
                          ("di_eq_dist", "DD–EB", "#C44E52")]:
         if col in d:
             v = pd.to_numeric(d[col], errors="coerce").dropna().to_numpy()
             if v.size:
-                ax[1, 1].hist(v, bins=np.linspace(0, 40, 21), histtype="step",
-                              lw=2, label=f"{name} (med {np.median(v):.1f})", color=c)
-    ax[1, 1].axvline(thr, color="k", ls="--", lw=0.8)
-    ax[1, 1].set_title("Cross-tool agreement — top-site center distance")
-    ax[1, 1].set_xlabel("distance (Å)"); ax[1, 1].set_ylabel("complexes")
-    ax[1, 1].legend(fontsize=8)
+                ax.hist(v, bins=np.linspace(0, 40, 21), histtype="step",
+                        lw=2, label=f"{name} (med {np.median(v):.1f})", color=c)
+    ax.axvline(thr, color="k", ls="--", lw=0.8)
+    ax.set_title("Cross-tool agreement — top-site center distance")
+    ax.set_xlabel("distance (Å)"); ax.set_ylabel("complexes")
+    ax.legend(fontsize=8)
 
+
+def _fig_summary(df, thr, out_dir):
+    """Docked-clusters vs fpocket/p2rank vs crystal overview.
+
+    Writes the combined 2×2 ``crystal_pocket_summary.png`` AND each of its four
+    panels as its own standalone PNG (single-panel figures carry no (a)/(b) label),
+    plus a 0–5 Å detail of the oracle-distance ECDF. Returns the list of paths.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    d = df[df["has_crystal"]]
+    saved = []
+
+    # ── combined 2×2 (kept for an at-a-glance overview) ──────────────────
+    fig, ax = plt.subplots(2, 2, figsize=(14, 10))
+    _panel_oracle_ecdf(ax[0, 0], d, thr)
+    _panel_hit_rate(ax[0, 1], d, thr)
+    _panel_triangulation(ax[1, 0], d, thr)
+    _panel_cross_tool(ax[1, 1], d, thr)
     _label_panels(ax)
     fig.suptitle("Docked clusters vs fpocket/p2rank vs crystal "
                  f"(n={len(d)} complexes, thr={thr:g} Å)", fontsize=14)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     p = out_dir / "crystal_pocket_summary.png"
     fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
-    return p
+    saved.append(p)
+
+    # ── the four panels, each as its own standalone graph ────────────────
+    panels = [
+        ("summary_oracle_distance_ecdf.png", _panel_oracle_ecdf, (7.6, 5.6)),
+        ("summary_hit_rate.png", _panel_hit_rate, (7.0, 5.2)),
+        ("summary_triangulation.png", _panel_triangulation, (7.2, 5.2)),
+        ("summary_cross_tool_agreement.png", _panel_cross_tool, (7.0, 5.2)),
+    ]
+    for fname, drawer, figsize in panels:
+        fig, a = plt.subplots(figsize=figsize)
+        drawer(a, d, thr)
+        fig.tight_layout()
+        p = out_dir / fname
+        fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+        saved.append(p)
+
+    # ── new graph: the Panel-A detail, zoomed to 0–5 Å (no inset) ────────
+    fig, a = plt.subplots(figsize=(7.0, 5.2))
+    _panel_oracle_ecdf(a, d, thr, detail_xlim=(0, 5))
+    fig.tight_layout()
+    p = out_dir / "oracle_distance_ecdf_detail_0-5A.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    saved.append(p)
+    return saved
 
 
-def _fig_rank_in_correct(df, thr, out_dir):
+def _fig_rank_in_correct(df, thr, out_dir, eq_variant=None):
     """How each tool ranks the poses it puts in the crystal-closest cluster."""
     import matplotlib
     matplotlib.use("Agg")
@@ -1287,7 +1395,7 @@ def _fig_rank_in_correct(df, thr, out_dir):
     ax[1].legend(fontsize=8)
     _label_panels(ax)
     fig.suptitle("How each tool ranks its poses in the crystal-closest cluster "
-                 f"(true-site complexes, n={len(d)}; EquiBind rank = smina-affinity proxy)",
+                 f"(true-site complexes, n={len(d)}; {_equibind_rank_note(eq_variant)})",
                  fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     p = out_dir / "rank_in_correct_cluster.png"
@@ -1302,7 +1410,7 @@ _RANK_BAND_COLORS = ["#08519c", "#3182bd", "#6baed6", "#c6dbef"]   # dark→ligh
 _CONSENSUS_COLORS = {1: "#bdbdbd", 2: "#737373", 3: "#252525"}     # 1→3 tools, light→dark
 
 
-def _fig_near_native_composition(results, thr, out_dir):
+def _fig_near_native_composition(results, thr, out_dir, eq_variant=None):
     """Composition of the near-native cluster.
 
     The near-native cluster is the crystal-closest cluster that actually holds a pose
@@ -1351,7 +1459,7 @@ def _fig_near_native_composition(results, thr, out_dir):
             consensus[nt] += 1
     band_mean = {t: [s / N for s in band_sum[t]] for t in TOOLS}
     subtitle = (f"near-native cluster = crystal-closest cluster holding a ≤ 2 Å pose  "
-                f"(n={N} complexes; PB-valid poses; EquiBind rank = smina affinity)")
+                f"(n={N} complexes; {_equibind_rank_note(eq_variant)})")
     saved = []
 
     # ── (1) rank composition per tool (stacked by rank band) — own figure ──
@@ -1678,6 +1786,601 @@ def _fig_top5(df_rank, df, out_dir):
     return saved
 
 
+def _fig_rank_in_crystal_cluster(df_rank, out_dir, eq_variant=None):
+    """Do a tool's n-th ranked pose tend to land in the crystal-closest cluster?
+
+    For each tool and each rank position n (1..up to _RANK_PROFILE_MAX), the fraction
+    of complexes whose n-th ranked pose falls in the crystal-closest cluster
+    (``in_correct_cluster`` from the per-rank table). A high, rank-1-peaked line means
+    the tool prioritises poses at the true site; a flat line means rank carries no
+    site information. Note the per-rank denominator shrinks at deep ranks (a tool that
+    emits fewer poses — e.g. AutoDock's Vina modes — has no pose there), so its line
+    simply stops; the legend n is the rank-1 count.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    if df_rank.empty or "in_correct_cluster" not in df_rank:
+        return None
+    max_present = pd.to_numeric(df_rank.get("rank"), errors="coerce").max()
+    hi = int(min(_RANK_PROFILE_MAX, max_present)) if max_present == max_present else 5
+    ranks = list(range(1, max(hi, 1) + 1))
+    _truth = {True: 1.0, False: 0.0, "True": 1.0, "False": 0.0}
+    fig, ax = plt.subplots(figsize=(8.6, 5.2))
+    any_data = False
+    for t in TOOLS:
+        g = df_rank[df_rank["tool"] == t]
+        fracs, n1 = [], 0
+        for k in ranks:
+            s = g[g["rank"] == k]["in_correct_cluster"].map(_truth).dropna()
+            fracs.append(float(s.mean()) if len(s) else np.nan)
+            if k == 1:
+                n1 = len(s)
+        if not np.isfinite(fracs).any():
+            continue
+        any_data = True
+        ax.plot(ranks, fracs, "-o", color=TOOL_COLORS[t], lw=2.2, markersize=6,
+                markeredgecolor="black", markeredgewidth=0.5,
+                label=f"{t} (n={n1})")
+    if not any_data:
+        plt.close(fig)
+        return None
+    ax.set_xticks(ranks); ax.set_xlim(0.5, ranks[-1] + 0.5); ax.set_ylim(0, 1.05)
+    ax.set_xlabel("Pose rank (1 = tool's top pose)")
+    ax.set_ylabel("Fraction of complexes in the crystal-closest cluster")
+    ax.set_title("Do a tool's top-ranked poses land in the crystal-closest cluster?\n"
+                 f"({_equibind_rank_note(eq_variant)})")
+    ax.grid(alpha=0.25); ax.set_axisbelow(True)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    p = out_dir / "rank_in_crystal_cluster_by_rank.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    return p
+
+
+def _fig_rank_cluster_membership(df_rank, out_dir, eq_variant=None):
+    """Per rank, where each tool's rank-k pose lands: IN the crystal-closest cluster
+    vs a DIFFERENT cluster — the in/out split of rank_in_crystal_cluster_by_rank.
+
+    One subplot per tool; each rank is a 100%-stacked bar over ALL complexes
+    (n = crystal complexes), split into three shares that sum to 1:
+      * in crystal cluster   (rank-k pose is in the crystal-closest cluster)
+      * different cluster     (rank-k pose exists but is in another cluster)
+      * no pose at this rank   (the tool emitted < k poses for that complex)
+    The 'no pose' share makes the shrinking deep-rank denominator explicit (it grows
+    for tools with few poses, e.g. AutoDock's Vina modes) instead of hiding it.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from matplotlib.patches import Patch
+    if df_rank.empty or "in_correct_cluster" not in df_rank:
+        return None
+    max_present = pd.to_numeric(df_rank.get("rank"), errors="coerce").max()
+    hi = int(min(_RANK_PROFILE_MAX, max_present)) if max_present == max_present else 5
+    ranks = list(range(1, max(hi, 1) + 1))
+    total = int(df_rank["protein"].nunique())
+    if total == 0:
+        return None
+    _truth = {True: 1.0, False: 0.0, "True": 1.0, "False": 0.0}
+    C_IN, C_OUT, C_ABS = "#55A868", "#C44E52", "#D9D9D9"
+    fig, axes = plt.subplots(1, len(TOOLS), figsize=(5.0 * len(TOOLS), 4.8), sharey=True)
+    axes = np.atleast_1d(axes)
+    for ax, t in zip(axes, TOOLS):
+        g = df_rank[df_rank["tool"] == t]
+        f_in, f_out, f_abs = [], [], []
+        for k in ranks:
+            m = g[g["rank"] == k]["in_correct_cluster"].map(_truth).dropna()
+            nin = float((m == 1.0).sum()); nout = float((m == 0.0).sum())
+            f_in.append(nin / total); f_out.append(nout / total)
+            f_abs.append(max(0.0, 1.0 - (nin + nout) / total))
+        f_in = np.array(f_in); f_out = np.array(f_out); f_abs = np.array(f_abs)
+        ax.bar(ranks, f_in, width=0.82, color=C_IN)
+        ax.bar(ranks, f_out, width=0.82, bottom=f_in, color=C_OUT)
+        ax.bar(ranks, f_abs, width=0.82, bottom=f_in + f_out, color=C_ABS)
+        ax.text(ranks[0], min(f_in[0] + 0.02, 0.98), f"{f_in[0]:.0%}", ha="center",
+                va="bottom", fontsize=8, color="#2f6b45", fontweight="bold")
+        ax.set_title(_TOOL_DISPLAY.get(t, t), color=TOOL_COLORS[t], fontweight="bold")
+        ax.set_xlabel("Pose rank (1 = top pose)")
+        ax.set_xticks(ranks); ax.set_xlim(0.4, ranks[-1] + 0.6); ax.set_ylim(0, 1.0)
+        ax.grid(axis="y", alpha=0.25); ax.set_axisbelow(True)
+    axes[0].set_ylabel(f"Fraction of complexes (n={total})")
+    handles = [Patch(color=C_IN, label="in crystal-closest cluster"),
+               Patch(color=C_OUT, label="in a different cluster"),
+               Patch(color=C_ABS, label="no pose at this rank")]
+    fig.legend(handles=handles, loc="lower center", ncol=3, fontsize=9, frameon=False)
+    fig.suptitle("Where each tool's rank-k pose lands: crystal-closest cluster vs elsewhere\n"
+                 f"({_equibind_rank_note(eq_variant)})", fontsize=12)
+    fig.tight_layout(rect=(0, 0.055, 1, 0.93))
+    p = out_dir / "rank_cluster_membership_stacked.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    return p
+
+
+def _fig_rank_consensus(df_rank, out_dir, eq_variant=None):
+    """Tool consensus across the top ranks: at each rank k, do AutoDock, DiffDock and
+    EquiBind put their rank-k pose in the SAME cluster, and is it the crystal one?
+
+    One 100%-stacked bar per rank k (1..up to _RANK_PROFILE_MAX), over the complexes
+    where all three tools have a rank-k pose (n printed above each bar), split into four
+    mutually exclusive outcomes:
+      * all 3 → crystal cluster        (consensus on the true site)
+      * all 3 → same other cluster     (consensus, wrong site)
+      * split, >=1 in crystal cluster  (partial — some agree with the crystal site)
+      * split, none in crystal cluster (scattered — all three miss)
+    Needs the per-pose ``cluster`` label (added to per_rank_distance.csv) so that
+    'same cluster' can be told apart from 'both merely out of the crystal cluster'.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    need = {"tool", "rank", "in_correct_cluster", "cluster"}
+    if df_rank.empty or not need <= set(df_rank.columns):
+        return None
+    max_present = pd.to_numeric(df_rank.get("rank"), errors="coerce").max()
+    hi = int(min(_RANK_PROFILE_MAX, max_present)) if max_present == max_present else 5
+    ranks = list(range(1, max(hi, 1) + 1))
+    _truth = {True: True, False: False, "True": True, "False": False}
+    cats = ["all_crystal", "all_other", "split_some", "split_none"]
+    colors = {"all_crystal": "#55A868", "all_other": "#8C8C8C",
+              "split_some": "#DD8452", "split_none": "#C44E52"}
+    lab = {"all_crystal": "all 3 → crystal cluster",
+           "all_other": "all 3 → same other cluster",
+           "split_some": "split — ≥1 in crystal cluster",
+           "split_none": "split — none in crystal cluster"}
+    d = df_rank[pd.to_numeric(df_rank["rank"], errors="coerce").isin(ranks)]
+    frac = {c: [] for c in cats}
+    ns = []
+    for k in ranks:
+        dk = d[d["rank"] == k]
+        by_prot = {}
+        for row in dk.itertuples(index=False):
+            cl = getattr(row, "cluster", None)
+            if cl is None or (isinstance(cl, float) and cl != cl):
+                continue
+            ic = _truth.get(getattr(row, "in_correct_cluster", None), False)
+            by_prot.setdefault(getattr(row, "protein"), {})[getattr(row, "tool")] = (int(cl), bool(ic))
+        counts = {c: 0 for c in cats}; n = 0
+        for rec in by_prot.values():
+            if not all(t in rec for t in TOOLS):
+                continue
+            n += 1
+            clset = {rec[t][0] for t in TOOLS}
+            n_in = sum(rec[t][1] for t in TOOLS)
+            if len(clset) == 1 and n_in == len(TOOLS):
+                counts["all_crystal"] += 1
+            elif len(clset) == 1:
+                counts["all_other"] += 1
+            elif n_in >= 1:
+                counts["split_some"] += 1
+            else:
+                counts["split_none"] += 1
+        ns.append(n)
+        for c in cats:
+            frac[c].append(counts[c] / n if n else np.nan)
+    fig, ax = plt.subplots(figsize=(9.8, 5.8))
+    bottom = np.zeros(len(ranks))
+    for c in cats:
+        vals = np.array([f if f == f else 0.0 for f in frac[c]])
+        ax.bar(ranks, vals, width=0.82, bottom=bottom, color=colors[c], label=lab[c])
+        bottom += vals
+    for xi, k in enumerate(ranks):
+        ax.text(k, 1.008, f"{ns[xi]}", ha="center", va="bottom", fontsize=7, color="#555")
+    ax.set_xticks(ranks); ax.set_xlim(0.4, ranks[-1] + 0.6); ax.set_ylim(0, 1.0)
+    ax.set_xlabel("Pose rank (each tool's k-th ranked pose)")
+    ax.set_ylabel("Fraction of complexes (all 3 tools present at rank k)")
+    ax.legend(fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.12),
+              ncol=2, frameon=False)
+    ax.grid(axis="y", alpha=0.25); ax.set_axisbelow(True)
+    fig.suptitle("Do the three tools' rank-k poses land in the SAME cluster — the crystal one or another?\n"
+                 f"(number above each bar = n complexes; {_equibind_rank_note(eq_variant)})",
+                 fontsize=11)
+    fig.tight_layout(rect=(0, 0, 1, 0.88))
+    p = out_dir / "rank_consensus_by_rank.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    return p
+
+
+_TOOL_ABBR = {"autodock": "AD", "diffdock": "DD", "equibind": "EB"}
+_TRUTH_MAP = {True: True, False: False, "True": True, "False": False}
+
+
+def _fig_rank1_cluster_matrix(df_rank, out_dir, eq_variant=None):
+    """Pairwise matrix: how often two tools' RANK-1 poses land in the SAME cluster.
+
+    cell[i][j] = fraction of complexes where tool i's rank-1 pose and tool j's rank-1
+    pose share a cluster label (any cluster). Each cell also prints the count
+    (same / both-present) and, off-diagonal, how many of those shared clusters are
+    the crystal-closest one. The diagonal is trivially 100%.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    need = {"tool", "rank", "cluster", "in_correct_cluster"}
+    if df_rank.empty or not need <= set(df_rank.columns):
+        return None
+    d1 = df_rank[pd.to_numeric(df_rank["rank"], errors="coerce") == 1]
+    r1 = {}
+    for row in d1.itertuples(index=False):
+        cl = getattr(row, "cluster", None)
+        if cl is None or (isinstance(cl, float) and cl != cl):
+            continue
+        r1.setdefault(getattr(row, "protein"), {})[getattr(row, "tool")] = (
+            int(cl), bool(_TRUTH_MAP.get(getattr(row, "in_correct_cluster", None), False)))
+    T = list(TOOLS); nT = len(T)
+    same = np.zeros((nT, nT)); both = np.zeros((nT, nT)); samex = np.zeros((nT, nT))
+    for rec in r1.values():
+        for a in range(nT):
+            for b in range(nT):
+                ta, tb = T[a], T[b]
+                if ta in rec and tb in rec:
+                    both[a, b] += 1
+                    if rec[ta][0] == rec[tb][0]:
+                        same[a, b] += 1
+                        if rec[ta][1] and rec[tb][1]:
+                            samex[a, b] += 1
+    frac = np.divide(same, both, out=np.full((nT, nT), np.nan), where=both > 0)
+    # three-way agreement: rank-1 poses of ALL tools sharing one cluster (by cluster
+    # transitivity this is exactly "EB shares a cluster with BOTH AD and DD", etc.)
+    n3 = all3_same = all3_crystal = two_agree = all_diff = 0
+    for rec in r1.values():
+        if not all(t in rec for t in T):
+            continue
+        n3 += 1
+        clset = {rec[t][0] for t in T}
+        if len(clset) == 1:
+            all3_same += 1
+            if all(rec[t][1] for t in T):
+                all3_crystal += 1
+        elif len(clset) == 2:
+            two_agree += 1
+        else:
+            all_diff += 1
+    tri = np.tril(np.ones((nT, nT), dtype=bool))          # lower triangle + diagonal
+    cmap = plt.cm.YlGnBu.copy(); cmap.set_bad("white")
+    fig, ax = plt.subplots(figsize=(7.0, 6.2))
+    im = ax.imshow(np.ma.masked_where(~tri, frac), cmap=cmap, vmin=0, vmax=1)
+    ax.set_xticks(range(nT)); ax.set_yticks(range(nT))
+    ax.set_xticklabels([_TOOL_DISPLAY.get(t, t) for t in T], rotation=45, ha="right",
+                       rotation_mode="anchor")
+    ax.set_yticklabels([_TOOL_DISPLAY.get(t, t) for t in T])
+    for a in range(nT):
+        for b in range(nT):
+            if b > a or both[a, b] == 0:
+                continue
+            pct = frac[a, b]
+            txt = f"{pct:.0%}\n{int(same[a, b])}/{int(both[a, b])}"
+            if a != b:
+                txt += f"\n(crystal {int(samex[a, b])})"
+            ax.text(b, a, txt, ha="center", va="center",
+                    color="white" if pct > 0.55 else "black", fontsize=9)
+    summ = ("All 3 rank-1 in ONE cluster\n"
+            f"  {all3_same}/{n3} ({all3_same / n3:.0%})   → crystal {all3_crystal}\n"
+            f"Only 2 tools share:  {two_agree}\n"
+            f"All 3 differ:  {all_diff}")
+    ax.text(0.97, 0.97, summ, transform=ax.transAxes, ha="right", va="top", fontsize=8.5,
+            bbox=dict(boxstyle="round,pad=0.5", fc="#f5f5f5", ec="#bbbbbb"))
+    n_total = int(df_rank["protein"].nunique())
+    ax.set_title("Rank-1 poses in the SAME cluster — pairwise (any cluster)\n"
+                 f"(n={n_total} complexes; {_equibind_rank_note(eq_variant)})", fontsize=11)
+    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="fraction of complexes")
+    fig.tight_layout()
+    p = out_dir / "rank1_cluster_agreement_matrix.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    return p
+
+
+def _fig_topN_crystal_matrix(df_rank, out_dir, eq_variant=None):
+    """Buckets: pairwise matrices of both tools reaching the CRYSTAL cluster within
+    the top-N ranked poses, for N = 1, 5, 10, 15.
+
+    cell[i][j] (i != j) = fraction of complexes where tool i AND tool j each place at
+    least one of their top-N poses in the crystal-closest cluster (so both are in the
+    same crystal cluster). Diagonal cell[i][i] = fraction where tool i alone reaches
+    the crystal cluster within top-N.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    need = {"tool", "rank", "in_correct_cluster"}
+    if df_rank.empty or not need <= set(df_rank.columns):
+        return None
+    maxr = int(pd.to_numeric(df_rank["rank"], errors="coerce").max())
+    buckets = [b for b in (1, 5, 10, 15) if b <= maxr] or [maxr]
+    T = list(TOOLS); nT = len(T)
+    # protein -> tool -> best (min) rank landing in the crystal cluster (else inf)
+    reach = {}; present = {}
+    for row in df_rank.itertuples(index=False):
+        prot = getattr(row, "protein"); t = getattr(row, "tool")
+        r = pd.to_numeric(getattr(row, "rank"), errors="coerce")
+        present.setdefault(prot, set()).add(t)
+        if _TRUTH_MAP.get(getattr(row, "in_correct_cluster", None), False) and r == r:
+            m = reach.setdefault(prot, {})
+            m[t] = min(m.get(t, np.inf), float(r))
+    proteins = list(present.keys())
+    n_total = len(proteins)
+    tri = np.tril(np.ones((nT, nT), dtype=bool))          # lower triangle + diagonal
+    cmap = plt.cm.YlGnBu.copy(); cmap.set_bad("white")
+    nb = len(buckets)
+    ncols = 2 if nb > 2 else nb
+    nrows = int(np.ceil(nb / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5.2 * ncols, 5.0 * nrows),
+                             constrained_layout=True, squeeze=False)
+    flat = axes.ravel()
+    im = None
+    for i, N in enumerate(buckets):
+        ax = flat[i]; col = i % ncols
+        cnt = np.zeros((nT, nT)); both = np.zeros((nT, nT))
+        all3 = n_all = 0                     # all three tools reach crystal within top-N
+        for prot in proteins:
+            pres = present.get(prot, set()); rc = reach.get(prot, {})
+            hit = {t: (rc.get(t, np.inf) <= N) for t in T}
+            for a in range(nT):
+                for b in range(nT):
+                    ta, tb = T[a], T[b]
+                    if ta in pres and tb in pres:
+                        both[a, b] += 1
+                        if (hit[ta] if a == b else (hit[ta] and hit[tb])):
+                            cnt[a, b] += 1
+            if all(t in pres for t in T):
+                n_all += 1
+                if all(hit[t] for t in T):
+                    all3 += 1
+        M = np.divide(cnt, both, out=np.full((nT, nT), np.nan), where=both > 0)
+        im = ax.imshow(np.ma.masked_where(~tri, M), cmap=cmap, vmin=0, vmax=1)
+        ax.set_xticks(range(nT)); ax.set_yticks(range(nT))
+        ax.set_xticklabels([_TOOL_DISPLAY.get(t, t) for t in T], rotation=45,
+                           ha="right", rotation_mode="anchor", fontsize=8)
+        ax.set_yticklabels([_TOOL_DISPLAY.get(t, t) for t in T] if col == 0
+                           else [""] * nT)
+        for a in range(nT):
+            for b in range(nT):
+                if b > a or both[a, b] == 0:
+                    continue
+                ax.text(b, a, f"{M[a, b]:.0%}\n{int(cnt[a, b])}", ha="center",
+                        va="center", color="white" if M[a, b] > 0.55 else "black",
+                        fontsize=9)
+        if n_all:
+            ax.text(0.96, 0.96, "All 3 tools reach crystal:\n"
+                    f"{all3}/{n_all} ({all3 / n_all:.0%})", transform=ax.transAxes,
+                    ha="right", va="top", fontsize=8,
+                    bbox=dict(boxstyle="round,pad=0.4", fc="#f5f5f5", ec="#bbbbbb"))
+        ax.set_title(f"Top-{N}")
+    for j in range(nb, nrows * ncols):       # hide any unused grid cell
+        flat[j].axis("off")
+    if im is not None:
+        fig.colorbar(im, ax=list(flat), fraction=0.046, pad=0.02,
+                     label="fraction of complexes")
+    fig.suptitle("Both tools reach the CRYSTAL cluster within top-N poses "
+                 "(diagonal = one tool alone)\n"
+                 f"n={n_total} complexes; {_equibind_rank_note(eq_variant)}", fontsize=12)
+    p = out_dir / "topN_crystal_cluster_matrix.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    return p
+
+
+def _fig_topN_crystal_reach_curves(df_rank, out_dir, eq_variant=None):
+    """How the topN_crystal_cluster_matrix values EVOLVE with ranking depth N.
+
+    Continuous companion to the four discrete matrix buckets: fraction of complexes
+    reaching the crystal-closest cluster within top-N, for N = 1..up to
+    _RANK_PROFILE_MAX. Left panel = each tool alone (the matrix diagonals); right
+    panel = each tool pair jointly (the off-diagonals) plus all three (the per-panel
+    three-way box). Monotonically non-decreasing, so the slope is the marginal gain
+    from allowing one more pose.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    need = {"tool", "rank", "in_correct_cluster"}
+    if df_rank.empty or not need <= set(df_rank.columns):
+        return None
+    maxr = pd.to_numeric(df_rank["rank"], errors="coerce").max()
+    hi = int(min(_RANK_PROFILE_MAX, maxr)) if maxr == maxr else 5
+    Ns = list(range(1, max(hi, 1) + 1))
+    T = list(TOOLS)
+    reach = {}; present = {}
+    for row in df_rank.itertuples(index=False):
+        prot = getattr(row, "protein"); t = getattr(row, "tool")
+        r = pd.to_numeric(getattr(row, "rank"), errors="coerce")
+        present.setdefault(prot, set()).add(t)
+        if _TRUTH_MAP.get(getattr(row, "in_correct_cluster", None), False) and r == r:
+            m = reach.setdefault(prot, {}); m[t] = min(m.get(t, np.inf), float(r))
+    proteins = [p for p in present if all(t in present[p] for t in T)]
+    n_total = len(proteins)
+    if n_total == 0:
+        return None
+
+    def frac(subset, N):
+        c = sum(all(reach.get(p, {}).get(t, np.inf) <= N for t in subset)
+                for p in proteins)
+        return c / n_total
+
+    pairs = [("autodock", "diffdock"), ("autodock", "equibind"),
+             ("diffdock", "equibind")]
+    pair_colors = {pairs[0]: "#8172B3", pairs[1]: "#DD8452", pairs[2]: "#937860"}
+    mark = [r for r in (1, 5, 10, 15) if r in Ns]      # ranks to label with the %
+
+    def _ann(ax, y, color, dy):
+        for N in mark:
+            v = y[Ns.index(N)]
+            ax.annotate(f"{v:.0%}", (N, v), textcoords="offset points",
+                        xytext=(0, dy), ha="center",
+                        va="bottom" if dy >= 0 else "top", fontsize=7,
+                        color=color, fontweight="bold",
+                        bbox=dict(boxstyle="round,pad=0.12", fc="white", ec="none",
+                                  alpha=0.55))
+
+    fig, (axL, axR) = plt.subplots(1, 2, figsize=(13.0, 5.4), sharey=True)
+    left_dy = {"autodock": -12, "diffdock": 9, "equibind": 9}   # AD near ceiling → below
+    for t in T:
+        y = [frac((t,), N) for N in Ns]
+        axL.plot(Ns, y, "-o", color=TOOL_COLORS[t], lw=2.4, markersize=5,
+                 label=_TOOL_DISPLAY.get(t, t))
+        _ann(axL, y, TOOL_COLORS[t], left_dy[t])
+    axL.set_title("Each tool alone (matrix diagonal)")
+    axL.set_ylabel(f"Fraction of complexes reaching the crystal cluster (n={n_total})")
+    pair_dy = {pairs[0]: 9, pairs[1]: 9, pairs[2]: -12}         # DD+EB below (≈ all-three)
+    for pr in pairs:
+        y = [frac(pr, N) for N in Ns]
+        axR.plot(Ns, y, "--o", color=pair_colors[pr], lw=2, markersize=4,
+                 label=f"{_TOOL_DISPLAY[pr[0]]} + {_TOOL_DISPLAY[pr[1]]}")
+        _ann(axR, y, pair_colors[pr], pair_dy[pr])
+    y3 = [frac(tuple(T), N) for N in Ns]
+    axR.plot(Ns, y3, "-s", color="black", lw=2.6, markersize=5, label="All three tools")
+    _ann(axR, y3, "black", -24)                                # further below DD+EB
+    axR.set_title("Tool pairs and all three jointly (matrix off-diagonal)")
+    for ax in (axL, axR):
+        ax.set_xlabel("Ranking depth (number of top poses considered, N)")
+        ax.set_xticks(Ns); ax.set_xlim(Ns[0] - 0.3, Ns[-1] + 0.3); ax.set_ylim(0, 1.02)
+        ax.grid(alpha=0.25); ax.set_axisbelow(True); ax.legend(fontsize=8)
+    fig.suptitle("Reaching the crystal cluster vs ranking depth "
+                 "(evolution of the top-N matrix values)\n"
+                 f"n={n_total} complexes; {_equibind_rank_note(eq_variant)}", fontsize=12)
+    fig.tight_layout(rect=(0, 0, 1, 0.92))
+    p = out_dir / "topN_crystal_reach_curves.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    return p
+
+
+def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None):
+    """How homogeneous is the crystal-closest cluster the tools land in?
+
+    Four panels, all restricted to each tool's top-15 ranked poses (the scope used
+    by the sibling rank figures):
+      (A) Pose contribution — how many of a tool's top-15 poses fall in the crystal
+          cluster (distribution over all complexes; 'reaches' = fraction with >=1).
+      (B) Consensus richness — fraction of crystal clusters populated by 1 / 2 / 3
+          tools.
+      (C) Internal tightness — per tool, the std of that tool's own in-cluster
+          poses' distances to the crystal centroid (needs >=2 in-cluster poses):
+          how far apart a single tool's poses sit.
+      (D) Spatial spread vs consensus — the crystal cluster's geometric radius
+          (max pose->center, from the full clustering) stratified by how many tools
+          contribute, i.e. does agreement make the cluster tighter or wider.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    need = {"protein", "tool", "in_correct_cluster", "centroid_dist"}
+    if df_rank.empty or not need <= set(df_rank.columns):
+        return None
+    d = df_rank.copy()
+    d["_ic"] = d["in_correct_cluster"].map(_TRUTH_MAP)
+    proteins = list(d["protein"].unique())
+    n_total = len(proteins)
+    if n_total == 0:
+        return None
+    T = list(TOOLS)
+    cc = d[d["_ic"] == True]                                             # noqa: E712
+    comp = (cc.groupby(["protein", "tool"]).size().unstack(fill_value=0)
+            .reindex(index=proteins, columns=T, fill_value=0))
+    reach = {t: float((comp[t] > 0).mean()) for t in T}
+    n_tools_per = (comp > 0).sum(axis=1)
+    ntool_counts = {k: int((n_tools_per == k).sum()) for k in (1, 2, 3)}
+    internal = {t: [] for t in T}
+    for (_prot, t), g in cc.groupby(["protein", "tool"]):
+        if len(g) >= 2:
+            v = pd.to_numeric(g["centroid_dist"], errors="coerce").to_numpy()
+            internal[t].append(float(np.std(v)))
+    radius = {}
+    for r in ok:
+        if not r.get("has_crystal"):
+            continue
+        cr = r.get("_crystal"); pk = r.get("_pockets")
+        if cr is None or not pk:
+            continue
+        cp = min(pk, key=lambda p: _dist(p["center"], cr))
+        radius[r["protein"]] = float(cp.get("radius", np.nan))
+    rad_by_n = {k: [] for k in (1, 2, 3)}
+    for prot in proteins:
+        k = int(n_tools_per.get(prot, 0))
+        rv = radius.get(prot, np.nan)
+        if k in rad_by_n and rv == rv:
+            rad_by_n[k].append(rv)
+
+    rng = np.random.default_rng(42)
+    tri_col = ["#C44E52", "#DD8452", "#55A868"]
+    fig, axes = plt.subplots(2, 2, figsize=(13.2, 10.4))
+    axA, axB, axC, axD = axes.ravel()
+
+    bp = axA.boxplot([comp[t].to_numpy() for t in T], patch_artist=True, widths=0.6,
+                     showmeans=True, medianprops=dict(color="black"),
+                     meanprops=dict(marker="D", markerfacecolor="white",
+                                    markeredgecolor="black", markersize=6))
+    for patch, t in zip(bp["boxes"], T):
+        patch.set_facecolor(TOOL_COLORS[t]); patch.set_alpha(0.75)
+    for i, t in enumerate(T, start=1):
+        axA.scatter(rng.normal(i, 0.05, len(comp)), comp[t], s=6,
+                    color=TOOL_COLORS[t], alpha=0.20, zorder=1)
+        axA.text(i, 15.6, f"reaches\n{reach[t]:.0%}", ha="center", va="bottom",
+                 fontsize=8, color=TOOL_COLORS[t], fontweight="bold")
+    axA.set_xticks([1, 2, 3]); axA.set_xticklabels([_TOOL_DISPLAY.get(t, t) for t in T])
+    axA.set_ylabel("Poses a tool places in the crystal cluster\n(top-15 scope)")
+    axA.set_ylim(-0.5, 18); axA.set_title("Pose contribution per tool")
+    axA.grid(axis="y", alpha=0.25); axA.set_axisbelow(True)
+
+    xs = [1, 2, 3]
+    fr = [ntool_counts[k] / n_total for k in xs]
+    axB.bar(xs, fr, color=tri_col, width=0.7, alpha=0.85)
+    for x in xs:
+        axB.text(x, fr[x - 1] + 0.01, f"{fr[x - 1]:.0%}\n(n={ntool_counts[x]})",
+                 ha="center", va="bottom", fontsize=9)
+    axB.set_xticks(xs); axB.set_xticklabels(["1 tool", "2 tools", "all 3 tools"])
+    axB.set_ylim(0, (max(fr) if fr else 1) + 0.12)
+    axB.set_ylabel(f"Fraction of complexes (n={n_total})")
+    axB.set_xlabel("Number of tools contributing ≥1 pose")
+    axB.set_title("Consensus richness of the crystal cluster")
+    axB.grid(axis="y", alpha=0.25); axB.set_axisbelow(True)
+
+    bp = axC.boxplot([internal[t] if internal[t] else [np.nan] for t in T],
+                     patch_artist=True, widths=0.6, showfliers=False,
+                     medianprops=dict(color="black"))
+    for patch, t in zip(bp["boxes"], T):
+        patch.set_facecolor(TOOL_COLORS[t]); patch.set_alpha(0.75)
+    for i, t in enumerate(T, start=1):
+        yy = internal[t]
+        if yy:
+            axC.scatter(rng.normal(i, 0.05, len(yy)), yy, s=7,
+                        color=TOOL_COLORS[t], alpha=0.25, zorder=1)
+        axC.text(i, -0.08, f"n={len(yy)}", ha="center", va="top", fontsize=8,
+                 color=TOOL_COLORS[t])
+    axC.set_xticks([1, 2, 3]); axC.set_xticklabels([_TOOL_DISPLAY.get(t, t) for t in T])
+    axC.set_ylabel("Std. of a tool's pose distances to the\ncrystal centroid, within the cluster (Å)")
+    axC.set_title("Internal tightness of each tool's own poses")
+    axC.set_ylim(-0.15, None)
+    axC.grid(axis="y", alpha=0.25); axC.set_axisbelow(True)
+
+    dataD = [rad_by_n[k] if rad_by_n[k] else [np.nan] for k in xs]
+    bp = axD.boxplot(dataD, patch_artist=True, widths=0.6, showmeans=True,
+                     medianprops=dict(color="black"),
+                     meanprops=dict(marker="D", markerfacecolor="white",
+                                    markeredgecolor="black", markersize=6))
+    for patch, c in zip(bp["boxes"], tri_col):
+        patch.set_facecolor(c); patch.set_alpha(0.75)
+    for i, _k in enumerate(xs):
+        vals = [v for v in dataD[i] if v == v]
+        if vals:
+            med = float(np.median(vals))
+            axD.text(i + 1, med + 0.12, f"{med:.2f} Å", ha="center",
+                     va="bottom", fontsize=9)
+    axD.set_xticks(xs); axD.set_xticklabels(["1 tool", "2 tools", "all 3 tools"])
+    axD.set_ylabel("Crystal-cluster radius (max pose->center, Å)")
+    axD.set_xlabel("Number of tools contributing to the crystal cluster")
+    axD.set_title("Spatial spread vs consensus richness")
+    axD.grid(axis="y", alpha=0.25); axD.set_axisbelow(True)
+
+    _label_panels(axes)
+    fig.suptitle("How homogeneous is the crystal-closest cluster?  "
+                 "Composition, internal tightness and spatial spread\n"
+                 f"n={n_total} complexes; top-15 poses per tool; "
+                 f"{_equibind_rank_note(eq_variant)}", fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    p = out_dir / "crystal_cluster_homogeneity.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    return p
+
+
 def _fig_placement(df, mode_thr, out_dir):
     """Centroid SITES vs placement-aware MODES: how the two geometry axes compare."""
     import matplotlib
@@ -1745,6 +2448,134 @@ def _fig_placement(df, mode_thr, out_dir):
                  f"(n={len(d)} complexes, mode-thr={mode_thr:g} Å)", fontsize=13)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     p = out_dir / "placement_vs_centroid.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    return p
+
+
+def _fig_cluster_quality(df, ablation, ranking_rho, out_dir, match_thr,
+                         stability_boot):
+    """Visualise the cluster-VALIDITY numbers that otherwise live only in
+    summary.json / per_complex_summary.csv / ranking_ablation.csv / console.
+
+    Six panels on the primary (centroid) partition, one figure:
+      (A-C) internal indices — silhouette, Calinski-Harabasz, Davies-Bouldin
+            (all k>=2 only; k=1 complexes contribute NaN and are dropped);
+      (D)   the k=1-safe pair compactness vs separation (tight & far-apart=good);
+      (E)   bootstrap stability distribution (>0.75 stable, <0.5 dissolved);
+      (F)   the precision@1 ranking ablation — does consensus ranking recover the
+            true crystal site more often than legacy size, and how close to the
+            oracle ceiling.
+    Internal indices say "well-separated geometry", stability says "reproducible",
+    precision@1 says "actually the right pocket" — three independent axes.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    def _col(name):
+        return (pd.to_numeric(df.get(name), errors="coerce").dropna()
+                if name in df else pd.Series(dtype=float))
+
+    def _hist(a, series, title, xlabel, color, ref=None):
+        if len(series):
+            a.hist(series, bins=20, color=color, alpha=0.85)
+            a.axvline(float(series.median()), color="k", ls="--", lw=1,
+                      label=f"median {series.median():.2f}")
+            for x, lab, c in (ref or []):
+                a.axvline(x, color=c, ls=":", lw=1.4, label=lab)
+            a.legend(fontsize=8)
+        else:
+            a.text(0.5, 0.5, "no data (all k=1)", ha="center", va="center",
+                   transform=a.transAxes, color="0.5")
+        a.set_title(title)
+        a.set_xlabel(xlabel)
+        a.set_ylabel("Number of complexes")
+        a.grid(alpha=0.25); a.set_axisbelow(True)
+
+    fig, ax = plt.subplots(2, 3, figsize=(16.5, 9.5))
+
+    # (A) Silhouette
+    _hist(ax[0, 0], _col("silhouette"),
+          "Silhouette coefficient (k≥2 only)\nhigher = tighter, better-separated sites",
+          "Silhouette coefficient (−1 to 1)", "#4C72B0")
+
+    # (B) Calinski-Harabasz — long right tail; clip display at the 98th pctile
+    ch = _col("ch_score")
+    ch_disp = ch.clip(upper=float(ch.quantile(0.98))) if len(ch) else ch
+    _hist(ax[0, 1], ch_disp,
+          "Calinski-Harabasz index (k≥2 only)\nhigher = better (between/within variance)",
+          "Calinski-Harabasz index (98th-pctile clipped)", "#55A868")
+
+    # (C) Davies-Bouldin
+    _hist(ax[0, 2], _col("db_score"),
+          "Davies-Bouldin index (k≥2 only)\nlower = better",
+          "Davies-Bouldin index", "#C44E52")
+
+    # (D) compactness vs separation (both defined at k=1)
+    comp = pd.to_numeric(df.get("compactness"), errors="coerce")
+    sep = pd.to_numeric(df.get("separation"), errors="coerce")
+    m = comp.notna() & sep.notna()
+    a = ax[1, 0]
+    if m.any():
+        a.scatter(comp[m], sep[m], s=18, alpha=0.5, color="#8172B3", edgecolors="none")
+        a.axhline(float(match_thr), color="k", ls="--", lw=0.8,
+                  label=f"match threshold {match_thr:g} Å")
+        a.legend(fontsize=8)
+    else:
+        a.text(0.5, 0.5, "no data", ha="center", va="center",
+               transform=a.transAxes, color="0.5")
+    a.set_title("Site compactness vs separation\ntight (low x) and far-apart (high y) = good")
+    a.set_xlabel("Within-site spread (Å, median distance-to-center; lower = tighter)")
+    a.set_ylabel("Nearest inter-site distance (Å; higher = better)")
+    a.grid(alpha=0.25); a.set_axisbelow(True)
+
+    # (E) bootstrap stability
+    _hist(ax[1, 1], _col("boot_stability"),
+          f"Bootstrap stability ({stability_boot} resamples)\nreproducibility of the partition",
+          "Mean best-cluster Jaccard overlap", "#CCB974",
+          ref=[(0.75, "stable ≥0.75", "#2ca02c"),
+               (0.5, "dissolved <0.5", "#d62728")])
+
+    # (F) precision@1 ranking ablation
+    a = ax[1, 2]
+    rule_lab = {"size": "size (legacy count)", "ntools": "consensus (n tools)",
+                "tight": "tightest spread", "confidence": "confidence-weighted",
+                "medoid": "consensus + medoid"}
+    bars = [(rule_lab[r["rule"]], float(r["precision_at_1"]), r["rule"])
+            for r in (ablation or [])
+            if r.get("rule") in rule_lab and r.get("precision_at_1") is not None]
+    oracle = next((float(r["precision_at_1"]) for r in (ablation or [])
+                   if r.get("rule") == "oracle" and r.get("precision_at_1") is not None), None)
+    if bars:
+        bars.sort(key=lambda x: x[1])
+        labels = [b[0] for b in bars]
+        vals = [b[1] for b in bars]
+        cols = ["#DD8452" if b[2] == "ntools" else "#B0A08F" for b in bars]
+        y = np.arange(len(bars))
+        a.barh(y, vals, color=cols)
+        a.set_yticks(y); a.set_yticklabels(labels, fontsize=9)
+        for yi, v in zip(y, vals):
+            a.text(min(v + 0.015, 1.0), yi, f"{v:.0%}", va="center", fontsize=8)
+        if oracle is not None:
+            a.axvline(oracle, color="k", ls="--", lw=1.3,
+                      label=f"oracle ceiling {oracle:.0%}")
+            a.legend(fontsize=8, loc="lower right")
+        a.set_xlim(0, 1.08)
+    else:
+        a.text(0.5, 0.5, "no data", ha="center", va="center",
+               transform=a.transAxes, color="0.5")
+    ttl = f"Precision@1 — rank-1 pocket within {match_thr:g} Å of crystal (default = consensus)"
+    if ranking_rho is not None:
+        ttl += f"\nranking enrichment Spearman ρ={ranking_rho:.2f}"
+    a.set_title(ttl)
+    a.set_xlabel("Precision@1 (fraction of complexes)")
+    a.grid(axis="x", alpha=0.25); a.set_axisbelow(True)
+
+    _label_panels(ax)
+    fig.suptitle("Cluster-quality assessment — internal validity, stability, and "
+                 f"ranking accuracy  (n={len(df)} complexes)", fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    p = out_dir / "cluster_quality_metrics.png"
     fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
     return p
 
@@ -1974,7 +2805,7 @@ def _fig_descriptor_quality(df_complex, features_csv, out_dir,
 # pickle the analysed complexes keyed by a fingerprint of the inputs, so a re-run
 # with unchanged inputs skips straight to (re)writing CSVs + figures.
 # ════════════════════════════════════════════════════════════════════════
-_CACHE_SCHEMA = 2
+_CACHE_SCHEMA = 5
 
 
 def _file_fp(path) -> Optional[dict]:
@@ -2303,10 +3134,12 @@ def main(argv=None) -> int:
     for r in ok:
         if not r["has_crystal"]:
             continue
-        for (cid_, t, rp, cd, rm) in r.get("_per_rank", []):
+        for (cid_, t, rp, cd, rm, ic, cl) in r.get("_per_rank", []):
             prrows.append({"protein": cid_, "tool": t, "rank": rp,
                            "centroid_dist": None if cd != cd else round(cd, 3),
-                           "rmsd": None if rm != rm else round(rm, 3)})
+                           "rmsd": None if rm != rm else round(rm, 3),
+                           "in_correct_cluster": None if (isinstance(ic, float) and ic != ic) else bool(ic),
+                           "cluster": None if cl is None else int(cl)})
     df_rank = pd.DataFrame(prrows)
     df_rank.to_csv(out_dir / "per_rank_distance.csv", index=False)
 
@@ -2597,9 +3430,18 @@ def main(argv=None) -> int:
                 _fig_summary(df_complex, args.match_thr, out_dir),
                 _fig_ecdf_split(df_complex, args.match_thr, out_dir),
                 _fig_top5(df_rank, df_complex, out_dir),   # returns a list of paths
-                _fig_rank_in_correct(df_complex, args.match_thr, out_dir),
-                _fig_near_native_composition(ok, args.match_thr, out_dir),
+                _fig_rank_in_crystal_cluster(df_rank, out_dir, eq_variant),
+                _fig_rank_cluster_membership(df_rank, out_dir, eq_variant),
+                _fig_rank_consensus(df_rank, out_dir, eq_variant),
+                _fig_rank1_cluster_matrix(df_rank, out_dir, eq_variant),
+                _fig_topN_crystal_matrix(df_rank, out_dir, eq_variant),
+                _fig_topN_crystal_reach_curves(df_rank, out_dir, eq_variant),
+                _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant),
+                _fig_rank_in_correct(df_complex, args.match_thr, out_dir, eq_variant),
+                _fig_near_native_composition(ok, args.match_thr, out_dir, eq_variant),
                 _fig_ensembles(df_complex, args.match_thr, out_dir),
+                _fig_cluster_quality(df_complex, ablation, ranking_rho, out_dir,
+                                     args.match_thr, args.stability_boot),
                 _fig_placement(df_complex, args.mode_rmsd_thr, out_dir),
                 _fig_descriptor_quality(df_complex, args.features_csv, out_dir,
                                         per_pose_csv=args.per_pose_csv,
