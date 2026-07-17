@@ -129,10 +129,18 @@ def _derive_pb_valid(df: pd.DataFrame) -> pd.Series:
     return T.all(axis=1)
 
 
-def load_poses(csv: Path, ids: Optional[set]) -> pd.DataFrame:
+def load_poses(csv: Path, ids: Optional[set],
+               dd_variant: Optional[str] = None) -> pd.DataFrame:
     df = pd.read_csv(csv, low_memory=False)
     tool_col = "docking_method" if "docking_method" in df.columns else "method"
     df["tool"] = df[tool_col].astype(str).str.lower()
+    # Restrict DiffDock to a single optimizer variant (raw poses carry optimizer
+    # "original"; refined poses "smina"/"gnina"). Keeps DiffDock represented by one
+    # variant instead of blending raw+smina+gnina into a ~3x pose cloud.
+    if dd_variant and dd_variant != "all" and "optimizer" in df.columns:
+        _opt = df["optimizer"].astype(str).str.lower()
+        _dd = df["tool"].str.startswith("diffdock")
+        df = df[(~_dd) | (_opt == dd_variant)].copy()
     # collapse any equibind variant label (equibind_guided / equibind_unguided_*) to "equibind"
     df.loc[df["tool"].str.startswith("equibind"), "tool"] = "equibind"
     df["frame"] = df["protein"].astype(str)
@@ -886,6 +894,10 @@ def main(argv=None) -> int:
                     default="PoseBusters_Benchmark_Analysis/ligand_protein_features.csv",
                     help="Per-ligand RDKit descriptors (from PoseBusters_DataSet_Analysis.ipynb); "
                          "enables the 'which ligand types dock consistently' analysis.")
+    ap.add_argument("--diffdock-variant", default="all",
+                    choices=("all", "original", "smina", "gnina"),
+                    help="Restrict DiffDock to one optimizer variant (default 'all' "
+                         "pools raw+smina+gnina). 'gnina' = keep only gnina-refined poses.")
     ap.add_argument("--no-plot", action="store_true")
     args = ap.parse_args(argv)
 
@@ -896,7 +908,7 @@ def main(argv=None) -> int:
                if ln.strip() and not ln.lstrip().startswith("#")}
 
     print(f"Loading poses from {args.per_pose_csv} ...")
-    df = load_poses(Path(args.per_pose_csv), ids)
+    df = load_poses(Path(args.per_pose_csv), ids, args.diffdock_variant)
     if df.empty:
         print("No poses found (check CSV path / ids).")
         return 1

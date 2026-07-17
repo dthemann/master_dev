@@ -81,7 +81,8 @@ def pick_entities(met: pd.DataFrame) -> list[dict]:
     dd = met[met["method"].astype(str).str.match(r"diffdock_(smina|gnina)$")]
     dd = dd[dd["rank"].between(1, 999) & (dd["rank"] != 999)]      # ranked variants only
     if len(dd):
-        top = dd.groupby("method")["pb_valid"].mean().idxmax()
+        top = ("diffdock_gnina" if (dd["method"] == "diffdock_gnina").any()
+               else dd.groupby("method")["pb_valid"].mean().idxmax())
         ents.append(dict(method=top, source="rank"))
     eqs = met[met["method"].astype(str).str.startswith("equibind")
               & met["method"].astype(str).str.contains("smina")

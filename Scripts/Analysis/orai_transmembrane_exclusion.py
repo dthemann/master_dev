@@ -31,6 +31,15 @@ optional "in_pore_lumen" sub-flag; the primary transmembrane test is slab
 membership at any radius (a ligand on the lipid-facing TM surface is still in the
 membrane).
 
+Because the slab is radially unbounded, drawing it at r_pore would misleadingly
+suggest only the conducting channel is excluded. So the layer also records r_outer:
+the 99th-percentile radial distance of all protein heavy atoms whose axial position
+falls inside the slab -- i.e. how far the hexamer's OUTER SHELL reaches from the axis
+in this membrane band (~35 A vs ~8 A for the pore). The visualization (PDB cage /
+PyMOL CGO) draws the exclusion boundary out to r_outer, with the pore cylinder kept
+as an inner reference and explicit R91 / E106 boundary planes, so the picture matches
+the actual test: the whole cross-section of the membrane-spanning band is excluded.
+
 A pose is flagged in_transmembrane when its ligand heavy-atom CENTROID falls in
 the slab. frac_atoms_in_layer and majority_in_layer are also reported so a
 stricter atom-level rule can be applied without recomputing.
@@ -47,9 +56,11 @@ which lists every generated pose (AutoDock Vina, DiffDock, EquiBind) with its
 `pose_file` (per-pose SDF in receptor coords) and `protein_file_used` receptor.
 
 Per dataset out-dir (default posebusters_results/<ds>/transmembrane_filter/):
-  tm_exclusion_zones.json     -- per-frame layer parameters (axis, ends, L, r_pore)
-  <frame>_tm_zone.pdb         -- pseudoatom cylinder tracing the layer (load w/ receptor)
-  <frame>_tm_zone.pml         -- PyMOL: load receptor + translucent TM cylinder
+  tm_exclusion_zones.json     -- per-frame layer parameters (axis, ends, L, r_pore, r_outer)
+  <frame>_tm_zone.pdb         -- pseudoatom cage of the band: outer shell + pore walls,
+                                 centreline, R91/E106 end-cap rings (load w/ receptor)
+  <frame>_tm_zone.pml         -- PyMOL: receptor + translucent outer-shell exclusion
+                                 cylinder (r_outer), inner pore reference, R91/E106 planes
   tm_pose_classification.csv  -- EVERY pose + geometry + flags
   tm_excluded_poses.csv       -- poses inside the TM layer (the filtered-out list)
   tm_kept_poses.csv           -- poses that survive the filter
@@ -265,6 +276,22 @@ def _pca_axis(pdb_path: Path) -> Optional[np.ndarray]:
     return vecs[:, -1]
 
 
+def _protein_heavy_xyz(pdb_path: Path) -> np.ndarray:
+    """All protein heavy-atom coordinates (ATOM records, hydrogens excluded)."""
+    pts = []
+    for ln in pdb_path.read_text(errors="ignore").splitlines():
+        if not ln.startswith("ATOM"):
+            continue
+        el = ln[76:78].strip() or ln[12:16].strip().lstrip("0123456789")[:1]
+        if el.upper() == "H":
+            continue
+        try:
+            pts.append([float(ln[30:38]), float(ln[38:46]), float(ln[46:54])])
+        except ValueError:
+            continue
+    return np.asarray(pts, dtype=float)
+
+
 def build_zone(pdb_path: Path, pad: float) -> Dict:
     """Construct the TM exclusion layer for one receptor frame."""
     r91 = _ring_ca(pdb_path, R91_RESNUM, R91_RESNAME)
@@ -281,6 +308,28 @@ def build_zone(pdb_path: Path, pad: float) -> Dict:
     proj = (ring - p_lo) @ axis
     radial = np.linalg.norm((ring - p_lo) - np.outer(proj, axis), axis=1)
     r_pore = float(radial.mean())
+    # OUTER SHELL radius of the transmembrane band. The exclusion test is slab
+    # membership at ANY radius (a ligand on the lipid-facing TM surface is still in
+    # the membrane), so the pore radius r_pore describes only the conducting channel,
+    # NOT the true radial extent of the excluded band. For an honest visualization we
+    # measure how far the hexamer reaches out from the axis WITHIN this axial slab:
+    # the radial distance of every protein heavy atom whose axial position falls in
+    # [t_lo, t_hi]. r_outer uses the 99th percentile so a few flexible loop tips that
+    # happen to sit axially in-band (but are not part of the compact TM bundle) do not
+    # balloon the drawn boundary; r_outer_max keeps the absolute extent for reference.
+    r_outer = r_outer_max = None
+    n_heavy_in_slab = 0
+    heavy = _protein_heavy_xyz(pdb_path)
+    if len(heavy):
+        dh = heavy - p_lo
+        th = dh @ axis
+        rh = np.linalg.norm(dh - np.outer(th, axis), axis=1)
+        in_slab = (th >= -pad) & (th <= length + pad)
+        if in_slab.any():
+            rs = rh[in_slab]
+            n_heavy_in_slab = int(in_slab.sum())
+            r_outer = round(float(np.percentile(rs, 99)), 3)
+            r_outer_max = round(float(rs.max()), 3)
     # sanity: angle between the residue-defined axis and the CA-PCA axis
     pca = _pca_axis(pdb_path)
     axis_pca_deg = None
@@ -293,6 +342,8 @@ def build_zone(pdb_path: Path, pad: float) -> Dict:
         "axis": axis.tolist(), "length": length, "pad": pad,
         "t_lo": -pad, "t_hi": length + pad,
         "r_pore_mean": r_pore, "r_pore_max": float(radial.max()),
+        "r_outer": r_outer, "r_outer_max": r_outer_max,
+        "n_heavy_in_slab": n_heavy_in_slab,
         "n_R91_subunits": int(len(r91)), "n_E106_subunits": int(len(e106)),
         "axis_vs_pca_deg": axis_pca_deg,
         "residues": {"lower": f"{R91_RESNAME}{R91_RESNUM}", "upper": f"{E106_RESNAME}{E106_RESNUM}"},
@@ -423,29 +474,59 @@ def _perp_basis(axis: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     return u, v
 
 
-def write_zone_pdb(zone: Dict, out: Path, n_ring: int = 36, n_layers: int = 9):
-    """Pseudoatom cylinder tracing the TM layer wall + pore centreline."""
+def write_zone_pdb(zone: Dict, out: Path, n_ring: int = 48, n_layers: int = 9):
+    """Pseudoatom cage tracing the TM exclusion band. The band is an axial slab
+    between the R91 and E106 rings, unbounded in radius; here we draw it out to the
+    hexamer's OUTER SHELL so the visualization reflects that the exclusion covers the
+    whole membrane-spanning cross-section (the lipid-facing surface), not just the
+    conducting pore. Elements/chains separate the parts for easy colouring in PyMOL:
+      chain O (resn OUT, carbon)   -- outer shell wall  (r_outer)
+      chain P (resn POR, oxygen)   -- inner pore wall    (r_pore, reference)
+      chain Y (resn AXS, nitrogen) -- pore centreline
+      chain B (resn CAP, sulphur)  -- end-cap rings at the R91 and E106 boundary planes
+    """
     p_lo = np.asarray(zone["p_R91"]); axis = np.asarray(zone["axis"])
-    L = zone["length"]; r = zone["r_pore_mean"]
+    L = zone["length"]
+    r_pore = float(zone["r_pore_mean"])
+    r_out = float(zone.get("r_outer") or r_pore)
     u, v = _perp_basis(axis)
     recs = []
     serial = 0
-    for k in range(n_layers):
-        frac = k / (n_layers - 1)
-        center = p_lo + frac * L * axis
-        for j in range(n_ring):
-            th = 2 * math.pi * j / n_ring
-            p = center + r * (math.cos(th) * u + math.sin(th) * v)
-            serial += 1
-            recs.append((serial, "C", "ZON", "Z", serial, p, frac * 100))
-    # centreline
+
+    def _wall(radius: float, el: str, resn: str, ch: str):
+        nonlocal serial
+        for k in range(n_layers):
+            frac = k / (n_layers - 1)
+            center = p_lo + frac * L * axis
+            for j in range(n_ring):
+                th = 2 * math.pi * j / n_ring
+                p = center + radius * (math.cos(th) * u + math.sin(th) * v)
+                serial += 1
+                recs.append((serial, el, resn, ch, serial, p, frac * 100))
+
+    _wall(r_out, "C", "OUT", "O")                 # outer shell wall (the exclusion boundary)
+    _wall(r_pore, "O", "POR", "P")                # inner pore wall (reference)
+    # pore centreline
     for k in range(n_layers):
         frac = k / (n_layers - 1)
         p = p_lo + frac * L * axis
         serial += 1
         recs.append((serial, "N", "AXS", "Y", serial, p, frac * 100))
-    lines = ["REMARK  Orai1 transmembrane exclusion layer (R91 ring <-> E106 ring)",
-             f"REMARK  axis {np.round(axis,4).tolist()}  length {L:.2f}  r_pore {r:.2f}"]
+    # end-cap rings: concentric rings from the pore out to the shell at the R91 (frac 0)
+    # and E106 (frac 1) planes, so the two axial boundaries of the band read as disks
+    n_cap_rings = 4
+    for frac in (0.0, 1.0):
+        center = p_lo + frac * L * axis
+        for m in range(n_cap_rings + 1):
+            radius = r_pore + (r_out - r_pore) * m / n_cap_rings
+            for j in range(n_ring):
+                th = 2 * math.pi * j / n_ring
+                p = center + radius * (math.cos(th) * u + math.sin(th) * v)
+                serial += 1
+                recs.append((serial, "S", "CAP", "B", serial, p, frac * 100))
+    lines = ["REMARK  Orai1 transmembrane exclusion band (R91 ring <-> E106 ring)",
+             f"REMARK  axis {np.round(axis,4).tolist()}  length {L:.2f}  "
+             f"r_pore {r_pore:.2f}  r_outer {r_out:.2f}"]
     for serial, el, resn, ch, resi, p, b in recs:
         lines.append(
             f"HETATM{serial % 100000:>5d} {el:>2s}   {resn:>3s} {ch}{resi % 10000:>4d}    "
@@ -457,28 +538,64 @@ def write_zone_pdb(zone: Dict, out: Path, n_ring: int = 36, n_layers: int = 9):
 
 def write_zone_pml(zone: Dict, frame: str, out: Path):
     p_lo = np.asarray(zone["p_R91"]); p_hi = np.asarray(zone["p_E106"])
-    r = zone["r_pore_mean"]
+    axis = np.asarray(zone["axis"])
+    r_pore = float(zone["r_pore_mean"])
+    r_out = float(zone.get("r_outer") or r_pore)
     receptor = zone["receptor_file"]
     zone_pdb = out.with_suffix(".pdb").name
-    txt = f"""# PyMOL: Orai1 TM exclusion layer for {frame}
+    # thin end-cap disks (short, fat CGO cylinders) marking the R91 and E106 planes,
+    # each spanning the full band cross-section (radius r_outer) so the two axial
+    # boundaries of the excluded band are explicit, colour-matched to the residues.
+    cap = 0.5
+    r91_a = p_lo - 0.5 * cap * axis;  r91_b = p_lo + 0.5 * cap * axis
+    e106_a = p_hi - 0.5 * cap * axis; e106_b = p_hi + 0.5 * cap * axis
+    # The whole scene is wrapped in a `python ... python end` block so PyMOL runs it as
+    # genuine Python: the multi-line CGO list literals with injected coordinates parse
+    # reliably (the .pml command interpreter mishandles multi-line list continuation).
+    txt = f"""# PyMOL: Orai1 transmembrane exclusion band for {frame}
 # usage:  pymol {out.name}
+# The excluded band is the axial slab between the R91 and E106 CA rings, unbounded in
+# radius. It is drawn out to the hexamer OUTER SHELL (r_outer={r_out:.1f} A) so it is
+# clear the exclusion covers the whole membrane-spanning cross-section, not just the
+# pore (r_pore={r_pore:.1f} A, drawn as an inner reference).
+python
 from pymol import cmd
 from pymol.cgo import CYLINDER
+
 cmd.load(r"{receptor}", "receptor")
-cmd.load(r"{out.with_suffix('.pdb').name}", "tm_zone_atoms") if False else None
-cmd.hide("everything", "receptor"); cmd.show("cartoon", "receptor")
+cmd.hide("everything", "receptor")
+cmd.show("cartoon", "receptor")
 cmd.color("grey80", "receptor")
+cmd.set("cartoon_transparency", 0.15, "receptor")
 cmd.select("R91", "receptor and resi 91 and resn ARG")
 cmd.select("E106", "receptor and resi 106 and resn GLU")
-cmd.show("sticks", "R91 or E106"); cmd.color("blue", "R91"); cmd.color("red", "E106")
-tm = [CYLINDER,
-      {p_lo[0]:.3f}, {p_lo[1]:.3f}, {p_lo[2]:.3f},
-      {p_hi[0]:.3f}, {p_hi[1]:.3f}, {p_hi[2]:.3f},
-      {r:.3f}, 1.0, 0.55, 0.0, 1.0, 0.55, 0.0]
-cmd.load_cgo(tm, "TM_exclusion_layer")
-cmd.set("cgo_transparency", 0.55, "TM_exclusion_layer")
+cmd.show("sticks", "R91 or E106")
+cmd.color("blue", "R91")
+cmd.color("red", "E106")
+
+# OUTER shell exclusion boundary -- spans the whole hexamer cross-section, R91 -> E106
+tm_outer = [CYLINDER, {p_lo[0]:.3f}, {p_lo[1]:.3f}, {p_lo[2]:.3f}, {p_hi[0]:.3f}, {p_hi[1]:.3f}, {p_hi[2]:.3f}, {r_out:.3f}, 1.0, 0.55, 0.0, 1.0, 0.55, 0.0]
+cmd.load_cgo(tm_outer, "TM_outer_shell")
+cmd.set("cgo_transparency", 0.70, "TM_outer_shell")
+
+# INNER pore / conducting channel (reference only)
+tm_pore = [CYLINDER, {p_lo[0]:.3f}, {p_lo[1]:.3f}, {p_lo[2]:.3f}, {p_hi[0]:.3f}, {p_hi[1]:.3f}, {p_hi[2]:.3f}, {r_pore:.3f}, 0.60, 0.0, 0.0, 0.60, 0.0, 0.0]
+cmd.load_cgo(tm_pore, "TM_pore_channel")
+cmd.set("cgo_transparency", 0.35, "TM_pore_channel")
+
+# R91 (blue) and E106 (red) boundary planes -- the axial limits of the excluded band
+r91_plane = [CYLINDER, {r91_a[0]:.3f}, {r91_a[1]:.3f}, {r91_a[2]:.3f}, {r91_b[0]:.3f}, {r91_b[1]:.3f}, {r91_b[2]:.3f}, {r_out:.3f}, 0.10, 0.30, 1.0, 0.10, 0.30, 1.0]
+cmd.load_cgo(r91_plane, "R91_boundary_plane")
+cmd.set("cgo_transparency", 0.80, "R91_boundary_plane")
+e106_plane = [CYLINDER, {e106_a[0]:.3f}, {e106_a[1]:.3f}, {e106_a[2]:.3f}, {e106_b[0]:.3f}, {e106_b[1]:.3f}, {e106_b[2]:.3f}, {r_out:.3f}, 1.0, 0.10, 0.10, 1.0, 0.10, 0.10]
+cmd.load_cgo(e106_plane, "E106_boundary_plane")
+cmd.set("cgo_transparency", 0.80, "E106_boundary_plane")
+
 cmd.zoom("receptor")
-# load {zone_pdb} to see the sampled cylinder wall as pseudoatoms
+cmd.set("two_sided_lighting", 1)
+# For a pseudoatom cage instead of solid CGO, load {zone_pdb}:
+#   cmd.load(r"{zone_pdb}", "tm_cage")   # chains O=outer P=pore Y=axis B=end-caps
+python end
 """
     out.write_text(txt)
 
@@ -756,9 +873,11 @@ def run_dataset(name: str, csv_path: Path, out_dir: Path, pad: float, workers: i
             continue
         z = build_zone(rec, pad)
         zones[str(frame)] = z
+        _rout = f"{z['r_outer']:.1f}" if z.get("r_outer") is not None else "n/a"
         print(f"  {frame}: R91 z-end {np.round(z['p_R91'],2).tolist()}  "
               f"E106 z-end {np.round(z['p_E106'],2).tolist()}  L={z['length']:.1f}  "
-              f"r_pore={z['r_pore_mean']:.1f}  axis|PCA={z['axis_vs_pca_deg']}deg")
+              f"r_pore={z['r_pore_mean']:.1f}  r_outer={_rout}  "
+              f"axis|PCA={z['axis_vs_pca_deg']}deg")
         write_zone_pdb(z, out_dir / f"{frame}_tm_zone.pdb")
         write_zone_pml(z, str(frame), out_dir / f"{frame}_tm_zone.pml")
     (out_dir / "tm_exclusion_zones.json").write_text(json.dumps(

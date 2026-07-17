@@ -2243,7 +2243,423 @@ def _fig_topN_crystal_reach_curves(df_rank, out_dir, eq_variant=None):
     return p
 
 
-def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None):
+# ── self-contained statistics for the homogeneity figure ─────────────────────
+# No scikit-posthocs / statsmodels in the `vina` env, so the post-hoc tests
+# (Dunn, Jonckheere-Terpstra, Cochran's Q, McNemar, Holm) are hand-rolled from
+# scipy primitives. Each panel of crystal_cluster_homogeneity.png has a distinct
+# data structure and therefore a distinct test; see _homogeneity_stats().
+
+def _fmt_p(p) -> str:
+    if p is None or p != p:
+        return "n/a"
+    if p < 1e-4:
+        return "<1e-4"
+    if p < 1e-3:
+        return f"{p:.1e}"
+    return f"{p:.3f}"
+
+
+def _p_stars(p) -> str:
+    if p is None or p != p:
+        return ""
+    return "***" if p < 1e-3 else "**" if p < 1e-2 else "*" if p < 0.05 else "ns"
+
+
+def _holm(pvals):
+    """Holm-Bonferroni step-down adjusted p-values (order preserved)."""
+    p = np.asarray(pvals, float)
+    m = len(p)
+    order = np.argsort(p)
+    adj = np.empty(m)
+    running = 0.0
+    for rank, idx in enumerate(order):
+        running = max(running, (m - rank) * p[idx])
+        adj[idx] = min(running, 1.0)
+    return adj
+
+
+def _cochran_q(X):
+    """Cochran's Q for k paired binary conditions (X is n x k of 0/1)."""
+    from scipy.stats import chi2
+    X = np.asarray(X, float)
+    n, k = X.shape
+    Cj = X.sum(axis=0)
+    Ri = X.sum(axis=1)
+    T = X.sum()
+    denom = k * T - float(np.sum(Ri ** 2))
+    if denom == 0:
+        return np.nan, np.nan, k - 1
+    Q = (k - 1) * (k * float(np.sum(Cj ** 2)) - T ** 2) / denom
+    return float(Q), float(chi2.sf(Q, k - 1)), k - 1
+
+
+def _mcnemar_exact(a, b):
+    """Exact (binomial) McNemar for two paired binary vectors a, b."""
+    from scipy.stats import binomtest
+    a = np.asarray(a); b = np.asarray(b)
+    n10 = int(np.sum((a == 1) & (b == 0)))
+    n01 = int(np.sum((a == 0) & (b == 1)))
+    disc = n10 + n01
+    if disc == 0:
+        return n10, n01, 1.0
+    p = binomtest(min(n10, n01), disc, 0.5).pvalue
+    return n10, n01, float(min(p, 1.0))
+
+
+def _ablation_paired_stats(df):
+    """Paired-complex significance for the precision@1 ranking ablation (panel F
+    of cluster_quality_metrics.png).
+
+    Every rule ranks the same clustering of the same complexes, so rank-1
+    hit/miss is a fully paired binary design. Cochran's Q gives the omnibus (do
+    the k rules differ at all?); an exact McNemar on every one of the C(k,2)
+    pairs, Holm-adjusted across the whole family, gives the post-hoc — with the
+    consensus-vs-legacy-size contrast pulled out for headline reporting. Each
+    test uses listwise-complete complexes (a rule that could not produce a
+    rank-1 pocket casts no vote; the omnibus needs all k present, each pair only
+    its two). Returns ``None`` when the hit columns are absent (a no-crystal
+    dataset) or too few complexes are scored to test.
+    """
+    if "has_crystal" in df:
+        df = df[df["has_crystal"]]
+    rules = ["size", "ntools", "tight", "confidence", "medoid"]
+    cols = {r: f"p1_{r}_hit" for r in rules}
+    if not all(c in df for c in cols.values()):
+        return None
+
+    def _bin(s):
+        return pd.to_numeric(
+            s.map({True: 1.0, False: 0.0, "True": 1.0, "False": 0.0}),
+            errors="coerce")
+
+    M = pd.DataFrame({r: _bin(df[c]) for r, c in cols.items()})
+    m_omni = M.dropna()
+    if len(m_omni) < 3:
+        return None
+    Q, pQ, dfQ = _cochran_q(m_omni.to_numpy())
+    prec = {r: float(m_omni[r].mean()) for r in rules}
+
+    # every pairwise exact McNemar, oriented so 'a' is the higher-precision rule
+    # of the pair (so a_wins >= b_wins reads as "a beats b"); Holm across all C(k,2).
+    pairs = []
+    for i in range(len(rules)):
+        for j in range(i + 1, len(rules)):
+            a, b = rules[i], rules[j]
+            if prec[b] > prec[a]:
+                a, b = b, a
+            sub = M[[a, b]].dropna()
+            n10, n01, p = _mcnemar_exact(sub[a].to_numpy(), sub[b].to_numpy())
+            pairs.append({"a": a, "b": b, "a_wins": int(n10), "b_wins": int(n01),
+                          "n_pairs": int(len(sub)), "p_raw": float(p)})
+    for pr, padj in zip(pairs, _holm([pp["p_raw"] for pp in pairs])):
+        pr["p_holm"] = float(padj)
+
+    cvs = next((pp for pp in pairs if {pp["a"], pp["b"]} == {"ntools", "size"}), None)
+    cons_vs_size = None
+    if cvs is not None:
+        c_wins = cvs["a_wins"] if cvs["a"] == "ntools" else cvs["b_wins"]
+        s_wins = cvs["b_wins"] if cvs["a"] == "ntools" else cvs["a_wins"]
+        cons_vs_size = {"n_pairs": cvs["n_pairs"], "consensus_wins": int(c_wins),
+                        "size_wins": int(s_wins),
+                        "p_raw": cvs["p_raw"], "p_holm": cvs["p_holm"]}
+    return {
+        "n_omnibus": int(len(m_omni)), "k": len(rules),
+        "cochran_q": round(float(Q), 3), "df": int(dfQ), "p_omnibus": float(pQ),
+        "precision_at_1": {r: round(prec[r], 4) for r in rules},
+        "pairwise_mcnemar_holm": pairs,
+        "consensus_vs_size_mcnemar": cons_vs_size,
+    }
+
+
+_ABLATION_RULE_ABBR = {"size": "size", "ntools": "cons", "tight": "tght",
+                       "confidence": "conf", "medoid": "medo"}
+
+
+def _ablation_pairwise_matrix_text(st):
+    """Render the full Holm-adjusted pairwise McNemar family (``st`` from
+    :func:`_ablation_paired_stats`) as a compact lower-triangular star matrix,
+    rules ordered by precision@1 (best first). Same significance-star vocabulary
+    as the sibling homogeneity figure's ``_pair_stars``."""
+    pairs = st.get("pairwise_mcnemar_holm") or []
+    prec = st.get("precision_at_1") or {}
+    if not pairs or not prec:
+        return None
+    order = sorted(prec, key=lambda r: prec[r], reverse=True)   # best precision first
+    star = {frozenset((p["a"], p["b"])): _p_stars(p["p_holm"]) for p in pairs}
+    ab = _ABLATION_RULE_ABBR
+    cols = order[:-1]
+    lines = ["Holm-adj. pairwise McNemar",
+             "     " + "".join(f"{ab.get(c, c):>5}" for c in cols)]
+    for ri, r in enumerate(order[1:], start=1):
+        cells = "".join(f"{star.get(frozenset((r, c)), ''):>5}" for c in order[:ri])
+        lines.append(f"{ab.get(r, r):>4} {cells}")
+    lines.append("*** p<.001  ** p<.01  * p<.05")
+    return "\n".join(lines)
+
+
+def _wilcoxon_rankbiserial(x, y):
+    """Wilcoxon signed-rank p + matched-pairs rank-biserial effect size."""
+    from scipy.stats import rankdata, wilcoxon
+    d = np.asarray(x, float) - np.asarray(y, float)
+    d = d[d != 0]
+    n = len(d)
+    if n < 1:
+        return np.nan, np.nan, 0
+    r = rankdata(np.abs(d))
+    r_plus = float(np.sum(r[d > 0])); r_minus = float(np.sum(r[d < 0]))
+    total = r_plus + r_minus
+    rb = (r_plus - r_minus) / total if total else np.nan
+    try:
+        p = float(wilcoxon(x, y, zero_method="wilcox").pvalue)
+    except Exception:
+        p = np.nan
+    return float(rb), p, n
+
+
+def _dunn(groups):
+    """Dunn's post-hoc (tie-corrected z, uncorrected two-sided p) for k groups."""
+    from scipy.stats import rankdata, norm
+    data = np.concatenate([np.asarray(g, float) for g in groups])
+    N = len(data)
+    ranks = rankdata(data)
+    _, counts = np.unique(data, return_counts=True)
+    ties = float(np.sum(counts ** 3 - counts))
+    sigma2 = (N * (N + 1) / 12.0) - ties / (12.0 * (N - 1))
+    sizes, meanranks, idx = [], [], 0
+    for g in groups:
+        m = len(g)
+        meanranks.append(float(np.mean(ranks[idx:idx + m])))
+        sizes.append(m); idx += m
+    out = []
+    for i in range(len(groups)):
+        for j in range(i + 1, len(groups)):
+            se = np.sqrt(sigma2 * (1.0 / sizes[i] + 1.0 / sizes[j]))
+            z = (meanranks[i] - meanranks[j]) / se if se else np.nan
+            out.append((i, j, float(z), float(2 * norm.sf(abs(z)))))
+    return out
+
+
+def _jonckheere(groups):
+    """Jonckheere-Terpstra trend test across ordered groups (normal approx)."""
+    from scipy.stats import norm
+    sizes = [len(g) for g in groups]
+    N = sum(sizes)
+    JT = 0.0
+    for i in range(len(groups)):
+        gi = np.asarray(groups[i], float)
+        for j in range(i + 1, len(groups)):
+            gj = np.asarray(groups[j], float)
+            for a in gi:
+                JT += float(np.sum(gj > a) + 0.5 * np.sum(gj == a))
+    mean = (N ** 2 - sum(s ** 2 for s in sizes)) / 4.0
+    var = (N ** 2 * (2 * N + 3)
+           - sum(s ** 2 * (2 * s + 3) for s in sizes)) / 72.0
+    z = (JT - mean) / np.sqrt(var) if var > 0 else np.nan
+    return float(JT), float(z), float(2 * norm.sf(abs(z)))
+
+
+def _consensus_perm_test(R, n_perm=10000, seed=42):
+    """Permutation test: do tools reach the crystal cluster on the SAME
+    complexes more than if their per-complex successes were independent?
+    Each tool's reach indicator is shuffled across complexes independently
+    (marginals preserved), breaking only the co-occurrence structure.
+    Returns observed vs expected counts of {0,1,..,k tools} and p-values."""
+    R = np.asarray(R, int)
+    n, k = R.shape
+    rng = np.random.default_rng(seed)
+
+    def dist(mat):
+        s = mat.sum(axis=1)
+        return np.array([np.sum(s == c) for c in range(k + 1)], float)
+
+    obs = dist(R)
+    cols = [R[:, j].copy() for j in range(k)]
+    null = np.zeros((n_perm, k + 1))
+    for b in range(n_perm):
+        perm = np.column_stack([rng.permutation(c) for c in cols])
+        null[b] = dist(perm)
+    exp = null.mean(axis=0)
+    mask = exp > 0
+
+    def stat(o):
+        return float(np.sum((o[mask] - exp[mask]) ** 2 / exp[mask]))
+
+    obs_stat = stat(obs)
+    null_stat = np.array([stat(null[b]) for b in range(n_perm)])
+    p_omni = (np.sum(null_stat >= obs_stat) + 1) / (n_perm + 1)
+    allk_null = null[:, k]
+    dev = abs(obs[k] - allk_null.mean())
+    p_allk = (np.sum(np.abs(allk_null - allk_null.mean()) >= dev) + 1) / (n_perm + 1)
+    return {"observed": obs.tolist(), "expected": exp.round(2).tolist(),
+            "chi2_like_stat": round(obs_stat, 2), "p_omnibus": float(p_omni),
+            "all_tools_obs": int(obs[k]), "all_tools_exp": round(float(allk_null.mean()), 2),
+            "all_tools_p": float(p_allk), "n_perm": n_perm}
+
+
+def _homogeneity_stats(comp, reach_R, internal, internal_prot, rad_by_n,
+                       nt_radius_pairs, tools, tool_disp):
+    """Compute every recommended test for crystal_cluster_homogeneity.png.
+
+    Panel A (paired counts, k=3)     -> Friedman + Wilcoxon post-hoc (Holm);
+                                        reaches (paired binary) -> Cochran's Q + McNemar.
+    Panel B (consensus co-occurrence)-> independence-null permutation test.
+    Panel C (tightness, unpaired)    -> Kruskal-Wallis + Dunn (Holm);
+                                        + common-subset Friedman sensitivity check.
+    Panel D (radius vs #tools, ord.) -> Jonckheere-Terpstra trend + Spearman.
+    """
+    from scipy.stats import friedmanchisquare, kruskal, spearmanr
+    T = list(tools)
+    disp = [tool_disp.get(t, t) for t in T]
+    rep = {}
+
+    # ---- Panel A: counts of poses in the crystal cluster (fully paired) ----
+    cols = [comp[t].to_numpy(float) for t in T]
+    chi2A, pA = friedmanchisquare(*cols)
+    nA = len(cols[0]); kA = len(T)
+    W = float(chi2A) / (nA * (kA - 1)) if nA else np.nan       # Kendall's W
+    posthocA = []
+    for i in range(kA):
+        for j in range(i + 1, kA):
+            rb, p, npair = _wilcoxon_rankbiserial(cols[i], cols[j])
+            posthocA.append({"pair": f"{disp[i]} vs {disp[j]}", "rank_biserial": rb,
+                             "p_raw": p, "n_pairs": npair})
+    padj = _holm([h["p_raw"] for h in posthocA])
+    for h, pa in zip(posthocA, padj):
+        h["p_holm"] = float(pa)
+    rep["A_pose_counts"] = {
+        "test": "Friedman (paired, k=3)", "chi2": round(float(chi2A), 3),
+        "df": kA - 1, "p": float(pA), "kendall_w": round(W, 3), "n": nA,
+        "medians": {disp[i]: float(np.median(cols[i])) for i in range(kA)},
+        "posthoc_wilcoxon_holm": posthocA}
+
+    # ---- Panel A companion: "reaches" >=1 pose (paired binary) ----
+    Rmat = np.asarray(reach_R, int)
+    Q, pQ, dfQ = _cochran_q(Rmat)
+    posthocQ = []
+    for i in range(kA):
+        for j in range(i + 1, kA):
+            n10, n01, p = _mcnemar_exact(Rmat[:, i], Rmat[:, j])
+            posthocQ.append({"pair": f"{disp[i]} vs {disp[j]}",
+                             "disc_i_only": n10, "disc_j_only": n01, "p_raw": p})
+    padjQ = _holm([h["p_raw"] for h in posthocQ])
+    for h, pa in zip(posthocQ, padjQ):
+        h["p_holm"] = float(pa)
+    rep["A_reaches"] = {
+        "test": "Cochran's Q (paired binary, k=3)", "Q": round(float(Q), 3),
+        "df": dfQ, "p": float(pQ),
+        "reach_rate": {disp[i]: round(float(Rmat[:, i].mean()), 3) for i in range(kA)},
+        "posthoc_mcnemar_holm": posthocQ}
+
+    # ---- Panel B: consensus co-occurrence vs independence null ----
+    rep["B_consensus"] = {"test": "independence-null permutation", **
+                          _consensus_perm_test(Rmat)}
+
+    # ---- Panel C: internal tightness std (unpaired; informative missingness) ----
+    gC = [np.asarray(internal[t], float) for t in T]
+    if all(len(g) >= 1 for g in gC) and sum(len(g) for g in gC) > len(T):
+        Hc, pC = kruskal(*gC)
+        NC = sum(len(g) for g in gC)
+        eps2 = (float(Hc) - kA + 1) / (NC - kA) if NC > kA else np.nan
+        posthocC = []
+        for (i, j, z, p) in _dunn(gC):
+            posthocC.append({"pair": f"{disp[i]} vs {disp[j]}", "z": round(z, 3),
+                             "p_raw": p})
+        padjC = _holm([h["p_raw"] for h in posthocC])
+        for h, pa in zip(posthocC, padjC):
+            h["p_holm"] = float(pa)
+        # sensitivity: Friedman on complexes present for all three tools
+        common = set.intersection(*[set(internal_prot[t]) for t in T]) if all(
+            internal_prot[t] for t in T) else set()
+        sens = None
+        if len(common) >= 3:
+            common = sorted(common)
+            fcols = [np.array([internal_prot[t][pr] for pr in common]) for t in T]
+            chi2s, ps = friedmanchisquare(*fcols)
+            sens = {"n_common": len(common), "chi2": round(float(chi2s), 3),
+                    "p": float(ps), "note": "paired subset present for all 3 tools"}
+        rep["C_tightness"] = {
+            "test": "Kruskal-Wallis (independent, unbalanced)",
+            "H": round(float(Hc), 3), "df": kA - 1, "p": float(pC),
+            "epsilon_sq": round(float(eps2), 3),
+            "n": {disp[i]: int(len(gC[i])) for i in range(kA)},
+            "medians": {disp[i]: (round(float(np.median(gC[i])), 3)
+                        if len(gC[i]) else None) for i in range(kA)},
+            "posthoc_dunn_holm": posthocC,
+            "note": "n differs per tool because a >=2-pose in-cluster count is "
+                    "required for a std; that missingness is informative "
+                    "(a tool is absent when it places <2 poses). A complex-random-"
+                    "effect mixed model would be more rigorous (needs statsmodels).",
+            "sensitivity_friedman_common_subset": sens}
+
+    # ---- Panel D: crystal-cluster radius vs number of contributing tools ----
+    gD = [np.asarray(rad_by_n[k], float) for k in (1, 2, 3)]
+    gD = [g[~np.isnan(g)] for g in gD]
+    if all(len(g) >= 1 for g in gD):
+        JT, zD, pD = _jonckheere(gD)
+        nt = np.array([p[0] for p in nt_radius_pairs], float)
+        rr = np.array([p[1] for p in nt_radius_pairs], float)
+        m = ~np.isnan(rr)
+        rho, prho = spearmanr(nt[m], rr[m]) if m.sum() > 2 else (np.nan, np.nan)
+        rep["D_radius_trend"] = {
+            "test": "Jonckheere-Terpstra (ordered 1<2<3 tools)",
+            "JT": round(JT, 1), "z": round(zD, 3), "p": float(pD),
+            "spearman_rho": round(float(rho), 3), "spearman_p": float(prho),
+            "n": {f"{k}_tools": int(len(gD[k - 1])) for k in (1, 2, 3)},
+            "medians": {f"{k}_tools": round(float(np.median(gD[k - 1])), 3)
+                        for k in (1, 2, 3)},
+            "caveat": "radius = max(pose->center) grows mechanically with the "
+                      "number of poses in the cluster, and more-consensus "
+                      "clusters tend to hold more poses; treat the trend as "
+                      "confounded unless controlled for pose count."}
+    return rep
+
+
+def _print_homogeneity_stats(rep):
+    def line(s=""):
+        print("    " + s)
+    print("\n  ── crystal_cluster_homogeneity.png statistics ──")
+    a = rep.get("A_pose_counts")
+    if a:
+        line(f"(A) pose counts | Friedman chi2={a['chi2']} df={a['df']} "
+             f"p={_fmt_p(a['p'])} {_p_stars(a['p'])}  Kendall W={a['kendall_w']}")
+        for h in a["posthoc_wilcoxon_holm"]:
+            line(f"      {h['pair']:<28} rank-biserial r={h['rank_biserial']:+.3f} "
+                 f"p_Holm={_fmt_p(h['p_holm'])} {_p_stars(h['p_holm'])}")
+    q = rep.get("A_reaches")
+    if q:
+        line(f"(A) reaches>=1  | Cochran's Q={q['Q']} df={q['df']} "
+             f"p={_fmt_p(q['p'])} {_p_stars(q['p'])}  rates={q['reach_rate']}")
+        for h in q["posthoc_mcnemar_holm"]:
+            line(f"      {h['pair']:<28} McNemar p_Holm={_fmt_p(h['p_holm'])} "
+                 f"{_p_stars(h['p_holm'])} (disc {h['disc_i_only']}/{h['disc_j_only']})")
+    b = rep.get("B_consensus")
+    if b:
+        line(f"(B) consensus   | perm vs independence: chi2-like={b['chi2_like_stat']} "
+             f"p={_fmt_p(b['p_omnibus'])} {_p_stars(b['p_omnibus'])}")
+        line(f"      all-3 tools observed={b['all_tools_obs']} vs "
+             f"expected={b['all_tools_exp']} (p={_fmt_p(b['all_tools_p'])})  "
+             f"obs={b['observed']} exp={b['expected']} [0,1,2,3 tools]")
+    c = rep.get("C_tightness")
+    if c:
+        line(f"(C) tightness   | Kruskal-Wallis H={c['H']} df={c['df']} "
+             f"p={_fmt_p(c['p'])} {_p_stars(c['p'])}  eps^2={c['epsilon_sq']} n={c['n']}")
+        for h in c["posthoc_dunn_holm"]:
+            line(f"      {h['pair']:<28} Dunn z={h['z']:+.2f} "
+                 f"p_Holm={_fmt_p(h['p_holm'])} {_p_stars(h['p_holm'])}")
+        s = c.get("sensitivity_friedman_common_subset")
+        if s:
+            line(f"      sensitivity Friedman (paired, n={s['n_common']}) "
+                 f"chi2={s['chi2']} p={_fmt_p(s['p'])}")
+    d = rep.get("D_radius_trend")
+    if d:
+        line(f"(D) radius trend| Jonckheere-Terpstra z={d['z']} p={_fmt_p(d['p'])} "
+             f"{_p_stars(d['p'])}  Spearman rho={d['spearman_rho']} "
+             f"(p={_fmt_p(d['spearman_p'])})  n={d['n']}")
+        line(f"      CAVEAT: {d['caveat']}")
+
+
+def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None,
+                                     stats=False):
     """How homogeneous is the crystal-closest cluster the tools land in?
 
     Four panels, all restricted to each tool's top-15 ranked poses (the scope used
@@ -2278,11 +2694,15 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None):
     reach = {t: float((comp[t] > 0).mean()) for t in T}
     n_tools_per = (comp > 0).sum(axis=1)
     ntool_counts = {k: int((n_tools_per == k).sum()) for k in (1, 2, 3)}
+    reach_R = (comp[T] > 0).astype(int).to_numpy()          # n x k reach indicator
     internal = {t: [] for t in T}
+    internal_prot = {t: {} for t in T}                       # keep protein identity
     for (_prot, t), g in cc.groupby(["protein", "tool"]):
         if len(g) >= 2:
             v = pd.to_numeric(g["centroid_dist"], errors="coerce").to_numpy()
-            internal[t].append(float(np.std(v)))
+            s = float(np.std(v))
+            internal[t].append(s)
+            internal_prot[t][_prot] = s
     radius = {}
     for r in ok:
         if not r.get("has_crystal"):
@@ -2293,11 +2713,32 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None):
         cp = min(pk, key=lambda p: _dist(p["center"], cr))
         radius[r["protein"]] = float(cp.get("radius", np.nan))
     rad_by_n = {k: [] for k in (1, 2, 3)}
+    nt_radius_pairs = []                     # (n_tools, radius) per complex for Spearman
     for prot in proteins:
         k = int(n_tools_per.get(prot, 0))
         rv = radius.get(prot, np.nan)
         if k in rad_by_n and rv == rv:
             rad_by_n[k].append(rv)
+        nt_radius_pairs.append((k, rv))
+
+    stats_rep = None
+    if stats:
+        try:
+            stats_rep = _homogeneity_stats(comp, reach_R, internal, internal_prot,
+                                           rad_by_n, nt_radius_pairs, T, _TOOL_DISPLAY)
+        except Exception as e:                                  # never break the figure
+            warnings.warn(f"homogeneity stats failed: {e}")
+            stats_rep = None
+
+    def _short(t):                              # AutoDock Vina -> AV, DiffDock -> DD
+        return "".join(w[0] for w in _TOOL_DISPLAY.get(t, t).split())
+
+    def _pair_stars(posthoc, key="p_holm"):
+        # "AV-DD *** | AV-EB *** | DD-EB **" from a post-hoc list
+        segs = []
+        for h, (i, j) in zip(posthoc, [(0, 1), (0, 2), (1, 2)]):
+            segs.append(f"{_short(T[i])}-{_short(T[j])} {_p_stars(h[key])}")
+        return "Holm post-hoc:  " + "  |  ".join(segs)
 
     rng = np.random.default_rng(42)
     tri_col = ["#C44E52", "#DD8452", "#55A868"]
@@ -2317,7 +2758,15 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None):
                  fontsize=8, color=TOOL_COLORS[t], fontweight="bold")
     axA.set_xticks([1, 2, 3]); axA.set_xticklabels([_TOOL_DISPLAY.get(t, t) for t in T])
     axA.set_ylabel("Poses a tool places in the crystal cluster\n(top-15 scope)")
-    axA.set_ylim(-0.5, 18); axA.set_title("Pose contribution per tool")
+    axA.set_ylim(-0.5, 18)
+    titleA = "Pose contribution per tool"
+    if stats_rep and stats_rep.get("A_pose_counts"):
+        a = stats_rep["A_pose_counts"]
+        titleA += (f"\nFriedman χ²={a['chi2']:.1f}, p={_fmt_p(a['p'])}, "
+                   f"Kendall W={a['kendall_w']:.2f}")
+        axA.text(2, 17.0, _pair_stars(a["posthoc_wilcoxon_holm"]), ha="center",
+                 va="center", fontsize=7.6, family="monospace", color="0.25")
+    axA.set_title(titleA)
     axA.grid(axis="y", alpha=0.25); axA.set_axisbelow(True)
 
     xs = [1, 2, 3]
@@ -2330,7 +2779,11 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None):
     axB.set_ylim(0, (max(fr) if fr else 1) + 0.12)
     axB.set_ylabel(f"Fraction of complexes (n={n_total})")
     axB.set_xlabel("Number of tools contributing ≥1 pose")
-    axB.set_title("Consensus richness of the crystal cluster")
+    titleB = "Consensus richness of the crystal cluster"
+    if stats_rep and stats_rep.get("B_consensus"):
+        b = stats_rep["B_consensus"]
+        titleB += f"\nvs independence null: permutation p={_fmt_p(b['p_omnibus'])}"
+    axB.set_title(titleB)
     axB.grid(axis="y", alpha=0.25); axB.set_axisbelow(True)
 
     bp = axC.boxplot([internal[t] if internal[t] else [np.nan] for t in T],
@@ -2347,8 +2800,20 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None):
                  color=TOOL_COLORS[t])
     axC.set_xticks([1, 2, 3]); axC.set_xticklabels([_TOOL_DISPLAY.get(t, t) for t in T])
     axC.set_ylabel("Std. of a tool's pose distances to the\ncrystal centroid, within the cluster (Å)")
-    axC.set_title("Internal tightness of each tool's own poses")
-    axC.set_ylim(-0.15, None)
+    titleC = "Internal tightness of each tool's own poses"
+    _c_top = None
+    if stats_rep and stats_rep.get("C_tightness"):
+        c = stats_rep["C_tightness"]
+        titleC += (f"\nKruskal–Wallis H={c['H']:.1f}, p={_fmt_p(c['p'])}, "
+                   f"ε²={c['epsilon_sq']:.2f}")
+        _all = [v for t in T for v in internal[t]]
+        _c_top = (max(_all) * 1.16 if _all else None)
+        if _c_top:
+            axC.text(2, max(_all) * 1.08, _pair_stars(c["posthoc_dunn_holm"]),
+                     ha="center", va="center", fontsize=7.6, family="monospace",
+                     color="0.25")
+    axC.set_title(titleC)
+    axC.set_ylim(-0.15, _c_top)
     axC.grid(axis="y", alpha=0.25); axC.set_axisbelow(True)
 
     dataD = [rad_by_n[k] if rad_by_n[k] else [np.nan] for k in xs]
@@ -2367,17 +2832,30 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None):
     axD.set_xticks(xs); axD.set_xticklabels(["1 tool", "2 tools", "all 3 tools"])
     axD.set_ylabel("Crystal-cluster radius (max pose->center, Å)")
     axD.set_xlabel("Number of tools contributing to the crystal cluster")
-    axD.set_title("Spatial spread vs consensus richness")
+    titleD = "Spatial spread vs consensus richness"
+    if stats_rep and stats_rep.get("D_radius_trend"):
+        dd = stats_rep["D_radius_trend"]
+        titleD += (f"\nJonckheere–Terpstra trend p={_fmt_p(dd['p'])}; "
+                   f"ρ={dd['spearman_rho']:+.2f}")
+    axD.set_title(titleD)
     axD.grid(axis="y", alpha=0.25); axD.set_axisbelow(True)
 
     _label_panels(axes)
-    fig.suptitle("How homogeneous is the crystal-closest cluster?  "
-                 "Composition, internal tightness and spatial spread\n"
-                 f"n={n_total} complexes; top-15 poses per tool; "
-                 f"{_equibind_rank_note(eq_variant)}", fontsize=13)
+    suptitle = ("How homogeneous is the crystal-closest cluster?  "
+                "Composition, internal tightness and spatial spread\n"
+                f"n={n_total} complexes; top-15 poses per tool; "
+                f"{_equibind_rank_note(eq_variant)}")
+    if stats_rep:
+        suptitle += "   ·   stars: * p<.05  ** p<.01  *** p<.001 (Holm)"
+    fig.suptitle(suptitle, fontsize=13)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     p = out_dir / "crystal_cluster_homogeneity.png"
     fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    if stats_rep:
+        (out_dir / "crystal_cluster_homogeneity_stats.json").write_text(
+            json.dumps(stats_rep, indent=2, default=str))
+        _print_homogeneity_stats(stats_rep)
+        print(f"  Stats JSON: {out_dir / 'crystal_cluster_homogeneity_stats.json'}")
     return p
 
 
@@ -2559,7 +3037,7 @@ def _fig_cluster_quality(df, ablation, ranking_rho, out_dir, match_thr,
         if oracle is not None:
             a.axvline(oracle, color="k", ls="--", lw=1.3,
                       label=f"oracle ceiling {oracle:.0%}")
-            a.legend(fontsize=8, loc="lower right")
+            a.legend(fontsize=8, loc="upper left", framealpha=0.92)
         a.set_xlim(0, 1.08)
     else:
         a.text(0.5, 0.5, "no data", ha="center", va="center",
@@ -2567,7 +3045,22 @@ def _fig_cluster_quality(df, ablation, ranking_rho, out_dir, match_thr,
     ttl = f"Precision@1 — rank-1 pocket within {match_thr:g} Å of crystal (default = consensus)"
     if ranking_rho is not None:
         ttl += f"\nranking enrichment Spearman ρ={ranking_rho:.2f}"
+    st = _ablation_paired_stats(df)
+    if st:
+        # omnibus in the title; the full pairwise family (incl. consensus vs size)
+        # is the star matrix below, and the console/summary.json carry the counts.
+        ttl += (f"\nCochran Q={st['cochran_q']:.1f}, p={_fmt_p(st['p_omnibus'])} "
+                f"(paired, k={st['k']}, n={st['n_omnibus']})")
     a.set_title(ttl)
+    # complete Holm-adjusted pairwise McNemar family as a lower-triangular star matrix
+    if bars and st:
+        mtxt = _ablation_pairwise_matrix_text(st)
+        if mtxt:
+            a.text(0.985, 0.03, mtxt, transform=a.transAxes, ha="right", va="bottom",
+                   family="monospace", fontsize=6.0, color="0.15", zorder=5,
+                   linespacing=1.25,
+                   bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
+                             edgecolor="0.75", alpha=0.92))
     a.set_xlabel("Precision@1 (fraction of complexes)")
     a.grid(axis="x", alpha=0.25); a.set_axisbelow(True)
 
@@ -2954,6 +3447,12 @@ def main(argv=None) -> int:
                     default="PoseBusters_Benchmark_Analysis/ligand_protein_features.csv",
                     help="Per-ligand RDKit descriptors (from PoseBusters_DataSet_Analysis.ipynb).")
     ap.add_argument("--no-plot", action="store_true")
+    ap.add_argument("--stats", action="store_true",
+                    help="Compute + annotate + export statistical tests for the "
+                         "crystal_cluster_homogeneity figure (Friedman/Cochran's Q "
+                         "for A, permutation for B, Kruskal-Wallis/Dunn for C, "
+                         "Jonckheere-Terpstra for D); writes "
+                         "crystal_cluster_homogeneity_stats.json.")
     ap.add_argument("--force", action="store_true",
                     help="Recompute the per-complex analysis even if a matching "
                          "cache (analysis_cache.pkl) exists for the current inputs.")
@@ -3356,6 +3855,22 @@ def main(argv=None) -> int:
           + (f"ρ={ranking_rho:.3f}  (positive = better-ranked clusters are nearer the crystal)"
              if ranking_rho is not None else "n/a (too few clusters)"))
 
+    # paired-complex significance of the ablation (same complexes, k rules):
+    #   Cochran's Q omnibus + Holm-adjusted pairwise exact McNemar family.
+    ablation_sig = _ablation_paired_stats(dc)
+    if ablation_sig is not None:
+        mc = ablation_sig["consensus_vs_size_mcnemar"]
+        print(f"  RANKING ABLATION SIGNIFICANCE (paired, n={ablation_sig['n_omnibus']}, "
+              f"k={ablation_sig['k']} rules): Cochran Q={ablation_sig['cochran_q']:.2f} "
+              f"p={_fmt_p(ablation_sig['p_omnibus'])}")
+        if mc:
+            print(f"    consensus vs size: {mc['consensus_wins']} wins / {mc['size_wins']} "
+                  f"losses, McNemar p={_fmt_p(mc['p_raw'])} (Holm p={_fmt_p(mc['p_holm'])})")
+        print("    pairwise McNemar (Holm-adjusted, a=better rule):")
+        for pr in ablation_sig.get("pairwise_mcnemar_holm", []):
+            print(f"      {pr['a']:>10} vs {pr['b']:<10} {pr['a_wins']:>3}↑/{pr['b_wins']:<3}↓"
+                  f"  p={_fmt_p(pr['p_raw'])}  Holm={_fmt_p(pr['p_holm'])} {_p_stars(pr['p_holm'])}")
+
     summary = {
         "n_complexes": int(n), "match_thr_A": args.match_thr,
         "equibind_variant": eq_variant,
@@ -3376,6 +3891,7 @@ def main(argv=None) -> int:
             "mean_ari_primary_vs_kmedoids": _mean(df_complex, "ari_primary_vs_kmedoids"),
         },
         "ranking_ablation": ablation,
+        "ranking_ablation_significance": ablation_sig,
         "ranking_enrichment_spearman": ranking_rho,
         "crystal_closest_cluster_purity": {
             "mean_purity_centroid": _mean(dc, "correct_cluster_purity_centroid"),
@@ -3436,7 +3952,8 @@ def main(argv=None) -> int:
                 _fig_rank1_cluster_matrix(df_rank, out_dir, eq_variant),
                 _fig_topN_crystal_matrix(df_rank, out_dir, eq_variant),
                 _fig_topN_crystal_reach_curves(df_rank, out_dir, eq_variant),
-                _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant),
+                _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant,
+                                                 stats=args.stats),
                 _fig_rank_in_correct(df_complex, args.match_thr, out_dir, eq_variant),
                 _fig_near_native_composition(ok, args.match_thr, out_dir, eq_variant),
                 _fig_ensembles(df_complex, args.match_thr, out_dir),

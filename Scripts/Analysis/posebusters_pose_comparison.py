@@ -1593,7 +1593,7 @@ def _select_best_equibind(df: pd.DataFrame) -> tuple[pd.DataFrame, str | None]:
     return df[keep].reset_index(drop=True), best_variant
 
 
-def _select_best_diffdock(df: pd.DataFrame) -> tuple[pd.DataFrame, str | None]:
+def _select_best_diffdock(df: pd.DataFrame, forced: str | None = None) -> tuple[pd.DataFrame, str | None]:
     """Keep non-DiffDock methods plus only the single best DiffDock variant.
 
     "Best" = the DiffDock optimizer variant (diffdock / diffdock_smina /
@@ -1608,13 +1608,19 @@ def _select_best_diffdock(df: pd.DataFrame) -> tuple[pd.DataFrame, str | None]:
     if not dd_mask.any():
         return df, None
 
-    oracle_sum = aggregate_oracle(df)
-    col = _variant_rank_col(oracle_sum)
-    dd_keys = [m for m in oracle_sum.index if str(m).startswith("diffdock")]
-    scores = (oracle_sum.loc[dd_keys, col].astype(float).dropna()
-              if col else pd.Series(dtype=float))
-    best_variant = (str(scores.idxmax()) if not scores.empty
-                    else sorted(methods[dd_mask].unique())[0])
+    present = sorted(methods[dd_mask].unique())
+    if forced and forced in present:
+        best_variant = forced
+    else:
+        if forced:
+            print(f"  [collapse-diffdock-variant] {forced!r} not present among "
+                  f"{present} — falling back to oracle ranking.")
+        oracle_sum = aggregate_oracle(df)
+        col = _variant_rank_col(oracle_sum)
+        dd_keys = [m for m in oracle_sum.index if str(m).startswith("diffdock")]
+        scores = (oracle_sum.loc[dd_keys, col].astype(float).dropna()
+                  if col else pd.Series(dtype=float))
+        best_variant = (str(scores.idxmax()) if not scores.empty else present[0])
 
     keep = (~dd_mask) | (methods == best_variant)
     out = df[keep].reset_index(drop=True)
@@ -2535,7 +2541,7 @@ def aggregate_optimization_raw_vs_best(df: pd.DataFrame, thr: float = 2.0) -> pd
     specs = [
         ("autodock", "final\n(rank-1)",           False, "autodock",                _rank1),
         ("diffdock", "raw\n(rank-1)",             False, "diffdock",                _rank1),
-        ("diffdock", "smina-opt\n(rank-1)",       True,  "diffdock_smina",          _rank1),
+        ("diffdock", "gnina-opt\n(rank-1)",       True,  "diffdock_gnina",          _rank1),
         ("equibind", "raw\n(first pose)",         False, "equibind_unguided_raw",   _first_pose),
         ("equibind", "gnina-opt\n(gnina-ranked)", True,  "equibind_unguided_gnina", _gnina_ranked),
     ]
@@ -2714,7 +2720,7 @@ def _gnina_affinity_rank(sub: pd.DataFrame) -> pd.Series:
 _RANK1_TOPN_SPECS = [
     ("autodock", "AutoDock Vina",        "autodock",                "confidence rank",     "native"),
     ("diffdock", "DiffDock (raw)",       "diffdock",                "confidence rank",     "native"),
-    ("diffdock", "DiffDock (smina-opt)", "diffdock_smina",          "confidence rank",     "native"),
+    ("diffdock", "DiffDock (gnina-opt)", "diffdock_gnina",          "confidence rank",     "native"),
     ("equibind", "EquiBind (raw)",       "equibind_unguided_raw",   "generation order",    "generation"),
     ("equibind", "EquiBind (gnina-opt)", "equibind_unguided_gnina", "gnina-affinity rank", "gnina"),
 ]
@@ -2885,7 +2891,7 @@ def plot_rank1_vs_topn(agg: pd.DataFrame, out: Path,
 _RANK1_TOPN_COLORS = {
     "AutoDock Vina":        "#1f77b4",
     "DiffDock (raw)":       "#ff7f0e",
-    "DiffDock (smina-opt)": "#d95f02",
+    "DiffDock (gnina-opt)": "#d95f02",
     "EquiBind (raw)":       "#2ca02c",
     "EquiBind (gnina-opt)": "#1b7837",
 }
@@ -4825,6 +4831,379 @@ def plot_form_vs_placement_depth_filmstrip(
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
 
 
+# ── Honest statistics companion to the _pbvalid depth filmstrip ──────────────
+# The filmstrip is a qualitative read of three confounds that its scatter cannot
+# quantify on its own, so this ships the numbers alongside it:
+#   1. COVERAGE — each per-tool cell is a DIFFERENT set of complexes (a tool only
+#      appears where it produced a valid on-receptor pose), so raw cross-tool
+#      medians are not apples-to-apples. We report valid-complex coverage and run
+#      the cross-tool comparison PAIRED on the complexes all three tools cover.
+#   2. r-COUPLING — r = form²/in-place² is inflated by low placement error, so a
+#      high median r ("form-limited") can just mean placement is solved; we report
+#      ABSOLUTE best-fit (form) RMSD as the primary form metric so r is never used
+#      to rank tools on conformation.
+#   3. POSE DIVERSITY — a flat depth profile can be genuine ranking robustness OR
+#      near-duplicate poses (low sample diversity); the within-complex spread of a
+#      tool's top-d in-place RMSD tells the two apart.
+# Cohorts are reconstructed identically to the _pbvalid filmstrip (top-d PB-valid,
+# RMSD gate removed, off-receptor centroid-trimmed). Crystal-free sets → {} (no-op).
+_FAM_STATS = [("autodock", "AutoDock", "#1f77b4"),
+              ("diffdock", "DiffDock", "#ff7f0e"),
+              ("equibind", "EquiBind", "#2ca02c")]
+
+
+def _holm(pvals: list[float]) -> list[float]:
+    """Holm–Bonferroni step-down adjusted p-values (input order preserved)."""
+    m = len(pvals)
+    order = sorted(range(m), key=lambda i: pvals[i])
+    adj = [0.0] * m
+    run = 0.0
+    for rank, idx in enumerate(order):
+        run = max(run, (m - rank) * pvals[idx])
+        adj[idx] = min(1.0, run)
+    return adj
+
+
+def _cliffs_delta(a, b) -> float:
+    """Cliff's δ effect size: P(a>b) − P(a<b) ∈ [−1, 1]."""
+    a = np.asarray(a, float); b = np.asarray(b, float)
+    if a.size == 0 or b.size == 0:
+        return float("nan")
+    gt = sum(np.sum(a > y) for y in b)
+    lt = sum(np.sum(a < y) for y in b)
+    return float((gt - lt) / (a.size * b.size))
+
+
+def _sig_star(p: float) -> str:
+    if p != p:            # NaN
+        return ""
+    return "***" if p < 1e-3 else "**" if p < 1e-2 else "*" if p < 0.05 else "ns"
+
+
+def _boot_centroid_drift(sub1: pd.DataFrame, sub5: pd.DataFrame,
+                         b_iter: int = 2000, seed: int = 0) -> dict:
+    """Cluster (receptor) bootstrap 95 % CI on the top-1 → top-d centroid drift
+    (Δmedian in-place, Δmedian form). Resamples RECEPTORS with replacement — the
+    unit of independence — not poses, so the CI respects the pseudoreplication of
+    many poses per complex."""
+    def bank(sub):
+        return {r: (g["inplace"].to_numpy(float), g["form"].to_numpy(float))
+                for r, g in sub.groupby("protein")}
+    b1, b5 = bank(sub1), bank(sub5)
+    recs = np.array(sorted(set(b1) | set(b5)))
+    if recs.size == 0:
+        nan = float("nan")
+        return dict(dx=nan, dy=nan, dx_ci=[nan, nan], dy_ci=[nan, nan])
+    rng = np.random.default_rng(seed)
+    dxs, dys = [], []
+    for _ in range(b_iter):
+        pick = rng.choice(recs, size=recs.size, replace=True)
+        p1 = [r for r in pick if r in b1]
+        p5 = [r for r in pick if r in b5]
+        if not p1 or not p5:
+            continue
+        ip1 = np.concatenate([b1[r][0] for r in p1]); fm1 = np.concatenate([b1[r][1] for r in p1])
+        ip5 = np.concatenate([b5[r][0] for r in p5]); fm5 = np.concatenate([b5[r][1] for r in p5])
+        dxs.append(np.median(ip5) - np.median(ip1))
+        dys.append(np.median(fm5) - np.median(fm1))
+    dx = float(sub5["inplace"].median() - sub1["inplace"].median())
+    dy = float(sub5["form"].median() - sub1["form"].median())
+    return dict(dx=dx, dy=dy,
+                dx_ci=[float(np.percentile(dxs, 2.5)), float(np.percentile(dxs, 97.5))],
+                dy_ci=[float(np.percentile(dys, 2.5)), float(np.percentile(dys, 97.5))])
+
+
+def _filmstrip_cohorts(df: pd.DataFrame, depths, centroid_max: float) -> dict:
+    """The exact cohorts behind the _pbvalid filmstrip: PB-valid poses within each
+    method's top-d (RMSD gate removed), off-receptor (centroid > ``centroid_max``)
+    trimmed, with ``fam``/``r`` columns added. ``eff_rank`` is carried for banding."""
+    out = {}
+    for d in sorted({int(x) for x in depths}):
+        c = _form_components(_valid_topd_poses(df, d, None)).dropna(subset=["form", "inplace"])
+        if "centroid_dist" in c.columns:
+            c = c[c["centroid_dist"].le(centroid_max)]
+        c = c.copy()
+        c["fam"] = c["method"].map(_fam_key)
+        c["r"] = (c["form"] ** 2 / c["inplace"] ** 2).clip(lower=0, upper=1)
+        out[d] = c
+    return out
+
+
+def aggregate_filmstrip_statistics(df: pd.DataFrame, depths=(1, 3, 5),
+                                   centroid_max: float = FAR_FROM_RECEPTOR_CENTROID_A,
+                                   form_ok: float = FORM_OK_KABSCH_A) -> dict:
+    """Statistics behind the _pbvalid depth filmstrip. Returns a dict of tidy
+    DataFrames (``{}`` for crystal-free sets, or if SciPy is unavailable):
+
+      per_tool_depth   — one row per (tool, depth): cumulative in-place & form
+                         median/IQR, mechanism composition (%), median r, and
+                         valid-complex COVERAGE of the benchmark universe.
+      within_tool_trend— one row per (tool, metric∈{in-place, form}): the disjoint
+                         rank-band medians (r1 / r2-3 / r4-5), a pose-level Spearman
+                         rank-vs-value trend, the within-complex PAIRED Friedman
+                         (the clustering-robust depth test), and the top-1→top-d
+                         centroid drift with a receptor-bootstrap 95 % CI.
+      crosstool_paired — one row per (depth, metric∈{in-place, form, r}): the tools
+                         compared on the COMMON complexes only (Friedman + Wilcoxon
+                         signed-rank post-hoc, Holm-adjusted, Cliff's δ).
+      pose_diversity   — one row per tool at the deepest depth: within-complex spread
+                         of in-place RMSD (mode-collapse vs genuine sample diversity).
+    """
+    try:
+        from scipy import stats as ss
+    except Exception as e:  # pragma: no cover
+        print(f"  [filmstrip-stats] SciPy unavailable ({e}); skipping companion stats.")
+        return {}
+    depths = sorted({int(x) for x in depths})
+    cohorts = _filmstrip_cohorts(df, depths, centroid_max)
+    if all(c.empty for c in cohorts.values()):
+        return {}  # crystal-free set — no in-place RMSD defined
+    dmax = depths[-1]
+    universe = int(df["protein"].nunique())
+    covsets = {(f, d): set(cohorts[d].loc[cohorts[d]["fam"] == f, "protein"])
+               for f, _, _ in _FAM_STATS for d in depths}
+
+    # ── per (tool, depth): cumulative composition, medians, coverage ──
+    rows = []
+    for f, lab, _ in _FAM_STATS:
+        for d in depths:
+            sub = cohorts[d][cohorts[d]["fam"] == f]
+            if sub.empty:
+                continue
+            mech = _mechanism_region(sub).astype(str)
+            ncplx = int(sub["protein"].nunique())
+            rows.append({
+                "tool": lab, "depth": d, "n_poses": int(len(sub)),
+                "n_valid_complexes": ncplx, "universe_complexes": universe,
+                "coverage_pct": round(100 * ncplx / universe, 1) if universe else float("nan"),
+                "inplace_median": round(float(sub["inplace"].median()), 3),
+                "inplace_q1": round(float(sub["inplace"].quantile(0.25)), 3),
+                "inplace_q3": round(float(sub["inplace"].quantile(0.75)), 3),
+                "form_median": round(float(sub["form"].median()), 3),
+                "form_q1": round(float(sub["form"].quantile(0.25)), 3),
+                "form_q3": round(float(sub["form"].quantile(0.75)), 3),
+                "median_r": round(float(sub["r"].median()), 3),
+                "pct_placement_limited": round(100 * float((mech == "placement-limited").mean()), 1),
+                "pct_mixed": round(100 * float((mech == "mixed").mean()), 1),
+                "pct_form_limited": round(100 * float((mech == "form-limited").mean()), 1),
+            })
+    per_tool_depth = pd.DataFrame(rows)
+
+    # ── within-tool depth trend (disjoint bands + paired Friedman + drift) ──
+    top = cohorts[dmax]; base = cohorts[depths[0]]
+    band_names = ["r1", "r2-3", "r4-5"]
+    rows2, rows_div = [], []
+    for f, lab, _ in _FAM_STATS:
+        s5 = top[top["fam"] == f].copy()
+        if s5.empty:
+            continue
+        er = pd.to_numeric(s5["eff_rank"], errors="coerce")
+        s5["band"] = np.where(er <= 1, "r1", np.where(er <= 3, "r2-3", "r4-5"))
+        s1 = base[base["fam"] == f]
+        drift = _boot_centroid_drift(s1, s5)
+        for metric in ("inplace", "form"):
+            bmed = {b: (float(s5.loc[s5["band"] == b, metric].median())
+                        if (s5["band"] == b).any() else float("nan")) for b in band_names}
+            sr = ss.spearmanr(er, pd.to_numeric(s5[metric], errors="coerce"), nan_policy="omit")
+            piv = s5.pivot_table(index="protein", columns="band", values=metric, aggfunc="median")
+            have = [b for b in band_names if b in piv.columns]
+            comp = piv[have].dropna() if len(have) == 3 else pd.DataFrame()
+            fr_chi = fr_p = float("nan"); n_comp = 0
+            if len(comp) >= 5:
+                fr = ss.friedmanchisquare(*[comp[b].values for b in have])
+                fr_chi, fr_p, n_comp = float(fr.statistic), float(fr.pvalue), int(len(comp))
+            dv, ci = ((drift["dx"], drift["dx_ci"]) if metric == "inplace"
+                      else (drift["dy"], drift["dy_ci"]))
+            rows2.append({
+                "tool": lab, "metric": metric,
+                "band_r1_median": round(bmed["r1"], 3),
+                "band_r2_3_median": round(bmed["r2-3"], 3),
+                "band_r4_5_median": round(bmed["r4-5"], 3),
+                "spearman_rank_rho": round(float(sr.statistic), 3),
+                "spearman_rank_p": float(sr.pvalue),
+                "friedman_chi2_paired": round(fr_chi, 2) if fr_chi == fr_chi else fr_chi,
+                "friedman_p_paired": fr_p, "friedman_n_complexes": n_comp,
+                f"drift_top{depths[0]}_to_top{dmax}": round(dv, 3),
+                "drift_ci_lo": round(ci[0], 3), "drift_ci_hi": round(ci[1], 3),
+            })
+        # within-complex pose spread at the deepest depth (mode-collapse check)
+        npose = s5.groupby("protein")["inplace"].size()
+        multi = npose[npose >= 2].index
+        sm = s5[s5["protein"].isin(multi)]
+        spread = sm.groupby("protein")["inplace"].agg(lambda x: x.max() - x.min())
+        sd = sm.groupby("protein")["inplace"].std()
+        rows_div.append({
+            "tool": lab, "depth": dmax,
+            "n_complexes_ge2_valid_poses": int(len(multi)),
+            "median_poses_per_complex": round(float(npose.median()), 1) if len(npose) else float("nan"),
+            "median_within_complex_inplace_spread": round(float(spread.median()), 2) if len(spread) else float("nan"),
+            "median_within_complex_inplace_sd": round(float(sd.median()), 2) if len(sd.dropna()) else float("nan"),
+        })
+    within_tool_trend = pd.DataFrame(rows2)
+    pose_diversity = pd.DataFrame(rows_div)
+
+    # ── cross-tool comparison on the COMMON complex set (paired) ──
+    pair_idx = [(0, 1), (0, 2), (1, 2)]
+    labels = [lab for _, lab, _ in _FAM_STATS]
+    rows3 = []
+    for d in depths:
+        coh = cohorts[d]
+        inter = set.intersection(*[covsets[(f, d)] for f, _, _ in _FAM_STATS])
+        for metric in ("inplace", "form", "r"):
+            wide = {}
+            for f, lab, _ in _FAM_STATS:
+                s = coh[(coh["fam"] == f) & (coh["protein"].isin(inter))]
+                wide[lab] = s.groupby("protein")[metric].median()
+            W = pd.DataFrame(wide)
+            W = (W.loc[sorted(inter)].dropna() if inter else W.dropna())
+            rec = {"depth": d, "metric": metric, "n_common": int(len(W))}
+            for lab in labels:
+                rec[f"median_{lab}"] = round(float(W[lab].median()), 3) if len(W) else float("nan")
+            if len(W) >= 5:
+                fr = ss.friedmanchisquare(*[W[lab].values for lab in labels])
+                rec["friedman_chi2"] = round(float(fr.statistic), 2)
+                rec["friedman_p"] = float(fr.pvalue)
+                praw = [ss.wilcoxon(W[labels[i]].values, W[labels[j]].values).pvalue
+                        for i, j in pair_idx]
+                for (i, j), ph in zip(pair_idx, _holm(praw)):
+                    rec[f"p_{labels[i]}_vs_{labels[j]}"] = ph
+                    rec[f"cliffs_{labels[i]}_vs_{labels[j]}"] = round(
+                        _cliffs_delta(W[labels[i]].values, W[labels[j]].values), 3)
+            rows3.append(rec)
+    crosstool_paired = pd.DataFrame(rows3)
+
+    return {"per_tool_depth": per_tool_depth, "within_tool_trend": within_tool_trend,
+            "crosstool_paired": crosstool_paired, "pose_diversity": pose_diversity}
+
+
+def plot_filmstrip_statistics(stats: dict, out: Path,
+                              depths=(1, 3, 5),
+                              form_ok: float = FORM_OK_KABSCH_A) -> None:
+    """Four-panel honest-statistics companion to the _pbvalid depth filmstrip.
+
+    (A) valid-complex COVERAGE per tool (why the per-cell medians are not on a
+        common set); (B) the depth drift of each tool's centroid in the
+        form-vs-placement plane (placement degrades, form far less); (C) the
+        cross-tool comparison PAIRED on the common complexes (tie at top-1, then
+        DiffDock separates by top-d); (D) within-complex pose spread — whether a
+        flat depth profile is ranking robustness or near-duplicate poses."""
+    if not stats:
+        return
+    ptd = stats["per_tool_depth"]; xt = stats["crosstool_paired"]; pv = stats["pose_diversity"]
+    depths = sorted({int(x) for x in depths})
+    d0, dmax = depths[0], depths[-1]
+    labels = [lab for _, lab, _ in _FAM_STATS]
+    colors = {lab: col for _, lab, col in _FAM_STATS}
+    present = [lab for lab in labels if (ptd["tool"] == lab).any()]
+    x = np.arange(len(present))
+
+    fig, axes = plt.subplots(2, 2, figsize=(13.5, 11))
+    (axA, axB), (axC, axD) = axes
+
+    # (A) coverage — grouped bars, top-d0 vs top-dmax
+    cov_depths = sorted({d0, dmax})
+    w = 0.8 / len(cov_depths)
+    for k, d in enumerate(cov_depths):
+        vals = [float(ptd[(ptd["tool"] == lab) & (ptd["depth"] == d)]["coverage_pct"].iloc[0])
+                if ((ptd["tool"] == lab) & (ptd["depth"] == d)).any() else 0.0 for lab in present]
+        ncx = [int(ptd[(ptd["tool"] == lab) & (ptd["depth"] == d)]["n_valid_complexes"].iloc[0])
+               if ((ptd["tool"] == lab) & (ptd["depth"] == d)).any() else 0 for lab in present]
+        bars = axA.bar(x + (k - (len(cov_depths) - 1) / 2) * w, vals, w,
+                       label=f"top-{d}", color=[colors[l] for l in present],
+                       alpha=0.55 + 0.45 * k, edgecolor="white")
+        for b, nc in zip(bars, ncx):
+            axA.text(b.get_x() + b.get_width() / 2, b.get_height() + 1, str(nc),
+                     ha="center", va="bottom", fontsize=8)
+    uni = int(ptd["universe_complexes"].iloc[0])
+    axA.set_ylim(0, 105); axA.set_xticks(x); axA.set_xticklabels(present)
+    axA.set_ylabel("Valid-complex coverage (% of benchmark)")
+    axA.set_title(f"(A) Coverage — each tool is scored on a different subset\n"
+                  f"bars labelled with n valid complexes (universe = {uni})", fontsize=10.5)
+    axA.legend(title="depth", fontsize=8, frameon=False, loc="upper right")
+    axA.grid(axis="y", alpha=0.3)
+
+    # (B) depth drift of the centroid in the form-vs-placement plane
+    lim = 0.0
+    for lab in present:
+        g = ptd[ptd["tool"] == lab]
+        lim = max(lim, g["inplace_median"].max(), g["form_median"].max())
+    lim = float(max(lim * 1.15, 2.0))
+    axB.plot([0, lim], [0, lim], ls="--", color="grey", lw=1)
+    for t in FORM_SHARE_BINS:
+        axB.plot([0, lim], [0, math.sqrt(t) * lim], ls=":", color="black", lw=0.7)
+    axB.axhline(form_ok, ls="--", color="crimson", lw=0.9)
+    for lab in present:
+        g = ptd[ptd["tool"] == lab].sort_values("depth")
+        xs, ys = g["inplace_median"].to_numpy(), g["form_median"].to_numpy()
+        axB.plot(xs, ys, "-", color=colors[lab], lw=1.4, alpha=0.8)
+        axB.scatter(xs[0], ys[0], s=44, color=colors[lab], zorder=5)      # top-d0 (dot)
+        axB.scatter(xs[1:-1], ys[1:-1], s=22, color=colors[lab], zorder=5)
+        axB.scatter(xs[-1], ys[-1], s=130, marker="X", color=colors[lab],
+                    edgecolors="white", linewidths=1.0, zorder=6, label=lab)
+    axB.set_xlim(0, lim); axB.set_ylim(0, lim)
+    axB.set_xlabel("In-place RMSD to crystal — median (Å)")
+    axB.set_ylabel("Form error — best-fit (Kabsch) RMSD, median (Å)")
+    axB.set_title("(B) Depth drift of each tool's centroid (top-1 → top-5)\n"
+                  "rightward = placement degrades · upward = form degrades", fontsize=10.5)
+    axB.legend(fontsize=8, frameon=False, loc="upper left",
+               title=f"● = top-{d0}  ✕ = top-{dmax}")
+    axB.grid(alpha=0.3)
+
+    # (C) cross-tool, PAIRED on the common complexes — median in-place
+    ci = xt[xt["metric"] == "inplace"]
+    w = 0.8 / len(cov_depths)
+    ymax = 0.0
+    for k, d in enumerate(cov_depths):
+        row = ci[ci["depth"] == d]
+        if row.empty:
+            continue
+        row = row.iloc[0]
+        vals = [float(row.get(f"median_{lab}", float("nan"))) for lab in present]
+        ymax = max([ymax] + [v for v in vals if v == v])
+        bars = axC.bar(x + (k - (len(cov_depths) - 1) / 2) * w, vals, w,
+                       color=[colors[l] for l in present], alpha=0.55 + 0.45 * k,
+                       edgecolor="white", label=f"top-{d} (n={int(row['n_common'])})")
+        pad = row.get(f"p_{present[0]}_vs_{present[1]}", float("nan")) if len(present) >= 2 else float("nan")
+        if pad == pad and len(present) >= 2:
+            xa = x[0] + (k - (len(cov_depths) - 1) / 2) * w
+            xb = x[1] + (k - (len(cov_depths) - 1) / 2) * w
+            yb = max(vals[0], vals[1]) + ymax * 0.06
+            axC.plot([xa, xa, xb, xb], [yb - ymax * 0.02, yb, yb, yb - ymax * 0.02],
+                     lw=0.9, color="0.3")
+            axC.text((xa + xb) / 2, yb, _sig_star(pad), ha="center", va="bottom", fontsize=9)
+    axC.set_xticks(x); axC.set_xticklabels(present)
+    axC.set_ylim(0, ymax * 1.3 if ymax else 1)
+    axC.set_ylabel("Median in-place RMSD on shared complexes (Å)")
+    _bracket = (f"bracket = {present[0]} vs {present[1]} (Wilcoxon, Holm)"
+                if len(present) >= 2 else "Wilcoxon signed-rank, Holm-adjusted")
+    axC.set_title(f"(C) Cross-tool PAIRED on common complexes\n{_bracket}", fontsize=10.5)
+    axC.legend(fontsize=8, frameon=False, loc="upper left")
+    axC.grid(axis="y", alpha=0.3)
+
+    # (D) within-complex pose spread — mode-collapse check
+    sp = [float(pv[pv["tool"] == lab]["median_within_complex_inplace_spread"].iloc[0])
+          if (pv["tool"] == lab).any() else 0.0 for lab in present]
+    sd = [float(pv[pv["tool"] == lab]["median_within_complex_inplace_sd"].iloc[0])
+          if (pv["tool"] == lab).any() else 0.0 for lab in present]
+    bars = axD.bar(x, sp, 0.6, color=[colors[l] for l in present], edgecolor="white")
+    for b, s in zip(bars, sd):
+        axD.text(b.get_x() + b.get_width() / 2, b.get_height(), f" SD {s:.2f}",
+                 ha="center", va="bottom", fontsize=8)
+    axD.set_xticks(x); axD.set_xticklabels(present)
+    axD.set_ylabel("Within-complex spread of in-place RMSD\nacross top-5 valid poses — median (Å)")
+    axD.set_title("(D) Pose diversity within a complex (top-5)\n"
+                  "small spread = near-duplicate poses (flat ≠ better ranking)", fontsize=10.5)
+    axD.grid(axis="y", alpha=0.3)
+
+    _label_panels(np.array([axA, axB, axC, axD]))
+    fig.suptitle(_vt("Honest statistics for the form-vs-placement depth filmstrip "
+                     "(PB-valid, gate removed)\ncoverage · paired cross-tool test · "
+                     "depth drift · pose diversity"),
+                 fontsize=13, fontweight="bold", y=1.0)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
+
+
 def plot_form_placement_clustering(df: pd.DataFrame, out: Path,
                                    rmsd_thr: float = NEAR_NATIVE_RMSD_A,
                                    selector=_near_native_valid_reps,
@@ -5607,7 +5986,7 @@ def plot_oracle_rank_distribution(dist: pd.DataFrame, top_n: int, out: Path) -> 
 _TOPK_RECOVERY_SPECS = [
     ("AutoDock Vina",        "autodock",                "native"),
     ("DiffDock (raw)",       "diffdock",                "native"),
-    ("DiffDock (smina-opt)", "diffdock_smina",          "native"),
+    ("DiffDock (gnina-opt)", "diffdock_gnina",          "native"),
     ("EquiBind (raw)",       "equibind_unguided_raw",   "generation"),
     ("EquiBind (gnina-opt)", "equibind_unguided_gnina", "gnina"),
 ]
@@ -6948,14 +7327,14 @@ def aggregate_pb_waterfall_raw_vs_best(df: pd.DataFrame, test_table: pd.DataFram
 
     dd_raw = _pb_cascade_from_rep(_rank1_rep(df, "diffdock"), test_table,
                                   test_cols, "raw pose", gate_rmsd=gate_rmsd)
-    dd_best = _pb_cascade_from_rep(_rank1_rep(df, "diffdock_smina"), test_table,
-                                   test_cols, "smina-refined pose", gate_rmsd=gate_rmsd)
+    dd_best = _pb_cascade_from_rep(_rank1_rep(df, "diffdock_gnina"), test_table,
+                                   test_cols, "gnina-refined pose", gate_rmsd=gate_rmsd)
     if dd_raw is not None:
         out["diffdock_raw"] = {**dd_raw, "role": "raw", "pair": "diffdock",
                                "title": "DiffDock — raw top-1 pose"}
     if dd_best is not None:
         e = {**dd_best, "role": "best", "pair": "diffdock",
-             "title": "DiffDock + smina — best variant, top-1 pose"}
+             "title": "DiffDock + gnina — best variant, top-1 pose"}
         if dd_raw is not None:
             e["vs"] = "diffdock_raw"
         out["diffdock_best"] = e
@@ -7510,6 +7889,11 @@ def main() -> None:
                          "oracle_pb_valid_and_rmsd2_%%) in all summaries/plots, relabelled "
                          "'DiffDock*'. Scores all three then picks the best, so it OVERRIDES "
                          "--diffdock-variant. AutoDock/EquiBind are unaffected.")
+    ap.add_argument("--collapse-diffdock-variant",
+                    choices=("diffdock", "diffdock_smina", "diffdock_gnina"), default=None,
+                    help="When --best-diffdock-only / --collapse-plots-only collapse DiffDock "
+                         "to a single 'DiffDock*' variant, FORCE it to be this one instead of "
+                         "the oracle-ranked best (does not affect the per-pose cache).")
     ap.add_argument("--best-variants-only", action="store_true",
                     help="Convenience umbrella: enable BOTH --best-equibind-only and "
                          "--best-diffdock-only, so every summary and plot shows only the "
@@ -7675,7 +8059,7 @@ def main() -> None:
     # Scores all three optimizer variants (kept because select_diffdock was off),
     # collapses to the best, relabelled 'DiffDock*'.
     if args.best_diffdock_only:
-        df, best_dd = _select_best_diffdock(df)
+        df, best_dd = _select_best_diffdock(df, forced=args.collapse_diffdock_variant)
         if best_dd:
             _LABEL_OVERRIDES["diffdock"] = "DiffDock*"
             print(f"best-diffdock-only: '{best_dd}' is the top DiffDock variant by "
@@ -7732,10 +8116,10 @@ def main() -> None:
         # Guard: 09c needs the raw + optimised variant of each ML tool. If a run
         # built df without the smina/gnina DiffDock variants (e.g. a plain default
         # run, no --diffdock-variant all), the smina-opt bar is silently absent.
-        if not (rvb["method_key"] == "diffdock_smina").any() \
+        if not (rvb["method_key"] == "diffdock_gnina").any() \
                 and (rvb["method_key"] == "diffdock").any():
-            print("  WARNING: 09c is missing DiffDock's smina-opt bar — df lacks "
-                  "diffdock_smina (re-run with --diffdock-variant all).")
+            print("  WARNING: 09c is missing DiffDock's gnina-opt bar — df lacks "
+                  "diffdock_gnina (re-run with --diffdock-variant all).")
 
     # 09d — best-of-top-d at several depths (top-1, top-N, top-30), raw vs refined
     # (ranking headroom + optimization). Uses df_full so BOTH the raw and the
@@ -7824,6 +8208,23 @@ def main() -> None:
         df, args.out_dir / "20d_form_vs_placement_by_family__depth_filmstrip_pbvalid.png",
         args.form_ok_kabsch, rmsd_gate=None, depths=(1, 3, 5),
         centroid_max=FAR_FROM_RECEPTOR_CENTROID_A, axis_max=8.0)
+    # Honest-statistics companion to the _pbvalid filmstrip: the numbers the scatter
+    # can only gesture at (differential coverage, r-coupling, paired cross-tool tests,
+    # pose diversity). Tidy CSVs + a 4-panel figure; no-op for crystal-free sets.
+    _fs_stats = aggregate_filmstrip_statistics(
+        df, depths=(1, 3, 5), centroid_max=FAR_FROM_RECEPTOR_CENTROID_A,
+        form_ok=args.form_ok_kabsch)
+    if _fs_stats:
+        for _key in ("per_tool_depth", "within_tool_trend", "crosstool_paired", "pose_diversity"):
+            _fs_stats[_key].to_csv(
+                args.out_dir / f"filmstrip_stats__{_key}.csv", index=False)
+        plot_filmstrip_statistics(
+            _fs_stats,
+            args.out_dir / "20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__stats.png",
+            depths=(1, 3, 5), form_ok=args.form_ok_kabsch)
+        print("  wrote filmstrip honest-statistics → filmstrip_stats__{per_tool_depth,"
+              "within_tool_trend,crosstool_paired,pose_diversity}.csv + "
+              "20d_...__depth_filmstrip_pbvalid__stats.png")
     # Companion reading across ranking depth (top-1 / top-5 / top-15 / top-30), each
     # panel a standalone figure, rendered under BOTH selections so they read side by
     # side: pbvalid (all PB-valid poses, RMSD gate removed — "how does form hold up as
@@ -8090,7 +8491,7 @@ def main() -> None:
 
                         # 17h — raw AND refined in ONE figure: AutoDock (physics,
                         # once) then each tool's raw panel directly above its
-                        # refined panel (DiffDock: smina; EquiBind: gnina), so the
+                        # refined panel (DiffDock: gnina; EquiBind: gnina), so the
                         # refinement benefit reads off panel-to-panel. Reuses the
                         # (already verified) cascades.
                         c1_all = {**c1_raw, **c1_30}
@@ -8100,7 +8501,7 @@ def main() -> None:
                                         "equibind_raw", "equibind_gnina")
                             if m in c1_all and m in cn_all)
                         combined_labels = {
-                            "diffdock": "DiffDock* (smina-refined)",
+                            "diffdock": "DiffDock* (gnina-refined)",
                             "diffdock_raw": "DiffDock (raw)",
                             "equibind_gnina": "EquiBind (gnina-refined)",
                             "equibind_raw": "EquiBind (raw)",

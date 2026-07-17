@@ -63,12 +63,21 @@ def main() -> None:
     ap.add_argument("--out-dir", type=Path,
                     default=Path("PoseBusters_Benchmark_Analysis/receptor_difficulty"))
     ap.add_argument("--n", type=int, default=60)
+    ap.add_argument("--diffdock-variant", default="all",
+                    choices=("all", "raw", "smina", "gnina"),
+                    help="Restrict DiffDock to one optimizer variant before the per-tool "
+                         "min-RMSD oracle (default 'all' pools raw+smina+gnina).")
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     n = args.n
 
     met = pd.read_csv(args.per_pose_metrics, low_memory=False)
     feat = pd.read_csv(args.features)
+    if args.diffdock_variant != "all":
+        _target = {"raw": "diffdock", "smina": "diffdock_smina",
+                   "gnina": "diffdock_gnina"}[args.diffdock_variant]
+        _dd = met["method"].astype(str).str.startswith("diffdock")
+        met = met[(~_dd) | (met["method"].astype(str) == _target)].copy()
     met["tool"] = met["method"].astype(str).str.replace(r"_.*$", "", regex=True)
     oracle = (met.groupby(["tool", "protein"])["rmsd"].min().reset_index()
               .rename(columns={"protein": "entry", "rmsd": "oracle_rmsd"})

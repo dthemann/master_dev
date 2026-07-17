@@ -1509,7 +1509,7 @@ def run_jku_similarity_analysis(args, fp_bench, region_sum, feats, fold, km_reg,
         return {}
     print(f"\n=== JKU × chemically-similar benchmark analysis ===\nLoading JKU poses: {jku_csv}")
     raw_jku = pd.read_csv(jku_csv, low_memory=False)
-    idx_jku = _build_pose_index(jku_csv, split_equibind=False)
+    idx_jku = _build_pose_index(jku_csv, split_equibind=False, diffdock_variant="diffdock_gnina")
     if "protein_file_used" in raw_jku.columns:
         idx_jku = idx_jku.merge(
             raw_jku[["pose_file", "protein_file_used"]].drop_duplicates("pose_file"),
@@ -1671,7 +1671,7 @@ def main() -> None:
 
     print(f"Loading Orai×Benchmark pose index: {args.pb_csv}")
     raw = pd.read_csv(args.pb_csv, low_memory=False)
-    idx = _build_pose_index(args.pb_csv, split_equibind=False)
+    idx = _build_pose_index(args.pb_csv, split_equibind=False, diffdock_variant="diffdock_gnina")
     # carry protein_file_used for receptor lookup
     if "protein_file_used" in raw.columns:
         idx = idx.merge(raw[["pose_file", "protein_file_used"]].drop_duplicates("pose_file"),

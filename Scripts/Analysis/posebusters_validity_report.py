@@ -1664,9 +1664,20 @@ def main() -> None:
     # from 100% down through the checks they fail to the PB-valid %. "Best" is the same
     # PB-Valid AND RMSD ≤ 2 Å pick the collapsed comparison figures use (falls back to
     # highest PB-valid fraction for crystal-free sets), so the report names one 'best' variant.
+    # Honour an explicit --diffdock-variant pin so the waterfall highlights the
+    # SAME DiffDock variant as the collapsed figures (otherwise it re-ranks via the
+    # oracle and can disagree — e.g. showing smina while the plots show gnina).
+    def _diffdock_wf_variant():
+        if args.diffdock_variant:
+            opt = ("original" if str(args.diffdock_variant).lower() in ("raw", "original")
+                   else str(args.diffdock_variant).lower())
+            want = "diffdock" if opt == "original" else f"diffdock_{opt}"
+            if (df_full["docking_method"].astype(str) == want).any():
+                return want
+        return _top_variant_for_waterfall(df_full, "diffdock", args.oracle_summary)
     top_variants = [v for v in (
         _top_variant_for_waterfall(df_full, "autodock", args.oracle_summary),
-        _top_variant_for_waterfall(df_full, "diffdock", args.oracle_summary),
+        _diffdock_wf_variant(),
         _top_variant_for_waterfall(df_full, "equibind", args.oracle_summary),
     ) if v]
     if top_variants and plot_failure_waterfall(
