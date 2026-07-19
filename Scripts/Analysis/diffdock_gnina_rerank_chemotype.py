@@ -30,6 +30,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -42,6 +43,11 @@ from scipy.stats import spearmanr, mannwhitneyu
 from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 from sklearn.cluster import KMeans
+
+import os as _os
+import sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import stats_utils as su  # noqa: E402
 
 _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
@@ -111,18 +117,38 @@ def main() -> None:
     for d in LIG_NUM:
         r, p = spearmanr(m[d], m["benefit_min"])
         rows.append(dict(predictor=f"descriptor:{d}", spearman_r=r, p_value=p))
-    corr = pd.DataFrame(rows).sort_values("p_value")
+    corr = pd.DataFrame(rows)
+    # Benjamini-Hochberg across the whole surfaced predictor family (6 named
+    # predictors + 16 descriptors) so the panel r/p are read against a corrected q.
+    try:
+        corr["q_value_bh"] = su.bh_fdr(corr["p_value"].to_numpy())
+    except Exception as exc:
+        print(f"[chemotype][warn] BH correction failed ({exc})")
+        corr["q_value_bh"] = np.nan
+    corr = corr.sort_values("p_value")
     corr.to_csv(args.out_dir / f"chemotype_benefit_correlations_{args.tool}.csv", index=False)
+    _q = dict(zip(corr["predictor"], corr["q_value_bh"]))
+    q_comm = _q.get("2-PC communality", np.nan)
+    q_nat = _q.get("DiffDock native top-1 RMSD", np.nan)
 
-    # ---- median split on communality ----
+    # ---- median split on communality (independent groups: Mann-Whitney + Cliff's delta) ----
     hi = m[m.comm2 >= m.comm2.median()]; lo = m[m.comm2 < m.comm2.median()]
-    _, p_mwu = mannwhitneyu(hi.benefit_min, lo.benefit_min)
+    mwc = None
+    try:
+        mwc = su.mannwhitney_cliffs(hi.benefit_min.to_numpy(), lo.benefit_min.to_numpy())
+    except Exception as exc:
+        print(f"[chemotype][warn] Mann-Whitney/Cliff's delta failed ({exc})")
+    p_mwu = mwc["p"] if mwc else mannwhitneyu(hi.benefit_min, lo.benefit_min)[1]
     split = pd.Series({
         "high_comm_supersede_pct": hi.supersede.mean() * 100,
         "low_comm_supersede_pct": lo.supersede.mean() * 100,
         "high_comm_benefit_median": hi.benefit_min.median(),
         "low_comm_benefit_median": lo.benefit_min.median(),
         "mannwhitney_p": p_mwu,
+        "cliffs_delta": mwc["cliffs_delta"] if mwc else np.nan,
+        "cliffs_delta_lo": mwc["delta_ci"][0] if mwc else np.nan,
+        "cliffs_delta_hi": mwc["delta_ci"][1] if mwc else np.nan,
+        "n_high": len(hi), "n_low": len(lo),
     })
     split.to_frame("value").to_csv(args.out_dir / f"chemotype_communality_split_{args.tool}.csv")
 
@@ -141,6 +167,26 @@ def main() -> None:
     r_comm, p_comm = spearmanr(m.comm2, m.benefit_min)
     r_nat, p_nat = spearmanr(m.A_native, m.benefit_min)
 
+    # ---- stats sidecar (numbers recoverable next to the figure) ----
+    stats_rep = {
+        "tool": args.tool, "n_complexes": int(len(m)), "hit": HIT,
+        "communality_split_mannwhitney_cliffs": mwc,
+        "communality_split_medians": {
+            "high": float(hi.benefit_min.median()), "low": float(lo.benefit_min.median())},
+        "predictor_correlations": corr.to_dict(orient="records"),
+        "panelB_communality": {"spearman_r": float(r_comm), "p": float(p_comm),
+                               "q_bh": (float(q_comm) if q_comm == q_comm else None),
+                               "n": int(len(m))},
+        "panelC_native_rmsd": {"spearman_r": float(r_nat), "p": float(p_nat),
+                               "q_bh": (float(q_nat) if q_nat == q_nat else None),
+                               "n": int(len(m))},
+    }
+    try:
+        (args.out_dir / f"chemotype_benefit_{args.tool}_stats.json").write_text(
+            json.dumps(stats_rep, indent=2, default=str))
+    except Exception as exc:
+        print(f"[chemotype][warn] sidecar write failed ({exc})")
+
     # ------------------------------------------------------------------ figure
     fig, ax = plt.subplots(1, 3, figsize=(16, 5))
     vlim = 5.0
@@ -158,6 +204,16 @@ def main() -> None:
     ax[0].text(0.03, 0.97, "winners & losers intermixed\n(no spatial grouping)",
                transform=ax[0].transAxes, va="top", ha="left", fontsize=8,
                bbox=dict(boxstyle="round", fc="white", ec="grey", alpha=.85))
+    # high- vs low-communality benefit: Mann-Whitney U + Cliff's delta (independent split)
+    if mwc:
+        d, dlo, dhi = mwc["cliffs_delta"], mwc["delta_ci"][0], mwc["delta_ci"][1]
+        ax[0].text(0.03, 0.03,
+                   f"high vs low communality benefit\n"
+                   f"Mann-Whitney p={su.fmt_p(mwc['p'])} {su.p_stars(mwc['p'])}\n"
+                   f"Cliff's delta={d:+.2f} [{dlo:+.2f}, {dhi:+.2f}]\n"
+                   f"(n={mwc['n_a']} vs {mwc['n_b']})",
+                   transform=ax[0].transAxes, va="bottom", ha="left", fontsize=7.5,
+                   bbox=dict(boxstyle="round", fc="white", ec="grey", alpha=.85))
     cb = fig.colorbar(sc, ax=ax[0]); cb.set_label(f"Re-ranking benefit (Angstrom)\n"
                                                   f"native RMSD - affinity-pick RMSD")
 
@@ -171,7 +227,9 @@ def main() -> None:
                      "(2-component communality)")
     ax[1].set_ylabel("Re-ranking benefit (Angstrom)\nnative RMSD - affinity-pick RMSD")
     ax[1].set_title("Benefit vs. 2-component communality")
-    ax[1].text(0.03, 0.97, f"Spearman r = {r_comm:+.2f}\np = {p_comm:.2f} (n.s.)",
+    ax[1].text(0.03, 0.97,
+               f"Spearman r = {r_comm:+.2f}\np = {su.fmt_p(p_comm)} {su.p_stars(p_comm)}\n"
+               f"BH q = {su.fmt_p(q_comm)}",
                transform=ax[1].transAxes, va="top", ha="left", fontsize=9,
                bbox=dict(boxstyle="round", fc="white", ec="grey", alpha=.85))
 
@@ -184,7 +242,9 @@ def main() -> None:
                      "(log scale; dotted line = 2 Angstrom hit)")
     ax[2].set_ylabel("Re-ranking benefit (Angstrom)\nnative RMSD - affinity-pick RMSD")
     ax[2].set_title("Benefit vs. native-pose quality")
-    ax[2].text(0.03, 0.97, f"Spearman r = {r_nat:+.2f}\np = {p_nat:.0e}",
+    ax[2].text(0.03, 0.97,
+               f"Spearman r = {r_nat:+.2f}\np = {su.fmt_p(p_nat)} {su.p_stars(p_nat)}\n"
+               f"BH q = {su.fmt_p(q_nat)}",
                transform=ax[2].transAxes, va="top", ha="left", fontsize=9,
                bbox=dict(boxstyle="round", fc="white", ec="grey", alpha=.85))
 

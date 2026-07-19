@@ -105,6 +105,18 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+# Shared, unit-tested statistical helpers (Holm/BH, Wilson CI, G-test of
+# independence, Cochran-Armitage trend, ...). Robust path insert so the module
+# imports whether the script is run from the repo root or its own directory.
+try:
+    import os as _os, sys as _sys
+    _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+    import stats_utils as su
+    _HAVE_SU = True
+except Exception:                                   # pragma: no cover
+    su = None
+    _HAVE_SU = False
+
 try:
     import matplotlib
     matplotlib.use("Agg")
@@ -128,6 +140,13 @@ _FATE = [
     ("unplaced", "PB-valid · off-protein/unevaluable", "#DD8452", ""),
     ("nonvalid", "not PB-valid",                       "#CFCFCF", ""),
 ]
+
+
+def _frame_sort_key(protein: str) -> int:
+    """MD-time ordinal for an Orai frame label (START-Fr0 < MDSnap-Fr300 < Fr400
+    < Fr499). Used to order the frames for the Cochran-Armitage trend test."""
+    m = re.search(r"Fr(\d+)", str(protein))
+    return int(m.group(1)) if m else 10 ** 9
 
 
 def _tool_key(method: str) -> str:
@@ -687,10 +706,154 @@ def make_figures(out: pd.DataFrame, out_dir: Path, name: str,
         print("  no poses for the selected variant — skipping figures")
         return
 
+    # ── Statistics (shared stats_utils; each block wrapped so a stats failure
+    #    degrades to the current test-free figure and never breaks the pipeline).
+    #    tm_stats.json next to the figures holds the full numeric results. ────────
+    tm_stats: Dict = {
+        "dataset": name,
+        "unit_of_analysis_caveat": (
+            "Counts below are individual POSES — pseudoreplicated: each tool emits "
+            "many correlated poses per (frame, ligand) unit. The G-test / "
+            "Cochran-Armitage p-values are computed on pose counts and therefore "
+            "OVERSTATE significance; the honest independent unit is the "
+            "(frame, ligand) pair (Orai x JKU has only ~3 ligands x 4 frames). "
+            "Per-(frame,ligand) loss-fraction aggregates and n_units are reported "
+            "alongside so the pooled result can be read against the real unit."),
+    }
+    # independent-unit count (frame x ligand pairs carrying >=1 PB-valid pose)
+    try:
+        _u = df.loc[pv, ["protein", "ligand"]].drop_duplicates()
+        n_units = int(len(_u))
+        n_ligands = int(df.loc[pv, "ligand"].nunique())
+    except Exception:
+        n_units = n_ligands = 0
+    # Orai x JKU has only ~3-4 distinct ligands: too few independent chemotypes for
+    # formal inference, so its conclusions are labelled exploratory. Benchmark's
+    # hundreds of ligands are not. Trigger on few units OR few distinct ligands.
+    small_n = (n_units < 12) or (n_ligands < 10)
+    tm_stats["n_frame_ligand_units_with_pbvalid"] = n_units
+    tm_stats["n_distinct_ligands"] = n_ligands
+    tm_stats["small_n_exploratory"] = bool(small_n)
+
     # ── Figure 1: per-toolchain PB-valid fate (produced → survive vs lost-to-TM) ──
     counts = {tc: df[df["toolchain"] == tc]["_fate"].value_counts() for tc in order}
     totals = {tc: int((df["toolchain"] == tc).sum()) for tc in order}
     ymax = max(totals.values()) if totals else 1
+
+    # toolchain x fate contingency table -> G-test of independence (+ Cramer's V,
+    # adjusted residuals); per-tool TM-loss fraction with Wilson CI; per-(frame,
+    # ligand) aggregate of the loss fraction (the pseudoreplication-free view).
+    _fate_keys = [k for k, _lab, _c, _h in _FATE]     # survive, lost_tm, unplaced, nonvalid
+    fig1_ci = {tc: (None, None) for tc in order}       # Wilson CI on lost/PB-valid
+    fig1_resid = {tc: None for tc in order}            # adjusted residual, lost_tm cell
+    fig1_flag = {tc: False for tc in order}            # |resid| > 2 on lost_tm
+    g_title = ""
+    perunit_title = ""       # pseudoreplication-free per-(frame,ligand) loss-test caption
+    if _HAVE_SU:
+        try:
+            f1: Dict = {"unit": "poses (pseudoreplicated — see unit_of_analysis_caveat)",
+                        "fate_categories": _fate_keys, "toolchains": list(order)}
+            # Wilson CI on the per-tool TM-loss fraction (lost_tm / PB-valid)
+            per_tool = {}
+            for tc in order:
+                nvalid = int(((df["toolchain"] == tc) & pv).sum())
+                nlost = int(counts[tc].get("lost_tm", 0))
+                lo, hi = su.wilson_ci(nlost, nvalid) if nvalid else (float("nan"), float("nan"))
+                fig1_ci[tc] = (lo, hi)
+                per_tool[tc] = {"pb_valid": nvalid, "lost_tm": nlost,
+                                "loss_fraction": (nlost / nvalid) if nvalid else None,
+                                "wilson_ci": [lo, hi]}
+            f1["per_toolchain_loss_fraction"] = per_tool
+            # G-test on the toolchain x fate table (drop all-zero rows/cols so
+            # chi2_contingency has valid marginals)
+            tbl = np.array([[int(counts[tc].get(k, 0)) for k in _fate_keys]
+                            for tc in order], float)
+            keep_r = tbl.sum(1) > 0
+            keep_c = tbl.sum(0) > 0
+            rows_k = [tc for tc, kr in zip(order, keep_r) if kr]
+            cols_k = [k for k, kc in zip(_fate_keys, keep_c) if kc]
+            sub = tbl[np.ix_(keep_r, keep_c)]
+            if sub.shape[0] >= 2 and sub.shape[1] >= 2:
+                g = su.gtest_independence(sub)
+                resid = np.asarray(g["residuals"])
+                f1["gtest"] = {"G": g["G"], "p": g["p"], "df": g["df"],
+                               "cramers_v": g["cramers_v"],
+                               "n_low_expected": g["n_low_expected"],
+                               "rows": rows_k, "cols": cols_k,
+                               "adjusted_residuals": resid.tolist()}
+                # map the lost_tm-column residual back to each toolchain
+                if "lost_tm" in cols_k:
+                    jc = cols_k.index("lost_tm")
+                    for ir, tc in enumerate(rows_k):
+                        z = float(resid[ir, jc])
+                        fig1_resid[tc] = z
+                        fig1_flag[tc] = abs(z) > 2.0
+                    f1["lost_tm_residual_flagged"] = [tc for tc in rows_k if fig1_flag[tc]]
+                g_title = (f"G={g['G']:.1f}, {su.fmt_p(g['p'])} {su.p_stars(g['p'])}, "
+                           f"Cramer's V={g['cramers_v']:.2f}")
+            else:
+                f1["gtest"] = {"skipped": "table has <2 non-empty rows/cols"}
+            # pseudoreplication-free view: per-(frame,ligand) loss fraction per tool
+            agg = {}
+            for tc in order:
+                s = df[(df["toolchain"] == tc) & pv]
+                if s.empty:
+                    continue
+                fr = (s.assign(_l=(s["analysis_status"] == "transmembrane").astype(float))
+                        .groupby(["protein", "ligand"])["_l"].mean())
+                agg[tc] = {"n_units": int(fr.size),
+                           "mean_per_unit_loss_fraction": float(fr.mean()) if fr.size else None,
+                           "per_unit_loss_fraction": {f"{a}|{b}": float(v)
+                                                      for (a, b), v in fr.items()}}
+            f1["per_frame_ligand_loss_fraction"] = agg
+            # pseudoreplication-FREE test: paired across tools on the per-(frame,
+            # ligand) loss fraction (one value per unit per tool), listwise-complete
+            # → Friedman + Kendall's W + Wilcoxon/Holm; plus a bootstrap CI on each
+            # tool's MEAN per-unit loss fraction. Honest companion to the pooled-pose
+            # G-test / Wilson CI above (whose unit is the pseudoreplicated pose).
+            try:
+                unit_mat = pd.DataFrame({tc: pd.Series(agg[tc]["per_unit_loss_fraction"])
+                                         for tc in order if tc in agg})
+                put: Dict = {"test": "friedman + wilcoxon (paired across tools)",
+                             "quantity": "per-(frame,ligand) TM-loss fraction",
+                             "unit": "(frame,ligand) pair"}
+                boot = {}
+                for tc in order:
+                    vals = np.array(list(agg.get(tc, {}).get("per_unit_loss_fraction", {}).values()), float)
+                    if vals.size:
+                        est, blo, bhi = su.bootstrap_ci(vals, statistic=np.mean)
+                        boot[tc] = {"mean": float(est), "ci": [float(blo), float(bhi)],
+                                    "n_units": int(vals.size)}
+                put["per_tool_mean_ci"] = boot
+                complete = unit_mat.dropna()
+                put["n_units_complete"] = int(len(complete))
+                if len(complete) >= 5 and complete.shape[1] >= 3:
+                    res = su.paired_continuous(complete, labels=list(complete.columns))
+                    put.update(res)
+                    om = res["omnibus"]
+                    perunit_title = (f"per-(frame,ligand) loss Friedman {su.p_stars(om['p'])} "
+                                     f"{su.fmt_p(om['p'])} (W={om['kendall_w']:.2f}, n={om['n']})")
+                elif len(complete) >= 5 and complete.shape[1] == 2:
+                    a, b = list(complete.columns)
+                    rb, p, npair = su.wilcoxon_rankbiserial(complete[a].to_numpy(float),
+                                                            complete[b].to_numpy(float))
+                    put["pairwise"] = [{"a": a, "b": b, "rank_biserial": float(rb),
+                                        "p_raw": float(p), "star": su.p_stars(p), "n": int(npair)}]
+                    perunit_title = (f"per-(frame,ligand) loss Wilcoxon {su.p_stars(p)} "
+                                     f"{su.fmt_p(p)} (n={npair})")
+                else:
+                    put["note"] = "n too small — exploratory"
+                    perunit_title = "per-(frame,ligand) loss: n too small — exploratory"
+                f1["per_frame_ligand_loss_test"] = put
+            except Exception as e:                    # pragma: no cover
+                f1["per_frame_ligand_loss_test"] = {"error": str(e)}
+            if small_n:
+                f1["note"] = "exploratory — few independent (frame,ligand) units"
+            tm_stats["fig_tool_tm_loss"] = f1
+        except Exception as e:                        # pragma: no cover
+            print(f"  [warn] fig_tool_tm_loss stats failed: {e}")
+            tm_stats["fig_tool_tm_loss"] = {"error": str(e)}
+
     fig, ax = plt.subplots(figsize=(1.9 * len(order) + 3.5, 6.2))
     x = np.arange(len(order)); bottoms = np.zeros(len(order))
     for key, label, colour, hatch in _FATE:
@@ -706,17 +869,37 @@ def make_figures(out: pd.DataFrame, out_dir: Path, name: str,
         nvalid = int(((df["toolchain"] == tc) & pv).sum())
         nlost = int(counts[tc].get("lost_tm", 0))
         pct = 100 * nlost / nvalid if nvalid else 0
+        lo, hi = fig1_ci.get(tc, (None, None))
+        ci_txt = (f" [{100 * lo:.0f}–{100 * hi:.0f}]"
+                  if lo is not None and lo == lo else "")   # Wilson 95% CI, %
+        mark = " ‡" if fig1_flag.get(tc) else ""            # |adj. residual|>2 on lost_tm
         ax.text(xi, totals[tc] + 0.015 * ymax,
-                f"produced {totals[tc]}\nPB-valid {nvalid}\nlost to TM {nlost} ({pct:.0f}%)",
+                f"produced {totals[tc]}\nPB-valid {nvalid}\n"
+                f"lost to TM {nlost} ({pct:.0f}%{ci_txt}){mark}",
                 ha="center", va="bottom", fontsize=8, color="#222")
     ax.set_xticks(x); ax.set_xticklabels(order)
     ax.set_ylabel("Number of poses produced")
+    _sub = []
+    if g_title:
+        _sub.append(f"toolchain×fate {g_title}")
+    if perunit_title:
+        _sub.append(perunit_title + " — pseudoreplication-free unit")
+    if any(fig1_flag.values()):
+        _sub.append("‡ = |adjusted residual|>2 for the lost-to-TM cell")
+    _sub.append("bracket = Wilson 95% CI on % PB-valid lost; counts are poses "
+                "(pseudoreplicated)" + (" · exploratory (few units)" if small_n else ""))
     ax.set_title(f"PB-valid poses lost to the transmembrane vs surviving, per toolchain  ({name})",
                  fontsize=11)
-    ax.margins(y=0.16)
+    ax.margins(y=0.18)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.07), ncol=2,
               frameon=False, fontsize=8)
     ax.spines[["top", "right"]].set_visible(False)
+    if _sub:
+        _half = (len(_sub) + 1) // 2                       # wrap footnote onto 2 lines
+        _foot = "\n".join(("   ·   ".join(_sub[:_half]),
+                           "   ·   ".join(_sub[_half:]))).strip()
+        fig.text(0.5, -0.14, _foot, ha="center", va="top",
+                 fontsize=8, color="0.35")
     fig.tight_layout()
     fig.savefig(out_dir / "fig_tool_tm_loss.png", dpi=130, bbox_inches="tight")
     plt.close(fig)
@@ -757,8 +940,56 @@ def make_figures(out: pd.DataFrame, out_dir: Path, name: str,
                     fontsize=7.5, color="white" if nl > 0.6 * vmax else "#333")
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.03).set_label(
         "PB-valid poses lost to transmembrane", fontsize=9)
-    ax.set_title(f"PB-valid poses lost to the transmembrane, per Orai frame × ligand{col_note}\n"
-                 f"cell = lost / total PB-valid (% of PB-valid lost)   ({name})", fontsize=10)
+
+    # Cochran-Armitage trend: does the fraction of PB-valid poses lost to the TM
+    # rise/fall across the ORDERED MD frames (START-Fr0 → Fr300 → Fr400 → Fr499)?
+    # Pooled across toolchains + per toolchain. Scores = the MD-time frame numbers.
+    ca_title = ""
+    if _HAVE_SU:
+        try:
+            f2: Dict = {"unit": "poses (pseudoreplicated — see unit_of_analysis_caveat)",
+                        "frame_order_scores": "Fr number (MD time)"}
+            frames_ord = sorted(df.loc[pv, "protein"].unique(), key=_frame_sort_key)
+            scores = [_frame_sort_key(f) for f in frames_ord]
+
+            def _ca(mask):
+                succ = [int((mask & pv & (df["protein"] == f) & (st == "transmembrane")).sum())
+                        for f in frames_ord]
+                tot = [int((mask & pv & (df["protein"] == f)).sum()) for f in frames_ord]
+                z, p, sgn = su.cochran_armitage(succ, tot, scores=scores)
+                return {"frames": [str(f) for f in frames_ord], "scores": scores,
+                        "lost": succ, "pb_valid": tot,
+                        "z": None if z != z else float(z),
+                        "p": None if p != p else float(p), "sign": int(sgn)}
+
+            true_all = pd.Series(True, index=df.index)
+            if len(frames_ord) >= 3:
+                pooled = _ca(true_all)
+                f2["pooled"] = pooled
+                per_tc = {}
+                for tc in order:
+                    per_tc[tc] = _ca(df["toolchain"] == tc)
+                f2["per_toolchain"] = per_tc
+                if pooled["p"] is not None:
+                    trend = ("↑" if pooled["sign"] > 0 else "↓" if pooled["sign"] < 0 else "flat")
+                    ca_title = (f"Cochran–Armitage frame trend (pooled): z={pooled['z']:.2f}, "
+                                f"{su.fmt_p(pooled['p'])} {su.p_stars(pooled['p'])} {trend}")
+            else:
+                f2["skipped"] = f"only {len(frames_ord)} ordered frame(s) — no trend test"
+            if small_n:
+                f2["note"] = "exploratory — few independent (frame,ligand) units"
+            tm_stats["fig_pbvalid_lost_matrix"] = f2
+        except Exception as e:                        # pragma: no cover
+            print(f"  [warn] fig_pbvalid_lost_matrix stats failed: {e}")
+            tm_stats["fig_pbvalid_lost_matrix"] = {"error": str(e)}
+
+    _t2 = (f"PB-valid poses lost to the transmembrane, per Orai frame × ligand{col_note}\n"
+           f"cell = lost / total PB-valid (% of PB-valid lost)   ({name})")
+    if ca_title:
+        _t2 += ("\n" + ca_title
+                + ("  · exploratory" if small_n else "")
+                + "  · poses (pseudorepl.)")
+    ax.set_title(_t2, fontsize=10)
     fig.tight_layout()
     fig.savefig(out_dir / "fig_pbvalid_lost_matrix.png", dpi=130, bbox_inches="tight")
     plt.close(fig)
@@ -820,6 +1051,41 @@ def make_figures(out: pd.DataFrame, out_dir: Path, name: str,
     pd.DataFrame(rows).to_csv(out_dir / "tool_tm_loss_summary.csv", index=False)
     mat.to_csv(out_dir / "pbvalid_lost_matrix.csv")
     pd.DataFrame(rank_rows).to_csv(out_dir / "rank_survival.csv", index=False)
+
+    # fig_rank_survival: descriptive only (no inferential test drawn on the figure,
+    # per validation plan §8 — a tool-vs-tool AUC permutation would need many more
+    # independent units than Orai x JKU offers). Record the per-rank survival counts
+    # so the descriptive claim is recoverable from the sidecar.
+    if _HAVE_SU:
+        try:
+            tm_stats["fig_rank_survival"] = {
+                "test": "none — descriptive",
+                "note": ("PB-valid poses outside the TM by native pose rank; solid = "
+                         "outside TM, dashed = all PB-valid. See rank_survival.csv."),
+                "rows": rank_rows}
+        except Exception as e:                        # pragma: no cover
+            print(f"  [warn] fig_rank_survival stats note failed: {e}")
+
+    # sidecar: full numeric statistical results next to the figures
+    if _HAVE_SU:
+        try:
+            def _san(o):
+                if isinstance(o, dict):
+                    return {k: _san(v) for k, v in o.items()}
+                if isinstance(o, (list, tuple)):
+                    return [_san(v) for v in o]
+                if isinstance(o, (np.floating,)):
+                    return float(o)
+                if isinstance(o, (np.integer,)):
+                    return int(o)
+                if isinstance(o, np.ndarray):
+                    return o.tolist()
+                return o
+            (out_dir / "tm_stats.json").write_text(json.dumps(_san(tm_stats), indent=2))
+            print(f"  stats → {out_dir/'tm_stats.json'}")
+        except Exception as e:                        # pragma: no cover
+            print(f"  [warn] writing tm_stats.json failed: {e}")
+
     print("  figures → fig_tool_tm_loss.png, fig_pbvalid_lost_matrix.png, fig_rank_survival.png")
 
 

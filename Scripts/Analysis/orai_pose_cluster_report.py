@@ -66,6 +66,10 @@ from pose_cluster_crystal_pocket_report import (   # noqa: E402
     SimpleKMedoids, _select_k, cluster_sites, _centroid_dm,
     pockets_from_labels, _dist,
 )
+try:                                                # shared, unit-tested stats helpers
+    import stats_utils as su                        # noqa: E402
+except Exception:                                   # pragma: no cover
+    su = None
 try:
     from pocket_comparison_report import _label_panels  # noqa: E402
 except Exception:                                   # pragma: no cover
@@ -324,6 +328,355 @@ def analyze_pair(frame: str, ligand: str, sub: pd.DataFrame, thr: float,
 
 
 # ════════════════════════════════════════════════════════════════════════
+# Statistical tests  (see STATISTICAL_VALIDATION_PLAN.md)
+# ------------------------------------------------------------------------
+# The independent n is the number of (frame, ligand) pairs, which varies by dataset
+# (Orai × JKU is TINY — ~12 pairs, a handful of JKU ligands × 4 MD snapshots; the
+# Orai × benchmark run has ~1200). Every test below is therefore GUARDED (skips
+# gracefully when there are too few units) and clearly labelled EXPLORATORY, and
+# we NEVER treat the hundreds of correlated poses as if they were independent:
+# proportions/continuous comparisons aggregate to the pair, and the one place we
+# look at pose-level distances uses a (frame,ligand) cluster bootstrap so the CI
+# respects the pose clustering. Results are annotated on the figures and written
+# in full to ``orai_cluster_stats.json``.
+# ════════════════════════════════════════════════════════════════════════
+
+_MIN_FRAMES_TREND = 3       # ordered MD frames needed for a Cochran–Armitage trend
+_MIN_PAIRS_WILCOXON = 6     # per-pair distances needed for a signed-rank test
+_MIN_CLUSTERS_MW = 4        # (frame,ligand) clusters for the pose-level bootstrap CI
+_MW_SAMPLE_CAP = 1500       # cap per group for Cliff's-δ CI (its bootstrap is O(n²)/iter;
+                            # keeps the always-on test cheap on big pose sets)
+
+
+def _f(v):
+    """nan/None-safe float for JSON sidecars."""
+    try:
+        if v is None or (isinstance(v, float) and v != v):
+            return None
+        return float(v)
+    except Exception:
+        return None
+
+
+def _stats_pb_frame_trend(poses, frames, tools):
+    """Cochran–Armitage trend of PoseBusters validity across the ORDERED MD
+    frames, one test per tool. Unit = pose (correlated within a (frame,ligand)
+    pair) so this is EXPLORATORY — it matches the pose-level rates the panel
+    plots, and with only ~1–3 pairs per frame it cannot be more than suggestive."""
+    out = {"test": "cochran_armitage_trend", "ordered_frames": list(frames),
+           "unit": "pose (correlated within frame×ligand pair) — exploratory",
+           "per_tool": {}}
+    if su is None:
+        out["skipped"] = "stats_utils unavailable"
+        return out
+    if len(frames) < _MIN_FRAMES_TREND:
+        out["skipped"] = "n too small — exploratory"
+        return out
+    d = poses[poses["pb_valid"].notna()]
+    for t in tools:
+        succ, tot = [], []
+        for fr in frames:
+            sel = d[(d["frame"] == fr) & (d["tool"] == t)]
+            succ.append(int((sel["pb_valid"] == True).sum()))   # noqa: E712
+            tot.append(int(len(sel)))
+        if sum(tot) == 0:
+            continue
+        try:
+            z, p, sign = su.cochran_armitage(succ, tot)
+            out["per_tool"][t] = {"z": _f(z), "p": _f(p), "sign": int(sign),
+                                  "successes": succ, "totals": tot,
+                                  "star": su.p_stars(p)}
+        except Exception as e:                          # pragma: no cover
+            out["per_tool"][t] = {"error": str(e)}
+    return out
+
+
+def _stats_tool_pair_agreement(pairs, tools, thr):
+    """Per tool-pair: is the per-(frame,ligand) inter-tool DOMINANT-site distance
+    significantly BELOW the agreement threshold? One-sample Wilcoxon signed-rank
+    of (distance − thr); rank-biserial < 0 ⇒ the tools tend to agree (sit within
+    ``thr`` Å). Holm across the tool-pairs. Unit = (frame,ligand) pair (paired
+    design). Guarded + exploratory given the tiny n."""
+    out = {"test": "wilcoxon_signed_rank_vs_threshold", "thr_A": float(thr),
+           "unit": "(frame,ligand) pair", "pairs": {}}
+    if su is None:
+        out["skipped"] = "stats_utils unavailable"
+        return out
+    entries = []
+    for i in range(len(tools)):
+        for j in range(i + 1, len(tools)):
+            a, b = tools[i], tools[j]
+            col = f"{a[:2]}_{b[:2]}_dist"
+            if col not in pairs.columns:
+                col = f"{b[:2]}_{a[:2]}_dist"
+            if col not in pairs.columns:
+                continue
+            v = pd.to_numeric(pairs[col], errors="coerce").dropna().to_numpy()
+            key = f"{a}|{b}"
+            rec = {"col": col, "n": int(v.size),
+                   "median_dist": _f(np.median(v)) if v.size else None,
+                   "agree_frac": _f(np.mean(v <= thr)) if v.size else None}
+            if v.size >= _MIN_PAIRS_WILCOXON:
+                try:
+                    rb, p, npair = su.wilcoxon_rankbiserial(v, np.full(v.shape, float(thr)))
+                    rec.update({"rank_biserial": _f(rb), "p_raw": _f(p),
+                                "n_nonzero": int(npair)})
+                    if rec["p_raw"] is not None:
+                        entries.append((key, rec))
+                except Exception as e:                  # pragma: no cover
+                    rec["error"] = str(e)
+            else:
+                rec["note"] = "n too small — exploratory"
+            out["pairs"][key] = rec
+    if entries:
+        adj = su.holm([rec["p_raw"] for _, rec in entries])
+        for (key, rec), pa in zip(entries, adj):
+            rec["p_holm"] = float(pa)
+            rec["star"] = su.p_stars(pa)
+    return out
+
+
+def _tpa_by_col(stats):
+    """Column-name -> per-tool-pair stat record, for figure annotation."""
+    if not stats:
+        return {}
+    return {rec["col"]: rec for rec in stats.get("pairs", {}).values()
+            if isinstance(rec, dict) and "col" in rec}
+
+
+def _stats_valid_vs_consensus(poses):
+    """Pose-level, UNPAIRED test: are PoseBusters survivors nearer their pair's
+    consensus than failures? Mann–Whitney U + Cliff's δ (with a percentile-
+    bootstrap δ CI); the group medians additionally get a CLUSTER bootstrap CI
+    with clusters = (frame,ligand) pair, so the CI respects that poses are
+    correlated within a pair rather than pretending each pose is independent.
+    Multi-tool pairs only (single-tool consensus would be circular)."""
+    out = {"test": "mann_whitney_u + cliffs_delta",
+           "unit": "pose (clustered by frame×ligand pair) — exploratory"}
+    if su is None:
+        out["skipped"] = "stats_utils unavailable"
+        return out
+    dd = poses[poses["pb_valid"].notna()].copy()
+    if "consensus_multitool" in dd:
+        dd = dd[dd["consensus_multitool"] == True]      # noqa: E712
+    if dd.empty:
+        out["skipped"] = "no multi-tool poses"
+        return out
+    dd["_pair"] = dd["frame"].astype(str) + "|" + dd["ligand"].astype(str)
+    vv = dd[dd["pb_valid"] == True]                      # noqa: E712
+    iv = dd[dd["pb_valid"] == False]                     # noqa: E712
+    vdist = pd.to_numeric(vv["dist_to_consensus"], errors="coerce").to_numpy()
+    idist = pd.to_numeric(iv["dist_to_consensus"], errors="coerce").to_numpy()
+    n_clusters = int(dd["_pair"].nunique())
+    out.update({"n_valid": int(np.isfinite(vdist).sum()),
+                "n_invalid": int(np.isfinite(idist).sum()),
+                "n_clusters": n_clusters})
+    if n_clusters < _MIN_CLUSTERS_MW:
+        out["note"] = "n too small — exploratory"
+    # Cliff's-δ CI inside mannwhitney_cliffs bootstraps at O(n_a·n_b) per iteration,
+    # so cap each group to keep this always-on test cheap on large pose sets. The
+    # U-test p-value and δ point estimate are near-invariant to this subsample.
+    va = vdist[np.isfinite(vdist)]; ia = idist[np.isfinite(idist)]
+    capped = va.size > _MW_SAMPLE_CAP or ia.size > _MW_SAMPLE_CAP
+    if capped:
+        rng = np.random.default_rng(0)
+        if va.size > _MW_SAMPLE_CAP:
+            va = rng.choice(va, _MW_SAMPLE_CAP, replace=False)
+        if ia.size > _MW_SAMPLE_CAP:
+            ia = rng.choice(ia, _MW_SAMPLE_CAP, replace=False)
+        out["mw_sample_cap"] = _MW_SAMPLE_CAP
+    try:
+        mw = su.mannwhitney_cliffs(va, ia)
+    except Exception as e:                              # pragma: no cover
+        mw = None
+        out["error"] = str(e)
+    if mw:
+        out.update({"U": _f(mw["U"]), "p": _f(mw["p"]),
+                    "cliffs_delta": _f(mw["cliffs_delta"]),
+                    "delta_ci": [_f(mw["delta_ci"][0]), _f(mw["delta_ci"][1])],
+                    "median_valid": _f(mw["medians"][0]),
+                    "median_invalid": _f(mw["medians"][1]),
+                    "star": su.p_stars(mw["p"])})
+    for name, sub in (("valid", vv), ("invalid", iv)):
+        try:
+            vals = pd.to_numeric(sub["dist_to_consensus"], errors="coerce").to_numpy()
+            cl = sub["_pair"].to_numpy()
+            est, lo, hi = su.cluster_bootstrap_ci(vals, cl, statistic=np.median)
+            out[f"median_{name}_clusterCI"] = [_f(est), _f(lo), _f(hi)]
+        except Exception:                               # pragma: no cover
+            pass
+    return out
+
+
+def _paired_tool_test(complete):
+    """Robust paired-across-tools comparison: Friedman + Kendall's W + Wilcoxon/Holm
+    when ≥3 tools are present, a single signed-rank when exactly 2 (Friedman needs
+    ≥3 conditions). ``complete`` is a DataFrame whose rows are the same units
+    (one per (frame,ligand) pair) and columns are tools, already NaN-dropped."""
+    labels = list(complete.columns)
+    if len(labels) >= 3:
+        return su.paired_continuous(complete, labels=labels)
+    a, b = labels
+    rb, p, npair = su.wilcoxon_rankbiserial(complete[a].to_numpy(float),
+                                            complete[b].to_numpy(float))
+    return {"omnibus": None,
+            "pairwise": [{"a": a, "b": b, "rank_biserial": _f(rb), "p_raw": _f(p),
+                          "p_holm": _f(p), "star": su.p_stars(p), "n": int(npair)}],
+            "medians": {l: _f(complete[l].median()) for l in labels}}
+
+
+def _paired_summary(res):
+    """One-line caption for a _paired_tool_test / paired_continuous result."""
+    if not res:
+        return None
+    om = res.get("omnibus")
+    if om and om.get("p") is not None:
+        return (f"Friedman {su.p_stars(om['p'])} {su.fmt_p(om['p'])}"
+                f" (W={om['kendall_w']:.2f}, n={om['n']})")
+    pw = res.get("pairwise") or []
+    if pw and pw[0].get("p_raw") is not None:
+        pr = pw[0]
+        return (f"Wilcoxon {su.p_stars(pr.get('p_holm') or pr['p_raw'])}"
+                f" {su.fmt_p(pr.get('p_holm') or pr['p_raw'])} (n={pr['n']})")
+    return None
+
+
+def _stats_cluster_structure_trend(pairs, frames):
+    """Jonckheere–Terpstra trend of per-(frame,ligand) cluster structure across the
+    ORDERED MD frames: does the number of distinct clusters / the dominant-cluster
+    fraction rise or fall along the trajectory? Unit = (frame,ligand) pair (one
+    value per pair — no pose pseudoreplication). Guarded + exploratory at this n."""
+    out = {"test": "jonckheere_terpstra_trend", "ordered_frames": list(frames),
+           "unit": "(frame,ligand) pair", "metrics": {}}
+    if su is None:
+        out["skipped"] = "stats_utils unavailable"
+        return out
+    if len(frames) < _MIN_FRAMES_TREND:
+        out["skipped"] = "n too small — exploratory"
+        return out
+    for metric in ("n_clusters", "dominant_cluster_frac"):
+        if metric not in pairs.columns:
+            continue
+        groups = [pd.to_numeric(pairs[pairs.frame == fr][metric], errors="coerce")
+                  .dropna().to_numpy() for fr in frames]
+        if any(len(g) == 0 for g in groups) or sum(len(g) for g in groups) < _MIN_PAIRS_WILCOXON:
+            out["metrics"][metric] = {"note": "n too small — exploratory"}
+            continue
+        try:
+            JT, z, p = su.jonckheere(groups)
+            out["metrics"][metric] = {"JT": _f(JT), "z": _f(z), "p": _f(p),
+                                      "per_frame_median": [_f(np.median(g)) for g in groups],
+                                      "star": su.p_stars(p)}
+        except Exception as e:                          # pragma: no cover
+            out["metrics"][metric] = {"error": str(e)}
+    return out
+
+
+def _stats_tool_cluster_contribution(poses, tools):
+    """Paired-across-tools Friedman + Wilcoxon on the per-(frame,ligand) number of
+    distinct clusters each tool occupies. Unit = (frame,ligand) pair, listwise-
+    complete across the tools (paired design — no pose pseudoreplication).
+    Exploratory at this n."""
+    out = {"test": "friedman + wilcoxon (paired across tools)",
+           "quantity": "distinct clusters occupied per pair",
+           "unit": "(frame,ligand) pair"}
+    if su is None:
+        out["skipped"] = "stats_utils unavailable"
+        return out
+    if "cluster" not in poses.columns:
+        out["skipped"] = "no cluster labels"
+        return out
+    rows = {}
+    for (frame, ligand), g in poses.groupby(["frame", "ligand"]):
+        rows[f"{frame}|{ligand}"] = {t: float(gt["cluster"].nunique())
+                                     for t, gt in g.groupby("tool")}
+    mat = pd.DataFrame.from_dict(rows, orient="index").reindex(columns=list(tools))
+    complete = mat.dropna()
+    out["n_pairs_complete"] = int(len(complete))
+    out["medians"] = {t: _f(mat[t].median()) for t in mat.columns if mat[t].notna().any()}
+    if len(complete) < _MIN_PAIRS_WILCOXON or complete.shape[1] < 2:
+        out["note"] = "n too small — exploratory"
+        return out
+    try:
+        out.update(_paired_tool_test(complete.loc[:, complete.notna().all()]))
+    except Exception as e:                              # pragma: no cover
+        out["error"] = str(e)
+    return out
+
+
+def _stats_tool_dispersion(pairs, tools):
+    """Paired-across-tools Friedman + Wilcoxon on each tool's per-(frame,ligand)
+    pose spread (decisiveness). Unit = (frame,ligand) pair, listwise-complete
+    across the tools. Exploratory at this n."""
+    out = {"test": "friedman + wilcoxon (paired across tools)",
+           "quantity": "per-pair pose spread (Å)", "unit": "(frame,ligand) pair"}
+    if su is None:
+        out["skipped"] = "stats_utils unavailable"
+        return out
+    cols = {t: f"{t}_spread" for t in tools if f"{t}_spread" in pairs.columns}
+    if len(cols) < 2:
+        out["skipped"] = "fewer than 2 tools with a spread column"
+        return out
+    mat = pd.DataFrame({t: pd.to_numeric(pairs[c], errors="coerce") for t, c in cols.items()})
+    complete = mat.dropna()
+    out["n_pairs_complete"] = int(len(complete))
+    out["medians"] = {t: _f(mat[t].median()) for t in mat.columns if mat[t].notna().any()}
+    if len(complete) < _MIN_PAIRS_WILCOXON:
+        out["note"] = "n too small — exploratory"
+        return out
+    try:
+        out.update(_paired_tool_test(complete))
+    except Exception as e:                              # pragma: no cover
+        out["error"] = str(e)
+    return out
+
+
+def _stats_cross_pose_touch(pairs, poses_by_pair, thr):
+    """Companion to ``_stats_tool_pair_agreement`` for the divergence-matrix RIGHT
+    panel: per tool-pair, is the per-(frame,ligand) CLOSEST cross-tool pose
+    distance (do the pose CLOUDS touch?) significantly below the ``thr`` agree
+    line? One-sample Wilcoxon signed-rank of (distance − thr); rank-biserial < 0 ⇒
+    the clouds tend to graze within ``thr`` Å. Holm across tool-pairs. Unit =
+    (frame,ligand) pair. Guarded + exploratory at this n."""
+    out = {"test": "wilcoxon_signed_rank_vs_threshold",
+           "quantity": "closest cross-tool pose distance",
+           "thr_A": float(thr), "unit": "(frame,ligand) pair", "pairs": {}}
+    if su is None:
+        out["skipped"] = "stats_utils unavailable"
+        return out
+    dfp = pairs.sort_values(["frame", "ligand"]).reset_index(drop=True)
+    entries = []
+    for ta, tb, col, lab in _TOOL_PAIRS:
+        vals = []
+        for _, r in dfp.iterrows():
+            d = _min_cross_pose_dist(poses_by_pair.get((r["frame"], r["ligand"]), []), ta, tb)
+            if np.isfinite(d):
+                vals.append(d)
+        v = np.asarray(vals, float)
+        key = f"{ta}|{tb}"
+        rec = {"col": col, "label": lab.replace("\n", " "), "n": int(v.size),
+               "median_dist": _f(np.median(v)) if v.size else None,
+               "touch_frac": _f(np.mean(v <= thr)) if v.size else None}
+        if v.size >= _MIN_PAIRS_WILCOXON:
+            try:
+                rb, p, npair = su.wilcoxon_rankbiserial(v, np.full(v.shape, float(thr)))
+                rec.update({"rank_biserial": _f(rb), "p_raw": _f(p), "n_nonzero": int(npair)})
+                if rec["p_raw"] is not None:
+                    entries.append((key, rec))
+            except Exception as e:                      # pragma: no cover
+                rec["error"] = str(e)
+        else:
+            rec["note"] = "n too small — exploratory"
+        out["pairs"][key] = rec
+    if entries:
+        adj = su.holm([rec["p_raw"] for _, rec in entries])
+        for (key, rec), pa in zip(entries, adj):
+            rec["p_holm"] = float(pa)
+            rec["star"] = su.p_stars(pa)
+    return out
+
+
+# ════════════════════════════════════════════════════════════════════════
 # Figures
 # ════════════════════════════════════════════════════════════════════════
 
@@ -338,25 +691,48 @@ def _style(tool):
 # Each _draw_* renders one panel into a supplied Axes so the SAME code backs
 # both the combined overview grid and the standalone per-panel PNGs.
 
-def _draw_cross_tool_agreement(ax, pairs, thr, tools):
-    """(A) inter-tool consensus-site distance distribution."""
+def _draw_cross_tool_agreement(ax, pairs, thr, tools, stats=None):
+    """(A) inter-tool consensus-site distance distribution. Legend labels carry a
+    signed-rank star (distance vs the ``thr`` agree-line; see orai_cluster_stats.json)."""
+    by_col = _tpa_by_col(stats)
     pair_cols = [c for c in pairs.columns if c.endswith("_dist")
                  and c not in ("mean_inter_tool_dist", "max_inter_tool_dist")]
-    for c in pair_cols:
-        v = pd.to_numeric(pairs[c], errors="coerce").dropna().to_numpy()
+    # Shared 2 Å bins spanning the full observed range so no pair's distances are
+    # clipped off the axis — inter-tool sites can sit far past 40 Å apart (up to
+    # ~93 Å on Orai), which a fixed [0,40] window silently dropped, hiding the
+    # au_eq/di_eq bars and pushing their medians off the plot. A 40 Å floor keeps
+    # tight runs from looking cramped.
+    cols_v = [pd.to_numeric(pairs[c], errors="coerce").dropna().to_numpy() for c in pair_cols]
+    allv = np.concatenate(cols_v) if cols_v else np.array([])
+    top = 40.0 if allv.size == 0 else max(40.0, float(np.ceil(allv.max() / 2.0) * 2.0))
+    bins = np.arange(0.0, top + 2.0, 2.0)
+    for c, v in zip(pair_cols, cols_v):
         if v.size:
-            ax.hist(v, bins=np.linspace(0, 40, 21), histtype="step", lw=2,
-                    label=f"{c.replace('_dist','')} (med {np.median(v):.1f} Å)")
+            med = float(np.median(v))
+            lab = f"{c.replace('_dist','')} (med {med:.1f} Å)"
+            rec = by_col.get(c)
+            if rec and rec.get("star"):
+                lab += f" {rec['star']}"
+            _, _, patches = ax.hist(v, bins=bins, histtype="step", lw=2, label=lab)
+            # Put each pair's median literally on the axis (matched colour).
+            col = patches[0].get_edgecolor() if patches else None
+            ax.axvline(med, color=col, ls=":", lw=1.2, alpha=0.75)
     ax.axvline(thr, color="k", ls="--", lw=0.8, label=f"agree ≤ {thr:g} Å")
     ax.set_title("Cross-tool agreement — distance between tools' consensus sites")
     ax.set_xlabel("Inter-tool consensus-site distance (Å)")
     ax.set_ylabel("Number of receptor-ligand pairs")
     ax.legend(fontsize=8); ax.grid(alpha=0.25)
+    if stats is not None and not stats.get("skipped"):
+        ax.text(0.98, 0.02, "star: Wilcoxon dist vs threshold (exploratory)",
+                transform=ax.transAxes, fontsize=6.5, color="0.4", ha="right", va="bottom")
 
 
-def _draw_pb_validity_per_frame(ax, poses, frames, tools):
+def _draw_pb_validity_per_frame(ax, poses, frames, tools, stats=None):
     """(B) per-frame PoseBusters validity rate, one line per tool — frames are
-    ordered MD snapshots, so the line traces validity along the trajectory."""
+    ordered MD snapshots, so the line traces validity along the trajectory. Each
+    tool's legend label carries its Cochran–Armitage trend p across the ordered
+    frames (exploratory; see orai_cluster_stats.json)."""
+    per_tool = (stats or {}).get("per_tool", {})
     d = poses[poses["pb_valid"].notna()]
     x = np.arange(len(frames))
     for t in tools:
@@ -364,8 +740,12 @@ def _draw_pb_validity_per_frame(ax, poses, frames, tools):
         for fr in frames:
             sel = d[(d["frame"] == fr) & (d["tool"] == t)]
             rates.append(float(sel["pb_valid"].mean()) * 100 if len(sel) else np.nan)
+        lab = _style(t)[0]
+        st = per_tool.get(t)
+        if st and su is not None and st.get("p") is not None:
+            lab += f" (trend {su.p_stars(st['p'])} {su.fmt_p(st['p'])})"
         ax.plot(x, rates, marker="o", lw=2, markersize=6,
-                color=_style(t)[1], label=_style(t)[0],
+                color=_style(t)[1], label=lab,
                 markeredgecolor="black", markeredgewidth=0.5)
     ax.set_xticks(x)
     ax.set_xticklabels([f.replace("Orai1WT-", "") for f in frames], rotation=20, ha="right")
@@ -373,17 +753,33 @@ def _draw_pb_validity_per_frame(ax, poses, frames, tools):
     ax.set_ylabel("Valid poses (percent of generated)")
     ax.set_ylim(0, 105); ax.legend(fontsize=8)
     ax.grid(alpha=0.3); ax.set_axisbelow(True)
+    if stats is not None:
+        note = ("trend across ordered MD frames: Cochran–Armitage (exploratory)"
+                if not stats.get("skipped") else "trend: n too small — exploratory")
+        ax.text(0.02, 0.04, note, transform=ax.transAxes, fontsize=6.5,
+                color="0.4", ha="left", va="bottom")
 
 
-def _draw_cluster_structure(ax, pairs, frames):
+def _draw_cluster_structure(ax, pairs, frames, stats=None):
     """(C) per-frame cluster tightness: mean #clusters + mean dominant fraction,
-    pooled over all tools (the per-tool breakdown is the next panel)."""
+    pooled over all tools (the per-tool breakdown is the next panel). Each bar
+    series carries a Jonckheere–Terpstra trend p across the ordered MD frames
+    (per-(frame,ligand) pair; exploratory — see orai_cluster_stats.json)."""
+    metrics = (stats or {}).get("metrics", {})
+
+    def _trend_tag(metric, base):
+        m = metrics.get(metric)
+        if m and su is not None and m.get("p") is not None:
+            return f"{base} (trend {su.p_stars(m['p'])} {su.fmt_p(m['p'])})"
+        return base
+
     x = np.arange(len(frames))
     ncl = [pd.to_numeric(pairs[pairs.frame == fr]["n_clusters"], errors="coerce").mean() for fr in frames]
     dom = [pd.to_numeric(pairs[pairs.frame == fr]["dominant_cluster_frac"], errors="coerce").mean() for fr in frames]
-    ax.bar(x - 0.2, ncl, 0.4, color="#8172B3", label="mean number of clusters")
+    ax.bar(x - 0.2, ncl, 0.4, color="#8172B3", label=_trend_tag("n_clusters", "mean number of clusters"))
     ax2 = ax.twinx()
-    ax2.bar(x + 0.2, dom, 0.4, color="#CCB974", label="mean dominant-cluster fraction")
+    ax2.bar(x + 0.2, dom, 0.4, color="#CCB974",
+            label=_trend_tag("dominant_cluster_frac", "mean dominant-cluster fraction"))
     ax.set_xticks(x)
     ax.set_xticklabels([f.replace("Orai1WT-", "") for f in frames], rotation=20, ha="right")
     ax.set_title("Cluster structure per Orai MD frame")
@@ -392,6 +788,12 @@ def _draw_cluster_structure(ax, pairs, frames):
     h1, l1 = ax.get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels()
     ax.legend(h1 + h2, l1 + l2, fontsize=8, loc="upper right")
     ax.grid(alpha=0.25); ax.set_axisbelow(True)
+    if stats is not None:
+        note = ("trend across ordered MD frames: Jonckheere–Terpstra, "
+                "unit (frame,ligand) pair (exploratory)"
+                if not stats.get("skipped") else "trend: n too small — exploratory")
+        ax.text(0.02, 0.02, note, transform=ax.transAxes, fontsize=6.5,
+                color="0.4", ha="left", va="bottom")
 
 
 def _per_tool_cluster_stats(poses, tools):
@@ -417,21 +819,23 @@ def _per_tool_cluster_stats(poses, tools):
     return out
 
 
-def _draw_tool_cluster_contribution(ax, poses, frames, tools):
+def _draw_tool_cluster_contribution(ax, poses, frames, tools, stats=None):
     """(new) per-tool contribution to the cluster structure of each MD frame:
     grouped bars = mean number of distinct clusters a tool occupies (left axis);
     markers = mean share of that tool's poses in the pair's dominant cluster
     (right axis). Together they show how much each docking tool drives the
-    multi-cluster spread vs concentrating on the dominant site."""
-    stats = _per_tool_cluster_stats(poses, tools)
+    multi-cluster spread vs concentrating on the dominant site. A paired-across-
+    tools Friedman/Wilcoxon on the per-(frame,ligand) cluster count is annotated
+    (exploratory — see orai_cluster_stats.json)."""
+    cstats = _per_tool_cluster_stats(poses, tools)
     x = np.arange(len(frames))
     nt = max(len(tools), 1)
     width = 0.8 / nt
     ax2 = ax.twinx()
     for k, t in enumerate(tools):
         off = (k - (nt - 1) / 2) * width
-        ncl = [stats.get((fr, t), (np.nan, np.nan, 0))[0] for fr in frames]
-        dom = [stats.get((fr, t), (np.nan, np.nan, 0))[1] for fr in frames]
+        ncl = [cstats.get((fr, t), (np.nan, np.nan, 0))[0] for fr in frames]
+        dom = [cstats.get((fr, t), (np.nan, np.nan, 0))[1] for fr in frames]
         ax.bar(x + off, ncl, width, color=_style(t)[1], alpha=0.85,
                edgecolor="black", linewidth=0.3, label=_style(t)[0])
         ax2.plot(x + off, dom, marker="o", ls="none", markersize=6,
@@ -447,6 +851,13 @@ def _draw_tool_cluster_contribution(ax, poses, frames, tools):
     h1, l1 = ax.get_legend_handles_labels(); h2, l2 = ax2.get_legend_handles_labels()
     ax.legend(h1 + h2, l1 + l2, fontsize=7, loc="upper right")
     ax.grid(alpha=0.25); ax.set_axisbelow(True)
+    if stats is not None and su is not None:
+        cap = _paired_summary(stats) if not stats.get("skipped") else None
+        note = (f"clusters/pair across tools: {cap}\nunit (frame,ligand) pair; exploratory"
+                if cap else "clusters/pair across tools: n too small — exploratory")
+        ax.text(0.02, 0.98, note, transform=ax.transAxes, fontsize=6.5, color="0.4",
+                ha="left", va="top",
+                bbox=dict(boxstyle="round", fc="white", ec="0.8", alpha=0.8))
 
 
 def _tool_agreement_matrix(pairs, tools, thr):
@@ -474,8 +885,10 @@ def _tool_agreement_matrix(pairs, tools, thr):
     return frac, cnt
 
 
-def _draw_tool_agreement_matrix(ax, pairs, tools, thr):
-    """(new) heat-map of pairwise tool agreement on the binding site."""
+def _draw_tool_agreement_matrix(ax, pairs, tools, thr, stats=None):
+    """(new) heat-map of pairwise tool agreement on the binding site. Cells carry
+    a Wilcoxon star (per-pair distance vs the ``thr`` agree-line; exploratory)."""
+    by_col = _tpa_by_col(stats)
     frac, cnt = _tool_agreement_matrix(pairs, tools, thr)
     n = len(tools)
     im = ax.imshow(np.where(np.isnan(frac), 0.0, frac), cmap="YlGn", vmin=0, vmax=1)
@@ -487,7 +900,10 @@ def _draw_tool_agreement_matrix(ax, pairs, tools, thr):
             if i == j:
                 ax.text(j, i, "—", ha="center", va="center", fontsize=11, color="0.4")
             elif not np.isnan(frac[i, j]):
-                ax.text(j, i, f"{frac[i, j]*100:.0f}%\n(n={cnt[i, j]})",
+                col = f"{tools[i][:2]}_{tools[j][:2]}_dist"
+                rec = by_col.get(col) or by_col.get(f"{tools[j][:2]}_{tools[i][:2]}_dist")
+                star = f"\n{rec['star']}" if (rec and rec.get("star")) else ""
+                ax.text(j, i, f"{frac[i, j]*100:.0f}%\n(n={cnt[i, j]}){star}",
                         ha="center", va="center", fontsize=9,
                         color="black" if frac[i, j] < 0.6 else "white")
             else:
@@ -498,10 +914,12 @@ def _draw_tool_agreement_matrix(ax, pairs, tools, thr):
     ax.grid(False)
 
 
-def _draw_valid_vs_consensus(ax, poses, thr):
+def _draw_valid_vs_consensus(ax, poses, thr, stats=None):
     """(D) PoseBusters survivors vs failures — distance to the pair consensus.
     Multi-tool pairs only: for single-tool pairs the consensus is just that
-    tool's own cluster centre, so 'nearer the consensus' would be circular."""
+    tool's own cluster centre, so 'nearer the consensus' would be circular.
+    Mann–Whitney U + Cliff's δ (unit = pose, clustered by (frame,ligand) pair for
+    the median CIs — see orai_cluster_stats.json)."""
     dd = poses[poses["pb_valid"].notna()]
     if "consensus_multitool" in dd:
         dd = dd[dd["consensus_multitool"] == True]  # noqa: E712
@@ -517,10 +935,22 @@ def _draw_valid_vs_consensus(ax, poses, thr):
     ax.set_title("Are valid poses nearer the consensus site?\n(multi-tool pairs)")
     ax.set_xlabel("Pose distance to its pair's consensus site (Å)")
     ax.set_ylabel("Probability density"); ax.legend(fontsize=8); ax.grid(alpha=0.25)
+    if stats and su is not None and stats.get("p") is not None:
+        d, ci = stats.get("cliffs_delta"), stats.get("delta_ci") or [None, None]
+        ci_txt = (f" [{ci[0]:.2f}, {ci[1]:.2f}]"
+                  if ci and ci[0] is not None and ci[1] is not None else "")
+        txt = (f"Mann–Whitney {su.p_stars(stats['p'])} {su.fmt_p(stats['p'])}"
+               f"\nCliff's δ={d:.2f}{ci_txt}"
+               f"\nunit: pose (clustered by frame×ligand pair); exploratory")
+        ax.text(0.97, 0.97, txt, transform=ax.transAxes, fontsize=7,
+                ha="right", va="top",
+                bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.85))
 
 
-def _draw_tool_dispersion(ax, pairs, tools):
-    """(E) per-tool homogeneity: how dispersed each tool's own poses are."""
+def _draw_tool_dispersion(ax, pairs, tools, stats=None):
+    """(E) per-tool homogeneity: how dispersed each tool's own poses are. A paired-
+    across-tools Friedman/Wilcoxon on the per-(frame,ligand) spread is annotated
+    (exploratory — see orai_cluster_stats.json)."""
     present = []
     for t in tools:
         col = pairs.get(f"{t}_spread")
@@ -538,6 +968,13 @@ def _draw_tool_dispersion(ax, pairs, tools):
         ax.set_xticklabels([_style(t)[0] for t, _ in present], rotation=15, ha="right")
     ax.set_title("Per-tool pose dispersion (decisiveness)")
     ax.set_ylabel("Mean spread of a tool's poses per pair (Å)"); ax.grid(alpha=0.25)
+    if stats is not None and su is not None:
+        cap = _paired_summary(stats) if not stats.get("skipped") else None
+        note = (f"spread across tools: {cap}\nunit (frame,ligand) pair; exploratory"
+                if cap else "spread across tools: n too small — exploratory")
+        ax.text(0.02, 0.98, note, transform=ax.transAxes, fontsize=6.5, color="0.4",
+                ha="left", va="top",
+                bbox=dict(boxstyle="round", fc="white", ec="0.8", alpha=0.8))
 
 
 def _draw_axis_depth(ax, poses, tools):
@@ -556,7 +993,8 @@ def _draw_axis_depth(ax, poses, tools):
         ax.set_xlim(lo - 5, hi + 5)
 
 
-def fig_overview(pairs: pd.DataFrame, poses: pd.DataFrame, thr: float, out_dir: Path):
+def fig_overview(pairs: pd.DataFrame, poses: pd.DataFrame, thr: float, out_dir: Path,
+                 stats_out: Optional[dict] = None):
     """Combined 8-panel overview PLUS a standalone PNG per panel in ``panels/``."""
     import matplotlib
     matplotlib.use("Agg")
@@ -565,16 +1003,42 @@ def fig_overview(pairs: pd.DataFrame, poses: pd.DataFrame, thr: float, out_dir: 
     tools = sorted(poses["tool"].unique())
     frames = sorted(pairs["frame"].unique())
 
+    # Compute the per-panel stats ONCE (guarded); they annotate both the grid
+    # cell and the standalone panel, and are written to orai_cluster_stats.json.
+    s_pb = s_tpa = s_vc = s_cs = s_tcc = s_td = None
+    for name, fn in (("pb_validity_per_frame trend", lambda: _stats_pb_frame_trend(poses, frames, tools)),
+                     ("tool-pair agreement", lambda: _stats_tool_pair_agreement(pairs, tools, thr)),
+                     ("valid-vs-consensus", lambda: _stats_valid_vs_consensus(poses)),
+                     ("cluster-structure trend", lambda: _stats_cluster_structure_trend(pairs, frames)),
+                     ("tool cluster contribution", lambda: _stats_tool_cluster_contribution(poses, tools)),
+                     ("tool dispersion", lambda: _stats_tool_dispersion(pairs, tools))):
+        try:
+            r = fn()
+        except Exception as e:                          # pragma: no cover
+            print(f"  [stats] {name} failed: {e}"); r = None
+        if name.startswith("pb_validity"):   s_pb = r
+        elif name.startswith("tool-pair"):    s_tpa = r
+        elif name.startswith("valid-vs"):     s_vc = r
+        elif name.startswith("cluster-str"):  s_cs = r
+        elif name.startswith("tool cluster"): s_tcc = r
+        elif name.startswith("tool disp"):    s_td = r
+    if stats_out is not None:
+        for key, val in (("pb_validity_per_frame", s_pb), ("tool_pair_agreement", s_tpa),
+                         ("valid_vs_consensus", s_vc), ("cluster_structure_trend", s_cs),
+                         ("tool_cluster_contribution", s_tcc), ("tool_dispersion", s_td)):
+            if val is not None:
+                stats_out[key] = val
+
     # (name, draw-fn) — one entry per panel; the draw-fn takes only an Axes so the
     # same call renders the grid cell and the standalone figure.
     panels = [
-        ("cross_tool_agreement",     lambda a: _draw_cross_tool_agreement(a, pairs, thr, tools)),
-        ("pb_validity_per_frame",    lambda a: _draw_pb_validity_per_frame(a, poses, frames, tools)),
-        ("cluster_structure",        lambda a: _draw_cluster_structure(a, pairs, frames)),
-        ("tool_cluster_contribution", lambda a: _draw_tool_cluster_contribution(a, poses, frames, tools)),
-        ("tool_agreement_matrix",    lambda a: _draw_tool_agreement_matrix(a, pairs, tools, thr)),
-        ("valid_vs_consensus",       lambda a: _draw_valid_vs_consensus(a, poses, thr)),
-        ("tool_dispersion",          lambda a: _draw_tool_dispersion(a, pairs, tools)),
+        ("cross_tool_agreement",     lambda a: _draw_cross_tool_agreement(a, pairs, thr, tools, s_tpa)),
+        ("pb_validity_per_frame",    lambda a: _draw_pb_validity_per_frame(a, poses, frames, tools, s_pb)),
+        ("cluster_structure",        lambda a: _draw_cluster_structure(a, pairs, frames, s_cs)),
+        ("tool_cluster_contribution", lambda a: _draw_tool_cluster_contribution(a, poses, frames, tools, s_tcc)),
+        ("tool_agreement_matrix",    lambda a: _draw_tool_agreement_matrix(a, pairs, tools, thr, s_tpa)),
+        ("valid_vs_consensus",       lambda a: _draw_valid_vs_consensus(a, poses, thr, s_vc)),
+        ("tool_dispersion",          lambda a: _draw_tool_dispersion(a, pairs, tools, s_td)),
         ("axis_depth",               lambda a: _draw_axis_depth(a, poses, tools)),
     ]
 
@@ -653,7 +1117,8 @@ def _draw_dist_matrix(ax, M, row_labels, col_labels, n_pairs, frames_seq,
     return im
 
 
-def fig_divergence_matrix(pairs: pd.DataFrame, poses_by_pair: dict, thr: float, out_dir: Path):
+def fig_divergence_matrix(pairs: pd.DataFrame, poses_by_pair: dict, thr: float, out_dir: Path,
+                          stats_out: Optional[dict] = None):
     """Two matched matrices over every (MD snapshot × ligand) pair (rows) and
     every tool-pair (cols), sharing one Å colour scale (green ≤ ``thr`` = agree,
     red = divergent, grey = a tool produced no pose):
@@ -676,7 +1141,44 @@ def fig_divergence_matrix(pairs: pd.DataFrame, poses_by_pair: dict, thr: float, 
         return None
     dfp = pairs.sort_values(["frame", "ligand"]).reset_index(drop=True)
     n_pairs = len(dfp)
-    col_labels = [lab for *_, lab in _TOOL_PAIRS] + ["mean of\npresent pairs"]
+
+    # Tool-pair signed-rank stars annotate the LEFT (dominant-site) matrix, whose
+    # columns are exactly the distances the Wilcoxon test uses. Reuse the stats
+    # already computed by fig_overview when available, else compute here.
+    s_tpa = (stats_out or {}).get("tool_pair_agreement")
+    if s_tpa is None:
+        try:
+            tools_seen = sorted({p["tool"] for recs in poses_by_pair.values() for p in recs})
+            s_tpa = _stats_tool_pair_agreement(pairs, tools_seen, thr)
+            if stats_out is not None:
+                stats_out.setdefault("tool_pair_agreement", s_tpa)
+        except Exception:                              # pragma: no cover
+            s_tpa = None
+    _by_col = _tpa_by_col(s_tpa)
+    left_labels = []
+    for _ta, _tb, col, lab in _TOOL_PAIRS:
+        rec = _by_col.get(col)
+        left_labels.append(lab + (f"\n{rec['star']}" if (rec and rec.get("star")) else ""))
+    left_labels.append("mean of\npresent pairs")
+
+    # Tool-pair signed-rank stars for the RIGHT (cloud-touch) matrix, whose columns
+    # are exactly the per-pair CLOSEST cross-tool pose distances the Wilcoxon test
+    # uses (do the pose clouds graze within ``thr`` Å?).
+    s_touch = (stats_out or {}).get("cross_pose_touch")
+    if s_touch is None:
+        try:
+            s_touch = _stats_cross_pose_touch(pairs, poses_by_pair, thr)
+            if stats_out is not None:
+                stats_out.setdefault("cross_pose_touch", s_touch)
+        except Exception:                              # pragma: no cover
+            s_touch = None
+    _touch_by_col = {rec.get("col"): rec for rec in (s_touch or {}).get("pairs", {}).values()
+                     if isinstance(rec, dict) and rec.get("col")}
+    right_labels = []
+    for _ta, _tb, col, lab in _TOOL_PAIRS:
+        rec = _touch_by_col.get(col)
+        right_labels.append(lab + (f"\n{rec['star']}" if (rec and rec.get("star")) else ""))
+    right_labels.append("mean of\npresent pairs")
 
     # LEFT: dominant-site distance (pre-computed columns) + per-row mean
     S = np.full((n_pairs, len(_TOOL_PAIRS)), np.nan)
@@ -707,16 +1209,22 @@ def fig_divergence_matrix(pairs: pd.DataFrame, poses_by_pair: dict, thr: float, 
     cmap = plt.get_cmap("RdYlGn_r").copy(); cmap.set_bad("#dddddd")
 
     fig, axes = plt.subplots(1, 2, figsize=(15.5, max(5.0, 0.5 * len(row_labels) + 2.2)))
-    _draw_dist_matrix(axes[0], S, row_labels, col_labels, n_pairs, frames_seq, norm, cmap, vmax,
+    _draw_dist_matrix(axes[0], S, row_labels, left_labels, n_pairs, frames_seq, norm, cmap, vmax,
                       "Do the tools prefer the same site?\n"
                       "distance between each tool's DOMINANT (largest-cluster) site (Å)", True)
-    im = _draw_dist_matrix(axes[1], D, row_labels, col_labels, n_pairs, frames_seq, norm, cmap, vmax,
+    im = _draw_dist_matrix(axes[1], D, row_labels, right_labels, n_pairs, frames_seq, norm, cmap, vmax,
                            "Do the tools' pose clouds ever touch?\n"
                            "closest distance between ANY two poses of the tools (Å)", False)
     for a, lab in zip(axes, "AB"):                         # panel labels clear of the 2-line titles
         a.text(-0.02, 1.17, f"({lab})", transform=a.transAxes,
                fontsize=13, fontweight="bold", va="bottom", ha="right")
-    fig.suptitle("Cross-tool divergence across all Orai MD snapshots × JKU ligands  "
+    if _by_col:                                            # star meaning for the LEFT column headers
+        axes[0].text(0.0, -0.02, "star: Wilcoxon per-pair distance vs threshold (exploratory)",
+                     transform=axes[0].transAxes, fontsize=6.5, color="0.4", ha="left", va="top")
+    if _touch_by_col:                                      # star meaning for the RIGHT column headers
+        axes[1].text(0.0, -0.02, "star: Wilcoxon per-pair closest-pose distance vs threshold (exploratory)",
+                     transform=axes[1].transAxes, fontsize=6.5, color="0.4", ha="left", va="top")
+    fig.suptitle("Cross-tool divergence across every Orai MD-snapshot × ligand pair  "
                  f"(green ≤ {thr:g} Å = agree, red = divergent, grey = tool absent)",
                  fontsize=12, y=1.0)
     cbar = fig.colorbar(im, ax=axes, fraction=0.046, pad=0.04, extend="max")
@@ -760,9 +1268,22 @@ def fig_examples(records, poses_by_pair, thr, out_dir, n_ex=6):
                      f"agree {r['mean_inter_tool_dist']:.1f} Å", fontsize=8)
         ax.set_xticklabels([]); ax.set_yticklabels([]); ax.set_zticklabels([])
     _label_panels(axes, fontsize=12)
+    # Edge legend names only the validity categories actually plotted. Under
+    # --pb-valid-only every marker is valid (black), so "red = invalid / grey =
+    # unknown" would be a phantom legend describing categories that never appear.
+    present = [p["pb_valid"] for r in ex
+               for p in poses_by_pair[(r["frame"], r["ligand"])]]
+    edge_bits = []
+    if any(v is True for v in present):
+        edge_bits.append("black = PoseBusters-valid")
+    if any(v is False for v in present):
+        edge_bits.append("red = invalid")
+    if any(v is not True and v is not False for v in present):
+        edge_bits.append("grey = unknown")
+    edge_txt = ", ".join(edge_bits) if edge_bits else "black = PoseBusters-valid"
     fig.suptitle("Example pose clusterings — colour = cluster, marker = tool "
-                 "(○ AutoDock / △ DiffDock / □ EquiBind), edge: black = PoseBusters-valid, "
-                 "red = invalid, grey = unknown", fontsize=11)
+                 "(○ AutoDock / △ DiffDock / □ EquiBind), edge: " + edge_txt,
+                 fontsize=11)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     p = out_dir / "orai_example_clusters.png"
     fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
@@ -773,7 +1294,8 @@ def fig_examples(records, poses_by_pair, thr, out_dir, n_ex=6):
 # Main
 # ════════════════════════════════════════════════════════════════════════
 
-def fig_descriptor_quality(pairs: pd.DataFrame, features_csv: str, out_dir: Path):
+def fig_descriptor_quality(pairs: pd.DataFrame, features_csv: str, out_dir: Path,
+                           stats_out: Optional[dict] = None):
     """Which ligand types dock CONSISTENTLY on Orai (no crystal)? Relate ligand
     descriptors / Lipinski Ro5 / PCA to the quality proxies we DO have: PoseBusters
     validity, cross-tool agreement, and cluster tightness. Reuses the same shared
@@ -830,24 +1352,64 @@ def fig_descriptor_quality(pairs: pd.DataFrame, features_csv: str, out_dir: Path
     ax[0, 1].set_ylabel("Median inter-tool consensus distance (Å)")
     ax[0, 1].grid(alpha=0.3); ax[0, 1].set_axisbelow(True)
 
-    # (C) Spearman of properties vs validity & vs agreement
+    # (C) Spearman of properties vs validity & vs agreement — now with p-values
+    # (previously discarded), BH-FDR-corrected across the properties (per target),
+    # and significance stars on the bars. n≈{len(d)} ligands ⇒ exploratory.
     feats = [f for f in PCA_FEATURES if f in d.columns] + [c for c in ("PC1", "PC2") if c in d.columns]
-    rows = []
+    rows = []                # [feature, rho_valid, rho_agree, p_valid, p_agree]
     for f in feats:
-        v = pd.to_numeric(d[f], errors="coerce")
-        out = {}
+        v = pd.to_numeric(d[f], errors="coerce").to_numpy()
+        rho, praw = {}, {}
         for tgt, kk in (("pb_valid_rate", "valid"), ("inter_tool_dist", "agree")):
-            m = v.notna() & d[tgt].notna()
-            out[kk] = spearmanr(v[m], d[tgt][m])[0] if m.sum() > 10 else np.nan
-        rows.append((f, out["valid"], out["agree"]))
+            tv = pd.to_numeric(d[tgt], errors="coerce").to_numpy()
+            m = ~(np.isnan(v) | np.isnan(tv))
+            if m.sum() > 10 and su is not None:
+                try:
+                    r, p, _n = su.spearman(v, tv)
+                except Exception:
+                    r, p = np.nan, np.nan
+            elif m.sum() > 10:
+                r, p = spearmanr(v[m], tv[m])[0], np.nan
+            else:
+                r, p = np.nan, np.nan
+            rho[kk], praw[kk] = r, p
+        rows.append([f, rho["valid"], rho["agree"], praw["valid"], praw["agree"]])
+    # BH-FDR across properties, separately per target
+    if su is not None:
+        try:
+            qv = su.bh_fdr([r[3] for r in rows])
+            qa = su.bh_fdr([r[4] for r in rows])
+        except Exception:
+            qv = qa = [np.nan] * len(rows)
+    else:
+        qv = qa = [np.nan] * len(rows)
+    for r, q1, q2 in zip(rows, qv, qa):
+        r.append(_f(q1)); r.append(_f(q2))     # -> [.., q_valid, q_agree]
     rows.sort(key=lambda x: (x[1] if x[1] == x[1] else 0))
     y = np.arange(len(rows)); w = 0.4
     ax[1, 0].barh(y - w / 2, [r[1] for r in rows], w, color="#2C7FB8", label="vs validity (↑ = more valid)")
     ax[1, 0].barh(y + w / 2, [r[2] for r in rows], w, color="#D95F0E", label="vs inter-tool dist (↑ = more disagreement)")
-    ax[1, 0].set_yticks(y); ax[1, 0].set_yticklabels([nice(f) for f, _, _ in rows], fontsize=7)
+    # star bars whose BH-FDR q < 0.05
+    if su is not None:
+        for k, r in enumerate(rows):
+            for val, q, dy in ((r[1], r[5], -w / 2), (r[2], r[6], +w / 2)):
+                s = su.p_stars(q)
+                if s and s not in ("", "ns") and val == val:
+                    ax[1, 0].text(val + (0.02 if val >= 0 else -0.02), k + dy, s,
+                                  va="center", ha="left" if val >= 0 else "right",
+                                  fontsize=8, fontweight="bold")
+    ax[1, 0].set_yticks(y); ax[1, 0].set_yticklabels([nice(r[0]) for r in rows], fontsize=7)
     ax[1, 0].axvline(0, color="k", lw=0.8); ax[1, 0].legend(fontsize=7)
-    ax[1, 0].set_title("Which properties track Orai docking quality?")
+    ax[1, 0].set_title("Which properties track Orai docking quality?\n"
+                       "(Spearman ρ; star = BH-FDR q<0.05, exploratory)")
     ax[1, 0].set_xlabel("Spearman correlation")
+    if stats_out is not None:
+        stats_out["descriptor_quality"] = {
+            "test": "spearman + BH-FDR across properties",
+            "unit": f"per-ligand (n={len(d)}) — exploratory",
+            "properties": [{"feature": r[0], "rho_valid": _f(r[1]), "p_valid": _f(r[3]),
+                            "q_valid": r[5], "rho_agree": _f(r[2]), "p_agree": _f(r[4]),
+                            "q_agree": r[6]} for r in rows]}
 
     # (D) PCA chemical space coloured by validity
     if "PC1" in d and "PC2" in d and has_pb.any():
@@ -898,6 +1460,19 @@ def main(argv=None) -> int:
                     choices=("all", "original", "smina", "gnina"),
                     help="Restrict DiffDock to one optimizer variant (default 'all' "
                          "pools raw+smina+gnina). 'gnina' = keep only gnina-refined poses.")
+    ap.add_argument("--valid-ligands-only", action="store_true",
+                    help="Restrict the analysis to ligands that produced at least ONE "
+                         "PoseBusters-valid pose anywhere (any Orai frame / any tool). "
+                         "All poses of those ligands are kept (so the valid-vs-invalid "
+                         "spatial split is preserved); ligands whose every docked pose "
+                         "fails PoseBusters are dropped entirely before clustering.")
+    ap.add_argument("--pb-valid-only", action="store_true",
+                    help="Cluster ONLY the individual poses that pass PoseBusters "
+                         "(pb_valid == True); every failing pose is dropped before "
+                         "clustering. The site/agreement/descriptor axes then describe "
+                         "the PB-valid pose cloud only. The valid-vs-invalid spatial "
+                         "comparison and per-frame validity panels become degenerate "
+                         "(everything is valid by construction) and are labelled as such.")
     ap.add_argument("--no-plot", action="store_true")
     args = ap.parse_args(argv)
 
@@ -914,6 +1489,34 @@ def main(argv=None) -> int:
         return 1
     print(f"  {len(df):,} poses | tools: {sorted(df['tool'].unique())} | "
           f"frames: {df['frame'].nunique()} | ligands: {df['ligand'].nunique()}")
+
+    # Optional: keep only ligands with >=1 PoseBusters-valid pose (any frame/tool).
+    # Every pose of a qualifying ligand is retained, so the per-pair clustering and
+    # the valid-vs-invalid spatial comparison still run; ligands that never produced
+    # a single valid pose are removed wholesale.
+    if args.valid_ligands_only:
+        valid_ligs = set(df.loc[df["pb_valid"] == True, "ligand"].unique())   # noqa: E712
+        n_before = df["ligand"].nunique()
+        df = df[df["ligand"].isin(valid_ligs)].copy()
+        print(f"  --valid-ligands-only: kept {len(valid_ligs)}/{n_before} ligands "
+              f"with >=1 PB-valid pose -> {len(df):,} poses remain.")
+        if df.empty:
+            print("No poses remain after the valid-ligand filter.")
+            return 1
+
+    # Pose-level PB-valid restriction: cluster ONLY passing poses. Applied after the
+    # optional ligand filter. Poses with an unknown verdict (pb_valid is NaN, e.g. a
+    # tool with no PoseBusters columns) are dropped too, since "valid-only" cannot
+    # vouch for them.
+    if args.pb_valid_only:
+        n_poses_before, n_lig_before = len(df), df["ligand"].nunique()
+        df = df[df["pb_valid"] == True].copy()   # noqa: E712
+        print(f"  --pb-valid-only: kept {len(df):,}/{n_poses_before:,} PB-valid poses "
+              f"across {df['ligand'].nunique()}/{n_lig_before} ligands "
+              f"(valid-vs-invalid panels are degenerate under this filter).")
+        if df.empty:
+            print("No PB-valid poses remain after the filter.")
+            return 1
     print("Computing pose centroids ...")
     df = add_centroids(df, args.workers)
 
@@ -1015,18 +1618,41 @@ def main(argv=None) -> int:
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
 
+    # Statistical-test sidecar (see STATISTICAL_VALIDATION_PLAN.md). Every test is
+    # guarded + labelled EXPLORATORY; a failure here never blocks the figures. The
+    # independent n varies by dataset (Orai×JKU is tiny, ~12 (frame,ligand) pairs;
+    # Orai×benchmark is ~1200), so the note reports the ACTUAL n rather than assuming.
+    _n_pairs = int(len(pairs))
+    _n_ligs = int(pairs["ligand"].nunique()) if len(pairs) else 0
+    _tiny = " (a tiny independent n)" if _n_pairs < 60 else ""
+    cluster_stats: Dict[str, dict] = {
+        "n_pairs": _n_pairs, "match_thr_A": float(args.match_thr),
+        "tools": sorted(poses["tool"].unique()),
+        "note": (f"n={_n_pairs} independent (frame×ligand) pairs over {_n_ligs} "
+                 f"ligands{_tiny}; all tests are exploratory and never treat "
+                 f"correlated poses within a pair as independent."),
+    }
+
     if not args.no_plot:
-        f1 = fig_overview(pairs, poses, args.match_thr, out_dir)
+        f1 = fig_overview(pairs, poses, args.match_thr, out_dir, stats_out=cluster_stats)
         print(f"  Figure: {f1}")
-        fdiv = fig_divergence_matrix(pairs, poses_by_pair, args.match_thr, out_dir)
+        fdiv = fig_divergence_matrix(pairs, poses_by_pair, args.match_thr, out_dir,
+                                     stats_out=cluster_stats)
         if fdiv:
             print(f"  Figure: {fdiv}")
         f2 = fig_examples(records, poses_by_pair, args.match_thr, out_dir)
         if f2:
             print(f"  Figure: {f2}")
-        f3 = fig_descriptor_quality(pairs, args.features_csv, out_dir)
+        f3 = fig_descriptor_quality(pairs, args.features_csv, out_dir, stats_out=cluster_stats)
         if f3:
             print(f"  Figure: {f3}")
+
+    try:
+        (out_dir / "orai_cluster_stats.json").write_text(
+            json.dumps(cluster_stats, indent=2, default=str))
+        print(f"  Stats sidecar: {out_dir / 'orai_cluster_stats.json'}")
+    except Exception as e:                              # pragma: no cover
+        print(f"  [stats] failed to write orai_cluster_stats.json: {e}")
     return 0
 
 

@@ -181,7 +181,11 @@ Output plots (in --out-dir):
     17h_pb_top30_recovery_raw_vs_refined.png — 17f + 17g in ONE figure: AutoDock once, then
                                        each tool's raw panel directly above its refined
                                        panel (DiffDock raw/smina*, EquiBind raw/gnina), so the
-                                       refinement benefit reads off panel-to-panel
+                                       refinement benefit reads off panel-to-panel.
+                                       17f/17g/17h each annotate per panel a Wilson 95% CI on
+                                       the pass-all rate + exact McNemar (Holm-adjusted) for
+                                       the rank-1→top-30 gain, and raw→refined McNemar on the
+                                       refined panels; full payloads in the *_stats.json sidecar
     17d_pb_test_waterfall_raw_vs_best.png — Same cascade, top-1 pose, comparing the RAW pose
                                        with its best refined variant per method:
                                        DiffDock raw vs diffdock_smina (rank-1), EquiBind raw
@@ -428,6 +432,20 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 # Shared (A),(B),(C)… panel labeller for multi-panel figures.
 from pocket_comparison_report import _label_panels  # noqa: E402
+# Shared, unit-tested statistical helpers (Friedman/Kendall-W, paired-proportions
+# with Cochran's Q + exact McNemar, Wilson CIs, Holm — see STATISTICAL_VALIDATION_PLAN.md).
+import stats_utils as su  # noqa: E402
+
+
+def _json_default(o):
+    """json.dump default: make numpy scalars/arrays serialisable in the stats sidecar."""
+    if isinstance(o, np.integer):
+        return int(o)
+    if isinstance(o, np.floating):
+        return float(o)
+    if isinstance(o, np.ndarray):
+        return o.tolist()
+    return str(o)
 
 from rdkit import Chem, DataStructs, RDLogger
 from rdkit.Chem import AllChem, rdMolTransforms
@@ -1503,8 +1521,8 @@ def aggregate_topn_within_thresholds(
         # (all of the tool's complexes / all its top-N poses) — the gate only restricts
         # which poses may count as a "hit".
         if pb_valid_only:
-            sub["pb_valid"] = sub["pb_valid"].map(
-                lambda x: str(x).strip().lower() in ("true", "1"))
+            sub["pb_valid"] = _to_bool(sub["pb_valid"])   # shared coercion — keeps
+            #   _topn_within_frames' per-complex mirror byte-identical to this curve
         n_pairs = sub.groupby(["protein", "ligand"]).ngroups
         ranked = sub[sub["_rk"] <= top_n]
         top1 = (ranked[ranked["_rk"] == 1]
@@ -1545,6 +1563,189 @@ def aggregate_topn_within_thresholds(
         _emit("equibind", eq_df, _gnina_affinity_rank(eq_df))
 
     return pd.DataFrame(rows).round(2)
+
+
+# Pre-specified RMSD thresholds at which fig 18's complex-level panel gets paired
+# tests — a SMALL fixed family (2 Å canonical docking success + 1 Å high-accuracy),
+# NOT one test per cumulative sweep point. The 21 grid thresholds are nested (a hit
+# at 1 Å is a hit at every larger t), so testing them all would multiply-count the
+# same complexes; we pre-register these two and Holm-pool the pairwise McNemar family
+# across them.
+_TOPN_WITHIN_TEST_THRESHOLDS = (1.0, 2.0)
+
+
+def _topn_within_frames(
+        df: pd.DataFrame, top_n: int,
+        eq_df: "pd.DataFrame | None" = None,
+        pb_valid_only: bool = False) -> dict:
+    """Per method → per-complex frame feeding fig 18's paired tests.
+
+    Mirrors :func:`aggregate_topn_within_thresholds` EXACTLY (same de-dup of
+    DiffDock's duplicate top pose, same gnina-affinity ranking for EquiBind, same
+    optional PB-valid gate) but returns, instead of the aggregate counts, a frame
+    indexed by every ``(protein, ligand)`` complex of the method with two float
+    columns:
+      ``top1_rmsd`` — the rank-1 pose's heavy-atom RMSD, or NaN when the rank-1 pose
+                      is absent or (under the gate) PoseBusters-invalid;
+      ``best_rmsd`` — the min RMSD among the method's top-N ranked (gated) poses, or
+                      NaN when none qualifies.
+    A hit at threshold ``t`` is ``col <= t`` (NaN ≤ t is False, so non-qualifying
+    complexes count as misses at every t — identical denominators to the plotted
+    curves). Returns ``{method: frame}`` for ``autodock`` / ``diffdock`` / ``equibind``.
+    """
+    frames: dict = {}
+
+    def _emit(label: str, sub: pd.DataFrame, rank_series) -> None:
+        sub = sub.copy()
+        sub["_rk"] = pd.to_numeric(rank_series, errors="coerce")
+        if pb_valid_only:
+            sub["pb_valid"] = _to_bool(sub["pb_valid"])
+        idx = sub.groupby(["protein", "ligand"]).size().index   # every complex
+        ranked = sub[sub["_rk"] <= top_n]
+        top1 = (ranked[ranked["_rk"] == 1]
+                .groupby(["protein", "ligand"]).first())
+        top1_hit = top1[top1["pb_valid"]] if pb_valid_only else top1
+        rk_hit = ranked[ranked["pb_valid"]] if pb_valid_only else ranked
+        frame = pd.DataFrame(index=idx)
+        frame["top1_rmsd"] = (pd.to_numeric(top1_hit["rmsd"], errors="coerce")
+                              .reindex(idx) if not top1_hit.empty
+                              else pd.Series(index=idx, dtype=float))
+        best = (rk_hit.dropna(subset=["rmsd"])
+                .groupby(["protein", "ligand"])["rmsd"].min())
+        frame["best_rmsd"] = best.reindex(idx) if len(best) else float("nan")
+        frames[label] = frame
+
+    for method, sub in df[df["method"].isin(RANKING_TOOLS)].groupby("method"):
+        sub = sub.copy()
+        sub["rank"] = pd.to_numeric(sub["rank"], errors="coerce")
+        sub = _dedup_ranked_poses(sub)          # collapse DiffDock's duplicate top pose
+        _emit(str(method), sub, sub["rank"])
+    if eq_df is not None and not eq_df.empty:
+        _emit("equibind", eq_df, _gnina_affinity_rank(eq_df))
+    return frames
+
+
+def _stats_topn_within(
+        df: pd.DataFrame, top_n: int,
+        eq_df: "pd.DataFrame | None" = None,
+        pb_valid_only: bool = False,
+        test_thresholds: tuple[float, ...] = _TOPN_WITHIN_TEST_THRESHOLDS) -> dict | None:
+    """Paired significance tests for fig 18's complex-level panel at PRE-SPECIFIED
+    RMSD thresholds (default 1 Å + 2 Å).
+
+    Unit = the ``(protein, ligand)`` complex (one rank-1 pose per complex, so no
+    pose-level pseudo-replication), paired across tools on the same complexes.
+    Three parts, all on per-complex booleans:
+
+      * ``rank1_across_tools`` / ``best_topN_across_tools`` — at each tested t, the
+        rank-1 (solid curve) and best-of-top-N (dashed curve) HIT outcome across
+        tools: Cochran's Q omnibus (complete cases) + pairwise exact McNemar. The
+        pairwise p-values of each family are pooled ACROSS the tested thresholds into
+        ONE Holm family (nested thresholds → one small pre-registered family, not 21
+        tests) and returned as ``rank1_pairwise_holm`` / ``best_topN_pairwise_holm``.
+      * ``ranking_headroom`` — within a tool, best-of-top-N vs rank-1. The rank-1 hit
+        set is a strict SUBSET of best-of-top-N (rank-1 ∈ top-N), so the discordance
+        is one-directional and a McNemar p is degenerate (0.5**b); the gain is
+        reported as an EFFECT SIZE (recovered share b/N with a Wilson 95 % CI), OUT of
+        the p-value family — mirroring :func:`topk_recovery_stats`.
+
+    Per-tool rates carry 95 % Wilson CIs on each tool's OWN denominator (matching the
+    plotted percentages) to drive the figure's error bars. Returns the sidecar dict,
+    or None when < 2 tools carry the per-complex frames.
+    """
+    frames = _topn_within_frames(df, top_n, eq_df=eq_df, pb_valid_only=pb_valid_only)
+    methods = [m for m in ("autodock", "diffdock", "equibind") if m in frames]
+    if len(methods) < 2:
+        return None
+    ts = [float(t) for t in test_thresholds]
+
+    def _hits(frame: pd.DataFrame, col: str, t: float) -> dict:
+        """complex-id → hit-at-t flag (paired keys shared across tools)."""
+        rec = pd.to_numeric(frame[col], errors="coerce") <= t
+        return {f"{p}||{l}": bool(v) for (p, l), v in zip(frame.index, rec)}
+
+    def _across(col: str):
+        """Cochran's Q per threshold (complete cases) + pairwise McNemar (raw p);
+        Holm pooled across thresholds. Returns (per_threshold, pooled_pairwise)."""
+        per_t, fam = [], []
+        for t in ts:
+            maps = {m: _hits(frames[m], col, t) for m in methods}
+            common = sorted(set.intersection(*[set(mp) for mp in maps.values()]))
+            n = len(common)
+            rec = {"rmsd_threshold_A": t, "n_complete": n}
+            if n >= _MIN_UNITS_STATS:
+                M = np.array([[maps[m][c] for m in methods] for c in common], float)
+                Q, pQ, dQ = su.cochran_q(M)
+                rec["omnibus"] = {"Q": Q, "p": pQ, "df": dQ}
+                for i in range(len(methods)):
+                    for j in range(i + 1, len(methods)):
+                        a, b = methods[i], methods[j]
+                        va = np.fromiter((maps[a][c] for c in common), bool, n)
+                        vb = np.fromiter((maps[b][c] for c in common), bool, n)
+                        n10, n01, p = su.mcnemar_exact(va, vb)
+                        # orient 'a' as the higher-rate condition
+                        if int(vb.sum()) > int(va.sum()):
+                            a, b, n10, n01 = b, a, n01, n10
+                        fam.append({"rmsd_threshold_A": t, "a": a, "b": b,
+                                    "a_wins": n10, "b_wins": n01, "n": n,
+                                    "p_raw": float(p)})
+            else:
+                rec["omnibus"] = {"status": "n too small — exploratory", "n": n}
+            per_t.append(rec)
+        if fam:
+            for pr, pa in zip(fam, su.holm([r["p_raw"] for r in fam])):
+                pr["p_holm"] = float(pa)
+                pr["star"] = su.p_stars(pa)
+        return per_t, fam
+
+    r1_per_t, r1_fam = _across("top1_rmsd")
+    best_per_t, best_fam = _across("best_rmsd")
+
+    headroom = []
+    for m in methods:
+        fr = frames[m]
+        N = int(len(fr))
+        t1_rmsd = pd.to_numeric(fr["top1_rmsd"], errors="coerce")
+        bt_rmsd = pd.to_numeric(fr["best_rmsd"], errors="coerce")
+        for t in ts:
+            t1 = t1_rmsd <= t
+            bt = bt_rmsd <= t
+            k1, kb = int(t1.sum()), int(bt.sum())
+            b = int((bt & ~t1).sum())          # recovered by a lower rank, missed by rank-1
+            lo1, hi1 = su.wilson_ci(k1, N)
+            lob, hib = su.wilson_ci(kb, N)
+            loh, hih = su.wilson_ci(b, N)
+            headroom.append({
+                "method": m, "rmsd_threshold_A": t, "n": N,
+                "top1_k": k1, "top1_rate": (k1 / N if N else float("nan")),
+                "top1_ci": [lo1, hi1],
+                "best_topN_k": kb, "best_topN_rate": (kb / N if N else float("nan")),
+                "best_topN_ci": [lob, hib],
+                "headroom_k": b, "headroom_share": (b / N if N else float("nan")),
+                "headroom_ci": [loh, hih], "nested": True,
+            })
+
+    return {
+        "figure": ("18_topn_within_thresholds_pbvalid_complex.png" if pb_valid_only
+                   else "18_topn_within_thresholds_complex.png"),
+        "metric": ("rank-1 / best-of-top-N pose within t Å AND PoseBusters-valid"
+                   if pb_valid_only else "rank-1 / best-of-top-N pose within t Å"),
+        "unit": ("(protein, ligand) complex — rank-1 / best-of-top-N hit boolean; "
+                 "paired across tools on shared complexes"),
+        "test": ("per-threshold Cochran's Q + pairwise exact McNemar (Holm pooled "
+                 "across the pre-specified thresholds) on the across-tool rank-1 and "
+                 "best-of-top-N hit; within-tool ranking headroom (best-of-top-N vs "
+                 "rank-1) reported as a Wilson-CI effect size (nested → no p); 95% "
+                 "Wilson CIs on every rate"),
+        "test_thresholds_A": ts,
+        "top_n": int(top_n),
+        "methods": list(methods),
+        "rank1_across_tools": r1_per_t,
+        "rank1_pairwise_holm": r1_fam,
+        "best_topN_across_tools": best_per_t,
+        "best_topN_pairwise_holm": best_fam,
+        "ranking_headroom": headroom,
+    }
 
 
 # Metric the variant-collapse selectors rank on: the combined docking-success criterion
@@ -1646,7 +1847,263 @@ def _select_best_diffdock(df: pd.DataFrame, forced: str | None = None) -> tuple[
 # ───────────────────────────────────────────────────────────────────
 
 
-def plot_oracle_rmsd_cdf(df: pd.DataFrame, out: Path) -> None:
+# ───────────────────────────────────────────────────────────────────
+# Statistical tests for the headline oracle / success / paper figures.
+# Unit of analysis = one (protein, ligand) complex (poses are aggregated to the
+# oracle / top-1 representative first); the design is paired across tools, so we
+# use the shared paired bundles (Friedman/Kendall-W, Cochran-Q + exact McNemar,
+# Wilson CIs) from stats_utils. Every caller wraps these in try/except so a stats
+# failure degrades to the current test-free figure. Results are also written to
+# posebusters_pose_comparison_stats.json in the out-dir. (See the plan doc.)
+# ───────────────────────────────────────────────────────────────────
+_MIN_UNITS_STATS = 5   # below this the paired tests are labelled 'exploratory'
+
+
+def _stats_oracle_rmsd_paired(df: pd.DataFrame) -> dict | None:
+    """Per-complex ORACLE (best) RMSD across tools → Friedman + Kendall's W with
+    Wilcoxon signed-rank pairwise (Holm). Complete-case (protein, ligand) rows.
+
+    Drives figures 01_oracle_rmsd_cdf and 02_oracle_rmsd_boxplot.
+    """
+    oracle = _oracle_per_pair(df)
+    if oracle.empty:
+        return None
+    piv = oracle.pivot_table(index=["protein", "ligand"], columns="method",
+                             values="rmsd")
+    methods = list(piv.columns)
+    complete = piv[methods].dropna()
+    payload = {
+        "figures": ["01_oracle_rmsd_cdf.png", "02_oracle_rmsd_boxplot.png"],
+        "measure": "per-complex oracle (best) heavy-atom RMSD vs crystal (Å)",
+        "unit": "(protein, ligand) complex — poses aggregated to the oracle first; complete cases across all tools",
+        "test": "Friedman + Kendall's W omnibus; Wilcoxon signed-rank (Holm) pairwise",
+        "methods": [str(m) for m in methods],
+        "n_complete": int(len(complete)),
+    }
+    if len(complete) < _MIN_UNITS_STATS or len(methods) < 2:
+        payload["status"] = "n too small — exploratory"
+        return payload
+    res = su.paired_continuous({str(m): complete[m].to_numpy(float) for m in methods})
+    payload["status"] = "ok"
+    payload["omnibus"] = res["omnibus"]
+    payload["pairwise"] = res["pairwise"]
+    payload["medians"] = res["medians"]
+    return payload
+
+
+def _annotate_oracle_rmsd_stats(ax, payload, x, y, ha, va) -> None:
+    """Draw the oracle-RMSD Friedman/Kendall-W + pairwise-star box on an axis."""
+    if not payload:
+        return
+    box = dict(boxstyle="round", fc="white", ec="0.7", alpha=0.88)
+    if payload.get("status") != "ok":
+        ax.text(x, y, f"cross-tool test: {payload.get('status', 'n/a')} "
+                f"(n={payload.get('n_complete', 0)})", transform=ax.transAxes,
+                ha=ha, va=va, fontsize=7.3, color="0.35", bbox=box)
+        return
+    om = payload["omnibus"]
+    lines = [f"Friedman χ²={om['chi2']:.1f}, {su.fmt_p(om['p'])} "
+             f"(Kendall W={om['kendall_w']:.2f}, n={om['n']})"]
+    for pr in payload["pairwise"]:
+        a = TOOL_LABEL.get(pr["a"], pr["a"]); b = TOOL_LABEL.get(pr["b"], pr["b"])
+        lines.append(f"{a} vs {b}: {su.p_stars(pr.get('p_holm'))} "
+                     f"({su.fmt_p(pr.get('p_holm'))}, r={pr['rank_biserial']:+.2f})")
+    ax.text(x, y, "\n".join(lines), transform=ax.transAxes, ha=ha, va=va,
+            fontsize=7.3, color="0.20", bbox=box, linespacing=1.3)
+
+
+def _stats_success_paired(df: pd.DataFrame, *, valid: bool) -> dict | None:
+    """Per-complex success across tools (paired proportions) + within-tool
+    oracle-vs-top-1 (exact McNemar).
+
+    success = RMSD ≤ 2 Å  (valid=False, fig 03)
+            = RMSD ≤ 2 Å AND PB-valid  (valid=True, fig 10)
+    Unit = (protein, ligand) complex. Per-method Wilson CIs are on each method's
+    own denominator (matching the plotted percentages); the cross-tool omnibus
+    uses complete cases.
+    """
+    def _succ(sub):
+        s = sub["rmsd"] <= 2.0
+        if valid:
+            s = s & sub["pb_valid"].astype(bool)
+        return s.astype(float)
+
+    oracle = _oracle_per_pair(df).copy()
+    if oracle.empty:
+        return None
+    oracle["succ"] = _succ(oracle)
+    orc = oracle.pivot_table(index=["protein", "ligand"], columns="method",
+                             values="succ")
+    top1 = _top1_per_pair(df).copy()
+    if not top1.empty:
+        top1["succ"] = _succ(top1)
+        t1 = top1.pivot_table(index=["protein", "ligand"], columns="method",
+                              values="succ")
+    else:
+        t1 = pd.DataFrame()
+
+    payload = {
+        "figure": ("10_pb_valid_rmsd2_success_bars.png" if valid
+                   else "03_oracle_vs_top1_success.png"),
+        "metric": ("RMSD ≤ 2 Å AND PB-valid" if valid else "RMSD ≤ 2 Å"),
+        "unit": "(protein, ligand) complex — per-complex success boolean",
+        "test": ("paired proportions across tools (Cochran's Q + exact McNemar, "
+                 "Holm) on the oracle success; within-tool oracle-vs-top-1 exact "
+                 "McNemar; 95% Wilson CIs"),
+        "methods": [str(m) for m in orc.columns],
+    }
+    per = {}
+    for m in orc.columns:
+        col = orc[m].dropna(); k = int(col.sum()); n = int(col.size)
+        lo, hi = su.wilson_ci(k, n)
+        d = {"oracle_k": k, "oracle_n": n,
+             "oracle_rate": (k / n if n else float("nan")),
+             "oracle_lo": lo, "oracle_hi": hi}
+        if not t1.empty and m in t1.columns:
+            c2 = t1[m].dropna(); k2 = int(c2.sum()); n2 = int(c2.size)
+            lo2, hi2 = su.wilson_ci(k2, n2)
+            d.update(top1_k=k2, top1_n=n2,
+                     top1_rate=(k2 / n2 if n2 else float("nan")),
+                     top1_lo=lo2, top1_hi=hi2)
+        per[str(m)] = d
+    payload["per_method"] = per
+
+    complete = orc[list(orc.columns)].dropna()
+    if len(complete) >= _MIN_UNITS_STATS and orc.shape[1] >= 2:
+        payload["cross_tool_oracle"] = su.paired_proportions(
+            {str(m): complete[m].to_numpy(float) for m in orc.columns})
+    else:
+        payload["cross_tool_oracle"] = {"status": "n too small — exploratory",
+                                        "n": int(len(complete))}
+
+    wt = []
+    for m in orc.columns:
+        if t1.empty or m not in t1.columns:
+            continue
+        pair = pd.concat([orc[m].rename("o"), t1[m].rename("t")], axis=1).dropna()
+        if len(pair) < _MIN_UNITS_STATS:
+            wt.append({"method": str(m), "n": int(len(pair)),
+                       "status": "n too small — exploratory"})
+            continue
+        n10, n01, p = su.mcnemar_exact(pair["o"].to_numpy(), pair["t"].to_numpy())
+        wt.append({"method": str(m), "n": int(len(pair)), "oracle_wins": n10,
+                   "top1_wins": n01, "p": float(p), "star": su.p_stars(p)})
+    payload["within_tool_oracle_vs_top1"] = wt
+    return payload
+
+
+def _annotate_success_dumbbell(fig, ax, methods, oracle_vals, top1_vals, payload,
+                               footnote_pairwise: bool = True) -> None:
+    """Overlay Wilson-CI error bars, per-row within-tool McNemar stars, and a
+    cross-tool omnibus footnote on the oracle-vs-top-1 dumbbell charts (03 / 10).
+
+    ``footnote_pairwise`` inlines the significant cross-tool pairs into the
+    footnote (fine for 3 tools). Set it False when many rows would make that list
+    overflow (fig 09e's 5 variants) — the omnibus stays on the figure and the full
+    pairwise matrix is recoverable from the stats sidecar.
+    """
+    if not payload:
+        return
+    yv = np.arange(len(methods))[::-1]
+    per = payload.get("per_method", {})
+    wt = {d["method"]: d for d in payload.get("within_tool_oracle_vs_top1", [])}
+    for yi, m, ov, tv in zip(yv, methods, oracle_vals, top1_vals):
+        d = per.get(str(m), {})
+        if not pd.isna(ov) and "oracle_lo" in d:
+            ax.errorbar(ov, yi,
+                        xerr=[[max(0.0, ov - d["oracle_lo"] * 100)],
+                              [max(0.0, d["oracle_hi"] * 100 - ov)]],
+                        fmt="none", ecolor="0.30", elinewidth=1.1, capsize=2.5, zorder=2)
+        if not pd.isna(tv) and "top1_lo" in d:
+            ax.errorbar(tv, yi,
+                        xerr=[[max(0.0, tv - d["top1_lo"] * 100)],
+                              [max(0.0, d["top1_hi"] * 100 - tv)]],
+                        fmt="none", ecolor="0.55", elinewidth=1.1, capsize=2.5, zorder=2)
+        w = wt.get(str(m))
+        if w and w.get("star") and not pd.isna(ov) and not pd.isna(tv):
+            ax.text((ov + tv) / 2, yi + 0.24, f"{w['star']} ({su.fmt_p(w['p'])})",
+                    ha="center", va="bottom", fontsize=7.3, color="#333",
+                    fontweight="bold")
+    ct = payload.get("cross_tool_oracle", {})
+    if str(ct.get("status", "")).startswith("n too small"):
+        note = f"Across-tool oracle test: n too small — exploratory (n={ct.get('n', 0)})"
+    elif "omnibus" in ct:
+        om = ct["omnibus"]
+        if footnote_pairwise:
+            sig = [f"{TOOL_LABEL.get(pr['a'], pr['a'])}>{TOOL_LABEL.get(pr['b'], pr['b'])} {pr['star']}"
+                   for pr in ct.get("pairwise", []) if pr.get("star") not in ("", "ns")]
+            tail = ("; " + ", ".join(sig)) if sig else ""
+            unit = "tool"
+        else:
+            n_sig = sum(1 for pr in ct.get("pairwise", []) if pr.get("star") not in ("", "ns"))
+            tail = (f"; {n_sig} of {len(ct.get('pairwise', []))} pairs significant "
+                    "(Holm) — see stats sidecar") if ct.get("pairwise") else ""
+            unit = "variant"
+        note = f"Across-{unit} oracle success: Cochran's Q={om['Q']:.1f}, {su.fmt_p(om['p'])}{tail}"
+    else:
+        note = ""
+    # Pairwise cross-tool detail (incl. non-significant) is in the stats sidecar.
+    note = (note + "  ·  within-tool ●vs○: exact McNemar; bars = 95% Wilson CI").strip()
+    fig.text(0.5, 0.012, note, ha="center", va="bottom", fontsize=7.0, color="0.30")
+
+
+def _stats_vs_paper(df: pd.DataFrame, oracle_sum: pd.DataFrame,
+                    top1_sum: pd.DataFrame) -> dict | None:
+    """One-sample binomial tests of our primary-pose success rate vs the paper's
+    FIXED published rate (fig 11). Selection mirrors plot_vs_posebusters_paper:
+    top-1 for ranking tools, best pose for EquiBind. The complex sets differ, so
+    this is descriptive — noted in the payload and the figure footnote.
+    """
+    from scipy.stats import binomtest
+    methods = list(oracle_sum.index)
+    chosen = [m for m in ("autodock", "diffdock") if m in methods]
+    eq = [m for m in methods if m.startswith("equibind")]
+    if eq:
+        vcol = "oracle_pb_valid_and_rmsd2_%"
+        best_eq = max(eq, key=lambda m: (float(oracle_sum.loc[m, vcol])
+                                         if vcol in oracle_sum.columns else -1.0))
+        chosen.append(best_eq)
+    if not chosen:
+        return None
+    orc = _oracle_per_pair(df)
+    t1 = _top1_per_pair(df)
+    payload = {
+        "figure": "11_vs_posebusters_paper.png",
+        "test": "one-sample exact binomial vs the paper's fixed published rate",
+        "note": ("the paper's value is a fixed published proportion (PoseBusters "
+                 "Benchmark) with a different complex set from this run, so the "
+                 "test is descriptive, not a like-for-like comparison"),
+        "methods": {},
+    }
+    for m in chosen:
+        ranking = m in RANKING_TOOLS
+        sel_df = t1[t1["method"] == m] if ranking else orc[orc["method"] == m]
+        n = int(len(sel_df))
+        entry = {"selection": ("top-1" if ranking else "best pose*"), "n": n, "metrics": {}}
+        ref = POSEBUSTERS_PAPER_BENCHMARK.get(_paper_method_name(m), {})
+        for metric, mask, paperkey in (
+            ("rmsd_le_2A", sel_df["rmsd"] <= 2.0, "rmsd2"),
+            ("rmsd_le_2A_and_pb_valid",
+             (sel_df["rmsd"] <= 2.0) & sel_df["pb_valid"].astype(bool), "rmsd2_valid"),
+        ):
+            k = int(mask.sum())
+            lo, hi = su.wilson_ci(k, n)
+            paper = ref.get(paperkey)
+            md = {"k": k, "n": n,
+                  "our_rate_%": (round(100 * k / n, 2) if n else None),
+                  "wilson_lo_%": round(100 * lo, 2), "wilson_hi_%": round(100 * hi, 2),
+                  "paper_%": paper}
+            if paper is not None and n > 0 and 0.0 <= paper <= 100.0:
+                bt = binomtest(k, n, paper / 100.0)
+                md["binom_p"] = float(bt.pvalue); md["star"] = su.p_stars(bt.pvalue)
+            else:
+                md["binom_p"] = None; md["star"] = ""
+            entry["metrics"][metric] = md
+        payload["methods"][str(m)] = entry
+    return payload
+
+
+def plot_oracle_rmsd_cdf(df: pd.DataFrame, out: Path, stats: dict | None = None) -> None:
     """Oracle RMSD CDF — best pose per pair, all tools."""
     oracle = _oracle_per_pair(df)
     fig, ax = plt.subplots(figsize=(9, 5.8))
@@ -1672,11 +2129,17 @@ def plot_oracle_rmsd_cdf(df: pd.DataFrame, out: Path) -> None:
     ])
     fig.text(0.5, 0.015, footnote, ha="center", va="bottom", fontsize=7.5,
              color="0.30", linespacing=1.35)
+    # Paired cross-tool test on the per-complex oracle RMSD (Friedman + Kendall W,
+    # Wilcoxon pairwise). Anchored lower-right, the empty corner of a RMSD CDF.
+    try:
+        _annotate_oracle_rmsd_stats(ax, stats, 0.985, 0.04, "right", "bottom")
+    except Exception as exc:  # never let a stats failure break the figure
+        print(f"  WARNING: oracle-RMSD CDF stats annotation skipped ({exc})")
     fig.tight_layout(rect=(0, 0.12, 1, 1))
     fig.savefig(out, dpi=160); plt.close(fig)
 
 
-def plot_oracle_rmsd_box(df: pd.DataFrame, out: Path) -> None:
+def plot_oracle_rmsd_box(df: pd.DataFrame, out: Path, stats: dict | None = None) -> None:
     """Oracle RMSD boxplot — best pose per pair, all tools.
 
     Outliers (points beyond the whiskers, i.e. > Q3 + 1.5×IQR) are hidden and
@@ -1716,13 +2179,20 @@ def plot_oracle_rmsd_box(df: pd.DataFrame, out: Path) -> None:
              "capped at the tallest whisker so the boxes stay legible; n is each "
              "method's full pair count.",
              ha="center", va="bottom", fontsize=7.5, color="0.30")
+    # Same paired cross-tool test as the CDF (Friedman + Kendall W, Wilcoxon
+    # pairwise). Anchored upper-right, above the low-RMSD boxes.
+    try:
+        _annotate_oracle_rmsd_stats(ax, stats, 0.985, 0.97, "right", "top")
+    except Exception as exc:
+        print(f"  WARNING: oracle-RMSD boxplot stats annotation skipped ({exc})")
     fig.tight_layout(rect=(0, 0.07, 1, 1)); fig.savefig(out, dpi=160); plt.close(fig)
 
 
 def _dumbbell(ax, labels, left, right, colors, *,
               left_name: str, right_name: str, value_fmt: str = "{:.0f}%",
               gap_fmt: str | None = None, gap_color: str = "#b22222",
-              missing_note: str | None = None, xmax: float | None = None):
+              missing_note: str | None = None, xmax: float | None = None,
+              label_pos: str = "beside"):
     """Horizontal dumbbell ("connected-dot") chart — a cleaner replacement for
     paired bars when the message is the *gap* between two per-row values.
 
@@ -1733,6 +2203,11 @@ def _dumbbell(ax, labels, left, right, colors, *,
     ``missing_note`` (e.g. EquiBind has no ranking). With ``gap_fmt`` the
     |left − right| gap is annotated on each connector. Returns legend handles so
     the caller controls legend placement.
+
+    ``label_pos`` controls where the value labels go: ``"beside"`` (default) puts
+    them just outside each marker horizontally; ``"below"`` hangs each value under
+    its own marker, growing outward so even near-coincident markers stay legible
+    (use when the two markers can sit close together, e.g. fig 09e).
     """
     from matplotlib.lines import Line2D
     y = np.arange(len(labels))[::-1]            # first label on top
@@ -1753,20 +2228,33 @@ def _dumbbell(ax, labels, left, right, colors, *,
             ax.scatter(rv, yi, s=120, facecolor="white", edgecolor=c,
                        linewidth=2.2, zorder=3)
 
+    below = label_pos == "below"
     for yi, lv, rv in zip(y, left, right):
         if not (pd.isna(lv) or pd.isna(rv)):
             lo, hi = (lv, rv) if lv <= rv else (rv, lv)
-            ax.text(lo - dx, yi, value_fmt.format(lo), ha="right", va="center",
-                    fontsize=8, fontweight="bold")
-            ax.text(hi + dx, yi, value_fmt.format(hi), ha="left", va="center",
-                    fontsize=8, fontweight="bold")
+            if below:
+                # Each value hangs below its own marker, anchored on the far side
+                # so the two texts grow apart — legible even when lo≈hi.
+                ax.text(lo, yi - 0.20, value_fmt.format(lo), ha="right", va="top",
+                        fontsize=8, fontweight="bold")
+                ax.text(hi, yi - 0.20, value_fmt.format(hi), ha="left", va="top",
+                        fontsize=8, fontweight="bold")
+            else:
+                ax.text(lo - dx, yi, value_fmt.format(lo), ha="right", va="center",
+                        fontsize=8, fontweight="bold")
+                ax.text(hi + dx, yi, value_fmt.format(hi), ha="left", va="center",
+                        fontsize=8, fontweight="bold")
             if gap_fmt:
                 ax.text((lo + hi) / 2, yi + 0.24, gap_fmt.format(abs(lv - rv)),
                         ha="center", va="bottom", fontsize=7.5,
                         color=gap_color, fontweight="bold")
         elif not pd.isna(lv):
-            ax.text(lv + dx, yi, value_fmt.format(lv), ha="left", va="center",
-                    fontsize=8, fontweight="bold")
+            if below:
+                ax.text(lv, yi - 0.20, value_fmt.format(lv), ha="left", va="top",
+                        fontsize=8, fontweight="bold")
+            else:
+                ax.text(lv + dx, yi, value_fmt.format(lv), ha="left", va="center",
+                        fontsize=8, fontweight="bold")
             if missing_note:
                 ax.text(lv + dx, yi + 0.24, missing_note, ha="left", va="bottom",
                         fontsize=7, color="grey", style="italic")
@@ -1788,7 +2276,8 @@ def _dumbbell(ax, labels, left, right, colors, *,
 
 def plot_oracle_vs_top1_success(oracle_sum: pd.DataFrame,
                                 top1_sum: pd.DataFrame,
-                                out: Path) -> None:
+                                out: Path,
+                                stats: dict | None = None) -> None:
     """Oracle vs top-1 RMSD ≤ 2 Å success rate, as a dumbbell chart.
 
     Ranking tools (Vina, DiffDock) get a filled (oracle) and an open (top-1)
@@ -1822,12 +2311,25 @@ def plot_oracle_vs_top1_success(oracle_sum: pd.DataFrame,
     ax.set_title(_vt("Oracle vs Top-1 success — ranking quality gap\n"
                      "(connector length = ranking loss; ● oracle, ○ top-1)"))
     ax.legend(handles=handles, loc="lower right", fontsize=9)
-    fig.tight_layout(); fig.savefig(out, dpi=160); plt.close(fig)
+    # Paired proportion tests: cross-tool oracle omnibus + within-tool
+    # oracle-vs-top-1 McNemar, with 95% Wilson CIs on each marker.
+    if stats is not None:
+        try:
+            _annotate_success_dumbbell(fig, ax, all_methods, oracle_vals,
+                                       top1_vals, stats)
+            fig.tight_layout(rect=(0, 0.055, 1, 1))
+        except Exception as exc:
+            print(f"  WARNING: fig 03 stats annotation skipped ({exc})")
+            fig.tight_layout()
+    else:
+        fig.tight_layout()
+    fig.savefig(out, dpi=160); plt.close(fig)
 
 
 def plot_pb_valid_success_bars(oracle_sum: pd.DataFrame,
                                top1_sum: pd.DataFrame,
-                               out: Path) -> None:
+                               out: Path,
+                               stats: dict | None = None) -> None:
     """Per-method success dumbbell for the strict '≤ 2 Å & PB-valid' category.
 
     One first-class chart for the combined success rate that fig 09 only shows
@@ -1867,13 +2369,25 @@ def plot_pb_valid_success_bars(oracle_sum: pd.DataFrame,
                      "(RMSD ≤ 2 Å and passes every PoseBusters check — "
                      "% of all complexes; ● oracle, ○ top-1)"))
     ax.legend(handles=handles, loc="lower right", fontsize=9)
-    fig.tight_layout(); fig.savefig(out, dpi=160); plt.close(fig)
+    # Same paired proportion tests as fig 03 on the strict ≤ 2 Å & PB-valid success.
+    if stats is not None:
+        try:
+            _annotate_success_dumbbell(fig, ax, all_methods, oracle_vals,
+                                       top1_vals, stats)
+            fig.tight_layout(rect=(0, 0.055, 1, 1))
+        except Exception as exc:
+            print(f"  WARNING: fig 10 stats annotation skipped ({exc})")
+            fig.tight_layout()
+    else:
+        fig.tight_layout()
+    fig.savefig(out, dpi=160); plt.close(fig)
 
 
 def plot_vs_posebusters_paper(oracle_sum: pd.DataFrame,
                               top1_sum: pd.DataFrame,
                               out: Path,
-                              csv_out: Path | None = None) -> None:
+                              csv_out: Path | None = None,
+                              stats: dict | None = None) -> None:
     """Side-by-side comparison: THIS study vs the published PoseBusters paper.
 
     For each shared method we plot our PRIMARY-prediction success next to the
@@ -1921,6 +2435,8 @@ def plot_vs_posebusters_paper(oracle_sum: pd.DataFrame,
     x = np.arange(len(rows)); w = 0.38
     panels = [("RMSD ≤ 2 Å (accuracy)", "our_rmsd2", "paper_rmsd2"),
               ("RMSD ≤ 2 Å & PB-valid (headline)", "our_valid", "paper_valid")]
+    # metric-key per panel, to look up the one-sample binomial-test payload.
+    _panel_metric = {"our_rmsd2": "rmsd_le_2A", "our_valid": "rmsd_le_2A_and_pb_valid"}
     fig, axes = plt.subplots(1, 2, figsize=(13, 6), sharey=True)
     for ax, (title, ourk, paperk) in zip(axes, panels):
         our_vals = [r[ourk] for r in rows]
@@ -1931,6 +2447,28 @@ def plot_vs_posebusters_paper(oracle_sum: pd.DataFrame,
         ax.bar(x + w / 2, [v if v is not None else 0.0 for v in paper_vals], w,
                color="#9e9e9e", edgecolor="black", hatch="//", alpha=0.7,
                label="PoseBusters paper")
+        # 95% Wilson CI whiskers + one-sample binomial star (our rate vs the
+        # paper's fixed published rate) on each "this study" bar.
+        if stats is not None:
+            try:
+                mkey = _panel_metric.get(ourk)
+                for xi, r, v in zip(x, rows, our_vals):
+                    md = (stats.get("methods", {}).get(str(r["method_key"]), {})
+                          .get("metrics", {}).get(mkey))
+                    if not md or pd.isna(v):
+                        continue
+                    ax.errorbar(xi - w / 2, v,
+                                yerr=[[max(0.0, v - md["wilson_lo_%"])],
+                                      [max(0.0, md["wilson_hi_%"] - v)]],
+                                fmt="none", ecolor="black", elinewidth=1.1,
+                                capsize=3, zorder=4)
+                    if md.get("star"):
+                        ax.text(xi - w / 2, min(v + 7, 103),
+                                f"{md['star']}\n{su.fmt_p(md['binom_p'])}",
+                                ha="center", va="bottom", fontsize=6.8,
+                                color="#8b0000", fontweight="bold")
+            except Exception as exc:
+                print(f"  WARNING: fig 11 stats annotation skipped ({exc})")
         for xi, v in zip(x, our_vals):
             if not pd.isna(v):
                 ax.text(xi - w / 2, v + 1, f"{v:.0f}%", ha="center",
@@ -1953,7 +2491,21 @@ def plot_vs_posebusters_paper(oracle_sum: pd.DataFrame,
                      "(ranking tools: our top-1 pose; EquiBind*: best pose, "
                      "no native ranking — upper bound)"),
                  fontsize=12, fontweight="bold")
-    fig.tight_layout(rect=(0, 0, 1, 0.91))
+    if stats is not None:
+        try:
+            fig.text(0.5, 0.012,
+                     "Stars: one-sample exact binomial test of our rate vs the "
+                     "paper's FIXED published rate (whiskers = 95% Wilson CI on "
+                     "our rate). The complex sets differ (paper = PoseBusters "
+                     "Benchmark), so this is descriptive, not like-for-like.",
+                     ha="center", va="bottom", fontsize=7.2, color="0.30",
+                     linespacing=1.3)
+            fig.tight_layout(rect=(0, 0.05, 1, 0.91))
+        except Exception as exc:
+            print(f"  WARNING: fig 11 footnote skipped ({exc})")
+            fig.tight_layout(rect=(0, 0, 1, 0.91))
+    else:
+        fig.tight_layout(rect=(0, 0, 1, 0.91))
     fig.savefig(out, dpi=160); plt.close(fig)
 
     if csv_out is not None:
@@ -2157,7 +2709,73 @@ def within2_validity_comparison(df: pd.DataFrame, thr: float = 2.0,
     return out
 
 
-def plot_within2_validity_dumbbell(comp: pd.DataFrame, out: Path, thr: float = 2.0) -> None:
+def _stats_within2_gap(df: pd.DataFrame, thr: float = 2.0) -> dict | None:
+    """Within-method paired test for the near-native validity dumbbell (fig 19):
+    is the oracle (min-RMSD) near-native pose systematically more/less PB-valid
+    than a typical near-native pose of the SAME complex — i.e. is the diamond's
+    offset from the circle real, or sampling noise?
+
+    Per method, over (protein, ligand) complexes that have ≥1 near-native pose
+    (RMSD ≤ *thr* Å; equivalently, whose oracle pick is itself near-native):
+      pool_rate    = mean pb_valid over that complex's near-native poses (the circle)
+      oracle_valid = pb_valid of the min-RMSD pose, 0/1                  (the diamond)
+    Wilcoxon signed-rank on (oracle_valid − pool_rate) tests the gap; a complex
+    with a single near-native pose contributes a zero difference and is dropped by
+    the signed-rank (it carries no information about the gap). rank_biserial > 0 ⇒
+    the closest pose is MORE valid than a typical near-native pose; < 0 ⇒ LESS
+    (the "leftward diamond"). The pooled circle rate carries a **cluster (complex)
+    bootstrap** CI — near-native poses are pooled and pseudoreplicated — while the
+    diamond is one pose per complex, so a plain Wilson CI is exact. Mirrors the
+    aggregation in :func:`within2_validity_comparison` so the numbers line up with
+    the plotted percentages.
+    """
+    need = {"method", "protein", "ligand", "rmsd", "pb_valid"}
+    if not need <= set(df.columns):
+        return None
+    d = df.dropna(subset=["rmsd"]).copy()
+    d["pb_valid"] = d["pb_valid"].map(lambda x: str(x).strip().lower() in ("true", "1"))
+    payload = {
+        "figure": "19_within2_validity_dumbbell.png",
+        "unit": "(protein, ligand) complex; near-native poses pooled with a cluster (complex) bootstrap",
+        "test": (f"within-method paired Wilcoxon signed-rank of oracle-pose vs near-native-"
+                 f"pool PB-validity (RMSD ≤ {thr:g} Å); cluster (complex) bootstrap 95% CI on "
+                 "the pool rate, Wilson 95% CI on the oracle-pose rate"),
+        "thr_A": float(thr),
+        "per_method": {},
+    }
+    for m, sub in d.groupby("method"):
+        w2 = sub[sub["rmsd"] <= thr]                                         # near-native poses
+        if w2.empty:
+            continue
+        pair_id = (w2["protein"].astype(str) + "|" + w2["ligand"].astype(str)).to_numpy()
+        circle_rate, c_lo, c_hi = su.cluster_bootstrap_ci(
+            w2["pb_valid"].to_numpy(float), pair_id, statistic=np.mean)
+        orc = sub.loc[sub.groupby(["protein", "ligand"])["rmsd"].idxmin()]   # oracle pick / complex
+        ow2 = orc[orc["rmsd"] <= thr]
+        b_n, b_v = int(len(ow2)), int(ow2["pb_valid"].sum())
+        d_lo, d_hi = su.wilson_ci(b_v, b_n)
+        pool = w2.groupby(["protein", "ligand"])["pb_valid"].mean()
+        ora = ow2.set_index(["protein", "ligand"])["pb_valid"].astype(float)
+        joined = pd.concat([pool.rename("pool"), ora.rename("oracle")], axis=1).dropna()
+        rec = {"circle_rate": float(circle_rate), "circle_ci": [float(c_lo), float(c_hi)],
+               "near_native_poses": int(len(w2)),
+               "diamond_rate": (b_v / b_n if b_n else float("nan")),
+               "diamond_ci": [float(d_lo), float(d_hi)], "oracle_near_native_n": b_n,
+               "n_complexes_paired": int(len(joined))}
+        if len(joined) >= _MIN_UNITS_STATS:
+            rb, p, npair = su.wilcoxon_rankbiserial(
+                joined["oracle"].to_numpy(float), joined["pool"].to_numpy(float))
+            rec.update(gap_test="wilcoxon_signed_rank", rank_biserial=rb, p=p,
+                       n_nonzero_pairs=int(npair), star=su.p_stars(p),
+                       median_gap_pp=float(100 * (joined["oracle"] - joined["pool"]).median()))
+        else:
+            rec["status"] = "n too small — exploratory"
+        payload["per_method"][str(m)] = rec
+    return payload if payload["per_method"] else None
+
+
+def plot_within2_validity_dumbbell(comp: pd.DataFrame, out: Path, thr: float = 2.0,
+                                   stats: dict | None = None) -> None:
     """Dumbbell per method: PB-validity among near-native (RMSD ≤ *thr* Å) poses, computed over
     ALL generated poses (circle) vs the ORACLE pick only (diamond).
 
@@ -2188,6 +2806,8 @@ def plot_within2_validity_dumbbell(comp: pd.DataFrame, out: Path, thr: float = 2
     y = list(range(len(methods)))[::-1]                 # first method = top row
     grps = [_grp(m) for m in methods]
     fig, ax = plt.subplots(figsize=(11.5, max(3.5, 0.62 * len(methods) + 2)))
+    has_stats = bool((stats or {}).get("per_method"))
+    star_x = 109.0                                       # right-hand significance column
 
     # Shade + bracket the pocket-guided EquiBind block; faint dividers between the three groups.
     guided_y = [yi for yi, g in zip(y, grps) if g == 2]
@@ -2215,6 +2835,34 @@ def plot_within2_validity_dumbbell(comp: pd.DataFrame, out: Path, thr: float = 2
                     fontsize=8, fontweight="bold")
         ax.scatter([av], [yi], color=col, s=110, edgecolor="black", zorder=3)
         ax.text(av, yi + 0.24, f"{av:.0f}%", va="bottom", ha="center", fontsize=8)
+        # 95% CI whiskers (circle: cluster/complex bootstrap · diamond: Wilson) + the
+        # oracle-vs-pool gap significance star (paired Wilcoxon), from _stats_within2_gap.
+        _st = (stats or {}).get("per_method", {}).get(str(m))
+        if _st:
+            cc = _st.get("circle_ci") or []
+            if len(cc) == 2 and cc[0] == cc[0]:
+                ax.errorbar(av, yi + 0.13, xerr=[[max(0.0, av - cc[0] * 100)],
+                            [max(0.0, cc[1] * 100 - av)]], fmt="none", ecolor=col,
+                            elinewidth=1.1, capsize=2.4, alpha=0.85, zorder=2)
+            dc = _st.get("diamond_ci") or []
+            if not pd.isna(bv) and len(dc) == 2 and dc[0] == dc[0]:
+                ax.errorbar(bv, yi - 0.13, xerr=[[max(0.0, bv - dc[0] * 100)],
+                            [max(0.0, dc[1] * 100 - bv)]], fmt="none", ecolor=col,
+                            elinewidth=1.1, capsize=2.4, alpha=0.85, zorder=2)
+            star = _st.get("star")
+            if star:
+                sig = star not in ("ns", "")
+                ax.text(star_x, yi, star, ha="center", va="center",
+                        fontsize=10 if sig else 8, fontweight="bold" if sig else "normal",
+                        color="0.15" if sig else "0.55", zorder=4)
+            elif _st.get("status"):
+                ax.text(star_x, yi, "—", ha="center", va="center", fontsize=8,
+                        color="0.6", zorder=4)
+    if has_stats:
+        # header sits just above the top spine (axes-fraction y), clear of the frame
+        ax.text(star_x, 1.012, "oracle\nvs pool", transform=ax.get_xaxis_transform(),
+                ha="center", va="bottom", fontsize=7.2, color="0.3",
+                fontweight="bold", clip_on=False)
     ax.set_yticks(y)
     ax.set_yticklabels(
         [f"{TOOL_LABEL.get(m, m)}\n{int(comp.loc[m, 'n_complexes'])} complexes · "
@@ -2222,7 +2870,7 @@ def plot_within2_validity_dumbbell(comp: pd.DataFrame, out: Path, thr: float = 2
          f"{int(comp.loc[m, 'near_native_poses'])} ≤ {thr:g} Å"
          for m in methods], fontsize=8)
     ax.set_xlabel(f"PB-valid share of near-native poses (RMSD ≤ {thr:g} Å) (%)")
-    ax.set_xlim(0, 104)
+    ax.set_xlim(0, 116 if has_stats else 104)
     ax.set_ylim(-0.7, (len(methods) - 1) + 0.7)
     ax.set_title(_vt(f"PB-validity of near-native poses: all generated vs. oracle pick\n"
                      f"circle = all poses ≤ {thr:g} Å RMSD  ·  diamond = oracle (min-RMSD) pick"),
@@ -2234,7 +2882,14 @@ def plot_within2_validity_dumbbell(comp: pd.DataFrame, out: Path, thr: float = 2
         Line2D([0], [0], marker="D", color="w", markerfacecolor="grey",
                markeredgecolor="black", markersize=10, label="oracle pick (min-RMSD)"),
     ], loc="lower right", fontsize=9)
-    fig.tight_layout(); fig.savefig(out, dpi=160); plt.close(fig)
+    if has_stats:
+        fig.text(0.01, 0.008, "whiskers = 95% CI (circle: cluster/complex bootstrap · "
+                 "diamond: Wilson).  ★ column = paired Wilcoxon signed-rank, oracle "
+                 "(min-RMSD) pose vs near-native-pool PB-validity, per complex "
+                 "(*** p<.001 · ** p<.01 · * p<.05 · ns; — = n too small).",
+                 fontsize=6.6, color="0.4")
+    fig.tight_layout(rect=(0, 0.03, 1, 1) if has_stats else None)
+    fig.savefig(out, dpi=160); plt.close(fig)
 
 
 def _draw_accuracy_validity_panel(ax, title: str, summ: pd.DataFrame,
@@ -2327,10 +2982,12 @@ def plot_accuracy_validity_top1(top1_sum: pd.DataFrame, out: Path) -> None:
     plt.close(fig)
 
 
-def _oracle_variant_specs(df_full: pd.DataFrame):
+def _oracle_variant_specs(df_full: pd.DataFrame, forced_dd: str | None = None):
     """[(method_key, label, kind)] for the 09b variants — each ML tool's RAW variant
     beside its best-by-PB-valid&≤2Å variant. ``kind`` ∈ {'native','generation'} picks
-    how the rank-1 representative is taken (native rank vs first generated pose)."""
+    how the rank-1 representative is taken (native rank vs first generated pose).
+    ``forced_dd`` pins the DiffDock 'best' variant (e.g. 'diffdock_gnina') instead of the
+    oracle-ranked one, matching --collapse-diffdock-variant."""
     oa = aggregate_oracle(df_full)
     col = _variant_rank_col(oa)
     present = set(df_full["method"].astype(str))
@@ -2357,6 +3014,8 @@ def _oracle_variant_specs(df_full: pd.DataFrame):
         return f"equibind_{pocket}_raw" if pocket else "equibind_unguided_raw"
 
     dd_best, eb_best = _best("diffdock"), _best("equibind")
+    if forced_dd and forced_dd in present:
+        dd_best = forced_dd
     eb_raw = _raw_of(eb_best)
     specs = []
 
@@ -2376,14 +3035,15 @@ def _oracle_variant_specs(df_full: pd.DataFrame):
 
 def plot_accuracy_validity_oracle(oracle_sum: pd.DataFrame, out: Path,
                                   df_full: "pd.DataFrame | None" = None,
-                                  thr: float = 2.0) -> None:
+                                  thr: float = 2.0,
+                                  forced_dd: str | None = None) -> None:
     """Fig 09b — accuracy-vs-validity bars per variant: the RANK-1 pose (EquiBind has
     no ranking, so its FIRST generated pose) beside the ORACLE (best-of-N) pose, with
     each ML tool's raw variant next to its best variant. Light bar = RMSD ≤ 2 Å, dark
     subset = also PB-valid. Falls back to a single oracle bar per (collapsed) tool when
     ``df_full`` is absent or has no crystal RMSD.
     """
-    specs = _oracle_variant_specs(df_full) if df_full is not None else []
+    specs = _oracle_variant_specs(df_full, forced_dd=forced_dd) if df_full is not None else []
 
     rows, color_key = [], {}
     for key, label, kind in specs:
@@ -2442,9 +3102,19 @@ def plot_accuracy_validity_oracle(oracle_sum: pd.DataFrame, out: Path,
         tool_spans.setdefault(tool, []).extend(xs)
         prev_tool = tool
 
+    # Colour every bar by its TOOL's raw/base variant, not the per-variant tint, so
+    # a tool's optimized bars (DiffDock*, EquiBind*) share the exact dark PB-valid
+    # colour of its raw bars — the family is read off position + the tool bracket,
+    # not hue. specs list the raw variant of each family first, so its colour is the
+    # family base. (Local to 09b; 09c/09d already colour by family.)
+    fam_base_color: dict[str, str] = {}
+    for key, _label, _kind in specs:
+        fam = _fam_key(str(key))
+        fam_base_color.setdefault(fam, TOOL_COLORS.get(key, "#888888"))
+
     fig, ax = plt.subplots(figsize=(max(9.0, 1.45 * (max(positions) + 1.4)), 6.3))
     for xi, r in zip(positions, plotted):
-        c = TOOL_COLORS.get(color_key[r["variant"]], "#888888")
+        c = fam_base_color.get(_fam_key(str(color_key[r["variant"]])), "#888888")
         acc, val = float(r["acc"]), float(r["valid"])
         ax.bar(xi, acc, width=bar_w, color=c, alpha=0.32, edgecolor=c, linewidth=1.4, zorder=2)
         ax.bar(xi, val, width=bar_w, color=c, edgecolor="white", linewidth=0.8, zorder=3)
@@ -2475,6 +3145,187 @@ def plot_accuracy_validity_oracle(oracle_sum: pd.DataFrame, out: Path,
                  fontsize=13, fontweight="bold", y=1.10)
     fig.tight_layout()
     fig.savefig(out, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ── 09e: strict PB-valid success dumbbell over the 09b variants (fig-10 style) ──
+#
+# Takes 09b's per-variant data (each ML tool's raw vs best-optimised variant, plus
+# AutoDock) and renders the strict "RMSD ≤ 2 Å & PB-valid" success as a fig-10
+# dumbbell: ● oracle (best of all docked poses) vs ○ the pose you'd actually PICK
+# by ranking. Unlike 09b — which uses EquiBind's FIRST generated pose as a stand-in
+# rank-1 — EquiBind here is ranked by GNINA AFFINITY, the only real ranking it has.
+# gnina scores exist only for the gnina-optimised variant (raw/smina EquiBind carry
+# no gnina score), so raw EquiBind stays oracle-only, marked "no ranking". Same
+# paired-proportion tests as figs 03/10: per-variant Wilson CIs, within-variant
+# oracle-vs-rank-1 exact McNemar, and a cross-variant Cochran's Q + pairwise
+# McNemar (Holm), rendered by the shared _annotate_success_dumbbell.
+
+
+def _native_rank1_per_pair(sub: pd.DataFrame) -> pd.DataFrame:
+    """One row per (protein, ligand): the tool's confidence rank-1 pose."""
+    sub = sub.copy()
+    sub["_rk"] = pd.to_numeric(sub["rank"], errors="coerce")
+    return (sub[sub["_rk"] == 1].sort_values("pose_name")
+               .groupby(["protein", "ligand"]).first().reset_index())
+
+
+def _gnina_rank1_per_pair(sub: pd.DataFrame) -> pd.DataFrame:
+    """One row per (protein, ligand): the best gnina-affinity pose (most negative;
+    generation index breaks ties, NaN affinities sort last). This is the ranking
+    gnina supplies to EquiBind, whose native output has no pose ranking."""
+    sub = sub.copy()
+    sub["_gi"] = sub["pose_name"].map(_equibind_pose_index)
+    sub["_aff"] = pd.to_numeric(sub["gnina_affinity"], errors="coerce")
+    return (sub.sort_values(["_aff", "_gi"], na_position="last", kind="mergesort")
+               .groupby(["protein", "ligand"]).first().reset_index())
+
+
+def _stats_pb_valid_variants(df_full: "pd.DataFrame | None", thr: float = 2.0,
+                             forced_dd: str | None = None,
+                             valid: bool = True) -> dict | None:
+    """Per-09b-variant paired-proportion stats + plotted values for the fig-09e
+    dumbbell. The payload is shaped exactly like ``_stats_success_paired`` so
+    ``_annotate_success_dumbbell`` renders it directly. ``valid`` toggles the metric
+    between '≤thr Å & PB-valid' (fig-10 style; default) and plain '≤thr Å'.
+    """
+    if df_full is None:
+        return None
+    specs = _oracle_variant_specs(df_full, forced_dd=forced_dd)
+    if not specs:
+        return None
+
+    def _succ(reps: pd.DataFrame) -> pd.Series:
+        s = reps["rmsd"] <= thr
+        if valid:
+            s = s & _to_bool(reps["pb_valid"])
+        return s.astype(float)
+
+    def _by_pair(reps: pd.DataFrame) -> pd.Series:
+        r = reps.copy()
+        r["_s"] = _succ(r)
+        return r.set_index(["protein", "ligand"])["_s"]
+
+    methods, per, orc_cols, wt = [], {}, {}, []
+    for key, label, _kind in specs:
+        sub = df_full[df_full["method"].astype(str) == key].dropna(subset=["rmsd"]).copy()
+        if sub.empty:
+            continue
+        fam = _fam_key(str(key))
+        has_gnina = ("gnina_affinity" in sub.columns
+                     and pd.to_numeric(sub["gnina_affinity"], errors="coerce").notna().any())
+        if fam in RANKING_TOOLS:
+            r1, rank_note = _native_rank1_per_pair(sub), "confidence rank-1"
+        elif has_gnina:
+            r1, rank_note = _gnina_rank1_per_pair(sub), "gnina-affinity rank-1"
+        else:
+            r1, rank_note = None, "no ranking (raw)"
+
+        o = _by_pair(_oracle_per_pair(sub))
+        orc_cols[label] = o
+        k, n = int(o.sum()), int(o.size)
+        lo, hi = su.wilson_ci(k, n)
+        d = {"method_key": key, "rank_note": rank_note, "n": n,
+             "oracle_k": k, "oracle_n": n,
+             "oracle_rate": (k / n if n else float("nan")),
+             "oracle_lo": lo, "oracle_hi": hi}
+        if r1 is not None and not r1.empty:
+            t = _by_pair(r1)
+            k2, n2 = int(t.sum()), int(t.size)
+            lo2, hi2 = su.wilson_ci(k2, n2)
+            d.update(top1_k=k2, top1_n=n2,
+                     top1_rate=(k2 / n2 if n2 else float("nan")),
+                     top1_lo=lo2, top1_hi=hi2)
+            pair = pd.concat([o.rename("o"), t.rename("t")], axis=1).dropna()
+            if len(pair) >= _MIN_UNITS_STATS:
+                n10, n01, p = su.mcnemar_exact(pair["o"].to_numpy(), pair["t"].to_numpy())
+                wt.append({"method": label, "n": int(len(pair)), "oracle_wins": n10,
+                           "top1_wins": n01, "p": float(p), "star": su.p_stars(p)})
+            else:
+                wt.append({"method": label, "n": int(len(pair)),
+                           "status": "n too small — exploratory"})
+        methods.append(label)
+        per[label] = d
+
+    if not methods:
+        return None
+
+    payload = {
+        "figure": "09e_pb_valid_variants_success_dumbbell.png",
+        "metric": ("RMSD ≤ 2 Å AND PB-valid" if valid else "RMSD ≤ 2 Å"),
+        "unit": "(protein, ligand) complex — per-complex success boolean",
+        "ranking": ("Vina/DiffDock: native confidence rank-1; EquiBind: gnina-affinity "
+                    "rank-1 (gnina-optimised variant only; raw/smina EquiBind carry no "
+                    "gnina score → oracle-only)"),
+        "test": ("paired proportions across variants (Cochran's Q + exact McNemar, "
+                 "Holm) on the oracle success; within-variant oracle-vs-rank-1 exact "
+                 "McNemar; 95% Wilson CIs"),
+        "methods": methods,
+        "per_method": per,
+        "within_tool_oracle_vs_top1": wt,
+    }
+    orc = pd.DataFrame(orc_cols)
+    complete = orc.dropna()
+    if len(complete) >= _MIN_UNITS_STATS and orc.shape[1] >= 2:
+        payload["cross_tool_oracle"] = su.paired_proportions(
+            {m: complete[m].to_numpy(float) for m in methods})
+    else:
+        payload["cross_tool_oracle"] = {"status": "n too small — exploratory",
+                                        "n": int(len(complete))}
+    return payload
+
+
+def plot_pb_valid_variants_dumbbell(df_full, out: Path, thr: float = 2.0,
+                                    forced_dd: str | None = None,
+                                    valid: bool = True,
+                                    stats: dict | None = None) -> None:
+    """Fig 09e — the strict '≤2 Å & PB-valid' success from 09b's per-variant data,
+    drawn as a fig-10 dumbbell (● oracle vs ○ selected rank-1) with EquiBind ranked
+    by gnina affinity. Paired-proportion tests (Wilson CIs, within-variant McNemar,
+    cross-variant Cochran's Q) are annotated when available.
+    """
+    payload = stats if stats is not None else _stats_pb_valid_variants(
+        df_full, thr, forced_dd, valid)
+    if not payload or not payload.get("methods"):
+        return
+    labels = payload["methods"]
+    per = payload["per_method"]
+    oracle_vals = [per[l]["oracle_rate"] * 100 for l in labels]
+    top1_vals = [(per[l]["top1_rate"] * 100 if per[l].get("top1_rate") is not None
+                  else float("nan")) for l in labels]
+
+    # Colour each row by its tool's raw/base hue (matches the 09b convention), so
+    # a tool's raw and optimised rows read as the same colour, distinguished by label.
+    fam_base: dict[str, str] = {}
+    for l in labels:
+        fam = _fam_key(str(per[l]["method_key"]))
+        fam_base.setdefault(fam, TOOL_COLORS.get(per[l]["method_key"], "#888888"))
+    colors = [fam_base[_fam_key(str(per[l]["method_key"]))] for l in labels]
+    ylabels = [f"{l}\n{per[l]['rank_note']} · n={per[l]['n']}" for l in labels]
+
+    metric_txt = "≤ 2 Å & PB-valid" if valid else "≤ 2 Å"
+    fig, ax = plt.subplots(figsize=(10.6, 0.9 * len(labels) + 2.8))
+    handles = _dumbbell(ax, ylabels, oracle_vals, top1_vals, colors,
+                        left_name="Oracle (best of all docked poses)",
+                        right_name="Selected rank-1 (confidence / gnina affinity)",
+                        value_fmt="{:.1f}%", missing_note="no ranking",
+                        label_pos="below")
+    ax.set_xlabel(f"% of receptor-ligand complexes with a pose {metric_txt}")
+    ax.set_title(_vt(f"Accurate & PoseBuster-valid poses per variant  ({metric_txt})\n"
+                     "raw vs. gnina-optimised · EquiBind ranked by gnina affinity"),
+                 fontsize=11.5)
+    ax.legend(handles=handles, loc="lower right", fontsize=9)
+    if payload.get("per_method"):
+        try:
+            _annotate_success_dumbbell(fig, ax, labels, oracle_vals, top1_vals,
+                                       payload, footnote_pairwise=False)
+            fig.tight_layout(rect=(0, 0.055, 1, 1))
+        except Exception as exc:
+            print(f"  WARNING: fig 09e stats annotation skipped ({exc})")
+            fig.tight_layout()
+    else:
+        fig.tight_layout()
+    fig.savefig(out, dpi=160)
     plt.close(fig)
 
 
@@ -3163,9 +4014,70 @@ def plot_cumulative_oracle_curve(rank_df: pd.DataFrame, top_n: int, out: Path) -
     fig.tight_layout(); fig.savefig(out, dpi=160); plt.close(fig)
 
 
+def _annotate_topn_within_stats(fig, ax, methods, payload, thr) -> None:
+    """Overlay 95 % Wilson CI whiskers at the pre-specified thresholds and a
+    Cochran's Q / pairwise-McNemar + ranking-headroom box on fig 18's complex panel
+    (A). Headline numbers are at the largest tested threshold (2 Å canonical); the
+    full pairwise matrix + the 1 Å tests live in the JSON sidecar."""
+    if not payload:
+        return
+    ts = [float(t) for t in payload.get("test_thresholds_A", ())]
+    if not ts:
+        return
+
+    def _rec_at(per_t, t):
+        for r in per_t:
+            if abs(float(r["rmsd_threshold_A"]) - t) < 1e-6:
+                return r
+        return None
+
+    # per-tool, per-threshold rates + Wilson CIs (on each tool's own denominator).
+    hr = {(r["method"], round(float(r["rmsd_threshold_A"]), 4)): r
+          for r in payload.get("ranking_headroom", [])}
+    for method in methods:
+        c = TOOL_COLORS.get(method, "grey")
+        for t in ts:
+            r = hr.get((method, round(t, 4)))
+            if not r:
+                continue
+            # rank-1 (solid) whisker left of the tick, best-of-top-N (dashed) right,
+            # so a tool's two intervals never overprint.
+            for col, ci, dx, a in (("top1_rate", "top1_ci", -0.035, 0.9),
+                                    ("best_topN_rate", "best_topN_ci", 0.035, 0.55)):
+                y = 100.0 * float(r[col]); lo, hi = (100.0 * float(v) for v in r[ci])
+                ax.errorbar(t + dx, y, yerr=[[max(0.0, y - lo)], [max(0.0, hi - y)]],
+                            fmt="none", ecolor=c, elinewidth=1.3, capsize=2.5,
+                            alpha=a, zorder=5)
+
+    t_hi = max(ts)
+    rec = _rec_at(payload.get("rank1_across_tools", []), t_hi) or {}
+    n = rec.get("n_complete", "?")
+    lines = [f"Paired tests · n={n} complexes · @ {t_hi:g} Å (1 Å in sidecar):"]
+    om = rec.get("omnibus", {})
+    if "Q" in om:
+        lines.append(f"  rank-1 across tools: Cochran Q={om['Q']:.1f}, {su.fmt_p(om['p'])}")
+    for pr in payload.get("rank1_pairwise_holm", []):
+        if abs(float(pr["rmsd_threshold_A"]) - t_hi) > 1e-6:
+            continue
+        a = TOOL_LABEL.get(pr["a"], pr["a"]); b = TOOL_LABEL.get(pr["b"], pr["b"])
+        lines.append(f"    {a} vs {b}: {su.p_stars(pr.get('p_holm'))} "
+                     f"({su.fmt_p(pr.get('p_holm'))})")
+    hs = [r for r in payload.get("ranking_headroom", [])
+          if abs(float(r["rmsd_threshold_A"]) - t_hi) < 1e-6]
+    if hs:
+        parts = ", ".join(f"{TOOL_LABEL.get(r['method'], r['method'])} "
+                          f"+{100 * float(r['headroom_share']):.1f}" for r in hs)
+        lines.append(f"  ranking headroom (best−rank-1, pp): {parts}")
+    lines.append("bars = 95% Wilson CI (rank-1 left · best-of-top-N right)")
+    ax.text(0.02, 0.975, "\n".join(lines), transform=ax.transAxes, ha="left", va="top",
+            fontsize=6.9, color="0.20", linespacing=1.35,
+            bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9), zorder=7)
+
+
 def plot_topn_within_thresholds(within_df: pd.DataFrame, top_n: int,
                                 thresholds: tuple[float, ...], out: Path,
-                                pb_valid_only: bool = False) -> None:
+                                pb_valid_only: bool = False,
+                                stats: dict | None = None) -> None:
     """How many of the top-ranked poses land within a fine RMSD grid.
 
     AutoDock Vina / DiffDock (native rank) + EquiBind (gnina-affinity ranked), two
@@ -3177,6 +4089,11 @@ def plot_topn_within_thresholds(within_df: pd.DataFrame, top_n: int,
       (B) pose level — % of ALL the tool's pooled top-N ranked poses within t, the
           literal "how many of the n top-ranked poses are within t Å".
     Dotted vertical line marks the 2 Å canonical docking-success threshold.
+
+    ``stats`` (from :func:`_stats_topn_within`) drives panel A's paired tests at the
+    pre-specified thresholds: 95 % Wilson CI whiskers on each curve's marker plus a
+    Cochran's Q / pairwise-McNemar + ranking-headroom box. The full payload lives in
+    the JSON sidecar; panel B (pooled poses = pseudo-replicated) carries no tests.
     """
     if within_df is None or within_df.empty:
         return
@@ -3259,7 +4176,16 @@ def plot_topn_within_thresholds(within_df: pd.DataFrame, top_n: int,
     axA.set_ylabel(f"% of complexes with a {pose_word} within the threshold")
     axA.set_title(f"Top-ranked {title_word} accuracy vs distance threshold\n"
                   "(rank-1 solid, best-of-top-N dashed)", fontweight="bold")
-    axA.legend(fontsize=8)
+    # Stats box (below) claims the upper-left, so anchor the legend lower-right when
+    # tests are drawn; otherwise keep matplotlib's automatic best placement.
+    axA.legend(fontsize=8, **({"loc": "lower right", "framealpha": 0.9} if stats else {}))
+    # Paired significance tests at the pre-specified thresholds (Wilson CI whiskers +
+    # Cochran's Q / pairwise McNemar + ranking headroom); degrades silently if absent.
+    if stats:
+        try:
+            _annotate_topn_within_stats(figA, axA, methods, stats, thr)
+        except Exception as _exc:
+            print(f"  WARNING: fig 18 complex-panel stats annotation failed ({_exc})")
     if not pb_valid_only:   # PB-valid complex figure is shown title-less
         figA.suptitle(_vt(f"Top-ranked {title_word} accuracy across {span}{valid_tag} \n"
                           f"(AutoDock Vina, DiffDock, EquiBind; top-{top_n})"),
@@ -4450,11 +5376,248 @@ def plot_form_fidelity_depth_gate_impact(df: pd.DataFrame, out: Path,
     _save(figC, "__form_correct")
 
 
+def _stats_form_fidelity_gate_vs_rank(
+        df: pd.DataFrame,
+        form_ok: float = FORM_OK_KABSCH_A,
+        depths=(1, 5, 10, 15),
+        rmsd_gate: float = NEAR_NATIVE_RMSD_A,
+        min_poses_corr: int = 3) -> "dict | None":
+    """Paired significance tests for fig 20 ``…_gate_vs_rank`` (the three-panel
+    form-fidelity-vs-rank companion). Crystal-only; returns ``None`` for crystal-free
+    sets or when no method carries a form value.
+
+    The unit of analysis is ALWAYS one ``(protein, ligand)`` complex — poses are
+    aggregated to a per-complex representative or a per-complex summary BEFORE any
+    test, so the figure's pooled-pose curves and top-d labels are never fed raw (no
+    pose-level pseudo-replication). Four tests, each tied to a visual claim:
+
+      ``gate_effect`` — (Panel C) does the RMSD ≤ 2 Å gate buy better internal
+        geometry? The near-native set is a strict SUBSET of the PB-valid set, so a
+        direct subset-vs-superset contrast is degenerate. Instead each tool's PB-valid
+        poses are PARTITIONED into near-native (≤ ``rmsd_gate``) vs far (> gate); per
+        complex holding both, the median best-fit (Kabsch) form RMSD of each group is
+        compared with a paired Wilcoxon signed-rank + Hodges–Lehmann median-difference
+        CI (far − near; > 0 ⇒ the gate removes worse-form poses).
+      ``form_across_tools_{pbvalid,near_native}`` — (Panels A / B) do tools differ in
+        the form error of the pose the ranker hands you first? Representative = the
+        SHALLOWEST-ranked PB-valid (A) / near-native (B) pose per complex; Friedman +
+        Kendall's W + pairwise Wilcoxon/Holm across the listwise-complete complexes.
+        The comparison is conditional on each tool HAVING such a pose, so n shrinks to
+        the shared set (reported as ``n_complete``).
+      ``rank_trend`` — (all panels) does form error degrade with rank? Per complex,
+        Kendall's τ of form vs effective rank over its PB-valid poses (≥
+        ``min_poses_corr``); one-sample Wilcoxon of the per-complex τ vs 0 (repeated
+        ranks within a complex are correlated, so the trend is tested on one slope per
+        complex, never pooled). EquiBind (gnina-affinity rank, not a native confidence
+        rank) is the pre-specified negative control.
+      ``form_placement_coupling`` — (mechanism) is best-fit form even coupled to
+        in-place RMSD? Per complex Spearman(form, in-place) over its PB-valid poses;
+        one-sample Wilcoxon of the ρ vs 0. ρ ≈ 0 ⇒ the gate (an in-place criterion)
+        can barely move form, so Panel C is small by construction.
+
+    Each per-tool family (gate_effect / rank_trend / coupling) is Holm-corrected across
+    the tools; the cross-tool panels carry their own Holm pairwise (via
+    :func:`stats_utils.paired_continuous`). Full payload → the JSON sidecar; the figure
+    shows only the headline lines.
+    """
+    max_d = max(int(x) for x in depths)
+    coh = _form_components(_valid_topd_poses(df, max_d, None)).dropna(subset=["form"])
+    if coh.empty:
+        return None
+    coh = coh.copy()
+    coh["inplace_rmsd"] = pd.to_numeric(coh["inplace"], errors="coerce")
+    coh["_near"] = pd.to_numeric(coh["rmsd"], errors="coerce") <= rmsd_gate
+    methods = [m for m in dict.fromkeys(df["method"]) if (coh["method"] == m).any()]
+    if not methods:
+        return None
+
+    def _holm_over(recs):
+        """Add Holm-adjusted p + star to the records in ``recs`` that carry p_raw."""
+        idx = [i for i, r in enumerate(recs) if "p_raw" in r]
+        if not idx:
+            return
+        for i, pa in zip(idx, su.holm([recs[i]["p_raw"] for i in idx])):
+            recs[i]["p_holm"] = float(pa)
+            recs[i]["star"] = su.p_stars(pa)
+
+    # ── gate_effect (Panel C): near vs far PB-valid poses, per-complex median form ──
+    gate = []
+    for m in methods:
+        g = coh[coh["method"] == m]
+        near = g[g["_near"]].groupby(["protein", "ligand"])["form"].median()
+        far = g[~g["_near"]].groupby(["protein", "ligand"])["form"].median()
+        common = near.index.intersection(far.index)
+        rec = {"method": m, "n_complexes_both": int(len(common))}
+        if len(common) >= _MIN_UNITS_STATS:
+            nn = near.reindex(common).to_numpy(float)   # near-native (≤ gate)
+            fn = far.reindex(common).to_numpy(float)    # far (> gate)
+            rb, p, npair = su.wilcoxon_rankbiserial(fn, nn)
+            est, lo, hi = su.median_diff_ci(fn, nn, paired=True)
+            rec.update({
+                "median_form_near": round(float(np.median(nn)), 3),
+                "median_form_far": round(float(np.median(fn)), 3),
+                "hl_median_diff_far_minus_near": round(float(est), 3),
+                "hl_ci": [round(float(lo), 3), round(float(hi), 3)],
+                "rank_biserial": round(float(rb), 3), "p_raw": float(p),
+                "n": int(npair)})
+        else:
+            rec["status"] = "n too small — exploratory"
+        gate.append(rec)
+    _holm_over(gate)
+
+    # ── form_across_tools (Panels A/B): shallowest-ranked rep per complex, paired ──
+    def _across_tools(cohort):
+        reps = {}
+        for m in methods:
+            sub = cohort[cohort["method"] == m]
+            if sub.empty:
+                continue
+            reps[m] = (sub.sort_values("eff_rank")
+                       .groupby(["protein", "ligand"]).first()["form"])
+        labs = [m for m in methods if m in reps]
+        if len(labs) < 2:
+            return None
+        common = sorted(set.intersection(*[set(reps[m].index) for m in labs]),
+                        key=lambda t: (str(t[0]), str(t[1])))
+        n = len(common)
+        out = {"unit": "shallowest-ranked pose per complex; paired across tools",
+               "methods": labs, "n_complete": n}
+        if n >= _MIN_UNITS_STATS:
+            data = {m: reps[m].reindex(common).to_numpy(float) for m in labs}
+            res = su.paired_continuous(data, labels=labs)
+            out.update({"omnibus": res["omnibus"], "pairwise": res["pairwise"],
+                        "medians": {k: round(v, 3) for k, v in res["medians"].items()}})
+        else:
+            out["status"] = "n too small — exploratory"
+            out["medians"] = {m: round(float(reps[m].reindex(common).median()), 3)
+                              for m in labs}
+        return out
+
+    # ── rank_trend + form_placement_coupling: one slope/correlation per complex ──
+    def _per_complex_corr(kind):
+        recs = []
+        for m in methods:
+            g = coh[coh["method"] == m]
+            coefs = []
+            for _, cx in g.groupby(["protein", "ligand"]):
+                if len(cx) < min_poses_corr:
+                    continue
+                if kind == "rank":
+                    t, _, _ = su.kendall(cx["eff_rank"].to_numpy(float),
+                                         cx["form"].to_numpy(float))
+                else:
+                    t, _, _ = su.spearman(cx["form"].to_numpy(float),
+                                          cx["inplace_rmsd"].to_numpy(float))
+                if t == t:                       # drop NaN (constant series)
+                    coefs.append(float(t))
+            rec = {"method": m, "n_complexes": len(coefs)}
+            if len(coefs) >= _MIN_UNITS_STATS:
+                arr = np.asarray(coefs, float)
+                rb, p, npair = su.wilcoxon_rankbiserial(arr, np.zeros_like(arr))
+                rec.update({"median_coef": round(float(np.median(arr)), 3),
+                            "rank_biserial": round(float(rb), 3),
+                            "p_raw": float(p), "n": int(npair)})
+            else:
+                rec["status"] = "n too small — exploratory"
+            recs.append(rec)
+        _holm_over(recs)
+        return recs
+
+    return {
+        "figure": "20_form_fidelity__rank_depth_gate_vs_rank.png",
+        "metric": f"best-fit (Kabsch) form RMSD of each tool's PB-valid poses "
+                  f"within top-{max_d}",
+        "unit": "one (protein, ligand) complex (poses aggregated per complex first)",
+        "rmsd_gate_A": float(rmsd_gate), "form_ok_A": float(form_ok),
+        "top_depth": max_d, "min_poses_corr": int(min_poses_corr),
+        "methods": list(methods),
+        "gate_effect": gate,
+        "form_across_tools_pbvalid": _across_tools(coh),
+        "form_across_tools_near_native": _across_tools(coh[coh["_near"]]),
+        "rank_trend": _per_complex_corr("rank"),
+        "form_placement_coupling": _per_complex_corr("coupling"),
+    }
+
+
+def _annotate_form_gate_vs_rank_stats(axA, axB, axC, payload, methods) -> None:
+    """Overlay the headline paired tests on the three panels of fig 20's
+    ``…_gate_vs_rank`` figure (full pairwise / per-tool detail is in the JSON
+    sidecar). Panel A: cross-tool form-error omnibus + the per-complex rank trend;
+    Panel B: cross-tool omnibus on the near-native reps; Panel C: the gate effect per
+    tool + the form⊥placement coupling that frames it."""
+    if not payload:
+        return
+    tl = lambda m: TOOL_LABEL.get(m, m)
+
+    def _omni(block):
+        if not block or "omnibus" not in block:
+            return None
+        om = block["omnibus"]
+        w = om.get("kendall_w")
+        return (f"Friedman {su.fmt_p(om.get('p'))}"
+                + (f", W={w:.2f}" if isinstance(w, (int, float)) and w == w else "")
+                + f" · n={block.get('n_complete', '?')}")
+
+    def _trend_str(recs, sym):
+        out = []
+        by = {r["method"]: r for r in recs}
+        for m in methods:
+            r = by.get(m)
+            if r and "median_coef" in r:
+                out.append(f"{tl(m)} {sym}={r['median_coef']:+.2f}{r.get('star', '')}")
+        return "; ".join(out)
+
+    # ── Panel A — cross-tool form error (PB-valid) + rank trend ──
+    A = payload.get("form_across_tools_pbvalid")
+    linesA = ["Cross-tool form error — shallowest PB-valid pose / complex"]
+    if _omni(A):
+        linesA.append("  " + _omni(A))
+    if A and A.get("pairwise"):
+        linesA.append("  " + "; ".join(
+            f"{tl(p['a'])}–{tl(p['b'])} {p.get('star', '')}" for p in A["pairwise"]))
+    trend = _trend_str(payload.get("rank_trend", []), "τ")
+    if trend:
+        linesA.append(f"Rank trend (Kendall τ, form vs rank / complex vs 0): {trend}")
+    axA.text(0.985, 0.03, "\n".join(linesA), transform=axA.transAxes, ha="right",
+             va="bottom", fontsize=6.8, color="0.20", linespacing=1.3,
+             bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9), zorder=7)
+
+    # ── Panel B — cross-tool form error on the near-native reps ──
+    B = payload.get("form_across_tools_near_native")
+    linesB = ["Cross-tool form error — shallowest near-native pose / complex"]
+    if _omni(B):
+        linesB.append("  " + _omni(B))
+    if B and B.get("pairwise"):
+        linesB.append("  " + "; ".join(
+            f"{tl(p['a'])}–{tl(p['b'])} {p.get('star', '')}" for p in B["pairwise"]))
+    axB.text(0.015, 0.975, "\n".join(linesB), transform=axB.transAxes, ha="left",
+             va="top", fontsize=6.8, color="0.20", linespacing=1.3,
+             bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9), zorder=7)
+
+    # ── Panel C — gate effect per tool (the headline) + form⊥placement framing ──
+    linesC = ["Gate effect — median form: far (>2 Å) − near (≤2 Å) PB-valid, per complex"]
+    by_g = {r["method"]: r for r in payload.get("gate_effect", [])}
+    for m in methods:
+        r = by_g.get(m)
+        if r and "hl_median_diff_far_minus_near" in r:
+            ci = r.get("hl_ci", [float("nan"), float("nan")])
+            linesC.append(f"  {tl(m)} Δ={r['hl_median_diff_far_minus_near']:+.2f} Å "
+                          f"[{ci[0]:+.2f}, {ci[1]:+.2f}] {r.get('star', '')} "
+                          f"(n={r.get('n', '?')})")
+    cpl = _trend_str(payload.get("form_placement_coupling", []), "ρ")
+    if cpl:
+        linesC.append(f"Form⊥placement: Spearman(form, in-place) / complex: {cpl}")
+    axC.text(0.015, 0.975, "\n".join(linesC), transform=axC.transAxes, ha="left",
+             va="top", fontsize=6.8, color="0.20", linespacing=1.3,
+             bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.9), zorder=7)
+
+
 def plot_form_fidelity_gate_vs_rank(df: pd.DataFrame, out: Path,
                                     form_ok: float = FORM_OK_KABSCH_A,
                                     depths=(1, 5, 10, 15),
                                     min_n: int = 5,
-                                    suptitle: str = "") -> None:
+                                    suptitle: str = "",
+                                    stats: "dict | None" = None) -> None:
     """Per-rank companion to :func:`plot_form_fidelity_depth_gate_impact` — three
     panels stacked on a shared rank x-axis (1 … max(depths); default top-15):
 
@@ -4469,6 +5632,11 @@ def plot_form_fidelity_gate_vs_rank(df: pd.DataFrame, out: Path,
               of that cumulative top-d cohort;
       C     — the gate's lift in form-correct (near-native − PB-valid, percentage
               points) and ``n`` = near-native complexes.
+
+    ``stats`` (from :func:`_stats_form_fidelity_gate_vs_rank`) adds the per-complex
+    paired tests: cross-tool form-error omnibus on panels A/B, the per-complex rank
+    trend, and the gate-effect (near vs far) + form⊥placement coupling on panel C.
+    The figure shows only the headline lines; the full payload is in the JSON sidecar.
     No-op for crystal-free sets (no RMSD defined)."""
     from matplotlib.lines import Line2D
     depths = sorted({int(x) for x in depths})
@@ -4627,6 +5795,11 @@ def plot_form_fidelity_gate_vs_rank(df: pd.DataFrame, out: Path,
                       label=TOOL_LABEL.get(m, m)) for m in methods]
     fig.legend(handles=handles, loc="outside lower center", ncol=len(methods),
                frameon=False, fontsize=9)
+    if stats:
+        try:
+            _annotate_form_gate_vs_rank_stats(axA, axB, axC, stats, methods)
+        except Exception as _exc:
+            print(f"  WARNING: fig 20 gate-vs-rank stats annotation failed ({_exc})")
     _save_titled(fig, out, suptitle)
 
 
@@ -4798,8 +5971,15 @@ def plot_form_vs_placement_depth_filmstrip(
             n_rec = int(sub["protein"].nunique())  # distinct receptors (unique complexes)
             dn = len(sub) - n1
             extra = f"  (+{dn} poses vs top-{d1})" if d != d1 and dn else ""
-            ax.set_title(f"{flabel} · top-{d}   n={len(sub)} · {n_rec} rec.{extra}",
-                         fontsize=9.5)
+            # Mechanism composition of this cohort (share of poses that are
+            # placement-limited / mixed / form-limited) — reading across a row shows
+            # the share shift as the ranking net widens.
+            _mc = _mechanism_region(sub).value_counts(normalize=True).reindex(
+                list(_MECH_LABELS)).fillna(0.0) * 100
+            ax.set_title(f"{flabel} · top-{d}   n={len(sub)} · {n_rec} rec.{extra}\n"
+                         f"place/mix/form = {_mc['placement-limited']:.0f}/"
+                         f"{_mc['mixed']:.0f}/{_mc['form-limited']:.0f}%",
+                         fontsize=9.0)
             if ri == 0 and ci == 0:
                 ax.legend(fontsize=7.5, frameon=False, loc="upper left", title="mechanism")
     if rmsd_gate is not None:
@@ -5201,6 +6381,61 @@ def plot_filmstrip_statistics(stats: dict, out: Path,
                      "depth drift · pose diversity"),
                  fontsize=13, fontweight="bold", y=1.0)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
+
+
+def plot_filmstrip_mechanism_share(stats: dict, out: Path, depths=(1, 3, 5)) -> None:
+    """How the mechanism COMPOSITION of each tool's PB-valid cohort shifts as the
+    ranking net widens (top-1 → top-3 → top-5). One panel per tool; within it a
+    100 %-stacked bar per depth splits the cohort into placement-limited / mixed /
+    form-limited (r = form²/in-place² bins), with the pose count n above each bar.
+    Reads directly off ``per_tool_depth`` (the same %s stamped on the filmstrip
+    panels). The deeper ranks add mis-positioned-but-valid poses, so the
+    placement-limited share grows — steeply for AutoDock/EquiBind, barely for a
+    tool whose ranking is depth-stable. ``{}`` / missing table → no-op."""
+    if not stats or "per_tool_depth" not in stats:
+        return
+    ptd = stats["per_tool_depth"]
+    if ptd.empty:
+        return
+    depths = sorted({int(x) for x in depths})
+    labels = [lab for _, lab, _ in _FAM_STATS]
+    present = [lab for lab in labels if (ptd["tool"] == lab).any()]
+    if not present:
+        return
+    seg_cols = ["pct_placement_limited", "pct_mixed", "pct_form_limited"]
+    fig, axes = plt.subplots(1, len(present), figsize=(4.4 * len(present), 5.0),
+                             squeeze=False)
+    axes = axes[0]
+    for ax, lab in zip(axes, present):
+        g = ptd[ptd["tool"] == lab].set_index("depth")
+        ds = [d for d in depths if d in g.index]
+        x = np.arange(len(ds))
+        bottoms = np.zeros(len(ds))
+        for seg, mech in zip(seg_cols, _MECH_LABELS):
+            vals = np.array([float(g.loc[d, seg]) for d in ds])
+            ax.bar(x, vals, 0.62, bottom=bottoms, color=_MECH_COLORS[mech],
+                   edgecolor="white", label=mech)
+            for xi, (v, b) in enumerate(zip(vals, bottoms)):
+                if v >= 6:                       # skip labels on slivers
+                    ax.text(xi, b + v / 2, f"{v:.0f}", ha="center", va="center",
+                            fontsize=8.5, color="white" if mech != "mixed" else "0.25")
+            bottoms += vals
+        for xi, d in enumerate(ds):
+            ax.text(xi, 101, f"n={int(g.loc[d, 'n_poses'])}", ha="center", va="bottom",
+                    fontsize=8, color="0.35")
+        ax.set_xticks(x); ax.set_xticklabels([f"top-{d}" for d in ds])
+        ax.set_ylim(0, 108); ax.set_xlim(-0.6, len(ds) - 0.4)
+        ax.set_title(lab, fontsize=11)
+        if ax is axes[0]:
+            ax.set_ylabel("Share of PB-valid poses (%)")
+        ax.grid(axis="y", alpha=0.25)
+    axes[0].legend(fontsize=8, frameon=False, loc="lower left", title="mechanism")
+    fig.suptitle(_vt("Mechanism composition shifts as the ranking net widens "
+                     "(top-1 → top-3 → top-5)\nshare of PB-valid poses that are "
+                     "placement-limited · mixed · form-limited (r = form² / in-place²)"),
+                 fontsize=12.5, fontweight="bold", y=1.02)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
 
 
@@ -5991,19 +7226,40 @@ _TOPK_RECOVERY_SPECS = [
     ("EquiBind (gnina-opt)", "equibind_unguided_gnina", "gnina"),
 ]
 
+# Pre-specified depths for the fig-15b significance tests. The 30 cumulative curve
+# points are nested (recovered by k ⟹ recovered by k+1) and so heavily auto-
+# correlated; testing all of them would be pseudo-replicated multiplicity. We fix a
+# SMALL set of depths in advance — top-1 (the deployment pick), a short shortlist,
+# and two deeper reads — and Holm-correct across the resulting family.
+_TOPK_TEST_DEPTHS = (1, 5, 10, 15)
 
-def aggregate_topk_recovery(df: pd.DataFrame, ks, thr: float = 2.0) -> pd.DataFrame:
-    """Per variant × depth k: cumulative recovery within the variant's top-k poses.
+# Pre-specified between-method comparisons tested at each depth in _TOPK_TEST_DEPTHS.
+# Each is a (baseline, comparison) pair of variant labels from _TOPK_RECOVERY_SPECS;
+# the full family of (pair × depth) exact-McNemar p-values is Holm-corrected together.
+_TOPK_TEST_PAIRS = [
+    ("DiffDock (raw)",       "DiffDock (gnina-opt)"),      # refinement effect (DiffDock)
+    ("EquiBind (raw)",       "EquiBind (gnina-opt)"),      # refinement effect (EquiBind)
+    ("AutoDock Vina",        "DiffDock (raw)"),            # physics vs raw DL
+    ("AutoDock Vina",        "DiffDock (gnina-opt)"),      # physics vs refined DL
+    ("DiffDock (gnina-opt)", "EquiBind (gnina-opt)"),      # DL vs DL (matched refinement)
+    ("AutoDock Vina",        "EquiBind (gnina-opt)"),      # physics vs EquiBind
+]
 
-    ``near_recovery_%`` = % of complexes with ≥ 1 top-k pose RMSD ≤ ``thr``;
-    ``valid_recovery_%`` = % with ≥ 1 top-k pose RMSD ≤ ``thr`` AND PB-valid (the
-    validity-aware line). Both are monotone non-decreasing in k and valid ≤ near, so
-    the gap between them is the accurate-but-invalid share at depth k. Needs the FULL
-    frame so raw ``diffdock`` and ``diffdock_smina`` are both present.
+
+def _topk_recovery_ranks(df: pd.DataFrame, thr: float = 2.0):
+    """Per variant, the per-complex min rank at which a near-native (RMSD ≤ ``thr``) and
+    a validity-aware (near-native AND PB-valid) pose first appears under the variant's
+    ranking. Shared by :func:`aggregate_topk_recovery` (curve %) and
+    :func:`topk_recovery_stats` (paired tests) so both read from identical ranking logic.
+
+    Returns an ordered list of ``(variant, method_key, frame)`` where ``frame`` is
+    indexed by ``(protein, ligand)`` over ALL the variant's complexes with float columns
+    ``near_rank`` / ``valid_rank`` (NaN when the variant never yields such a pose — NaN
+    ≤ k is False, so those complexes count as un-recovered at every depth). Needs the
+    FULL frame so raw ``diffdock`` and its optimised variants are all present.
     """
-    ks = sorted({int(k) for k in ks})
     present = set(df["method"].astype(str))
-    rows = []
+    out = []
     for variant, mkey, kind in _TOPK_RECOVERY_SPECS:
         if mkey not in present:
             continue
@@ -6013,23 +7269,119 @@ def aggregate_topk_recovery(df: pd.DataFrame, ks, thr: float = 2.0) -> pd.DataFr
               else _gnina_affinity_rank(sub))
         sub["_rk"] = pd.to_numeric(rk, errors="coerce")
         sub = sub.dropna(subset=["_rk", "rmsd"])
-        N = sub.groupby(["protein", "ligand"]).ngroups
-        if not N:
+        idx = sub.groupby(["protein", "ligand"]).size().index    # every complex present
+        if not len(idx):
             continue
         near = sub["rmsd"] <= thr
         valid = near & _to_bool(sub["pb_valid"])
-        near_rank = sub[near].groupby(["protein", "ligand"])["_rk"].min()
-        valid_rank = sub[valid].groupby(["protein", "ligand"])["_rk"].min()
+        frame = pd.DataFrame(index=idx)
+        frame["near_rank"] = (sub[near].groupby(["protein", "ligand"])["_rk"].min()
+                              .reindex(idx))
+        frame["valid_rank"] = (sub[valid].groupby(["protein", "ligand"])["_rk"].min()
+                               .reindex(idx))
+        out.append((variant, mkey, frame))
+    return out
+
+
+def aggregate_topk_recovery(df: pd.DataFrame, ks, thr: float = 2.0) -> pd.DataFrame:
+    """Per variant × depth k: cumulative recovery within the variant's top-k poses.
+
+    ``near_recovery_%`` = % of complexes with ≥ 1 top-k pose RMSD ≤ ``thr``;
+    ``valid_recovery_%`` = % with ≥ 1 top-k pose RMSD ≤ ``thr`` AND PB-valid (the
+    validity-aware line). Both are monotone non-decreasing in k and valid ≤ near, so
+    the gap between them is the accurate-but-invalid share at depth k. ``near_k`` /
+    ``valid_k`` carry the integer counts behind the percentages so callers (e.g. the
+    Wilson-CI bands in :func:`plot_topk_recovery_validity`) needn't re-derive them from
+    rounded percentages. Needs the FULL frame so raw ``diffdock`` and ``diffdock_smina``
+    are both present.
+    """
+    ks = sorted({int(k) for k in ks})
+    rows = []
+    for variant, mkey, frame in _topk_recovery_ranks(df, thr):
+        N = len(frame)
+        near_rank, valid_rank = frame["near_rank"], frame["valid_rank"]
         for k in ks:
+            nk = int((near_rank <= k).sum())
+            vk = int((valid_rank <= k).sum())
             rows.append({
                 "variant": variant, "method_key": mkey, "k": k, "n_complexes": N,
-                "near_recovery_%": round(100 * int((near_rank <= k).sum()) / N, 2),
-                "valid_recovery_%": round(100 * int((valid_rank <= k).sum()) / N, 2),
+                "near_k": nk, "valid_k": vk,
+                "near_recovery_%": round(100 * nk / N, 2),
+                "valid_recovery_%": round(100 * vk / N, 2),
             })
     return pd.DataFrame(rows)
 
 
-def plot_topk_recovery_validity(rec: pd.DataFrame, out: Path, thr: float = 2.0) -> None:
+def topk_recovery_stats(df: pd.DataFrame, thr: float = 2.0,
+                        test_ks=_TOPK_TEST_DEPTHS) -> dict | None:
+    """Paired significance tests for fig 15b at PRE-SPECIFIED depths (default
+    k ∈ {1, 5, 10, 15}) — a fixed, small number of tests rather than one per cumulative
+    point. Unit = the receptor-ligand complex (recovered = ≥ 1 top-k pose meets the
+    criterion), so there is no pose-level pseudo-replication, and every comparison is
+    PAIRED across methods on the same complexes.
+
+    Two families, both on the per-complex outcome:
+      * ``between_method`` — exact McNemar on the NEAR-NATIVE outcome for each pre-
+        specified (baseline, comparison) pair × depth in :data:`_TOPK_TEST_PAIRS`. ALL
+        these p-values form ONE Holm family (``p_holm`` / ``star`` back-filled).
+      * ``near_vs_valid_gap`` — within a variant, the near-native vs validity-aware gap.
+        Because the validity-aware set is a strict SUBSET of near-native, discordance is
+        one-directional and a McNemar p-value is degenerate (≈ 0.5**b); we therefore
+        report the gap as an EFFECT SIZE — the accurate-but-invalid share (b/N) with a
+        Wilson 95 % CI — and keep it OUT of the p-value family.
+
+    Returns the sidecar dict, or None when < 2 variants are present.
+    """
+    test_ks = sorted({int(k) for k in test_ks})
+    ranks = {variant: frame for variant, _mk, frame in _topk_recovery_ranks(df, thr)}
+    if len(ranks) < 2:
+        return None
+
+    def _cmap(frame: pd.DataFrame, col: str, k: int) -> dict:
+        """complex-id → recovered-by-depth-k flag (paired keys for _mcnemar_on_maps)."""
+        rec = (frame[col] <= k)
+        return {f"{p}||{l}": bool(v) for (p, l), v in zip(frame.index, rec)}
+
+    between, fam = [], []
+    for a, b in _TOPK_TEST_PAIRS:
+        if a not in ranks or b not in ranks:
+            continue
+        for k in test_ks:
+            rec = _mcnemar_on_maps(_cmap(ranks[a], "near_rank", k),
+                                   _cmap(ranks[b], "near_rank", k))
+            if rec is None:
+                continue
+            rec = {"baseline": a, "comparison": b, "k": k, **rec}
+            between.append(rec)
+            fam.append(rec)
+    for rec, pa in zip(fam, su.holm([r["mcnemar_p"] for r in fam])):
+        rec["p_holm"] = float(pa)
+        rec["star"] = su.p_stars(pa)
+
+    gap = []
+    for variant, frame in ranks.items():
+        N = len(frame)
+        for k in test_ks:
+            near = (frame["near_rank"] <= k)
+            valid = (frame["valid_rank"] <= k)
+            nk, vk = int(near.sum()), int(valid.sum())
+            b = int((near & ~valid).sum())          # accurate but INVALID at depth k
+            lo, hi = su.wilson_ci(b, N)
+            gap.append({
+                "variant": variant, "k": k, "n": N, "near_k": nk, "valid_k": vk,
+                "near_rate": nk / N, "valid_rate": vk / N,
+                "gap_pp": round(100 * (nk - vk) / N, 2),
+                "accurate_invalid_k": b, "accurate_invalid_share": b / N,
+                "accurate_invalid_ci": [lo, hi], "nested": True,
+            })
+
+    return {"test_depths": test_ks,
+            "unit": "per-complex (≥1 top-k pose meets criterion); paired across methods",
+            "between_method": between, "near_vs_valid_gap": gap}
+
+
+def plot_topk_recovery_validity(rec: pd.DataFrame, out: Path, thr: float = 2.0,
+                                stats: dict | None = None) -> None:
     """Fig 15b — cumulative recovery within top-k: one solid (near-native, RMSD ≤ 2 Å)
     and one dashed (validity-aware: near-native AND PB-valid) line per variant, colour
     = variant. Raw DiffDock and DiffDock* (smina) appear side by side; the gap between
@@ -6037,7 +7389,14 @@ def plot_topk_recovery_validity(rec: pd.DataFrame, out: Path, thr: float = 2.0) 
     15 (rank of the min-RMSD pose, RMSD only), this brings PB-validity into the view.
     Every curve is annotated with its recovery % (one decimal) where it crosses each
     x-axis tick — k = 1, 5, 10, 15, 20, 25, 30 (dotted reference lines): near-native
-    values left of each line, validity-aware right of it."""
+    values left of each line, validity-aware right of it.
+
+    Each curve carries a shaded Wilson 95 % CI band (from the ``near_k`` / ``valid_k``
+    counts) — a proportion CI, so it stays valid at the extremes (EquiBind ≈ 1 %,
+    AutoDock plateau ≈ 89 %) where a Gaussian/Wald interval would run past 0/100 %. The
+    four pre-specified test depths k ∈ {1, 5, 10, 15} (see :func:`topk_recovery_stats`)
+    get a darker reference line; ``stats`` (when supplied) drives only the footnote —
+    the full paired-McNemar table lives in the CSV / JSON sidecar."""
     if rec is None or rec.empty:
         return
     from matplotlib.lines import Line2D
@@ -6047,6 +7406,20 @@ def plot_topk_recovery_validity(rec: pd.DataFrame, out: Path, thr: float = 2.0) 
     for variant in variants:
         g = rec[rec["variant"] == variant].sort_values("k")
         c = _RANK1_TOPN_COLORS.get(variant, "#888888")
+        # Wilson 95% CI band per line (needs the integer counts; skip gracefully if a
+        # cached CSV predates the near_k/valid_k columns). Near-native band a touch
+        # stronger than the validity-aware one so overlapping variants stay legible.
+        try:
+            N = int(g["n_complexes"].iloc[0])
+            for col, alpha in (("near_k", 0.13), ("valid_k", 0.07)):
+                if col not in g.columns:
+                    continue
+                cis = [su.wilson_ci(int(kk), N) for kk in g[col]]
+                ax.fill_between(g["k"], [100 * lo for lo, _ in cis],
+                                [100 * hi for _, hi in cis],
+                                color=c, alpha=alpha, lw=0, zorder=2)
+        except Exception:
+            pass
         ax.plot(g["k"], g["near_recovery_%"], color=c, lw=2.2, ls="-", zorder=3)
         ax.plot(g["k"], g["valid_recovery_%"], color=c, lw=2.2, ls="--", zorder=3)
         kmax = int(g["k"].max())
@@ -6079,7 +7452,13 @@ def plot_topk_recovery_validity(rec: pd.DataFrame, out: Path, thr: float = 2.0) 
                         bbox=dict(boxstyle="round,pad=0.08", fc="white", ec="none", alpha=0.8))
 
     for mk in MARK_KS:
-        ax.axvline(mk, color="0.6", ls=(0, (2, 3)), lw=1.0, zorder=1)
+        is_test = mk in _TOPK_TEST_DEPTHS       # a pre-specified McNemar test depth
+        ax.axvline(mk, color="0.45" if is_test else "0.72", ls=(0, (2, 3)),
+                   lw=1.2 if is_test else 0.9, zorder=1)
+        if is_test:
+            ax.annotate("test k", xy=(mk, 100), xytext=(0, 1.5),
+                        textcoords="offset points", ha="center", va="bottom",
+                        fontsize=6, color="0.45", clip_on=False)
         near_col, valid_col = [], []
         for variant in variants:
             row = rec[(rec["variant"] == variant) & (rec["k"].astype(int) == mk)]
@@ -6114,7 +7493,13 @@ def plot_topk_recovery_validity(rec: pd.DataFrame, out: Path, thr: float = 2.0) 
               fontsize=9, framealpha=0.9, title="line = recovery of")
     ax.set_title("Cumulative recovery within top-k — near-native vs. PB-valid",
                  fontsize=12, fontweight="bold")
-    fig.tight_layout(); fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
+    depths = ", ".join(str(k) for k in (stats or {}).get("test_depths", _TOPK_TEST_DEPTHS))
+    note = ("Shaded bands: Wilson 95% CI on each rate. Paired exact-McNemar tests "
+            f"(Holm-corrected) at pre-specified depths k ∈ {{{depths}}}; full table → "
+            "topk_recovery_stats.csv / …_stats.json.")
+    fig.text(0.006, 0.006, note, fontsize=7, color="0.4", ha="left", va="bottom")
+    fig.tight_layout(rect=(0, 0.025, 1, 1))
+    fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
 
 
 # ── Optimization benefit by rank — does refinement help early ranks more? ────────
@@ -6201,7 +7586,109 @@ def _opt_tools_in(rec: pd.DataFrame):
     return [t for (t, *_r) in _OPT_BENEFIT_TOOLS if t in seen]
 
 
-def plot_optimization_benefit_by_rank(rec: pd.DataFrame, out: Path) -> None:
+# Map each 15c/15d criterion column to the endpoint tested in
+# optimization_benefit_stats.py; the derived "both_%" is never tested.
+_OPT_CRIT2EP = {"near_%": "near_native", "pbv_%": "pb_valid", "both_%": None}
+
+
+def _annotate_15c_panel(ax, ranks, r, s, g, a_df, tool, col) -> None:
+    """Overlay question-(a) paired-test results on a 15c panel: significance stars at
+    the pre-specified tested ranks (raw→gnina exact McNemar, Holm) + a corner box with
+    the primary rank-1 contrast. ``a_df`` is optimization_benefit_stats' pairwise table.
+    The derived both_% column is labelled 'not tested'."""
+    ep = _OPT_CRIT2EP.get(col)
+    if ep is None:
+        ax.text(0.97, 0.96, "derived (near ∧ PB-valid)\n— not tested",
+                transform=ax.transAxes, ha="right", va="top", fontsize=6.3,
+                color="0.45", style="italic")
+        return
+    sub = a_df[(a_df["tool"] == tool) & (a_df["endpoint"] == ep)]
+    if sub.empty:
+        return
+    rk_int = ranks.astype(int)
+    arrs = [a for a in (s, g) if a is not None]
+    top = np.nanmax(np.vstack(arrs), axis=0) if arrs else r
+    span = ax.get_ylim()[1] - ax.get_ylim()[0]
+    for _, rr in sub.iterrows():
+        rk = int(rr["rank"])
+        hit = np.where(rk_int == rk)[0]
+        if not hit.size:
+            continue
+        star = str(rr["gnina_star"])
+        ax.annotate(star, xy=(rk, float(top[hit[0]]) + 0.02 * span), ha="center",
+                    va="bottom", fontsize=7.5 if star != "ns" else 6.0,
+                    color=_OPT_C_GNI if star != "ns" else "0.55",
+                    fontweight="bold", zorder=5)
+    prim = sub[sub["primary"]]
+    if not prim.empty:
+        rr = prim.iloc[0]
+        n_sig = int((sub["gnina_mcnemar_holm"] < 0.05).sum())
+        line = (f"raw→gnina @r1: {rr['gnina_minus_raw_pp']:+.1f} pp  {rr['gnina_star']}\n"
+                f"McNemar p_holm={su.fmt_p(rr['gnina_mcnemar_holm'])} · "
+                f"{n_sig}/{len(sub)} tested ranks sig")
+        yloc, vloc = (0.5, "center") if ep == "pb_valid" else (0.96, "top")
+        ax.text(0.97, yloc, line, transform=ax.transAxes, ha="right", va=vloc,
+                fontsize=6.4, color="0.12",
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.7", alpha=0.9))
+
+
+def _annotate_15d_panel(ax, b_df, tool, col) -> None:
+    """Overlay question-(b) results on a 15d panel: the optimizer×rank interaction
+    (gnina, cluster-bootstrap, BH-corrected) with a plain-language trend, plus the
+    raw-only rank slope (DiffDock = confidence gradient; EquiBind = negative control).
+    ``b_df`` is optimization_benefit_stats' interaction table."""
+    ep = _OPT_CRIT2EP.get(col)
+    if ep is None:
+        ax.text(0.03, 0.97, "derived — not tested", transform=ax.transAxes,
+                ha="left", va="top", fontsize=6.3, color="0.45", style="italic")
+        return
+    gn = b_df[(b_df["tool"] == tool) & (b_df["endpoint"] == ep)
+              & (b_df["contrast"] == "gnina_vs_raw")]
+    if gn.empty:
+        return
+    rr = gn.iloc[0]
+    b3, star = rr["interaction_logodds_per_rank"], str(rr["star"])
+    if star != "ns":
+        trend = "benefit grows with rank" if b3 > 0 else "benefit shrinks with rank"
+    else:
+        trend = "benefit ~flat across ranks"
+    ctl = "  (neg. control)" if tool == "EquiBind" else ""
+    line = (f"opt×rank (gnina): {b3:+.3f}/rank\n"
+            f"p_BH={su.fmt_p(rr['interaction_p_bh'])} {star} — {trend}\n"
+            f"raw slope {rr['raw_rank_slope_logodds']:+.3f}/rank "
+            f"{rr['raw_slope_star']}{ctl}")
+    # top-left: these bars rise from 0 (leftmost group shortest for PB-valid), so the
+    # upper-left corner clears them where a bottom anchor would sit inside the bars.
+    ax.text(0.03, 0.97, line, transform=ax.transAxes, ha="left", va="top",
+            fontsize=6.3, color="0.12",
+            bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="0.7", alpha=0.9))
+
+
+def _load_opt_benefit_stats(out_dir: Path) -> dict | None:
+    """Load the 15c/15d test results (written by optimization_benefit_stats.py) so a
+    plain report run RE-ANNOTATES the figures instead of silently dropping the stats.
+    Returns {"a": pairwise_df, "b": interaction_df} or None if not computed yet.
+
+    The curves themselves are always recomputed from the current data; only the
+    annotation layer is reused, so if the underlying poses changed since the stats were
+    last computed, re-run optimization_benefit_stats.py to refresh the numbers."""
+    ap = out_dir / "optimization_benefit_stats_pairwise.csv"
+    bp = out_dir / "optimization_benefit_stats_interaction.csv"
+    if not (ap.exists() and bp.exists()):
+        return None
+    try:
+        a = pd.read_csv(ap)
+        b = pd.read_csv(bp)
+        if "primary" in a.columns:
+            a["primary"] = a["primary"].astype(bool)
+        return {"a": a, "b": b}
+    except Exception as exc:                             # pragma: no cover
+        print(f"  (15c/15d stats present but unreadable — drawing un-annotated: {exc})")
+        return None
+
+
+def plot_optimization_benefit_by_rank(rec: pd.DataFrame, out: Path,
+                                      stats: dict | None = None) -> None:
     """Fig 15c — per-rank benefit of pose optimization (smina/gnina) over the raw pose:
     rows = DiffDock / EquiBind, cols = the three criteria. Each panel draws the raw /
     smina / gnina per-rank rates and shades the raw→smina gap as the benefit; the rank
@@ -6254,6 +7741,8 @@ def plot_optimization_benefit_by_rank(rec: pd.DataFrame, out: Path) -> None:
                     ax.annotate(f"{lo}–{hi}", xy=((lo + hi) / 2, 0.02),
                                 xycoords=("data", "axes fraction"), ha="center",
                                 va="bottom", fontsize=7.5, color=gc, fontweight="bold")
+            if stats is not None and stats.get("a") is not None:
+                _annotate_15c_panel(ax, ranks, r, s, g, stats["a"], tool, col)
     handles = [
         Line2D([0], [0], color=_OPT_C_RAW, lw=2.0, marker="o", ms=3, label="raw (un-optimized)"),
         Line2D([0], [0], color=_OPT_C_SMI, lw=2.2, marker="o", ms=3, label="smina-opt"),
@@ -6269,7 +7758,8 @@ def plot_optimization_benefit_by_rank(rec: pd.DataFrame, out: Path) -> None:
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
 
 
-def plot_optimization_benefit_by_group(rec: pd.DataFrame, out: Path) -> None:
+def plot_optimization_benefit_by_group(rec: pd.DataFrame, out: Path,
+                                       stats: dict | None = None) -> None:
     """Fig 15d — optimization impact (+pp = optimized − raw, pose-count-weighted within
     each group) summarised over three rank groups (1–10, 11–20, 21–30). Rows = DiffDock /
     EquiBind, cols = the three criteria; grouped bars for smina and gnina, value-labelled
@@ -6313,6 +7803,8 @@ def plot_optimization_benefit_by_group(rec: pd.DataFrame, out: Path) -> None:
             ax.set_ylabel("optimization impact (+pp vs raw)")
             ax.grid(axis="y", alpha=0.3); ax.set_axisbelow(True)
             ax.margins(y=0.20)
+            if stats is not None and stats.get("b") is not None:
+                _annotate_15d_panel(ax, stats["b"], tool, col)
     axes[0][0].legend(loc="upper right", fontsize=8.5, framealpha=0.9)
     fig.suptitle("Optimization impact by rank group (+percentage points vs the raw pose)",
                  fontsize=13, fontweight="bold", y=0.995)
@@ -6628,9 +8120,11 @@ def _pb_cascade_from_rep(rep: pd.DataFrame, test_table: pd.DataFrame,
     steps = [{"label": "All predictions", "kind": "start",
               "removed": 0, "remaining": N, "before": N, "after": N}]
     surv = pd.Series(True, index=merged.index)
+    placement = pd.Series(True, index=merged.index)   # RMSD ≤ 2 Å status per complex
 
     if gate_rmsd:
         rmsd_ok = (pd.to_numeric(merged["rmsd"], errors="coerce") <= 2.0).fillna(False)
+        placement = rmsd_ok
         before = int(surv.sum()); surv = surv & rmsd_ok; after = int(surv.sum())
         steps.append({"label": "RMSD > 2 Å", "kind": "drop",
                       "removed": before - after, "remaining": after,
@@ -6650,7 +8144,15 @@ def _pb_cascade_from_rep(rep: pd.DataFrame, test_table: pd.DataFrame,
     steps.append({"label": "Passing all tests", "kind": "end",
                   "removed": 0, "remaining": passing,
                   "before": passing, "after": passing})
-    return {"N": N, "selection": selection, "steps": steps}
+    # Per-complex outcomes keyed by "protein\x1fligand" so downstream paired tests
+    # (McNemar: rank-1 vs top-N, raw vs refined) align the SAME complexes across
+    # cascades. ``surv`` now holds passing-all-tests status; ``placement`` the RMSD
+    # gate. One representative pose per complex, so each key is unique.
+    ck = merged["protein"].astype(str) + "\x1f" + merged["ligand"].astype(str)
+    pass_all = dict(zip(ck, surv.reindex(merged.index).to_numpy(dtype=bool)))
+    rmsd_ok_map = dict(zip(ck, placement.reindex(merged.index).to_numpy(dtype=bool)))
+    return {"N": N, "selection": selection, "steps": steps,
+            "pass_all": pass_all, "rmsd_ok": rmsd_ok_map}
 
 
 def aggregate_pb_waterfall(df: pd.DataFrame, test_table: pd.DataFrame,
@@ -6928,12 +8430,82 @@ def _step_category(step: dict) -> tuple[str, str]:
     return "other PoseBusters tests", amber
 
 
+def _mcnemar_on_maps(map_a: dict | None, map_b: dict | None) -> dict | None:
+    """Exact paired McNemar on two per-complex pass/fail maps (keyed by complex
+    id), restricted to complexes present in BOTH. ``a`` is the baseline condition,
+    ``b`` the comparison. Returns each rate + its Wilson 95% CI and the exact
+    McNemar p, or None when the maps share no complex."""
+    if not map_a or not map_b:
+        return None
+    keys = sorted(set(map_a) & set(map_b))
+    n = len(keys)
+    if n == 0:
+        return None
+    a = np.fromiter((bool(map_a[k]) for k in keys), dtype=bool, count=n)
+    b = np.fromiter((bool(map_b[k]) for k in keys), dtype=bool, count=n)
+    ka, kb = int(a.sum()), int(b.sum())
+    n10, n01, p = su.mcnemar_exact(a, b)
+    return {"n": n, "a_k": ka, "b_k": kb, "a_rate": ka / n, "b_rate": kb / n,
+            "a_ci": su.wilson_ci(ka, n), "b_ci": su.wilson_ci(kb, n),
+            "a_wins": int(n10), "b_wins": int(n01), "mcnemar_p": float(p)}
+
+
+def _stats_top30_recovery(cascades_top1: dict, cascades_topn: dict, methods,
+                          raw_key_map: dict | None = None) -> dict | None:
+    """Paired significance tests for the top-30 recovery figures (17f/17g/17h).
+
+    Per method panel, on the per-complex 'passing all PoseBusters tests' outcome
+    (one representative pose per complex, so no pose-level pseudoreplication):
+      * ``rank_gain``  — rank-1 vs best-of-top-N (the panel's coloured recovery
+        bars): exact McNemar + Wilson 95% CIs on each pass-all rate. Two-sided —
+        the top-N pick minimises RMSD, not PB-validity, so a complex can pass at
+        rank-1 yet fail the top-N pick.
+      * ``refine_gain`` — raw vs refined at BOTH rank-1 and top-N depths, but only
+        for a refined panel whose raw counterpart is present in the same figure.
+    Every p-value in the figure forms ONE family and is Holm-adjusted together.
+    Returns ``{method: {...}}`` (each record carrying ``p_holm``/``star``) or None
+    when no panel carries the per-complex maps.
+    """
+    raw_key_map = raw_key_map or {"diffdock": "diffdock_raw",
+                                  "equibind_gnina": "equibind_raw"}
+    out: dict = {}
+    fam: list = []                 # records to back-fill Holm-adjusted p-values
+    for m in methods:
+        c1, cn = cascades_top1.get(m), cascades_topn.get(m)
+        if not c1 or not cn:
+            continue
+        rank = _mcnemar_on_maps(c1.get("pass_all"), cn.get("pass_all"))
+        if rank is None:
+            continue
+        entry: dict = {"rank_gain": rank}
+        fam.append(rank)
+        rk = raw_key_map.get(str(m))
+        if rk and rk in cascades_top1 and rk in cascades_topn:
+            refine: dict = {}
+            for depth, casc in (("rank1", cascades_top1), ("topn", cascades_topn)):
+                rec = _mcnemar_on_maps(casc[rk].get("pass_all"),
+                                       casc[m].get("pass_all"))
+                if rec is not None:
+                    refine[depth] = rec
+                    fam.append(rec)
+            if refine:
+                entry["refine_gain"] = refine
+        out[str(m)] = entry
+    if not out:
+        return None
+    for rec, pa in zip(fam, su.holm([r["mcnemar_p"] for r in fam])):
+        rec["p_holm"] = float(pa)
+        rec["star"] = su.p_stars(pa)
+    return out
+
+
 def plot_pb_top30_recovery_by_test(cascades_top1: dict, cascades_topn: dict,
                                    top_n: int, out: Path,
                                    csv_out: Path | None = None,
                                    extra: tuple = (),
                                    methods: tuple | None = None,
                                    labels: dict | None = None,
+                                   stats: dict | None = None,
                                    only_differences: bool = True) -> None:
     """Per method, how many MORE complexes survive each cascade step when the
     representative pose is the best of the top-``top_n`` instead of rank-1.
@@ -6969,6 +8541,16 @@ def plot_pb_top30_recovery_by_test(cascades_top1: dict, cascades_topn: dict,
     axes = list(axes[:, 0])
     x = np.arange(nx)
     csv_rows = []
+
+    # Alternating vertical bands at every x-tick, painted on each (shared-x) panel
+    # so a cascade-step label on the bottom axis can be traced straight up through
+    # all panels above it. Two faint tints alternate column-to-column; the low
+    # zorder keeps them behind the grid, the gap bars and the survivor lines.
+    band_colors = ("#eceff4", "#d9e1ec")
+    for ax in axes:
+        for xi in x:
+            ax.axvspan(xi - 0.5, xi + 0.5, color=band_colors[int(xi) % 2],
+                       alpha=0.7, lw=0, zorder=0)
 
     def _lbl_idx(name: str) -> int | None:
         return labels_x.index(name) if name in labels_x else None
@@ -7036,6 +8618,7 @@ def plot_pb_top30_recovery_by_test(cascades_top1: dict, cascades_topn: dict,
         # lift at both rank-1 and top-N.
         note = (f"top-{top_n} recovers:  +{place_gain} within 2 Å  ·  −{lost} to "
                 f"other tests  ·  +{final_gain} pass all")
+        st = (stats or {}).get(str(method))
         raw_key = {"diffdock": "diffdock_raw",
                    "equibind_gnina": "equibind_raw"}.get(str(method))
         if raw_key and raw_key in cascades_top1 and raw_key in cascades_topn:
@@ -7043,8 +8626,23 @@ def plot_pb_top30_recovery_by_test(cascades_top1: dict, cascades_topn: dict,
                 cascades_top1[raw_key]["N"] or 1)
             rp30 = 100 * cascades_topn[raw_key]["steps"][-1]["after"] / (
                 cascades_topn[raw_key]["N"] or 1)
-            note += (f"\nraw → refined:  +{p1 - rp1:.1f} pp at rank-1  ·  "
-                     f"+{p30 - rp30:.1f} pp at top-{top_n}")
+            # Star each raw → refined pp lift with its own paired McNemar result.
+            ref = (st or {}).get("refine_gain", {})
+            r1s = f" {ref['rank1']['star']}" if ref.get("rank1") else ""
+            r30s = f" {ref['topn']['star']}" if ref.get("topn") else ""
+            note += (f"\nraw → refined:  +{p1 - rp1:.1f} pp at rank-1{r1s}  ·  "
+                     f"+{p30 - rp30:.1f} pp at top-{top_n}{r30s}")
+        # Paired significance of the rank-1 → top-N passing-all gain (the panel's
+        # coloured bars): Wilson 95% CI on each rate + exact McNemar, Holm-adjusted
+        # across the figure. Absent when stats weren't computed (degrades silently).
+        rg = st.get("rank_gain") if st else None
+        if rg:
+            lo1, hi1 = rg["a_ci"]; lon, hin = rg["b_ci"]
+            pshow = rg.get("p_holm", rg["mcnemar_p"])
+            note += (f"\npass-all % [95% CI]:  {100 * rg['a_rate']:.1f} "
+                     f"[{100 * lo1:.0f}–{100 * hi1:.0f}] → {100 * rg['b_rate']:.1f} "
+                     f"[{100 * lon:.0f}–{100 * hin:.0f}]   ·   McNemar "
+                     f"{rg['star']} ({su.fmt_p(pshow)})")
         ax.text(0.5, 0.93, note, transform=ax.transAxes, ha="center", va="top",
                 fontsize=8, color="0.12",
                 bbox=dict(boxstyle="round,pad=0.35", fc="white", ec="0.55",
@@ -7073,13 +8671,29 @@ def plot_pb_top30_recovery_by_test(cascades_top1: dict, cascades_topn: dict,
                              rotation_mode="anchor", fontsize=8)
     if nrows > 1:
         _label_panels(axes)
-    fig.suptitle(_vt(f"Extra complexes recovered by best-of-top-{top_n} vs rank-1, "
-                     "at each PoseBusters cascade step\n(bar = extra survivors "
-                     "where the top-30 pick makes a difference; blue = RMSD ≤ 2 Å "
-                     "placement, amber = other physical-validity tests, green = "
-                     "passing all tests)"),
-                 fontsize=13, fontweight="bold")
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    # Title broken over four lines (each subtitle clause on its own line) so it
+    # stays readable regardless of figure width, and pulled down close to the top
+    # panel. NB: passing the title band to tight_layout via rect= does NOT work —
+    # tight_layout leaves ~6% slack below the rect top instead of filling it, so the
+    # title floats far above the graph. Instead run tight_layout() normally (for the
+    # inter-panel + x-label spacing), then MEASURE the rendered title bottom and push
+    # the subplot region up to just below it with subplots_adjust(top=…).
+    title_y = 0.992
+    suptitle = fig.suptitle(_vt(
+        f"Extra complexes recovered by best-of-top-{top_n} vs rank-1,\n"
+        "at each PoseBusters cascade step\n"
+        "(bar = extra survivors where the top-30 pick makes a difference;\n"
+        "blue = RMSD ≤ 2 Å placement, amber = other physical-validity tests, "
+        "green = passing all tests)"),
+        fontsize=13, fontweight="bold", y=title_y, va="top")
+    fig.tight_layout()
+    try:
+        fig.canvas.draw()
+        bb = suptitle.get_window_extent(renderer=fig.canvas.get_renderer())
+        title_bottom = float(fig.transFigure.inverted().transform((0, bb.y0))[1])
+        fig.subplots_adjust(top=min(0.97, title_bottom - 0.018))
+    except Exception:
+        fig.subplots_adjust(top=title_y - 4 * (0.253 / fig.get_figheight()) - 0.02)
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
     if csv_out is not None and csv_rows:
         pd.DataFrame(csv_rows).to_csv(csv_out, index=False)
@@ -8014,12 +9628,19 @@ def main() -> None:
     # Computed on the FULL (pre-collapse) df so the raw/smina/gnina contrast is preserved,
     # and labelled by true variant identity (the DiffDock*/EquiBind* overrides aren't set yet).
     _w2cmp = within2_validity_comparison(df)
+    _w2_stats = None
     if not _w2cmp.empty:
         _w2cmp.to_csv(args.out_dir / "within2_validity_comparison.csv")
+        # Paired within-method test of the circle↔diamond gap (oracle vs near-native
+        # pool PB-validity); degrades to the test-free figure on any failure.
+        try:
+            _w2_stats = _stats_within2_gap(df)
+        except Exception as exc:
+            print(f"  WARNING: fig 19 within2 gap stats failed ({exc})")
         # Figure keeps fpocket/p2rank as separate rows but brackets them as one guided block —
         # they are handed the pocket, so warrant reading apart from the blind methods.
         plot_within2_validity_dumbbell(
-            _w2cmp, args.out_dir / "19_within2_validity_dumbbell.png")
+            _w2cmp, args.out_dir / "19_within2_validity_dumbbell.png", stats=_w2_stats)
         print(f"  wrote near-native validity comparison → within2_validity_comparison.csv "
               f"+ 19_within2_validity_dumbbell.png ({len(_w2cmp)} variants)")
 
@@ -8091,18 +9712,79 @@ def main() -> None:
     oracle_pivot.to_csv(args.out_dir / "oracle_rmsd_per_pair.csv")
 
     # ── Part A: oracle comparison (all tools) ────────────────────
+    # Statistical tests for the headline oracle / success / paper figures. Each
+    # is computed once (unit = per-complex) and both annotated on the figure and
+    # written to the stats sidecar. Any failure degrades to the test-free figure.
+    _stats_sidecar: dict = {}
+    try:
+        _oracle_rmsd_stats = _stats_oracle_rmsd_paired(df)
+        if _oracle_rmsd_stats:
+            _stats_sidecar["oracle_rmsd_across_tools"] = _oracle_rmsd_stats
+    except Exception as exc:
+        _oracle_rmsd_stats = None
+        print(f"  WARNING: oracle-RMSD paired stats failed ({exc})")
+    try:
+        _succ03_stats = _stats_success_paired(df, valid=False)
+        if _succ03_stats:
+            _stats_sidecar["success_rmsd2_oracle_vs_top1"] = _succ03_stats
+    except Exception as exc:
+        _succ03_stats = None
+        print(f"  WARNING: fig 03 success stats failed ({exc})")
+    try:
+        _succ10_stats = _stats_success_paired(df, valid=True)
+        if _succ10_stats:
+            _stats_sidecar["success_rmsd2_pbvalid_oracle_vs_top1"] = _succ10_stats
+    except Exception as exc:
+        _succ10_stats = None
+        print(f"  WARNING: fig 10 success stats failed ({exc})")
+    try:
+        _paper11_stats = _stats_vs_paper(df, oracle_sum, top1_sum)
+        if _paper11_stats:
+            _stats_sidecar["vs_posebusters_paper"] = _paper11_stats
+    except Exception as exc:
+        _paper11_stats = None
+        print(f"  WARNING: fig 11 paper stats failed ({exc})")
+    # fig 19 within-2Å validity gap (computed above, on the pre-collapse df)
+    if _w2_stats:
+        _stats_sidecar["within2_validity_dumbbell"] = _w2_stats
+    # fig 15b top-k recovery — paired McNemar at pre-specified depths k ∈ {1,5,10,15}
+    # (near-native) + the nested near-vs-valid gap as an effect size. On df_full so all
+    # DiffDock/EquiBind variants are present; drives the 15b footnote + its own CSV.
+    try:
+        _topk_stats = topk_recovery_stats(df_full)
+        if _topk_stats:
+            _stats_sidecar["topk_recovery"] = _topk_stats
+    except Exception as exc:
+        _topk_stats = None
+        print(f"  WARNING: fig 15b top-k recovery stats failed ({exc})")
+    # fig 09e — strict ≤2Å & PB-valid success per 09b variant, oracle vs selected
+    # rank-1 (EquiBind ranked by gnina affinity). Paired proportions across variants
+    # + within-variant McNemar; needs df_full so every raw/opt variant is present.
+    try:
+        _variants09e_stats = _stats_pb_valid_variants(
+            df_full, thr=2.0, forced_dd=args.collapse_diffdock_variant, valid=True)
+        if _variants09e_stats:
+            _stats_sidecar["pb_valid_variants_oracle_vs_rank1"] = _variants09e_stats
+    except Exception as exc:
+        _variants09e_stats = None
+        print(f"  WARNING: fig 09e variant success stats failed ({exc})")
+
     print("\nGenerating plots …")
-    plot_oracle_rmsd_cdf(df, args.out_dir / "01_oracle_rmsd_cdf.png")
-    plot_oracle_rmsd_box(df, args.out_dir / "02_oracle_rmsd_boxplot.png")
+    plot_oracle_rmsd_cdf(df, args.out_dir / "01_oracle_rmsd_cdf.png",
+                         stats=_oracle_rmsd_stats)
+    plot_oracle_rmsd_box(df, args.out_dir / "02_oracle_rmsd_boxplot.png",
+                         stats=_oracle_rmsd_stats)
     plot_oracle_vs_top1_success(oracle_sum, top1_sum,
-                                args.out_dir / "03_oracle_vs_top1_success.png")
+                                args.out_dir / "03_oracle_vs_top1_success.png",
+                                stats=_succ03_stats)
     # Accuracy-vs-validity (former two-panel fig 09), now split into 09a (top-1)
     # and 09b (oracle), plus 09c contrasting each tool's raw vs best-optimised pose.
     plot_accuracy_validity_top1(top1_sum,
                                 args.out_dir / "09a_accuracy_vs_validity_top1.png")
     plot_accuracy_validity_oracle(oracle_sum,
                                   args.out_dir / "09b_accuracy_vs_validity_oracle.png",
-                                  df_full=df_full)
+                                  df_full=df_full,
+                                  forced_dd=args.collapse_diffdock_variant)
     rvb = aggregate_optimization_raw_vs_best(df_full)
     if not rvb.empty:
         # role_label carries newlines for the two-line bar labels — keep the clean
@@ -8142,11 +9824,27 @@ def main() -> None:
             print(f"  WARNING: 09d is missing variant(s) {missing} — df lacks those "
                   "method keys (re-run with --diffdock-variant all --split-equibind).")
 
+    # 09e — 09b's per-variant data as a fig-10 dumbbell (● oracle vs ○ selected
+    # rank-1) for the strict ≤2Å & PB-valid metric, EquiBind ranked by gnina affinity.
+    plot_pb_valid_variants_dumbbell(
+        df_full, args.out_dir / "09e_pb_valid_variants_success_dumbbell.png",
+        thr=2.0, forced_dd=args.collapse_diffdock_variant, valid=True,
+        stats=_variants09e_stats)
+
     plot_pb_valid_success_bars(oracle_sum, top1_sum,
-                               args.out_dir / "10_pb_valid_rmsd2_success_bars.png")
+                               args.out_dir / "10_pb_valid_rmsd2_success_bars.png",
+                               stats=_succ10_stats)
     plot_vs_posebusters_paper(oracle_sum, top1_sum,
                               args.out_dir / "11_vs_posebusters_paper.png",
-                              args.out_dir / "comparison_vs_posebusters_paper.csv")
+                              args.out_dir / "comparison_vs_posebusters_paper.csv",
+                              stats=_paper11_stats)
+    # Persist the full numeric stats for the headline figures (recoverable numbers).
+    try:
+        with open(args.out_dir / "posebusters_pose_comparison_stats.json", "w") as _fh:
+            json.dump(_stats_sidecar, _fh, indent=2, default=_json_default)
+        print("  wrote statistical sidecar → posebusters_pose_comparison_stats.json")
+    except Exception as exc:
+        print(f"  WARNING: could not write stats sidecar ({exc})")
     plot_rmsd2_vs_pbvalid_grouped(oracle_sum, top1_sum,
                                   args.out_dir / "12_rmsd2_vs_pbvalid_grouped.png")
     plot_pbvalid_filter_influence(oracle_sum,
@@ -8222,9 +9920,15 @@ def main() -> None:
             _fs_stats,
             args.out_dir / "20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__stats.png",
             depths=(1, 3, 5), form_ok=args.form_ok_kabsch)
+        # Mechanism-composition shift across depth (share of placement/mixed/form-
+        # limited poses growing from top-1 → top-3 → top-5, per tool).
+        plot_filmstrip_mechanism_share(
+            _fs_stats,
+            args.out_dir / "20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__mechanism_share.png",
+            depths=(1, 3, 5))
         print("  wrote filmstrip honest-statistics → filmstrip_stats__{per_tool_depth,"
               "within_tool_trend,crosstool_paired,pose_diversity}.csv + "
-              "20d_...__depth_filmstrip_pbvalid__stats.png")
+              "20d_...__depth_filmstrip_pbvalid__stats.png + __mechanism_share.png")
     # Companion reading across ranking depth (top-1 / top-5 / top-15 / top-30), each
     # panel a standalone figure, rendered under BOTH selections so they read side by
     # side: pbvalid (all PB-valid poses, RMSD gate removed — "how does form hold up as
@@ -8256,12 +9960,30 @@ def main() -> None:
     # Per-rank companion to the gate-impact view: form error vs rank for the PB-valid
     # (A) and near-native (B) cohorts stacked, plus the per-rank gate effect (C =
     # A − B), each curve labelled with the % form-correct at every top-d marker.
+    # Paired per-complex tests (gate effect near-vs-far, cross-tool form omnibus,
+    # per-complex rank trend, form⊥placement coupling) drive the panel annotations
+    # + the JSON sidecar; degrades to the test-free figure if the stats raise.
+    try:
+        _gate_vr_stats = _stats_form_fidelity_gate_vs_rank(
+            df, args.form_ok_kabsch, depths=(1, 5, 10, 15))
+        if _gate_vr_stats:
+            _stats_sidecar["form_fidelity_gate_vs_rank"] = _gate_vr_stats
+    except Exception as _exc:
+        _gate_vr_stats = None
+        print(f"  WARNING: fig 20 gate-vs-rank stats failed ({_exc})")
     plot_form_fidelity_gate_vs_rank(
         df, args.out_dir / "20_form_fidelity__rank_depth_gate_vs_rank.png",
-        args.form_ok_kabsch, depths=(1, 5, 10, 15), suptitle=_vt(
+        args.form_ok_kabsch, depths=(1, 5, 10, 15), stats=_gate_vr_stats, suptitle=_vt(
             "Form fidelity vs rank (top-15) — impact of the RMSD ≤ 2 Å criterion\n"
             "(A) PB-valid   (B) near-native (PB-valid AND ≤ 2 Å)   (C) gate effect\n"
             "curves = median best-fit RMSD (band = IQR); labels = % form-correct · n complexes"))
+    if _gate_vr_stats:
+        try:
+            with open(args.out_dir / "posebusters_pose_comparison_stats.json", "w") as _fh:
+                json.dump(_stats_sidecar, _fh, indent=2, default=_json_default)
+            print("  updated statistical sidecar with fig-20 gate-vs-rank tests")
+        except Exception as _exc:
+            print(f"  WARNING: could not update stats sidecar ({_exc})")
     # Head-to-head of the two selections: table (how many complexes each rule
     # keeps + how many the nearest rule needlessly drops) and figure (20c).
     aggregate_oracle_selection_comparison(df).to_csv(
@@ -8310,9 +10032,24 @@ def main() -> None:
         if not topk_rec.empty:
             topk_rec.to_csv(args.out_dir / "topk_recovery_validity.csv", index=False)
             plot_topk_recovery_validity(
-                topk_rec, args.out_dir / "15b_topk_recovery_validity.png")
+                topk_rec, args.out_dir / "15b_topk_recovery_validity.png",
+                stats=_topk_stats)
             print("  wrote top-k recovery (near-native vs PB-valid) → "
                   "topk_recovery_validity.csv")
+            # Tidy CSV of the pre-specified paired McNemar tests (k ∈ {1,5,10,15}).
+            if _topk_stats and _topk_stats.get("between_method"):
+                _bm = pd.DataFrame(_topk_stats["between_method"])
+                _bm["baseline_rate_%"] = (100 * _bm["a_rate"]).round(2)
+                _bm["comparison_rate_%"] = (100 * _bm["b_rate"]).round(2)
+                _bm = _bm.rename(columns={"a_wins": "baseline_only_wins",
+                                          "b_wins": "comparison_only_wins",
+                                          "n": "n_complexes"})
+                _bm[["baseline", "comparison", "k", "n_complexes",
+                     "baseline_rate_%", "comparison_rate_%",
+                     "baseline_only_wins", "comparison_only_wins",
+                     "mcnemar_p", "p_holm", "star"]].to_csv(
+                    args.out_dir / "topk_recovery_stats.csv", index=False)
+                print("  wrote top-k paired McNemar tests → topk_recovery_stats.csv")
 
         # 15c/15d — per-rank benefit of pose optimization (smina/gnina) over the raw
         # pose, for DiffDock (confidence rank) and EquiBind (generation order): does
@@ -8323,12 +10060,18 @@ def main() -> None:
         if not opt_benefit.empty:
             opt_benefit.to_csv(args.out_dir / "optimization_benefit_by_rank.csv",
                                index=False)
+            # Re-annotate from the sidecar (optimization_benefit_stats.py) if present, so
+            # a plain report run keeps the 15c/15d stats instead of overwriting them plain.
+            _ob_stats = _load_opt_benefit_stats(args.out_dir)
             plot_optimization_benefit_by_rank(
-                opt_benefit, args.out_dir / "15c_optimization_benefit_by_rank.png")
+                opt_benefit, args.out_dir / "15c_optimization_benefit_by_rank.png",
+                stats=_ob_stats)
             plot_optimization_benefit_by_group(
-                opt_benefit, args.out_dir / "15d_optimization_benefit_by_group.png")
+                opt_benefit, args.out_dir / "15d_optimization_benefit_by_group.png",
+                stats=_ob_stats)
             print("  wrote per-rank optimization benefit → "
-                  "optimization_benefit_by_rank.csv")
+                  "optimization_benefit_by_rank.csv"
+                  + ("  (+15c/15d stats annotations)" if _ob_stats else ""))
 
         # How many of the top-N ranked poses land within 1, 1.25, 1.5 … Å?
         # EquiBind (gnina-ranked) is added from df_full since the collapsed df keeps
@@ -8339,9 +10082,22 @@ def main() -> None:
             eq_df=eq_gnina if not eq_gnina.empty else None)
         if not within_df.empty:
             within_df.to_csv(args.out_dir / "topn_within_thresholds.csv", index=False)
+            # Paired complex-level tests (Cochran's Q + pairwise McNemar, Holm; Wilson
+            # CIs; ranking headroom) at the pre-specified 1 Å + 2 Å thresholds — drives
+            # panel A's annotations and the JSON sidecar. Same (df, eq_df) as the curves.
+            try:
+                _topn18_stats = _stats_topn_within(
+                    df, args.top_n,
+                    eq_df=eq_gnina if not eq_gnina.empty else None, pb_valid_only=False)
+                if _topn18_stats:
+                    _stats_sidecar["topn_within_thresholds"] = _topn18_stats
+            except Exception as _exc:
+                _topn18_stats = None
+                print(f"  WARNING: fig 18 within-threshold stats failed ({_exc})")
             plot_topn_within_thresholds(within_df, args.top_n,
                                         args.fine_rmsd_thresholds,
-                                        args.out_dir / "18_topn_within_thresholds.png")
+                                        args.out_dir / "18_topn_within_thresholds.png",
+                                        stats=_topn18_stats)
             thr_str = ", ".join(f"{t:g}" for t in args.fine_rmsd_thresholds)
             print(f"\nTop-ranked poses within RMSD thresholds ({thr_str} Å):")
             print(within_df.pivot_table(index="method", columns="rmsd_threshold_A",
@@ -8356,12 +10112,33 @@ def main() -> None:
         if not within_pbv.empty:
             within_pbv.to_csv(args.out_dir / "topn_within_thresholds_pbvalid.csv",
                               index=False)
+            try:
+                _topn18v_stats = _stats_topn_within(
+                    df, args.top_n,
+                    eq_df=eq_gnina if not eq_gnina.empty else None, pb_valid_only=True)
+                if _topn18v_stats:
+                    _stats_sidecar["topn_within_thresholds_pbvalid"] = _topn18v_stats
+            except Exception as _exc:
+                _topn18v_stats = None
+                print(f"  WARNING: fig 18 PB-valid within-threshold stats failed ({_exc})")
             plot_topn_within_thresholds(
                 within_pbv, args.top_n, args.fine_rmsd_thresholds,
                 args.out_dir / "18_topn_within_thresholds_pbvalid.png",
-                pb_valid_only=True)
+                pb_valid_only=True, stats=_topn18v_stats)
             print("  wrote PB-valid within-threshold sweep → "
                   "topn_within_thresholds_pbvalid.csv")
+
+        # Re-persist the sidecar: the headline dump ran before fig 18's within-threshold
+        # tests existed, and the top-30 re-persist below is gated on a deeper block that
+        # need not run — fold the fig-18 payloads in now (idempotent superset write).
+        if any(k.startswith("topn_within_thresholds") for k in _stats_sidecar):
+            try:
+                with open(args.out_dir / "posebusters_pose_comparison_stats.json",
+                          "w") as _fh:
+                    json.dump(_stats_sidecar, _fh, indent=2, default=_json_default)
+                print("  updated statistical sidecar with fig-18 within-threshold tests")
+            except Exception as exc:
+                print(f"  WARNING: could not update stats sidecar ({exc})")
     else:
         print("  Skipping ranking plots (no ranking tool data found).")
 
@@ -8456,11 +10233,19 @@ def main() -> None:
                     # step in counts: how many MORE complexes survive each test
                     # with best-of-top-30 vs rank-1, colour-split into the RMSD ≤ 2 Å
                     # placement filter and the other physical-validity tests.
+                    try:
+                        stats17f = _stats_top30_recovery(
+                            c1_30, cn_30, ("autodock", "diffdock", *ex30))
+                    except Exception as exc:
+                        stats17f = None
+                        print(f"  WARNING: 17f recovery stats failed ({exc})")
+                    if stats17f:
+                        _stats_sidecar["top30_recovery_refined"] = stats17f
                     plot_pb_top30_recovery_by_test(
                         c1_30, cn_30, TOP30,
                         args.out_dir / "17f_pb_top30_recovery_by_test.png",
                         csv_out=args.out_dir / "pb_top30_recovery_by_test.csv",
-                        extra=ex30)
+                        extra=ex30, stats=stats17f)
                     print("  wrote top-30 per-test recovery → "
                           "17f_pb_top30_recovery_by_test.png")
 
@@ -8480,11 +10265,19 @@ def main() -> None:
                             args.out_dir / "17c3_pb_waterfall_top1_vs_top30_raw.png",
                             csv_out=args.out_dir / "pb_waterfall_top1_vs_top30_raw.csv",
                             methods=raw_methods)
+                        try:
+                            stats17g = _stats_top30_recovery(
+                                c1_raw, cn_raw, raw_methods)
+                        except Exception as exc:
+                            stats17g = None
+                            print(f"  WARNING: 17g recovery stats failed ({exc})")
+                        if stats17g:
+                            _stats_sidecar["top30_recovery_raw"] = stats17g
                         plot_pb_top30_recovery_by_test(
                             c1_raw, cn_raw, TOP30,
                             args.out_dir / "17g_pb_top30_recovery_by_test_raw.png",
                             csv_out=args.out_dir / "pb_top30_recovery_by_test_raw.csv",
-                            methods=raw_methods)
+                            methods=raw_methods, stats=stats17g)
                         print("  wrote un-refined (raw) top-30 recovery → "
                               "17c3_pb_waterfall_top1_vs_top30_raw.png, "
                               "17g_pb_top30_recovery_by_test_raw.png")
@@ -8507,13 +10300,34 @@ def main() -> None:
                             "equibind_raw": "EquiBind (raw)",
                         }
                         if len(combined_methods) >= 2:
+                            try:
+                                stats17h = _stats_top30_recovery(
+                                    c1_all, cn_all, combined_methods)
+                            except Exception as exc:
+                                stats17h = None
+                                print(f"  WARNING: 17h recovery stats failed ({exc})")
+                            if stats17h:
+                                _stats_sidecar["top30_recovery_raw_vs_refined"] = stats17h
                             plot_pb_top30_recovery_by_test(
                                 c1_all, cn_all, TOP30,
                                 args.out_dir / "17h_pb_top30_recovery_raw_vs_refined.png",
                                 csv_out=args.out_dir / "pb_top30_recovery_raw_vs_refined.csv",
-                                methods=combined_methods, labels=combined_labels)
+                                methods=combined_methods, labels=combined_labels,
+                                stats=stats17h)
                             print("  wrote combined raw+refined top-30 recovery → "
                                   "17h_pb_top30_recovery_raw_vs_refined.png")
+
+            # Re-persist the sidecar: the headline dump above ran before the
+            # top-30 recovery tests existed, so fold their McNemar/Wilson payloads
+            # in now (idempotent superset write; degrades silently on failure).
+            if any(k.startswith("top30_recovery") for k in _stats_sidecar):
+                try:
+                    with open(args.out_dir / "posebusters_pose_comparison_stats.json",
+                              "w") as _fh:
+                        json.dump(_stats_sidecar, _fh, indent=2, default=_json_default)
+                    print("  updated statistical sidecar with top-30 recovery tests")
+                except Exception as exc:
+                    print(f"  WARNING: could not update stats sidecar ({exc})")
 
             # Raw pose vs best refined variant, top-1 per method — 17d. Uses
             # df_full (every optimiser/refinement variant under its own method key,

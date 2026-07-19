@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import json
 import sys
 from pathlib import Path
 
@@ -53,6 +54,11 @@ from matplotlib.colors import LogNorm
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr, kendalltau
+
+import os as _os
+import sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import stats_utils as su  # noqa: E402
 
 _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
@@ -283,7 +289,79 @@ def selection_benefit(ranked: pd.DataFrame, rmsd: pd.DataFrame, tool: str,
     return per
 
 
-def fig_selection(per: pd.DataFrame, tool: str, hit: float, out_dir: Path) -> None:
+# Strategies compared on panel A (paired by complex). The four selectable rules
+# feed the omnibus + pairwise McNemar; the two oracle ceilings only get Wilson CIs.
+_CORE_STRATS = ["A_native", "C_rerank", "D_minimize", "B_full"]
+_ALL_STRATS = _CORE_STRATS + ["oracle_raw", "oracle_min"]
+_MIN_UNITS = 5   # below this, inference is not reported (figure still drawn)
+
+
+def _find_pair(pairwise, x, y):
+    """Locate the (orientation-agnostic) McNemar record for the {x, y} pair."""
+    for pr in pairwise:
+        if {pr["a"], pr["b"]} == {x, y}:
+            return pr
+    return None
+
+
+def selection_stats(per: pd.DataFrame, tool: str, hit: float):
+    """Real paired tests behind the selection figure. Returns a JSON-able dict
+    (or None if too few complexes / on failure). Never raises."""
+    try:
+        n = len(per)
+        # per-strategy Wilson CIs on the success proportion (success = <= hit)
+        wilson = {}
+        for k in _ALL_STRATS:
+            kk = int((per[k] <= hit).sum())
+            lo, hi = su.wilson_ci(kk, n)
+            wilson[k] = {"k": kk, "n": n, "rate": kk / n if n else float("nan"),
+                         "lo": lo, "hi": hi}
+        rep = {"tool": tool, "hit": hit, "n": n,
+               "panelA_strategy_success": {"wilson": wilson}}
+        if n < _MIN_UNITS:
+            rep["note"] = f"n={n} too small -- exploratory, no omnibus/pairwise test"
+            return rep
+
+        # (A) paired proportions across the four selectable strategies.
+        succ = {k: (per[k] <= hit).astype(int) for k in _CORE_STRATS}
+        pp = su.paired_proportions(succ, labels=_CORE_STRATS)
+        fvn = _find_pair(pp["pairwise"], "A_native", "B_full")
+        rep["panelA_strategy_success"].update({
+            "omnibus": pp["omnibus"],
+            "rates": {k: {"rate": v[0], "lo": v[1], "hi": v[2]}
+                      for k, v in pp["rates"].items()},
+            "pairwise": pp["pairwise"],
+            "full_vs_native": fvn,
+        })
+
+        # (B) native vs full-pipeline top-1 RMSD, paired (drop incomplete pairs).
+        pair = per[["A_native", "B_full"]].dropna()
+        nat, full = pair["A_native"].to_numpy(), pair["B_full"].to_numpy()
+        rb, pw, npair = su.wilcoxon_rankbiserial(nat, full)
+        est, mlo, mhi = su.median_diff_ci(nat, full, paired=True)
+        rep["panelB_rmsd_native_vs_full"] = {
+            "wilcoxon": {"rank_biserial": rb, "p": pw, "star": su.p_stars(pw),
+                         "n": npair,
+                         "interpretation": "rank_biserial>0 & sig => full pipeline "
+                                           "lower RMSD (closer to crystal)"},
+            "median_diff_native_minus_full": {"est": est, "lo": mlo, "hi": mhi},
+        }
+
+        # (C) effect decomposition: each refinement step vs the native pick.
+        decomp = {}
+        for k, tag in [("C_rerank", "rerank_only_vs_native"),
+                       ("D_minimize", "minimize_only_vs_native"),
+                       ("B_full", "full_vs_native")]:
+            decomp[tag] = _find_pair(pp["pairwise"], "A_native", k)
+        rep["panelC_decomposition"] = decomp
+        return rep
+    except Exception as exc:   # degrade to the test-free figure
+        print(f"[selection][warn] stats failed ({exc}); drawing without tests")
+        return None
+
+
+def fig_selection(per: pd.DataFrame, tool: str, hit: float, out_dir: Path,
+                  stats=None) -> None:
     fig, ax = plt.subplots(1, 3, figsize=(16, 4.8))
 
     # (A) success-rate bars for the 2x2 + oracle ceilings
@@ -302,8 +380,41 @@ def fig_selection(per: pd.DataFrame, tool: str, hit: float, out_dir: Path) -> No
     ax[0].set_xticks(range(len(order)))
     ax[0].set_xticklabels(names, fontsize=7)
     ax[0].set_ylabel(f"Top-1 poses within {hit:g} Angstrom of crystal (% of complexes)")
-    ax[0].set_title(f"Selection success ({len(per)} complexes)")
+    titleA = f"Selection success ({len(per)} complexes)"
     ax[0].set_ylim(0, 100)
+
+    # --- Wilson 95% CIs on every bar + omnibus + full-vs-native McNemar star ---
+    if stats:
+        try:
+            wil = stats["panelA_strategy_success"].get("wilson", {})
+            yerr_lo, yerr_hi = [], []
+            for k in order:
+                w = wil.get(k)
+                if w:
+                    yerr_lo.append((w["rate"] - w["lo"]) * 100)
+                    yerr_hi.append((w["hi"] - w["rate"]) * 100)
+                else:
+                    yerr_lo.append(0.0); yerr_hi.append(0.0)
+            ax[0].errorbar(range(len(order)), succ, yerr=[yerr_lo, yerr_hi],
+                           fmt="none", ecolor="0.3", elinewidth=1, capsize=3, zorder=5)
+            omni = stats["panelA_strategy_success"].get("omnibus")
+            if omni and omni.get("p") == omni.get("p"):   # not NaN
+                titleA += (f"\nCochran Q p={su.fmt_p(omni['p'])} "
+                           f"{su.p_stars(omni['p'])} (paired, {len(_CORE_STRATS)} rules)")
+            fvn = stats["panelA_strategy_success"].get("full_vs_native")
+            if fvn:
+                ia, ib = order.index("A_native"), order.index("B_full")
+                ytop = max(succ[ia], succ[ib]) + 7
+                ytop = min(ytop, 95)
+                ax[0].plot([ia, ia, ib, ib],
+                           [ytop - 2, ytop, ytop, ytop - 2], color="0.25", lw=1)
+                ax[0].text((ia + ib) / 2, ytop + 0.5,
+                           f"full vs native  McNemar p={su.fmt_p(fvn['p_holm'])} "
+                           f"{su.p_stars(fvn['p_holm'])}",
+                           ha="center", va="bottom", fontsize=7.5, color="0.2")
+        except Exception as exc:
+            print(f"[selection][warn] panel A annotation failed ({exc})")
+    ax[0].set_title(titleA)
 
     # (B) paired per-complex RMSD, native vs full pipeline
     lo, hi = 0.2, max(per["A_native"].max(), per["B_full"].max()) * 1.1
@@ -321,6 +432,19 @@ def fig_selection(per: pd.DataFrame, tool: str, hit: float, out_dir: Path) -> No
     ax[1].set_ylabel(f"Full {tool} pipeline top-1 RMSD to crystal (Angstrom)")
     ax[1].set_title("Per-complex top-1 accuracy\n(below diagonal = re-ranking helped)")
     ax[1].legend(fontsize=8, loc="upper left")
+    if stats and stats.get("panelB_rmsd_native_vs_full"):
+        try:
+            b = stats["panelB_rmsd_native_vs_full"]
+            w = b["wilcoxon"]; md = b["median_diff_native_minus_full"]
+            ax[1].text(0.97, 0.03,
+                       f"Wilcoxon p={su.fmt_p(w['p'])} {su.p_stars(w['p'])}\n"
+                       f"rank-biserial={w['rank_biserial']:+.2f} (n={w['n']})\n"
+                       f"HL median (native-full)={md['est']:+.2f}\n"
+                       f"[{md['lo']:+.2f}, {md['hi']:+.2f}] Angstrom",
+                       transform=ax[1].transAxes, va="bottom", ha="right", fontsize=7.5,
+                       bbox=dict(boxstyle="round", fc="white", ec="grey", alpha=.85))
+        except Exception as exc:
+            print(f"[selection][warn] panel B annotation failed ({exc})")
 
     # (C) effect decomposition relative to the native pick
     base = (per["A_native"] <= hit).mean() * 100
@@ -332,14 +456,30 @@ def fig_selection(per: pd.DataFrame, tool: str, hit: float, out_dir: Path) -> No
     cols3 = [C_RERANK, C_MINIM, C_FULL]
     bars = ax[2].bar(range(len(eff)), list(eff.values()), color=cols3, edgecolor="white")
     ax[2].axhline(0, color="black", lw=.8)
+    # McNemar star for each step vs the native pick (paired, Holm across the family)
+    decomp_star = ["", "", ""]
+    if stats and stats.get("panelC_decomposition"):
+        try:
+            dc = stats["panelC_decomposition"]
+            for i, tag in enumerate(["rerank_only_vs_native", "minimize_only_vs_native",
+                                     "full_vs_native"]):
+                rec = dc.get(tag)
+                if rec is not None:
+                    decomp_star[i] = su.p_stars(rec["p_holm"])
+        except Exception as exc:
+            print(f"[selection][warn] panel C annotation failed ({exc})")
     for i, v in enumerate(eff.values()):
-        ax[2].text(i, v + (0.3 if v >= 0 else -0.3), f"{v:+.1f}", ha="center",
+        lbl = f"{v:+.1f}" + (f" {decomp_star[i]}" if decomp_star[i] else "")
+        ax[2].text(i, v + (0.3 if v >= 0 else -0.3), lbl, ha="center",
                    va="bottom" if v >= 0 else "top", fontsize=9)
     ax[2].set_xticks(range(len(eff)))
     ax[2].set_xticklabels(list(eff.keys()), fontsize=8)
     ax[2].set_ylabel(f"Change in success rate vs DiffDock native\n"
                      f"(percentage points, hit = {hit:g} Angstrom)")
-    ax[2].set_title("Effect decomposition")
+    titleC = "Effect decomposition"
+    if any(decomp_star):
+        titleC += "\n(paired McNemar vs native, Holm)"
+    ax[2].set_title(titleC)
 
     _label_panels(ax)
     fig.suptitle(f"Does {tool} re-ranking pick a better DiffDock pose? "
@@ -377,7 +517,15 @@ def main() -> None:
         rmsd = load_crystal_rmsd(args.per_pose_metrics, args.tool)
         sel = selection_benefit(ranked, rmsd, args.tool, args.hit, args.out_dir)
         print(f"[selection] {len(sel)} complexes with a crystal reference")
-        fig_selection(sel, args.tool, args.hit, args.out_dir)
+        stats_rep = selection_stats(sel, args.tool, args.hit)
+        if stats_rep is not None:
+            (args.out_dir / f"selection_benefit_{args.tool}_stats.json").write_text(
+                json.dumps(stats_rep, indent=2, default=str))
+            omni = stats_rep.get("panelA_strategy_success", {}).get("omnibus")
+            if omni:
+                print(f"[selection] Cochran Q p={su.fmt_p(omni['p'])} "
+                      f"(paired across {len(_CORE_STRATS)} strategies)")
+        fig_selection(sel, args.tool, args.hit, args.out_dir, stats=stats_rep)
     else:
         print(f"[selection] skipped -- {args.per_pose_metrics} not found")
 

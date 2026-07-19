@@ -28,12 +28,17 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import stats_utils as su
 
 TOOLS = ["autodock", "diffdock", "equibind"]
 CONT = ["mw", "heavy_atoms", "rot_bonds", "hbd", "hba", "tpsa", "logp", "n_rings",
@@ -127,13 +132,76 @@ def main() -> None:
     print(b.round(0).to_string())
 
     cols = [t for t in TOOLS if t in succ]
+
+    # ---- NEW: per-cell Mann–Whitney (worst vs best) + BH across the heatmap,
+    #      Cliff's-δ bootstrap CI, and a stronger full-sample Spearman.
+    #      All wrapped so a stats failure degrades to the test-free figure. ----
+    star_map = {}  # (nice_property, tool) -> stars string for BH-significant cells
+    try:
+        cell_records = []
+        for tool in cols:
+            sub = (oracle[oracle["tool"] == tool].dropna(subset=["oracle_rmsd"])
+                   .sort_values("oracle_rmsd"))
+            best_g, worst_g = sub.head(n), sub.tail(n)
+            for p in CONT:
+                w = worst_g[p].to_numpy(float); b = best_g[p].to_numpy(float)
+                mw = su.mannwhitney_cliffs(w, b)
+                if mw is None:
+                    continue
+                d, lo, hi = su.cliffs_delta_ci(w, b)
+                cell_records.append(dict(
+                    tool=tool, property=NICE.get(p, p), descriptor=p,
+                    cliffs_delta=d, delta_ci_lo=lo, delta_ci_hi=hi,
+                    mw_U=mw["U"], p_raw=mw["p"],
+                    n_worst=mw["n_a"], n_best=mw["n_b"]))
+        if cell_records:
+            qs = su.bh_fdr([r["p_raw"] for r in cell_records])
+            for r, q in zip(cell_records, qs):
+                r["p_bh"] = float(q); r["star"] = su.p_stars(q)
+                if q == q and q < 0.05:
+                    star_map[(r["property"], r["tool"])] = su.p_stars(q)
+        with open(args.out_dir / "ligand_difficulty_delta_heatmap_stats.json", "w") as fh:
+            json.dump({"n_split": n, "unit": "one oracle-best-RMSD value per complex",
+                       "family": "mannwhitney_cliffs, BH across all heatmap cells",
+                       "cells": cell_records}, fh, indent=2)
+
+        # Full-sample Spearman: descriptor vs continuous oracle RMSD over ALL
+        # complexes (not just the N=60 tails), BH across the 14 descriptors/tool.
+        spear_rows = []
+        for tool in cols:
+            sub = oracle[oracle["tool"] == tool].dropna(subset=["oracle_rmsd"])
+            recs = []
+            for p in CONT:
+                rho, pv, nn = su.spearman(sub[p].to_numpy(float),
+                                          sub["oracle_rmsd"].to_numpy(float))
+                recs.append(dict(tool=tool, property=NICE.get(p, p), descriptor=p,
+                                 spearman_rho=rho, spearman_p=pv, n=nn))
+            for r, q in zip(recs, su.bh_fdr([r["spearman_p"] for r in recs])):
+                r["spearman_p_bh"] = float(q); r["star"] = su.p_stars(q)
+            spear_rows.extend(recs)
+        pd.DataFrame(spear_rows).to_csv(args.out_dir / "difficulty_stats.csv", index=False)
+        print("\n=== full-sample Spearman ρ (descriptor vs oracle RMSD, all complexes; BH) ===")
+        print(pd.DataFrame(spear_rows).pivot(index="property", columns="tool",
+              values="spearman_rho").reindex(dtbl.index).round(2).to_string())
+    except Exception as e:
+        print(f"[warn] difficulty stats skipped ({e}); drawing test-free heatmap")
+        star_map = {}
+
     fig, ax = plt.subplots(figsize=(1.6 * len(cols) + 3.5, 0.42 * len(dtbl) + 1.6))
     sns.heatmap(dtbl[cols], annot=True, fmt=".2f", cmap="RdBu_r", center=0,
                 vmin=-0.7, vmax=0.7, linewidths=0.4, linecolor="white",
                 cbar_kws={"label": "Cliff's δ  (+ = larger in hard-to-dock ligands)"}, ax=ax)
+    for i, prop in enumerate(dtbl.index):          # overlay BH-significant stars
+        for j, tool in enumerate(cols):
+            s = star_map.get((prop, tool))
+            if s:
+                ax.text(j + 0.5, i + 0.16, s, ha="center", va="center",
+                        fontsize=9, fontweight="bold", color="black")
     ax.set_xlabel("Docking tool"); ax.set_ylabel("Ligand property")
     ax.set_title(f"What ligand properties separate the best-{n} from worst-{n}\n"
-                 "docked complexes, per tool (oracle RMSD-to-crystal)")
+                 "docked complexes, per tool (oracle RMSD-to-crystal)\n"
+                 "* / ** / *** = Mann–Whitney worst-vs-best, BH-corrected q<.05/.01/.001",
+                 fontsize=10)
     fig.tight_layout()
     fig.savefig(args.out_dir / "ligand_difficulty_delta_heatmap.png", dpi=160)
     plt.close(fig)

@@ -75,6 +75,10 @@ import pandas as pd
 _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
+try:                                                # shared, unit-tested stats helpers
+    import stats_utils as su                        # noqa: E402
+except Exception:                                   # pragma: no cover - stats degrade off
+    su = None
 try:                                                # reuse the shared panel-labeller
     from pocket_comparison_report import _label_panels  # noqa: E402
 except Exception:                                   # pragma: no cover - fallback
@@ -390,6 +394,174 @@ def build_table(args) -> tuple:
 
 
 # ════════════════════════════════════════════════════════════════════════
+# Statistics (paired across methods on the common timed set)
+# ════════════════════════════════════════════════════════════════════════
+
+_MIN_PAIRED = 3          # need at least this many paired complexes for a real test
+
+
+def compute_effort_stats(pc: pd.DataFrame, summ: pd.DataFrame, meta: dict,
+                         seed: int = 0) -> dict:
+    """Paired stats over the COMMON timed set (one value per complex per method).
+
+    All methods dock the SAME complexes, so ``pc`` (already restricted to the
+    common set in ``build_table``) is a fully paired design once pivoted to
+    cid × method. Everything here degrades gracefully: if stats_utils is missing,
+    too few paired complexes exist, or a test raises, the corresponding block is
+    skipped with a note and the figures fall back to their test-free form.
+
+    Returns a JSON-serialisable dict (also written to effort_stats.json):
+      unit, common_n, wall_distribution{omnibus, pairwise, medians, median_ratios},
+      validity{omnibus, pairwise, rates_paired, rates_pooled}, notes[].
+    """
+    out = {
+        "unit": "per-complex wall-clock / per-complex 'produced >=1 pb_valid pose' "
+                "boolean; paired across methods on the common timed set (Benchmark). "
+                "Pooled per-pose validity rates are shown descriptively with Wilson CIs.",
+        "common_n": int(meta.get("common_n", 0)),
+        "min_paired": _MIN_PAIRED,
+        "notes": [],
+    }
+    if su is None:
+        out["notes"].append("stats_utils unavailable — all tests skipped (figures unannotated).")
+        return out
+    if pc is None or pc.empty:
+        out["notes"].append("no per-complex effort rows — tests skipped.")
+        return out
+
+    order = [k for k in METHODS if (pc["method"] == k).any()]
+    pretty = {k: METHODS[k][0] for k in order}
+
+    # ── wall-clock distribution: Friedman + Wilcoxon/Holm + median-ratio CIs ──
+    try:
+        wall = pc.pivot_table(index="cid", columns="method", values="wall_s")
+        wall = wall[[k for k in order if k in wall.columns]].dropna()
+        n_pair = int(len(wall))
+        wd = {"n_paired": n_pair}
+        if n_pair >= _MIN_PAIRED and len(order) >= 2:
+            data = {pretty[k]: wall[k].to_numpy(float) for k in order}
+            res = su.paired_continuous(data)
+            wd["omnibus"] = res["omnibus"]
+            wd["pairwise"] = res["pairwise"]
+            wd["medians_s"] = res["medians"]
+            # per-complex median ratio (paired) for each pair, higher / lower median
+            ratios = []
+            for k1 in order:
+                for k2 in order:
+                    if k1 >= k2:
+                        continue
+                    a, b = wall[k1].to_numpy(float), wall[k2].to_numpy(float)
+                    m = (a > 0) & (b > 0)
+                    if m.sum() < _MIN_PAIRED:
+                        continue
+                    # orient hi/lo by median so the ratio reads >= 1
+                    if np.median(a[m]) >= np.median(b[m]):
+                        hi, lo, hn, ln = a[m], b[m], pretty[k1], pretty[k2]
+                    else:
+                        hi, lo, hn, ln = b[m], a[m], pretty[k2], pretty[k1]
+                    est, clo, chi = su.bootstrap_ci(hi / lo, np.median, seed=seed)
+                    ratios.append({"slower": hn, "faster": ln,
+                                   "median_ratio": est, "ci": [clo, chi], "n": int(m.sum())})
+            wd["median_ratios"] = ratios
+        else:
+            wd["skipped"] = f"only {n_pair} paired complexes (<{_MIN_PAIRED}) — descriptive only."
+            out["notes"].append("wall distribution: " + wd["skipped"])
+        out["wall_distribution"] = wd
+    except Exception as e:                                       # pragma: no cover
+        out["notes"].append(f"wall distribution stats failed: {e!r}")
+
+    # ── validity: per-complex 'produced a pb_valid pose' -> paired proportions ──
+    try:
+        val = pc.pivot_table(index="cid", columns="method", values="pb_valid")
+        val = val[[k for k in order if k in val.columns]].dropna()
+        n_pair = int(len(val))
+        vd = {"n_paired": n_pair}
+        if n_pair >= _MIN_PAIRED and len(order) >= 2:
+            has_valid = {pretty[k]: (val[k].to_numpy(float) > 0).astype(int) for k in order}
+            res = su.paired_proportions(has_valid)
+            vd["omnibus"] = res["omnibus"]
+            vd["pairwise"] = res["pairwise"]
+            vd["rate_has_valid"] = {lab: {"rate": r, "ci": [lo, hi]}
+                                    for lab, (r, lo, hi) in res["rates"].items()}
+        else:
+            vd["skipped"] = f"only {n_pair} paired complexes (<{_MIN_PAIRED}) — descriptive only."
+            out["notes"].append("validity: " + vd["skipped"])
+        # pooled per-pose validity rate (what the bars actually show) + Wilson CI
+        pooled = {}
+        for _, r in summ.iterrows():
+            k = r["method"]
+            n_gen, n_val = int(r["poses_generated"]), int(r["poses_pb_valid"])
+            lo, hi = su.wilson_ci(n_val, n_gen)
+            pooled[pretty.get(k, k)] = {"poses_generated": n_gen, "poses_pb_valid": n_val,
+                                        "rate": (n_val / n_gen) if n_gen else float("nan"),
+                                        "ci": [lo, hi],
+                                        "note": "pooled over correlated poses — CI is "
+                                                "descriptive, not the unit of inference"}
+        vd["rate_pooled_per_pose"] = pooled
+        out["validity"] = vd
+    except Exception as e:                                       # pragma: no cover
+        out["notes"].append(f"validity stats failed: {e!r}")
+
+    return out
+
+
+def _pretty_pos(order):
+    """{pretty method name -> x position} for placing star brackets."""
+    return {METHODS[k][0]: i for i, k in enumerate(order)}
+
+
+def _sig_brackets(ax, pairwise, pos, log=False, show_ns=True):
+    """Stack star brackets over paired comparisons without overplotting.
+
+    pairwise : list of {a, b, star} (pretty names); pos maps name->x index.
+    Reserves headroom at the top of the axis, then draws each bracket at a fixed
+    axis-fraction height so log/linear scales are handled uniformly.
+    """
+    pairs = []
+    for pr in pairwise:
+        star = pr.get("star", "")
+        if not star or (star == "ns" and not show_ns):
+            continue
+        if pr["a"] not in pos or pr["b"] not in pos:
+            continue
+        i, j = sorted((pos[pr["a"]], pos[pr["b"]]))
+        pairs.append((i, j, star))
+    if not pairs:
+        return
+    pairs.sort(key=lambda t: (t[1] - t[0], t[0]))               # nested first
+    # headroom so the highest bracket sits above the data
+    frac = max(0.55, 1.0 - 0.09 * (len(pairs) + 1))
+    lo, hi = ax.get_ylim()
+    if log and lo > 0 and hi > 0:
+        llo, lhi = np.log10(lo), np.log10(hi)
+        ax.set_ylim(lo, 10 ** (llo + (lhi - llo) / frac))
+    else:
+        ax.set_ylim(lo, lo + (hi - lo) / frac)
+    trans = ax.get_xaxis_transform()
+    for lvl, (i, j, star) in enumerate(pairs):
+        y = 0.80 + 0.075 * lvl
+        ax.plot([i, i, j, j], [y, y + 0.012, y + 0.012, y], transform=trans,
+                color="black", lw=0.8, clip_on=False)
+        ax.text((i + j) / 2.0, y + 0.016, star, transform=trans, ha="center",
+                va="bottom", fontsize=8, clip_on=False)
+
+
+def _omnibus_note(omni, kind):
+    """Compact omnibus subtitle line for a title, reusing su.fmt_p/p_stars."""
+    if not omni or su is None:
+        return ""
+    p = omni.get("p")
+    if p is None or p != p:
+        return ""
+    if kind == "friedman":
+        return (f"Friedman chi2={omni.get('chi2', float('nan')):.1f}, {su.fmt_p(p)} "
+                f"{su.p_stars(p)}, Kendall W={omni.get('kendall_w', float('nan')):.2f} "
+                f"(n={omni.get('n', '?')} paired)")
+    return (f"Cochran Q={omni.get('Q', float('nan')):.1f}, {su.fmt_p(p)} "
+            f"{su.p_stars(p)} (n paired)")
+
+
+# ════════════════════════════════════════════════════════════════════════
 # Figures
 # ════════════════════════════════════════════════════════════════════════
 
@@ -417,7 +589,7 @@ def _save_panels(panels, panel_dir, plt, figsize=(6.2, 4.8)):
     return written
 
 
-def make_wall_figure(pc, summ, out_dir):
+def make_wall_figure(pc, summ, out_dir, stats=None):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -428,6 +600,10 @@ def make_wall_figure(pc, summ, out_dir):
     devices = [METHODS[k][2] for k in order]
     s = summ.set_index("method").reindex(order)
     x = np.arange(len(order))
+    stats = stats or {}
+    pos = _pretty_pos(order)
+    _wd = stats.get("wall_distribution", {}) or {}
+    _vd = stats.get("validity", {}) or {}
 
     def _style(ax):
         ax.set_xticks(x); ax.set_xticklabels(names, rotation=15, ha="right", fontsize=9)
@@ -446,9 +622,18 @@ def make_wall_figure(pc, summ, out_dir):
         for patch, c in zip(bp["boxes"], colors):
             patch.set_facecolor(c); patch.set_alpha(0.75)
         ax.set_yscale("log")
-        ax.set_title("Per-complex docking wall-clock time (distribution)\n"
-                     "EquiBind = best-config-only estimate (compute ÷ workers)")
+        title = ("Per-complex docking wall-clock time (distribution)\n"
+                 "EquiBind = best-config-only estimate (compute ÷ workers)")
+        note = _omnibus_note(_wd.get("omnibus"), "friedman")
+        if note:
+            title += "\n" + note + "  [paired Friedman; Wilcoxon/Holm brackets]"
+        ax.set_title(title)
         ax.set_ylabel("Wall-clock time per complex (seconds, log scale)"); _style(ax)
+        try:
+            if _wd.get("pairwise"):
+                _sig_brackets(ax, _wd["pairwise"], pos, log=True)
+        except Exception as _e:                                  # pragma: no cover
+            print(f"  [warn] wall-distribution brackets skipped: {_e!r}")
 
     def p_counts(ax):
         w = 0.38
@@ -461,8 +646,18 @@ def make_wall_figure(pc, summ, out_dir):
             if rate == rate:
                 ax.text(x[i] + w / 2, val[i], f"{rate:.1f}%", ha="center",
                         va="bottom", fontsize=8)
-        ax.set_title("Poses generated vs. poses that survive\nthe PoseBusters tests")
+        title = "Poses generated vs. poses that survive\nthe PoseBusters tests"
+        note = _omnibus_note(_vd.get("omnibus"), "cochran")
+        if note:
+            title += ("\nper-complex 'produced a valid pose': " + note
+                      + " [McNemar/Holm brackets]")
+        ax.set_title(title)
         ax.set_ylabel("Number of poses"); ax.legend(fontsize=8); _style(ax)
+        try:
+            if _vd.get("pairwise"):
+                _sig_brackets(ax, _vd["pairwise"], pos, log=False)
+        except Exception as _e:                                  # pragma: no cover
+            print(f"  [warn] poses-count brackets skipped: {_e!r}")
 
     def p_per_generated(ax):
         _bars(ax, x, s["wall_s_per_generated"].to_numpy(float), colors, "{:.2f} s")
@@ -476,9 +671,18 @@ def make_wall_figure(pc, summ, out_dir):
 
     def p_rate(ax):
         _bars(ax, x, s["pb_valid_rate_pct"].to_numpy(float), colors, "{:.1f}%", ymax_mult=1.3)
-        ax.set_title("PoseBusters validity rate\n(fraction of generated poses that survive)")
+        title = "PoseBusters validity rate\n(fraction of generated poses that survive)"
+        note = _omnibus_note(_vd.get("omnibus"), "cochran")
+        if note:
+            title += ("\npaired on per-complex 'produced a valid pose': " + note)
+        ax.set_title(title)
         ax.set_ylabel("Valid poses (percent of generated)")
         ax.set_ylim(0, min(100, ax.get_ylim()[1])); _style(ax)
+        try:
+            if _vd.get("pairwise"):
+                _sig_brackets(ax, _vd["pairwise"], pos, log=False)
+        except Exception as _e:                                  # pragma: no cover
+            print(f"  [warn] validity-rate brackets skipped: {_e!r}")
 
     panels = [
         ("wall_overall_total", p_overall),
@@ -685,6 +889,27 @@ def main(argv=None) -> int:
     pc.to_csv(out_dir / "per_complex_effort.csv", index=False)
     summ.to_csv(out_dir / "effort_summary.csv", index=False)
 
+    # ── paired stats over the common timed set (degrades gracefully) ─────────
+    stats = {}
+    try:
+        stats = compute_effort_stats(pc, summ, meta)
+        def _jsonable(o):
+            if isinstance(o, dict):
+                return {k: _jsonable(v) for k, v in o.items()}
+            if isinstance(o, (list, tuple)):
+                return [_jsonable(v) for v in o]
+            if isinstance(o, np.generic):
+                return o.item()
+            if isinstance(o, float) and o != o:
+                return None
+            return o
+        (out_dir / "effort_stats.json").write_text(
+            json.dumps(_jsonable(stats), indent=2))
+        print(f"  Stats sidecar:       {out_dir / 'effort_stats.json'}")
+    except Exception as e:
+        print(f"  [warn] effort stats failed ({e!r}); figures fall back to test-free.")
+        stats = {}
+
     # ── console report ───────────────────────────────────────────────────
     print("\n" + "=" * 100)
     _eq_cfg = f"{args.eq_mode}+{args.eq_refine}" + (f"+{args.eq_clamp}" if args.eq_clamp else "")
@@ -724,7 +949,7 @@ def main(argv=None) -> int:
     print(f"\n  CSVs written to: {out_dir}/")
 
     if not args.no_plot:
-        wall_files = make_wall_figure(pc, summ, out_dir)
+        wall_files = make_wall_figure(pc, summ, out_dir, stats)
         res_files = make_resource_figure(summ, out_dir)
         time_fig = make_time_per_pose_figure(summ, out_dir)
         print(f"  Figure (wall-clock): {wall_files[0]}")

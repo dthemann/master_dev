@@ -94,6 +94,8 @@ Quick usage:
 from __future__ import annotations
 
 import argparse
+import json
+import math
 import sys
 from pathlib import Path
 
@@ -101,6 +103,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+
+# Shared, unit-tested statistical helpers (paired McNemar/Cochran's Q, Friedman +
+# Kendall's W, Wilson CI, Holm/BH). Never reimplement a test — import them.
+import os as _os, sys as _sys  # noqa: E402
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import stats_utils as su  # noqa: E402
 
 # Single source of truth: reuse the pipeline's canonical PoseBusters test set and
 # its bool-coercion so this report and run_posebusters.py agree exactly on what
@@ -793,9 +801,269 @@ def equibind_axis_breakdown(df: pd.DataFrame) -> pd.DataFrame:
     return axis
 
 
+# ─────────────────────── statistics (paired, per-complex) ───────────────────
+# HARD RULE: aggregate the tool's many correlated poses to ONE value per complex
+# FIRST, then run the paired test across tools/variants. The unit of analysis is the
+# receptor-ligand ``pair`` (Benchmark ≈ 303 complexes; Orai×JKU ≈ 12 (frame,ligand)
+# pairs). All tests degrade gracefully (try/except at the call site) — a stats failure
+# just falls back to the current, test-free figure.
+
+# Below this many complete paired units the omnibus/pairwise tests are drawn but flagged
+# 'exploratory (small n)' (Orai×JKU's real n ≈ 12); below _MIN_UNITS_FOR_TEST we skip the
+# test entirely (nothing to say) but still draw the figure.
+_EXPLORATORY_MAX_UNITS = 20
+_MIN_UNITS_FOR_TEST = 5
+
+
+def _usable_methods(df: pd.DataFrame, methods: list[str], min_frac: float = 0.5) -> list[str]:
+    """Drop methods with structural missingness before a listwise-complete paired test.
+
+    A legacy/optional variant present for only a handful of complexes (e.g. the
+    ``equibind_guided`` back-compat bucket, 1/303) would otherwise collapse the
+    listwise-complete n to a handful. Keep only methods covering ≥ *min_frac* of the
+    best-covered method's complexes; order is preserved."""
+    tot = df.pivot_table(index="pair", columns="docking_method",
+                         values="pb_valid", aggfunc="size")
+    cov = tot.notna().sum()
+    if cov.empty:
+        return list(methods)
+    mx = float(cov.max())
+    return [m for m in methods if m in cov.index and float(cov[m]) >= min_frac * mx]
+
+
+def _pair_valid_count_matrix(df: pd.DataFrame, methods: list[str]) -> pd.DataFrame:
+    """Per-complex PB-valid pose COUNT, one column per method (NaN where a tool
+    produced no pose for that pair — informative missingness, kept out of the paired
+    test rather than counted as a 0)."""
+    total = df.pivot_table(index="pair", columns="docking_method",
+                           values="pb_valid", aggfunc="size")
+    valid = df.pivot_table(index="pair", columns="docking_method",
+                           values="pb_valid", aggfunc="sum")
+    valid = valid.where(total.notna())
+    cols = [m for m in methods if m in valid.columns]
+    return valid[cols]
+
+
+def _pair_any_valid_matrix(df: pd.DataFrame, methods: list[str]) -> pd.DataFrame:
+    """Per-complex boolean '≥1 PB-valid pose' (0/1), one column per method; NaN where
+    the tool produced no pose for that pair."""
+    cnt = _pair_valid_count_matrix(df, methods)
+    return (cnt >= 1).astype(float).where(cnt.notna())
+
+
+def _pair_check_anypass_matrix(df: pd.DataFrame, methods: list[str],
+                               bool_checks: pd.DataFrame, check: str) -> pd.DataFrame:
+    """Per-complex boolean 'the tool has ≥1 pose passing *check*' (0/1) per method;
+    NaN where the tool produced no pose for that pair. Aggregates poses to the complex
+    first (max over the tool's poses)."""
+    work = pd.DataFrame({"pair": df["pair"].to_numpy(),
+                         "docking_method": df["docking_method"].to_numpy(),
+                         "_pass": bool_checks[check].to_numpy().astype(float)})
+    anypass = work.groupby(["pair", "docking_method"])["_pass"].max().unstack("docking_method")
+    cols = [m for m in methods if m in anypass.columns]
+    return anypass[cols]
+
+
+def _json_safe(o):
+    """Recursively coerce numpy / NaN into JSON-serialisable Python."""
+    if isinstance(o, dict):
+        return {str(k): _json_safe(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_json_safe(v) for v in o]
+    if isinstance(o, np.ndarray):
+        return _json_safe(o.tolist())
+    if isinstance(o, np.integer):
+        return int(o)
+    if isinstance(o, np.floating):
+        o = float(o)
+    if isinstance(o, np.bool_):
+        return bool(o)
+    if isinstance(o, float):
+        return None if math.isnan(o) else o
+    return o
+
+
+def _exploratory(n: int) -> bool:
+    return n < _EXPLORATORY_MAX_UNITS
+
+
+def _tag(n: int) -> str:
+    return "  — exploratory (small n)" if _exploratory(n) else ""
+
+
+def _fmt_cont_omnibus(res: dict) -> str | None:
+    """One-line Friedman + Kendall's W caption for a paired_continuous result."""
+    om = res.get("omnibus", {})
+    p, W, chi2, n, dfree = (om.get("p"), om.get("kendall_w"), om.get("chi2"),
+                            om.get("n"), om.get("df"))
+    if p is None or (isinstance(p, float) and math.isnan(p)):
+        return None
+    return (f"Friedman χ²({dfree})={chi2:.1f}, p={su.fmt_p(p)} {su.p_stars(p)}; "
+            f"Kendall W={W:.2f}; n={n}{_tag(int(n))}")
+
+
+def _fmt_prop_omnibus(res: dict, label: str = "≥1 valid pose") -> str | None:
+    """One-line Cochran's Q caption for a paired_proportions result."""
+    om = res.get("omnibus", {})
+    p, Q, dfq, n = om.get("p"), om.get("Q"), om.get("df"), res.get("n")
+    if p is None or (isinstance(p, float) and math.isnan(p)):
+        return None
+    return (f"{label}: Cochran Q({dfq})={Q:.1f}, p={su.fmt_p(p)} "
+            f"{su.p_stars(p)}; n={n}{_tag(int(n))}")
+
+
+def _pairwise_caption(pairwise: list[dict], label_fn=_pretty_method,
+                      max_show: int = 3) -> str | None:
+    """Compact caption of the most-significant pairwise contrasts (Holm-adjusted)."""
+    if not pairwise:
+        return None
+    items = sorted(pairwise, key=lambda d: (d.get("p_holm", 1.0) if
+                   d.get("p_holm") == d.get("p_holm") else 1.0))
+    parts = []
+    for d in items[:max_show]:
+        star = d.get("star", "")
+        if star in ("", "n/a"):
+            continue
+        parts.append(f"{label_fn(d['a'])} vs {label_fn(d['b'])} {star}")
+    return "pairwise (Holm): " + "; ".join(parts) if parts else None
+
+
+def _draw_star_brackets(ax, method_to_x: dict, pairwise: list[dict],
+                        y0: float, step: float, max_brackets: int = 6) -> float:
+    """Draw significance brackets between bars for the significant pairwise contrasts.
+
+    Returns the top y reached (so the caller can extend the y-limit). Only drawn for a
+    small number of bars — the caller gates on bar count to avoid overplotting."""
+    sig = [d for d in pairwise if d.get("star") in ("*", "**", "***")
+           and d["a"] in method_to_x and d["b"] in method_to_x]
+    sig.sort(key=lambda d: abs(method_to_x[d["a"]] - method_to_x[d["b"]]))
+    sig = sig[:max_brackets]
+    top = y0
+    for lvl, d in enumerate(sig):
+        xa, xb = method_to_x[d["a"]], method_to_x[d["b"]]
+        y = y0 + lvl * step
+        ax.plot([xa, xa, xb, xb], [y, y + step * 0.25, y + step * 0.25, y],
+                color="black", lw=0.8, clip_on=False)
+        ax.text((xa + xb) / 2, y + step * 0.25, d["star"], ha="center",
+                va="bottom", fontsize=8)
+        top = max(top, y + step * 0.5)
+    return top
+
+
+def _variant_paired_stats(df_full: pd.DataFrame, prefix: str,
+                          n_units: int) -> dict | None:
+    """Paired per-complex stats across the variants of one tool (*prefix*).
+
+    Returns {any_valid: paired_proportions, valid_count: paired_continuous,
+    variants:[...], n} or None when the tool has <2 variants / too few units."""
+    variants = sorted(m for m in df_full["docking_method"].astype(str).unique()
+                      if m.startswith(prefix))
+    variants = _usable_methods(df_full, variants)
+    if len(variants) < 2:
+        return None
+    cnt = _pair_valid_count_matrix(df_full, variants).dropna()
+    if len(cnt) < _MIN_UNITS_FOR_TEST:
+        return {"variants": variants, "n": int(len(cnt)),
+                "note": "n too small — exploratory"}
+    anyv = (cnt >= 1).astype(float)
+    out: dict = {"variants": variants, "n": int(len(cnt))}
+    try:
+        out["any_valid"] = su.paired_proportions({v: anyv[v].to_numpy() for v in variants})
+    except Exception as e:  # pragma: no cover - degrade gracefully
+        print(f"  [stats] {prefix} variant any-valid failed: {e}")
+    # Friedman needs >=3 conditions; with 2 variants the McNemar in any_valid is the test.
+    if len(variants) >= 3:
+        try:
+            out["valid_count"] = su.paired_continuous(
+                {v: cnt[v].to_numpy() for v in variants})
+        except Exception as e:  # pragma: no cover
+            print(f"  [stats] {prefix} variant valid-count failed: {e}")
+    return out
+
+
+def compute_validity_stats(df_plot: pd.DataFrame, df_full: pd.DataFrame,
+                           order_plot: list[str], order_full: list[str],
+                           dataset_label: str) -> dict:
+    """All paired, per-complex validity statistics for the report.
+
+    Aggregates the correlated poses to one value per receptor-ligand ``pair`` FIRST,
+    then runs the paired tests across tools (df_plot / order_plot) and across each
+    tool's variants (df_full / order_full). Returns a JSON-ready dict; individual
+    tests are wrapped so one failure never sinks the rest."""
+    n_units = int(df_plot["pair"].nunique())
+    # Drop structurally-sparse methods (e.g. the 1-complex legacy 'equibind_guided'
+    # bucket) so listwise completeness across the remaining tools doesn't collapse n.
+    usable_plot = _usable_methods(df_plot, order_plot)
+    stats: dict = {"dataset": dataset_label, "unit_of_analysis": "receptor-ligand pair",
+                   "n_units": n_units,
+                   "exploratory": _exploratory(n_units),
+                   "min_units_for_test": _MIN_UNITS_FOR_TEST,
+                   "methods_tested": usable_plot,
+                   "methods_dropped_sparse": [m for m in order_plot if m not in usable_plot]}
+
+    # ── Across tools: per-complex valid-pose count + ≥1-valid (figs 01/03/04) ──
+    cnt = _pair_valid_count_matrix(df_plot, usable_plot).dropna()
+    stats["n_complete_units"] = int(len(cnt))
+    if len(cnt) >= _MIN_UNITS_FOR_TEST and cnt.shape[1] >= 2:
+        if cnt.shape[1] >= 3:            # Friedman needs >=3 tools
+            try:
+                stats["valid_count"] = su.paired_continuous(
+                    {m: cnt[m].to_numpy() for m in cnt.columns})
+            except Exception as e:  # pragma: no cover
+                print(f"  [stats] valid-count paired_continuous failed: {e}")
+        try:
+            anyv = (cnt >= 1).astype(float)
+            stats["any_valid"] = su.paired_proportions(
+                {m: anyv[m].to_numpy() for m in anyv.columns})
+        except Exception as e:  # pragma: no cover
+            print(f"  [stats] any-valid paired_proportions failed: {e}")
+    else:
+        stats["note_tools"] = "n too small — exploratory"
+
+    # ── Per-check family: '≥1 pose passes check c' across tools, BH over checks (fig 05) ──
+    checks = _present_checks(df_plot)
+    if checks and cnt.shape[1] >= 2:
+        bchecks = _bool_checks(df_plot, checks)
+        per_check: dict = {}
+        pvals, keys = [], []
+        for chk in checks:
+            try:
+                m = _pair_check_anypass_matrix(df_plot, usable_plot, bchecks, chk).dropna()
+                if len(m) < _MIN_UNITS_FOR_TEST or m.shape[1] < 2:
+                    continue
+                res = su.paired_proportions({c: m[c].to_numpy() for c in m.columns})
+                per_check[chk] = res
+                pvals.append(res["omnibus"]["p"])
+                keys.append(chk)
+            except Exception as e:  # pragma: no cover
+                print(f"  [stats] per-check '{chk}' failed: {e}")
+        if pvals:
+            q = su.bh_fdr(pvals)
+            sig = []
+            for k, p, qq in zip(keys, pvals, q):
+                per_check[k]["omnibus"]["p_bh"] = float(qq)
+                per_check[k]["omnibus"]["star_bh"] = su.p_stars(qq)
+                if qq == qq and qq < 0.05:
+                    sig.append(k)
+            stats["per_check_significant_bh"] = sig
+        stats["per_check"] = per_check
+
+    # ── Variants are paired (same poses minimized): raw vs smina vs gnina (06/07/07b) ──
+    for prefix, key in (("equibind", "equibind_variants"),
+                        ("diffdock", "diffdock_variants")):
+        try:
+            res = _variant_paired_stats(df_full, prefix, n_units)
+            if res is not None:
+                stats[key] = res
+        except Exception as e:  # pragma: no cover
+            print(f"  [stats] {prefix} variant stats failed: {e}")
+
+    return stats
+
+
 # ───────────────────────────── plots ─────────────────────────────
 
-def plot_per_tool(summary: pd.DataFrame, out: Path) -> None:
+def plot_per_tool(summary: pd.DataFrame, out: Path, stats: dict | None = None) -> None:
     count_col = _analyzed_count_col(summary)
     has_gen = "generated_poses" in summary.columns
     analyzed_label = "Poses within cutoff" if count_col == "within_rmsd_poses" else "Total poses"
@@ -837,8 +1105,22 @@ def plot_per_tool(summary: pd.DataFrame, out: Path) -> None:
     ax.set_xticklabels([_pretty_method(t) for t in summary.index],
                        rotation=20, ha="right")
     ax.set_ylabel("Number of poses")
-    ax.set_title("PoseBusters Benchmark — Pose validity per docking method\n"
-                 "(valid = passes all canonical PB checks)" + _RMSD_FILTER_NOTE)
+    title = ("PoseBusters Benchmark — Pose validity per docking method\n"
+             "(valid = passes all canonical PB checks)" + _RMSD_FILTER_NOTE)
+    # Paired per-complex tests (aggregated to one value per receptor-ligand pair first):
+    # valid-pose COUNT (Friedman + Kendall W) and ≥1-valid-pose (Cochran Q).
+    if stats:
+        try:
+            caps = [c for c in (_fmt_cont_omnibus(stats.get("valid_count", {})),
+                                _fmt_prop_omnibus(stats.get("any_valid", {}))) if c]
+            if caps:
+                # Each omnibus on its own line so the caption never overflows the width;
+                # per-complex pairwise stars are drawn on fig 04 (matched y-axis).
+                title += "\nper-complex paired: " + caps[0]
+                title += "".join("\n" + c for c in caps[1:])
+        except Exception as e:  # pragma: no cover
+            print(f"  [stats] plot_per_tool annotation failed: {e}")
+    ax.set_title(title, fontsize=10)
     ax.legend()
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
@@ -875,7 +1157,7 @@ def plot_heatmap(valid_mat: pd.DataFrame, out: Path, top_n: int = 60,
 
 
 def plot_grouped_bars(valid_mat: pd.DataFrame, out: Path, colors: dict,
-                      top_n: int = 30) -> None:
+                      top_n: int = 30, stats: dict | None = None) -> None:
     # Cleveland dot plot: one row per receptor-ligand pair, one coloured dot per
     # tool, joined by a faint connector. Replaces a dense top-N grouped-bar wall
     # and complements the per-pair validity heatmap (fig 02).
@@ -900,8 +1182,21 @@ def plot_grouped_bars(valid_mat: pd.DataFrame, out: Path, colors: dict,
     ax.set_yticks(y)
     ax.set_yticklabels(pairs, fontsize=8)
     ax.set_xlabel("Valid poses")
-    ax.set_title(f"Valid poses per docking method — top {len(pairs)} receptor-ligand pairs"
-                 + _RMSD_FILTER_NOTE)
+    title = (f"Valid poses per docking method — top {len(pairs)} receptor-ligand pairs"
+             + _RMSD_FILTER_NOTE)
+    # Whole-set paired test (all complexes, not just the top-N shown): does the tool a
+    # complex gets ≥1 valid pose from differ? Cochran's Q + pairwise McNemar/Holm.
+    if stats:
+        try:
+            cap = _fmt_prop_omnibus(stats.get("any_valid", {}))
+            pw = _pairwise_caption((stats.get("any_valid") or {}).get("pairwise", []))
+            if cap:
+                title += "\n(all complexes) " + cap
+            if pw:
+                title += "\n" + pw
+        except Exception as e:  # pragma: no cover
+            print(f"  [stats] plot_grouped_bars annotation failed: {e}")
+    ax.set_title(title, fontsize=10)
     ax.legend(fontsize=8)
     ax.grid(axis="x", alpha=0.3); ax.set_axisbelow(True)
     fig.tight_layout()
@@ -909,7 +1204,8 @@ def plot_grouped_bars(valid_mat: pd.DataFrame, out: Path, colors: dict,
     plt.close(fig)
 
 
-def plot_validity_distribution(df: pd.DataFrame, out: Path, order: list[str]) -> None:
+def plot_validity_distribution(df: pd.DataFrame, out: Path, order: list[str],
+                               stats: dict | None = None) -> None:
     """Distribution of per-pair valid-pose counts by method (boxplot)."""
     valid = df.pivot_table(index="pair", columns="docking_method",
                            values="pb_valid", aggfunc="sum", fill_value=0)
@@ -930,16 +1226,33 @@ def plot_validity_distribution(df: pd.DataFrame, out: Path, order: list[str]) ->
     ax.set_xticklabels([f"{_pretty_method(c)}\n(n = {int(counts.get(c, 0)):,})" for c in cols],
                        rotation=20, ha="right")
     ax.set_ylabel("Valid poses per receptor-ligand pair")
-    ax.set_title("Distribution of valid poses across receptor-ligand pairs\n"
-                 "(n = poses assessed per variant; whiskers/caps in red)"
-                 + _RMSD_FILTER_NOTE)
+    title = ("Distribution of valid poses across receptor-ligand pairs\n"
+             "(n = poses assessed per variant; whiskers/caps in red)"
+             + _RMSD_FILTER_NOTE)
+    # Paired per-complex valid-pose COUNT: Friedman + Kendall's W, Wilcoxon post-hoc (Holm).
+    if stats:
+        try:
+            vc = stats.get("valid_count")
+            cap = _fmt_cont_omnibus(vc or {})
+            if cap:
+                title += "\nper-complex paired: " + cap
+            if vc and len(cols) <= 5:
+                m2x = {m: i + 1 for i, m in enumerate(cols)}
+                top = float(np.nanmax(valid.to_numpy())) * 1.05 + 0.5
+                ytop = _draw_star_brackets(ax, m2x, vc.get("pairwise", []),
+                                           top, max(0.5, top * 0.06))
+                ax.set_ylim(top=max(ax.get_ylim()[1], ytop * 1.05))
+        except Exception as e:  # pragma: no cover
+            print(f"  [stats] plot_validity_distribution annotation failed: {e}")
+    ax.set_title(title)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
     fig.savefig(out, dpi=160)
     plt.close(fig)
 
 
-def plot_check_passrate(df: pd.DataFrame, out: Path, order: list[str]) -> None:
+def plot_check_passrate(df: pd.DataFrame, out: Path, order: list[str],
+                        stats: dict | None = None) -> None:
     """Per-check pass rate per method (which PB criterion is failing most)."""
     checks = _present_checks(df)
     rows = []
@@ -959,8 +1272,26 @@ def plot_check_passrate(df: pd.DataFrame, out: Path, order: list[str]) -> None:
     fig, ax = plt.subplots(figsize=(max(8, 1.2 * len(pr.columns)), 6))
     sns.heatmap(pr * 100, annot=True, fmt=".1f", cmap="RdYlGn", vmin=0, vmax=100,
                 cbar_kws={"label": "Pass rate (%)"}, ax=ax)
-    ax.set_title("Per-check pass rate (%) per docking method (n = poses per variant)"
-                 + _RMSD_FILTER_NOTE)
+    title = ("Per-check pass rate (%) per docking method (n = poses per variant)"
+             + _RMSD_FILTER_NOTE)
+    # Per-complex paired test on EACH check ('≥1 pose passes it'): Cochran's Q, BH-corrected
+    # across the checks. Star (★) the checks where tools genuinely differ — this is what
+    # substantiates the 'EquiBind fails bond angles/lengths' claim.
+    if stats:
+        try:
+            sig = set(stats.get("per_check_significant_bh", []))
+            per_check = stats.get("per_check", {})
+            if per_check:
+                ylabels = []
+                for chk in pr.index:                       # raw check names
+                    star = "★ " if chk in sig else ""
+                    ylabels.append(star + str(chk))
+                ax.set_yticklabels(ylabels, rotation=0)
+                title += ("\n★ tools differ (per-complex ≥1-pose-passes; "
+                          "Cochran Q, BH q<0.05)")
+        except Exception as e:  # pragma: no cover
+            print(f"  [stats] plot_check_passrate annotation failed: {e}")
+    ax.set_title(title)
     ax.set_xlabel("")
     ax.set_ylabel("PoseBusters critical check")
     fig.tight_layout()
@@ -992,7 +1323,7 @@ def _variant_short_label(m: str, prefix: str) -> str:
 
 def plot_tool_variant_comparison(summary: pd.DataFrame, out: Path, colors: dict, *,
                                  prefix: str, tool_label: str,
-                                 subtitle: str = "") -> bool:
+                                 subtitle: str = "", stats: dict | None = None) -> bool:
     """Bar chart comparing PB-validity (%) across the variants of one docking tool.
 
     Filters *summary* to methods whose key starts with *prefix* (``diffdock`` /
@@ -1025,7 +1356,34 @@ def plot_tool_variant_comparison(summary: pd.DataFrame, out: Path, colors: dict,
     title = f"{tool_label} — PB-validity per variant"
     if subtitle:
         title += "\n" + subtitle
-    ax.set_title(title + _RMSD_FILTER_NOTE)
+    title += _RMSD_FILTER_NOTE
+    # Variants are PAIRED (the same complexes' poses minimized): per-complex ≥1-valid
+    # (Cochran's Q) + raw-vs-smina-vs-gnina pairwise McNemar/Holm brackets. Validates
+    # gnina > smina.
+    vstats = (stats or {}).get(f"{prefix}_variants")
+    if vstats:
+        try:
+            av = vstats.get("any_valid")
+            vc = vstats.get("valid_count")
+            caps = [c for c in (_fmt_prop_omnibus(av or {}),
+                                _fmt_cont_omnibus(vc or {}) and
+                                ("valid-count " + _fmt_cont_omnibus(vc))) if c]
+            if caps:
+                title += "\nper-complex paired: " + caps[0]
+                title += "".join("\n" + c for c in caps[1:])
+            # Prefer the valid-COUNT pairwise for the brackets — the ≥1-valid level
+            # saturates (both smina & gnina almost always get one), so gnina>smina only
+            # shows in the count. Fall back to ≥1-valid pairwise when count is absent (k=2).
+            pw_src = (vc or av or {}).get("pairwise", [])
+            if pw_src and len(sub) <= 6:
+                m2x = {m: i for i, m in enumerate(sub.index)}
+                top = float(sub["valid_fraction"].max() * 100) * 1.10 + 2
+                ytop = _draw_star_brackets(ax, m2x, pw_src,
+                                           top, max(2.0, top * 0.06))
+                ax.set_ylim(top=max(ax.get_ylim()[1], ytop * 1.05))
+        except Exception as e:  # pragma: no cover
+            print(f"  [stats] plot_tool_variant_comparison annotation failed: {e}")
+    ax.set_title(title, fontsize=10)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
     fig.savefig(out, dpi=160)
@@ -1033,13 +1391,15 @@ def plot_tool_variant_comparison(summary: pd.DataFrame, out: Path, colors: dict,
     return True
 
 
-def plot_equibind_variants(summary: pd.DataFrame, out: Path, colors: dict) -> bool:
+def plot_equibind_variants(summary: pd.DataFrame, out: Path, colors: dict,
+                           stats: dict | None = None) -> bool:
     """Valid fraction (%) per EquiBind variant. Returns False if < 2 variants.
 
     Thin wrapper over plot_tool_variant_comparison kept for its original call site."""
     return plot_tool_variant_comparison(
         summary, out, colors, prefix="equibind", tool_label="EquiBind",
-        subtitle="(fpocket / p2rank / unguided, smina re-search, centroid clamp)")
+        subtitle="(fpocket / p2rank / unguided, smina re-search, centroid clamp)",
+        stats=stats)
 
 
 def _variant_matrix_cell(m: str) -> tuple[str, str] | None:
@@ -1064,7 +1424,8 @@ def _variant_matrix_cell(m: str) -> tuple[str, str] | None:
     return None
 
 
-def plot_variant_validity_matrix(summary: pd.DataFrame, out: Path) -> bool:
+def plot_variant_validity_matrix(summary: pd.DataFrame, out: Path,
+                                 stats: dict | None = None) -> bool:
     """Heatmap of PB-validity (%) per variant — the matrix view of the per-tool variant
     bar charts (figs 06/07). Rows are the base method (AutoDock, DiffDock, and EquiBind by
     pocket × clamp); columns are the shared optimizer axis (raw/original, smina, gnina);
@@ -1096,8 +1457,22 @@ def plot_variant_validity_matrix(summary: pd.DataFrame, out: Path) -> bool:
                 cbar_kws={"label": "PB-Valid poses (%)"}, ax=ax)
     ax.set_xlabel("Optimizer / re-search")
     ax.set_ylabel("Base method")
-    ax.set_title("PB-validity (%) per variant — base method × optimizer"
-                 + _RMSD_FILTER_NOTE)
+    title = ("PB-validity (%) per variant — base method × optimizer" + _RMSD_FILTER_NOTE)
+    # Paired per-complex omnibus across each tool's optimizer variants (Cochran's Q on
+    # ≥1-valid); the raw-vs-smina-vs-gnina pairwise stars live in the 06/07 bar charts.
+    if stats:
+        try:
+            caps = []
+            for prefix, name in (("equibind", "EquiBind"), ("diffdock", "DiffDock")):
+                v = stats.get(f"{prefix}_variants", {})
+                c = _fmt_prop_omnibus((v or {}).get("any_valid", {}))
+                if c:
+                    caps.append(f"{name} {c}")
+            if caps:
+                title += "\nper-complex paired: " + "\n".join(caps)
+        except Exception as e:  # pragma: no cover
+            print(f"  [stats] plot_variant_validity_matrix annotation failed: {e}")
+    ax.set_title(title, fontsize=10)
     fig.tight_layout()
     fig.savefig(out, dpi=160)
     plt.close(fig)
@@ -1615,18 +1990,37 @@ def main() -> None:
                                         rmsd2_counts, rmsd2_valid_counts)
         valid_mat_plot = per_pair_tool_matrix(df_plot, "valid", order_plot)
 
+    # ── Paired, per-complex validity statistics (aggregate poses to one value per
+    # receptor-ligand pair FIRST). Always-on and cheap; wrapped so any failure degrades
+    # to the current, test-free figures. Numbers are also written to validity_stats.json.
+    dataset_label = args.out_dir.parent.parent.name if len(args.out_dir.parts) >= 2 \
+        else str(args.out_dir.name)
+    stats: dict | None = None
+    try:
+        stats = compute_validity_stats(df_plot, df_full, order_plot, order_full,
+                                       dataset_label)
+        (args.out_dir / "validity_stats.json").write_text(
+            json.dumps(_json_safe(stats), indent=2, default=str))
+        note = (" (exploratory — small n)" if stats.get("exploratory") else "")
+        print(f"Stats: paired per-complex tests over n={stats.get('n_complete_units')} "
+              f"complete units{note}; wrote validity_stats.json")
+    except Exception as e:  # pragma: no cover - never crash the pipeline
+        print(f"[warn] statistics step failed ({e}); figures drawn without tests.")
+        stats = None
+
     figures: list[str] = []
-    plot_per_tool(summary_plot, args.out_dir / "01_per_tool_validity.png")
+    plot_per_tool(summary_plot, args.out_dir / "01_per_tool_validity.png", stats=stats)
     plot_heatmap(valid_mat_plot, args.out_dir / "02_valid_heatmap_top.png",
                  top_n=args.top_n_heatmap)
     plot_heatmap(valid_mat_plot, args.out_dir / "02b_valid_heatmap_bottom.png",
                  top_n=args.top_n_heatmap, worst=True)
     plot_grouped_bars(valid_mat_plot, args.out_dir / "03_valid_grouped_bars_top.png",
-                      colors_plot, top_n=args.top_n_bars)
+                      colors_plot, top_n=args.top_n_bars, stats=stats)
     plot_validity_distribution(df_plot,
                                args.out_dir / "04_valid_per_pair_distribution.png",
-                               order_plot)
-    plot_check_passrate(df_plot, args.out_dir / "05_per_check_passrate.png", order_plot)
+                               order_plot, stats=stats)
+    plot_check_passrate(df_plot, args.out_dir / "05_per_check_passrate.png", order_plot,
+                        stats=stats)
     figures += ["01_per_tool_validity.png", "02_valid_heatmap_top.png",
                 "02b_valid_heatmap_bottom.png", "03_valid_grouped_bars_top.png",
                 "04_valid_per_pair_distribution.png", "05_per_check_passrate.png"]
@@ -1638,16 +2032,16 @@ def main() -> None:
     # variant is left, so they self-skip.
     if plot_equibind_variants(summary_full,
                               args.out_dir / "06_equibind_variant_validity.png",
-                              colors_full):
+                              colors_full, stats=stats):
         figures.append("06_equibind_variant_validity.png")
     if plot_tool_variant_comparison(
             summary_full, args.out_dir / "07_diffdock_variant_validity.png",
             colors_full, prefix="diffdock", tool_label="DiffDock",
-            subtitle="(original vs smina- / gnina-optimised)"):
+            subtitle="(original vs smina- / gnina-optimised)", stats=stats):
         figures.append("07_diffdock_variant_validity.png")
     # Matrix view of 06/07: PB-validity (%) per variant as base method × optimizer.
     if plot_variant_validity_matrix(
-            summary_full, args.out_dir / "07b_variant_validity_matrix.png"):
+            summary_full, args.out_dir / "07b_variant_validity_matrix.png", stats=stats):
         figures.append("07b_variant_validity_matrix.png")
 
     # ── RMSD-relaxation sweep (opt-in via --rmsd-sweep-max; crystal sets only) ──

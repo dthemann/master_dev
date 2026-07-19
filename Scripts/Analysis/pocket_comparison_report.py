@@ -54,6 +54,17 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
+# Shared, unit-tested statistical helpers (Holm/BH, Wilson, McNemar, Wilcoxon
+# rank-biserial, Hodges-Lehmann median-diff CI, ...). Imported robustly so the
+# script works regardless of the working directory it is launched from.
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+try:
+    import stats_utils as su
+except Exception as _e:            # degrade to the test-free figures/CSVs
+    su = None
+    warnings.warn(f"stats_utils unavailable ({_e}); statistical annotations skipped")
+
 
 # ════════════════════════════════════════════════════════════════════════
 # Parsing — self-contained so the script runs without the equibind package
@@ -367,6 +378,29 @@ _C_NEG = "#C44E52"      # negative-correlation red
 _C_ECDF = "#55A868"     # single-series ECDF green
 
 
+# Minimum number of paired receptors below which a formal test is unreliable;
+# figures are still drawn but labelled 'n too small - exploratory'.
+_MIN_PAIRED_N = 6
+
+
+def _json_safe(obj):
+    """Recursively coerce numpy scalars/arrays to plain Python for json.dump."""
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, np.ndarray):
+        return _json_safe(obj.tolist())
+    if isinstance(obj, (np.floating, float)):
+        f = float(obj)
+        return None if f != f else f
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
+    return obj
+
+
 def _ecdf_xy(vals):
     """Return (sorted values, cumulative fraction) for a step ECDF."""
     srt = np.sort(np.asarray(vals, dtype=float))
@@ -461,9 +495,85 @@ def _donut(ax, values, colors, labels, centre_big, centre_small, pctfmt):
     return wedges
 
 
+def _annotate_paired_dist(ax, a, b, key, stats_out, what="a − b", loc="lower right"):
+    """Annotate a figure with a paired (per-receptor) fpocket-vs-p2rank test on
+    two aligned distance vectors: Wilcoxon signed-rank + rank-biserial effect
+    size + Hodges-Lehmann median-difference bootstrap CI. Records the full
+    numbers in ``stats_out[key]``. Degrades to an 'n too small' label (or no-op
+    if stats_utils is unavailable) rather than crashing the figure."""
+    if su is None:
+        return
+    try:
+        a = np.asarray(a, float); b = np.asarray(b, float)
+        m = ~(np.isnan(a) | np.isnan(b))
+        a, b = a[m], b[m]
+        n = int(len(a))
+        xa = {"lower right": 0.98, "upper left": 0.02}.get(loc, 0.98)
+        ya = {"lower right": 0.04, "upper left": 0.98}.get(loc, 0.04)
+        ha = "right" if "right" in loc else "left"
+        va = "bottom" if "lower" in loc else "top"
+        if n < _MIN_PAIRED_N:
+            ax.text(xa, ya, f"paired test: n={n} too small — exploratory",
+                    transform=ax.transAxes, ha=ha, va=va, fontsize=7.5,
+                    color="#777777")
+            stats_out[key] = {"test": "wilcoxon_signed_rank_paired", "n": n,
+                              "note": "n too small — exploratory"}
+            return
+        rb, p, npair = su.wilcoxon_rankbiserial(a, b)
+        est, lo, hi = su.median_diff_ci(a, b, paired=True)
+        star = su.p_stars(p)
+        txt = (f"paired Wilcoxon (n={n}): p={su.fmt_p(p)} {star}\n"
+               f"median Δ (HL) = {est:+.2f} Å [{lo:+.2f}, {hi:+.2f}]\n"
+               f"rank-biserial r = {rb:+.2f}")
+        ax.text(xa, ya, txt, transform=ax.transAxes, ha=ha, va=va, fontsize=7.5,
+                color="#333333",
+                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="#cccccc",
+                          alpha=0.85))
+        stats_out[key] = {
+            "test": "wilcoxon_signed_rank_paired", "quantity": what, "n": n,
+            "n_nonzero_pairs": int(npair), "p": float(p), "star": star,
+            "rank_biserial": float(rb),
+            "median_diff_hodges_lehmann": float(est),
+            "median_diff_ci95": [float(lo), float(hi)],
+        }
+    except Exception as e:
+        warnings.warn(f"paired-distance annotation failed ({key}): {e}")
+
+
+def _paired_success_mcnemar(fp_arr, pr_arr, thr, upto=None):
+    """Paired (per-receptor) McNemar comparing the two programs' 'true site found'
+    boolean at a distance threshold. ``fp_arr``/``pr_arr`` are (n_receptors x top_n)
+    distance arrays; the success flag is 'best of ranks 1..upto <= thr' (upto=None
+    => all ranks). Receptors missing a value for either program are dropped.
+    Returns a dict (or None if stats_utils is missing)."""
+    if su is None:
+        return None
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)
+        sl = slice(None) if upto is None else slice(0, upto)
+        fp_best = np.nanmin(fp_arr[:, sl], axis=1)
+        pr_best = np.nanmin(pr_arr[:, sl], axis=1)
+    valid = ~(np.isnan(fp_best) | np.isnan(pr_best))
+    fp_best, pr_best = fp_best[valid], pr_best[valid]
+    n = int(valid.sum())
+    fp_hit = (fp_best <= thr).astype(int)
+    pr_hit = (pr_best <= thr).astype(int)
+    if n < _MIN_PAIRED_N:
+        return {"test": "mcnemar_exact_paired", "n": n,
+                "note": "n too small — exploratory",
+                "fpocket_rate": float(fp_hit.mean()) if n else None,
+                "p2rank_rate": float(pr_hit.mean()) if n else None}
+    n10, n01, p = su.mcnemar_exact(fp_hit, pr_hit)
+    return {"test": "mcnemar_exact_paired", "n": n,
+            "fpocket_wins": int(n10), "p2rank_wins": int(n01),
+            "p": float(p), "star": su.p_stars(p),
+            "fpocket_rate": float(fp_hit.mean()),
+            "p2rank_rate": float(pr_hit.mean())}
+
+
 def _save_figures(rows, matched_pairs, rankmat_sum, rankmat_cnt,
                   attr_corr, crystal_rows, top_n, match_thr, consensus_thr,
-                  crystal_thresholds, out_dir):
+                  crystal_thresholds, out_dir, attr_pvals=None):
     """Write every graph as its own standalone PNG under ``out_dir``."""
     try:
         import matplotlib
@@ -472,6 +582,9 @@ def _save_figures(rows, matched_pairs, rankmat_sum, rankmat_cnt,
     except Exception:
         return []
     saved = []
+    # Collects the full numeric results of every statistical annotation added
+    # below; written to pocket_stats.json next to the figures at the end.
+    stats_out: Dict[str, dict] = {}
 
     overlaps = [r["overlap"] for r in rows if r["overlap"] == r["overlap"]]
     top1 = [r["top1_dist"] for r in rows if r["top1_dist"] == r["top1_dist"]]
@@ -601,10 +714,39 @@ def _save_figures(rows, matched_pairs, rankmat_sum, rankmat_cnt,
         order = sorted(items.items(), key=lambda kv: kv[1])
         labels = [a for a, _ in order]; vals = [v for _, v in order]
         colors = [_C_NEG if v < 0 else pos_col for v in vals]
+        # Surface the (previously discarded) Spearman p-values and BH-correct
+        # across the attributes shown; star bars that survive FDR.
+        praw = {a: (attr_pvals or {}).get(prog, {}).get(a) for a in labels}
+        qmap = {}
+        if su is not None and any(praw[a] is not None for a in labels):
+            try:
+                names = [a for a in labels if praw[a] is not None]
+                q = su.bh_fdr([praw[a] for a in names])
+                qmap = {a: float(q[i]) for i, a in enumerate(names)}
+            except Exception as e:
+                warnings.warn(f"attr-ranking BH failed ({prog}): {e}")
         fig, ax = plt.subplots(figsize=(6.8, 0.55 * len(labels) + 2.0))
         ax.barh(labels, vals, color=colors)
         ax.axvline(0, color="k", lw=0.8)
         ax.set_xlim(-1, 1)
+        # Star each bar by its BH q-value (n = pooled top-N pockets over receptors)
+        rec = {}
+        if qmap:
+            for a, v in order:
+                star = su.p_stars(qmap.get(a))
+                rec[a] = {"rho": round(float(v), 3), "p_raw": praw.get(a),
+                          "p_bh": qmap.get(a), "star": star}
+                if not star:
+                    continue
+                off = 0.03 if v >= 0 else -0.03
+                ax.text(v + off, a, star, ha="left" if v >= 0 else "right",
+                        va="center", fontsize=11, fontweight="bold",
+                        color="#333333")
+            ax.text(0.99, 0.02,
+                    "★ significant Spearman rank↔attribute (BH-FDR q<0.05)",
+                    transform=ax.transAxes, ha="right", va="bottom", fontsize=7.5,
+                    color="#555555")
+            stats_out.setdefault("attr_ranking", {})[prog] = rec
         ax.set_title(f"What {prog} ranks pockets by")
         ax.set_xlabel("Spearman ρ (pocket rank vs attribute)\n"
                       "← higher value gives a better rank   |   "
@@ -641,6 +783,10 @@ def _save_figures(rows, matched_pairs, rankmat_sum, rankmat_cnt,
             ax.set_xlabel(xlab)
             ax.set_ylabel("Cumulative fraction of receptors")
             ax.legend(fontsize=8)
+            # Paired (per-receptor) fpocket-vs-p2rank Wilcoxon signed-rank +
+            # Hodges-Lehmann median-difference CI on the plotted DCC distances.
+            _annotate_paired_dist(ax, a, b, name.replace(".png", ""), stats_out,
+                                  what="fpocket − p2rank distance (Å)")
             _save_one(fig, ax, out_dir, name, saved)
 
         # paired top-1 scatter: which program's top pocket is closer per receptor
@@ -658,6 +804,9 @@ def _save_figures(rows, matched_pairs, rankmat_sum, rankmat_cnt,
         ax.set_title("Which program's top pocket is closer to the crystal ligand?\n"
                      "(below the diagonal ⇒ p2rank closer; above ⇒ fpocket closer)")
         ax.legend(fontsize=8)
+        _annotate_paired_dist(ax, fp_t1, pr_t1, "crystal_paired_top1_scatter",
+                              stats_out, what="fpocket − p2rank top-1 distance (Å)",
+                              loc="upper left")
         _save_one(fig, ax, out_dir, "crystal_paired_top1_scatter.png", saved)
 
         # ── distance to the crystal ligand as a function of pocket rank ──
@@ -759,6 +908,35 @@ def _save_figures(rows, matched_pairs, rankmat_sum, rankmat_cnt,
                 his = [_wilson_ci(int(hits[i]), int(ns[i]))[1] for i in range(top_n)]
                 ax.fill_between(ranks, los, his, color=c, alpha=0.08)
         ax.set_ylim(0, 1.02); ax.set_xticks(ranks)
+        # Paired McNemar (fpocket vs p2rank) at each top-N depth on the primary
+        # metric (DCA if available, else DCC); star the N where they differ.
+        prim_lab, prim_key = ("DCA", "dca") if has_dca else ("DCC", "dist")
+        try:
+            fp_pm, pr_pm = _rank_dist_arrays(crystal_rows, top_n, prim_key)
+            frac_fp, _, _ = _topn_success(fp_pm, match_thr)
+            frac_pr, _, _ = _topn_success(pr_pm, match_thr)
+            perN = []
+            for N in range(1, top_n + 1):
+                res = _paired_success_mcnemar(fp_pm, pr_pm, match_thr, upto=N)
+                if res is None:
+                    continue
+                res = {"N": N, **res}
+                perN.append(res)
+                if res.get("star") and res["star"] != "ns":
+                    y = max(frac_fp[N - 1], frac_pr[N - 1])
+                    y = (y if y == y else 0.9) + 0.04
+                    ax.text(N, min(y, 1.0), res["star"], ha="center", va="bottom",
+                            fontsize=12, fontweight="bold", color="#333333")
+            if perN:
+                ax.text(0.02, 0.02,
+                        f"★ paired McNemar (fpocket vs p2rank, {prim_lab}, "
+                        f"per-receptor): significant depths starred",
+                        transform=ax.transAxes, ha="left", va="bottom",
+                        fontsize=7, color="#555555")
+                stats_out["crystal_success_vs_topn"] = {
+                    "metric": prim_lab, "threshold_A": match_thr, "per_N": perN}
+        except Exception as e:
+            warnings.warn(f"top-N McNemar annotation failed: {e}")
         ax.set_xlabel("Number of top pockets considered (N)")
         ax.set_ylabel(f"Receptors with the true site found (≤ {match_thr:g} Å)")
         ax.set_title("Top-N success rate — is the crystal site among the top N pockets?\n"
@@ -794,12 +972,43 @@ def _save_figures(rows, matched_pairs, rankmat_sum, rankmat_cnt,
         ax.axvline(match_thr, color="k", ls=":", lw=1.1,
                    label=f"match threshold = {match_thr:g} Å")
         ax.set_xlim(0, 15); ax.set_ylim(0, 1.02)
+        # Paired McNemar at the match threshold on the primary metric (best of
+        # top-N), star the compared point on the cutoff line.
+        prim_lab, prim_key = ("DCA", "dca") if has_dca else ("DCC", "dist")
+        try:
+            fp_pm, pr_pm = _rank_dist_arrays(crystal_rows, top_n, prim_key)
+            res = _paired_success_mcnemar(fp_pm, pr_pm, match_thr, upto=None)
+            if res is not None:
+                star = res.get("star", "")
+                pstr = su.fmt_p(res["p"]) if "p" in res else "n/a"
+                y = max(res.get("fpocket_rate") or 0, res.get("p2rank_rate") or 0)
+                if star and star != "ns":
+                    ax.text(match_thr, min(y + 0.05, 1.0), star, ha="center",
+                            va="bottom", fontsize=12, fontweight="bold",
+                            color="#333333")
+                ax.text(0.98, 0.02,
+                        f"paired McNemar @ {match_thr:g} Å ({prim_lab}): "
+                        f"p={pstr} {star}  (n={res['n']})",
+                        transform=ax.transAxes, ha="right", va="bottom",
+                        fontsize=7, color="#555555")
+                stats_out["crystal_success_vs_threshold"] = {
+                    "metric": prim_lab, "threshold_A": match_thr, **res}
+        except Exception as e:
+            warnings.warn(f"threshold McNemar annotation failed: {e}")
         ax.set_xlabel(f"Distance cutoff — best of top-{top_n} pocket → crystal (Å)")
         ax.set_ylabel("Fraction of receptors with the true site found")
         ax.set_title("How often the true site is recovered vs. how strict the cutoff is\n"
                      "(best of top-N; solid = DCA, dashed = DCC; band = Wilson 95% CI on DCA)")
         ax.legend(fontsize=8, ncol=2)
         _save_one(fig, ax, out_dir, "crystal_success_vs_threshold.png", saved)
+
+    # ── Sidecar: full numeric results of every statistical annotation ────────
+    if stats_out:
+        try:
+            (out_dir / "pocket_stats.json").write_text(
+                json.dumps(_json_safe(stats_out), indent=2))
+        except Exception as e:
+            warnings.warn(f"could not write pocket_stats.json: {e}")
 
     return saved
 
@@ -808,11 +1017,17 @@ def _save_figures(rows, matched_pairs, rankmat_sum, rankmat_cnt,
 # Driver
 # ════════════════════════════════════════════════════════════════════════
 
-def _attribute_rank_correlation(all_fp, all_pr) -> Dict[str, Dict[str, float]]:
+def _attribute_rank_correlation(all_fp, all_pr):
     """Spearman rho between rank and each ranking attribute, pooled over all
-    receptors. Negative rho => higher attribute -> better (lower) rank."""
-    from scipy.stats import spearmanr
+    receptors. Negative rho => higher attribute -> better (lower) rank.
+
+    Returns ``(corr, pvals)`` where both are ``{program: {attr: value}}``: ``corr``
+    holds the (rounded) Spearman rho (unchanged shape, used by the CSV/summary),
+    ``pvals`` the matching raw two-sided p-values (surfaced/BH-corrected in the
+    attribute figures). Falls back to scipy directly if stats_utils is missing.
+    """
     out: Dict[str, Dict[str, float]] = {"fpocket": {}, "p2rank": {}}
+    pout: Dict[str, Dict[str, float]] = {"fpocket": {}, "p2rank": {}}
     specs = {
         "fpocket": (all_fp, ["score", "druggability", "volume", "alpha_spheres",
                              "total_sasa", "hydrophobicity"]),
@@ -825,10 +1040,16 @@ def _attribute_rank_correlation(all_fp, all_pr) -> Dict[str, Dict[str, float]]:
             mask = ~np.isnan(vals)
             if mask.sum() < 3 or len(set(ranks[mask])) < 2:
                 continue
-            rho, _ = spearmanr(ranks[mask], vals[mask])
+            if su is not None:
+                rho, p, _ = su.spearman(ranks[mask], vals[mask])
+            else:
+                from scipy.stats import spearmanr
+                res = spearmanr(ranks[mask], vals[mask])
+                rho, p = float(res.statistic), float(res.pvalue)
             if rho == rho:
                 out[prog][a] = round(float(rho), 3)
-    return out
+                pout[prog][a] = float(p) if p == p else np.nan
+    return out, pout
 
 
 def main(argv=None) -> int:
@@ -985,8 +1206,21 @@ def main(argv=None) -> int:
     pd.DataFrame(matched_pairs, columns=["fpocket_rank", "p2rank_rank", "distance_A"]
                  ).to_csv(out_dir / "matched_pairs.csv", index=False)
 
-    attr_corr = _attribute_rank_correlation(all_fp, all_pr)
-    pd.DataFrame([{"program": prog, "attribute": a, "spearman_rank_vs_attr": v}
+    attr_corr, attr_pvals = _attribute_rank_correlation(all_fp, all_pr)
+    # Surface the Spearman p-values (previously discarded) with a BH-FDR
+    # correction across the attributes of each program, so the CSV carries the
+    # significance the figures star. bh across-attributes is per program.
+    attr_bh = {prog: {} for prog in attr_pvals}
+    if su is not None:
+        for prog, pd_ in attr_pvals.items():
+            names = list(pd_.keys())
+            if names:
+                q = su.bh_fdr([pd_[a] for a in names])
+                attr_bh[prog] = {a: float(q[i]) for i, a in enumerate(names)}
+    pd.DataFrame([{"program": prog, "attribute": a,
+                   "spearman_rank_vs_attr": v,
+                   "p_raw": attr_pvals.get(prog, {}).get(a),
+                   "p_bh": attr_bh.get(prog, {}).get(a)}
                   for prog, d in attr_corr.items() for a, v in d.items()]
                  ).to_csv(out_dir / "attribute_rank_correlation.csv", index=False)
 
@@ -1172,7 +1406,8 @@ def main(argv=None) -> int:
     if not args.no_plot:
         figs = _save_figures(rows, matched_pairs, rankmat_sum, rankmat_cnt,
                              attr_corr, crystal_rows, args.top_n, args.match_thr,
-                             consensus_thr, crystal_thresholds, out_dir)
+                             consensus_thr, crystal_thresholds, out_dir,
+                             attr_pvals=attr_pvals)
         for f in figs:
             print(f"  Figure: {f}")
     return 0

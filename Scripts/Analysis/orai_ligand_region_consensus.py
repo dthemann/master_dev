@@ -129,6 +129,7 @@ from posebusters_pose_comparison import (  # noqa: E402
 )
 from pocket_comparison_report import _label_panels  # noqa: E402
 from ligand_descriptors import load_descriptors, add_pca, PCA_FEATURES, nice  # noqa: E402
+import stats_utils as su  # noqa: E402  (shared statistical helpers; _HERE already on sys.path)
 
 DEFAULT_PB_CSV = Path("posebusters_results/orai_benchmark/dock/"
                       "posebusters_filtered_results.csv")
@@ -687,6 +688,130 @@ def ligandcluster_consensus(fp: pd.DataFrame, per_lig: pd.DataFrame,
 
 
 # ───────────────────────────────────────────────────────────────────
+# Statistical tests (shared stats_utils; results annotate the figures and
+# are also written verbatim to region_stats.json). Every caller wraps these
+# in try/except so a stats failure degrades to the current test-free figure.
+# ───────────────────────────────────────────────────────────────────
+
+def _contingency_gtest(table, row_labels, col_labels, unit="poses", note=""):
+    """G-test of independence on a count contingency → (JSON-safe record, adjusted
+    residual matrix). The record carries G, df, p, Cramér's V and the list of
+    'driving' cells (|adjusted residual| ≥ 2, i.e. the cells whose over-/under-
+    representation drives the association). The residual matrix is returned so the
+    caller can mark those cells on its heatmap (rows/cols align with row/col_labels).
+    """
+    tbl = np.asarray(table, float)
+    res = su.gtest_independence(tbl)
+    resid = res["residuals"]
+    driving = []
+    for i in range(resid.shape[0]):
+        for j in range(resid.shape[1]):
+            z = float(resid[i, j])
+            if np.isfinite(z) and abs(z) >= 2.0:
+                driving.append({"row": str(row_labels[i]), "col": str(col_labels[j]),
+                                "adj_residual": round(z, 2),
+                                "direction": "over" if z > 0 else "under"})
+    record = {
+        "test": "G-test of independence", "unit": unit, "note": note,
+        "row_labels": [str(r) for r in row_labels],
+        "col_labels": [str(c) for c in col_labels],
+        "table": tbl.astype(int).tolist(),
+        "G": round(float(res["G"]), 3), "df": int(res["df"]),
+        "p": float(res["p"]), "p_str": su.fmt_p(res["p"]),
+        "stars": su.p_stars(res["p"]),
+        "cramers_v": round(float(res["cramers_v"]), 3),
+        "n_low_expected": int(res["n_low_expected"]),
+        "adj_residuals": np.round(resid, 2).tolist(),
+        "driving_cells": driving,
+    }
+    return record, resid
+
+
+def _distinct_ligand_contingency(df, row_key, col_key, rows, cols):
+    """Contingency of DISTINCT ligands per (row_key, col_key) cell — each ligand is
+    counted at most once per cell, so raw-pose pseudoreplication does not inflate the
+    table. Reindexed to the given row/col order so it aligns with the heatmap grid.
+    """
+    d = df[df["region"] >= 0].drop_duplicates(["ligand", row_key, col_key])
+    ct = pd.crosstab(d[row_key], d[col_key])
+    return ct.reindex(index=rows, columns=cols, fill_value=0)
+
+
+def _dominant_purity_permutation(fp, n_perm: int = 2000, seed: int = 0):
+    """Permutation null for per-ligand dominant-region purity (figure 04 panel A).
+
+    Observed statistic = mean over ligands of (largest region's pose share). The
+    null shuffles every pose's region label across ALL poses (pooled), preserving
+    each ligand's pose count and the global region marginals but breaking the
+    ligand↔region association; one-sided p = fraction of permutations whose mean
+    purity ≥ observed. purity ∈ [0, 1]. Returns None when too few ligands/regions.
+    """
+    d = fp[fp["region"] >= 0]
+    if d.empty:
+        return None
+    _, lcodes = np.unique(d["ligand"].to_numpy(), return_inverse=True)
+    _, rcodes = np.unique(d["region"].to_numpy().astype(int), return_inverse=True)
+    L = int(lcodes.max()) + 1 if lcodes.size else 0
+    R = int(rcodes.max()) + 1 if rcodes.size else 0
+    if L < 3 or R < 2:
+        return None
+
+    def mean_purity(rc):
+        counts = np.zeros((L, R), dtype=np.int64)
+        np.add.at(counts, (lcodes, rc), 1)
+        tot = counts.sum(1)
+        return float(np.mean(counts.max(1) / tot))
+
+    obs = mean_purity(rcodes)
+    rng = np.random.default_rng(seed)
+    null = np.array([mean_purity(rng.permutation(rcodes)) for _ in range(n_perm)])
+    p = (int(np.sum(null >= obs - 1e-12)) + 1) / (n_perm + 1)
+    return {
+        "statistic": "mean per-ligand dominant-region purity (fraction, 0-1)",
+        "observed_mean_purity": round(obs, 4),
+        "null_mean": round(float(null.mean()), 4),
+        "null_sd": round(float(null.std()), 4),
+        "p_one_sided": float(p), "stars": su.p_stars(p),
+        "n_perm": int(n_perm), "n_ligands": int(L), "n_regions": int(R),
+        "note": ("null shuffles each pose's region label across all pooled poses, "
+                 "preserving per-ligand pose counts and global region marginals; "
+                 "one-sided p that observed purity exceeds chance"),
+    }
+
+
+def _jku_similar_gtest(d_jku, d_sim, region_ids, n_jku_ligs):
+    """Region-occupancy association: JKU poses vs chemically-similar benchmark poses
+    (figure 06c). EXPLORATORY — pooled-pose counts across only ~3 JKU ligands, so the
+    unit is not independent; reported for description, not inference."""
+    try:
+        dj = d_jku[d_jku["region"] >= 0]
+        ds = d_sim[d_sim["region"] >= 0]
+        if dj.empty or ds.empty:
+            return {"skipped": "empty JKU or similar group", "exploratory": True,
+                    "n_jku_ligands": int(n_jku_ligs)}
+        regs = [r for r in region_ids
+                if int((dj["region"] == r).sum()) + int((ds["region"] == r).sum()) > 0]
+        if len(regs) < 2:
+            return {"skipped": "fewer than 2 occupied regions", "exploratory": True,
+                    "n_jku_ligands": int(n_jku_ligs)}
+        table = np.array([[int((dj["region"] == r).sum()) for r in regs],
+                          [int((ds["region"] == r).sum()) for r in regs]], float)
+        if (table.sum(1) == 0).any() or (table.sum(0) == 0).any():
+            return {"skipped": "empty row/column after filtering", "exploratory": True,
+                    "n_jku_ligands": int(n_jku_ligs)}
+        rec, _ = _contingency_gtest(
+            table, ["JKU", "similar benchmark"], [f"R{r + 1}" for r in regs],
+            unit="pooled poses",
+            note=(f"pooled-pose counts across only {n_jku_ligs} JKU ligands — "
+                  "EXPLORATORY, descriptive not inferential"))
+        rec["exploratory"] = True
+        rec["n_jku_ligands"] = int(n_jku_ligs)
+        return rec
+    except Exception as exc:  # noqa: BLE001
+        return {"error": str(exc), "exploratory": True}
+
+
+# ───────────────────────────────────────────────────────────────────
 # Plots
 # ───────────────────────────────────────────────────────────────────
 
@@ -709,10 +834,16 @@ def plot_region_overview(fp, region_sum, all_methods, all_frames, out: Path):
     ax.tick_params(axis="x", rotation=45)
     ax.axhline(50, color="grey", ls="--", alpha=0.6)
 
-    # region × method and region × frame pose-share heatmaps
-    for ax, key, order, title in (
-            (axes[1, 0], "method", all_methods, "Region × method"),
-            (axes[1, 1], "frame", all_frames, "Region × frame")):
+    # region × method and region × frame pose-share heatmaps. The displayed values
+    # are pose-share fractions; the association TEST runs on a DISTINCT-LIGAND
+    # contingency (each ligand counted once per cell) so raw-pose pseudoreplication
+    # does not inflate n. Cells with |adjusted residual| ≥ 2 (from the ligand-count
+    # G-test) are outlined red as the drivers of the association.
+    from matplotlib.patches import Rectangle
+    stats: dict = {}
+    for ax, key, order, title, skey in (
+            (axes[1, 0], "method", all_methods, "Region × method", "region_x_method"),
+            (axes[1, 1], "frame", all_frames, "Region × frame", "region_x_frame")):
         ct = pd.crosstab(fp[fp.region >= 0]["region"], fp[fp.region >= 0][key])
         ct = ct.reindex(index=regions, columns=order, fill_value=0)
         frac = ct.div(ct.sum(axis=1).replace(0, np.nan), axis=0).fillna(0).values
@@ -722,12 +853,34 @@ def plot_region_overview(fp, region_sum, all_methods, all_frames, out: Path):
                            rotation=30, ha="right")
         ax.set_yticks(range(len(regions)))
         ax.set_yticklabels(rlabels)
-        ax.set_title(title + " — pose share within region", fontweight="bold")
         for i in range(frac.shape[0]):
             for j in range(frac.shape[1]):
                 ax.text(j, i, f"{frac[i, j]:.2f}", ha="center", va="center",
                         color="white" if frac[i, j] < 0.6 else "black", fontsize=7)
         fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+        subtitle = ""
+        try:
+            xkey = "method" if key == "method" else "frame"
+            lig_ct = _distinct_ligand_contingency(fp, "region", xkey, regions, order)
+            rec, resid = _contingency_gtest(
+                lig_ct.values, rlabels,
+                [_mlabel(o) if key == "method" else str(o) for o in order],
+                unit="distinct ligands (one per cell; heatmap shows pose share)",
+                note="ligand-aggregated contingency to avoid pose pseudoreplication")
+            stats[skey] = rec
+            for i in range(resid.shape[0]):
+                for j in range(resid.shape[1]):
+                    if np.isfinite(resid[i, j]) and abs(resid[i, j]) >= 2.0:
+                        ax.add_patch(Rectangle((j - 0.5, i - 0.5), 1, 1, fill=False,
+                                               edgecolor="#d62728", lw=2.0))
+            subtitle = (f"\nG={rec['G']:.1f}, {su.fmt_p(rec['p'])} {rec['stars']} · "
+                        f"Cramér's V={rec['cramers_v']:.2f} (distinct-ligand counts; "
+                        "red = |adj.resid|≥2)")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ! region×{key} G-test skipped: {exc}")
+        ax.set_title(title + " — pose share within region" + subtitle,
+                     fontweight="bold")
 
     _label_panels(axes)
     fig.suptitle("Orai PB-valid binding regions — defined by contacted-residue "
@@ -735,6 +888,7 @@ def plot_region_overview(fp, region_sum, all_methods, all_frames, out: Path):
                  fontsize=13, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
+    return stats
 
 
 def plot_ligand_clusters(desc, prof, feats, out: Path):
@@ -779,9 +933,11 @@ def plot_ligand_clusters(desc, prof, feats, out: Path):
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
 
 
-def plot_ligandcluster_region(matrix, consensus, out: Path):
+def plot_ligandcluster_region(matrix, consensus, out: Path, fp=None):
     if matrix is None or matrix.empty:
-        return
+        return {}
+    from matplotlib.patches import Rectangle
+    stats: dict = {}
     fig, axes = plt.subplots(1, 2, figsize=(15, 5.8),
                              gridspec_kw={"width_ratios": [1.25, 1]})
 
@@ -790,8 +946,6 @@ def plot_ligandcluster_region(matrix, consensus, out: Path):
     ax.set_xticks(range(matrix.shape[1])); ax.set_xticklabels(matrix.columns)
     ax.set_yticks(range(matrix.shape[0])); ax.set_yticklabels(matrix.index)
     ax.set_xlabel("Binding region"); ax.set_ylabel("Ligand chemo-cluster")
-    ax.set_title("Where each ligand type docks\n(fraction of the cluster's PB-valid "
-                 "poses in each region)", fontweight="bold")
     for i in range(matrix.shape[0]):
         for j in range(matrix.shape[1]):
             v = matrix.values[i, j]
@@ -799,6 +953,35 @@ def plot_ligandcluster_region(matrix, consensus, out: Path):
                 ax.text(j, i, f"{v:.2f}", ha="center", va="center",
                         color="white" if v < 0.6 else "black", fontsize=7)
     fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label="pose fraction")
+
+    # Chemo-cluster × region association. Test on DISTINCT-LIGAND counts (one per
+    # cell) so pooled poses don't inflate n; heatmap keeps showing pose fractions.
+    ctitle = ("Where each ligand type docks\n(fraction of the cluster's PB-valid "
+              "poses in each region)")
+    if fp is not None:
+        try:
+            region_cols = [int(c[1:]) - 1 for c in matrix.columns]  # 'R3' -> 2
+            lig_ct = _distinct_ligand_contingency(
+                fp[fp["lig_cluster"].notna()], "lig_cluster", "region",
+                list(matrix.index), region_cols)
+            lig_ct.columns = list(matrix.columns)
+            rec, resid = _contingency_gtest(
+                lig_ct.values, list(matrix.index), list(matrix.columns),
+                unit="distinct ligands (one per cell; heatmap shows pose share)",
+                note="chemo-cluster × region; ligand-aggregated to avoid pose "
+                     "pseudoreplication")
+            stats["ligandcluster_x_region"] = rec
+            for i in range(resid.shape[0]):
+                for j in range(resid.shape[1]):
+                    if np.isfinite(resid[i, j]) and abs(resid[i, j]) >= 2.0:
+                        ax.add_patch(Rectangle((j - 0.5, i - 0.5), 1, 1, fill=False,
+                                               edgecolor="#39ff14", lw=2.0))
+            ctitle += (f"\nG={rec['G']:.1f}, {su.fmt_p(rec['p'])} {rec['stars']} · "
+                       f"Cramér's V={rec['cramers_v']:.2f} (distinct-ligand counts; "
+                       "green = |adj.resid|≥2)")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ! chemo-cluster×region G-test skipped: {exc}")
+    ax.set_title(ctitle, fontweight="bold")
 
     ax = axes[1]
     if consensus is not None and not consensus.empty:
@@ -823,9 +1006,11 @@ def plot_ligandcluster_region(matrix, consensus, out: Path):
                  fontsize=13, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
+    return stats
 
 
-def plot_consistency(per_lig, region_sum, out: Path):
+def plot_consistency(per_lig, region_sum, out: Path, fp=None):
+    stats: dict = {}
     fig, axes = plt.subplots(1, 3, figsize=(18, 5.4))
 
     ax = axes[0]
@@ -834,8 +1019,24 @@ def plot_consistency(per_lig, region_sum, out: Path):
                label=f"median {per_lig['region_purity_%'].median():.0f}%")
     ax.set_xlabel("Dominant-region purity\n(% of a ligand's PB-valid poses in its top region)")
     ax.set_ylabel("Number of ligands")
-    ax.set_title("Dominant-region purity per ligand", fontsize=10, fontweight="bold")
-    ax.legend(); ax.grid(alpha=0.3)
+    atitle = "Dominant-region purity per ligand"
+    # Permutation test: is the mean per-ligand dominant-region purity above chance?
+    if fp is not None:
+        try:
+            perm = _dominant_purity_permutation(fp)
+            if perm is not None:
+                stats["dominant_region_purity_permutation"] = perm
+                ax.axvline(100 * perm["null_mean"], color="grey", ls=":",
+                           label=f"chance {100 * perm['null_mean']:.0f}%")
+                ax.axvline(100 * perm["observed_mean_purity"], color="green", ls="-",
+                           lw=1.5, label=f"observed {100 * perm['observed_mean_purity']:.0f}%")
+                atitle += (f"\npermutation: observed>{100 * perm['null_mean']:.0f}% chance, "
+                           f"{su.fmt_p(perm['p_one_sided'])} {perm['stars']} "
+                           f"(n={perm['n_ligands']} ligands, {perm['n_perm']} perms)")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  ! dominant-purity permutation skipped: {exc}")
+    ax.set_title(atitle, fontsize=10, fontweight="bold")
+    ax.legend(fontsize=8); ax.grid(alpha=0.3)
 
     ax = axes[1]
     cats = {
@@ -867,6 +1068,7 @@ def plot_consistency(per_lig, region_sum, out: Path):
                  fontsize=13, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
+    return stats
 
 
 def plot_snapshot_clusters_3d(fp_xyz, frame, region_colors, out: Path,
@@ -1331,12 +1533,23 @@ def _region_fraction(df: pd.DataFrame, regions: list) -> pd.Series:
     return pd.Series([float(vc.get(r, 0.0)) for r in regions], index=regions)
 
 
+_MIN_LIGS_REGION_GTEST = 5   # distinct ligands needed for a region×tool G-test on 06a/06b
+
+
 def plot_pose_set_where(d, region_ids, receptor_for_frame, title, out,
-                        lig_label=str, lig_sublabel=None, max_ghost=2500):
+                        lig_label=str, lig_sublabel=None, max_ghost=2500,
+                        stats_out=None, set_label="pose set"):
     """Generic 'where does this pose set dock' figure: a 3D centroid scatter per
     frame (colour = ligand, shape = tool) over the receptor envelope, plus a
     ligand×region occupancy heatmap and a per-ligand/tool pose-count bar. Used for
-    both the JKU ligands (a) and the chemically-similar benchmark ligands (b)."""
+    both the JKU ligands (a) and the chemically-similar benchmark ligands (b).
+
+    The occupancy heatmap carries a region×tool G-test on DISTINCT-ligand counts
+    (pseudoreplication-safe, as on figs 01/03) WHEN enough distinct ligands are
+    present; with too few (e.g. the 3 JKU ligands) a distinct-ligand test is not
+    informative, so the panel is DESCRIPTIVE and labelled exploratory — mirroring
+    06c's explicitly-exploratory pooled test, so the absence of a test is never
+    read as a tested null. The record is written to region_stats.json."""
     from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
     from matplotlib.lines import Line2D
     d = d[d["cx"].notna() & (d["region"] >= 0)].copy()
@@ -1396,8 +1609,34 @@ def plot_pose_set_where(d, region_ids, receptor_for_frame, title, out,
     axh.set_yticks(range(len(ligs)))
     axh.set_yticklabels([lig_label(l) for l in ligs], fontsize=8)
     axh.set_xlabel("Binding region (benchmark consensus)")
+    # region×tool association on DISTINCT-ligand counts (pseudoreplication-safe)
+    # when enough distinct ligands exist; else the panel stays DESCRIPTIVE + labelled.
+    heat_note, stat_rec = "", None
+    if len(ligs) >= _MIN_LIGS_REGION_GTEST and len(methods) >= 2 and len(region_ids) >= 2:
+        try:
+            ct = _distinct_ligand_contingency(d, "region", "method", region_ids, methods)
+            sub = ct.loc[ct.sum(1) > 0, ct.sum(0) > 0]
+            if sub.shape[0] >= 2 and sub.shape[1] >= 2:
+                stat_rec, _resid = _contingency_gtest(
+                    sub.values, [f"R{int(r) + 1}" for r in sub.index], list(sub.columns),
+                    unit="distinct ligands",
+                    note=f"{set_label}: region×tool on distinct-ligand counts")
+                heat_note = (f"region×tool  G={stat_rec['G']:.1f}, {stat_rec['p_str']} "
+                             f"{stat_rec['stars']}, V={stat_rec['cramers_v']:.2f} "
+                             f"(distinct ligands, n={len(ligs)})")
+        except Exception as exc:                       # pragma: no cover
+            stat_rec = {"error": str(exc)}
+    if not heat_note:
+        heat_note = (f"descriptive — no region×tool association test "
+                     f"(n={len(ligs)} distinct ligand{'s' if len(ligs) != 1 else ''}: "
+                     f"too few — exploratory)")
+        if stat_rec is None:
+            stat_rec = {"skipped": "too few distinct ligands for a distinct-ligand G-test",
+                        "n_distinct_ligands": int(len(ligs)), "exploratory": True}
+    if stats_out is not None:
+        stats_out["region_tool_gtest"] = stat_rec
     axh.set_title("Where each ligand docks — fraction of its PB-valid poses per "
-                  "region\n(pooled over frames & tools)", fontsize=9)
+                  "region\n(pooled over frames & tools)\n" + heat_note, fontsize=9)
     for i in range(mat.shape[0]):
         for j in range(mat.shape[1]):
             if mat[i, j] > 0.02:
@@ -1430,7 +1669,7 @@ def plot_pose_set_where(d, region_ids, receptor_for_frame, title, out,
 
 
 def plot_jku_vs_similar(d_jku, d_sim, region_ids, reg_sig, out, top_n,
-                        occ_thr: float = 0.10):
+                        occ_thr: float = 0.10, gtest_record=None):
     """(c) Commonalities & differences across clusters across tools: per tool, the
     region-occupancy of JKU poses vs chemically-similar benchmark poses, and a
     region×tool map flagging where BOTH occupy (shared), only JKU, or only the
@@ -1480,9 +1719,16 @@ def plot_jku_vs_similar(d_jku, d_sim, region_ids, reg_sig, out, top_n,
             t = txt[int(codes[ri, ci])]
             if t:
                 axc.text(ci, ri, t, ha="center", va="center", fontsize=7)
-    axc.set_title(f"Region occupied by ≥{int(occ_thr * 100)}% of a group's poses — "
-                  "commonalities (both) vs differences (JKU-only / similar-only), per tool",
-                  fontsize=9)
+    ctitle = (f"Region occupied by ≥{int(occ_thr * 100)}% of a group's poses — "
+              "commonalities (both) vs differences (JKU-only / similar-only), per tool")
+    if isinstance(gtest_record, dict) and "G" in gtest_record:
+        ctitle += (f"\nJKU vs similar region occupancy: G={gtest_record['G']:.1f}, "
+                   f"{gtest_record['p_str']} {gtest_record['stars']} · "
+                   f"Cramér's V={gtest_record['cramers_v']:.2f} — EXPLORATORY "
+                   f"(pooled poses, n={gtest_record.get('n_jku_ligands', '?')} JKU ligands)")
+    elif isinstance(gtest_record, dict) and gtest_record.get("skipped"):
+        ctitle += "\nJKU vs similar G-test: n too small — exploratory, not tested"
+    axc.set_title(ctitle, fontsize=9)
     leg = [Patch(facecolor="#a9dfbf", edgecolor="black", label="shared (both)"),
            Patch(facecolor="#f5b7b1", edgecolor="black", label="JKU only"),
            Patch(facecolor="#aed6f1", edgecolor="black", label="similar only"),
@@ -1573,25 +1819,33 @@ def run_jku_similarity_analysis(args, fp_bench, region_sum, feats, fold, km_reg,
 
     # figures (a) (b) (c)
     print("  generating JKU figures …")
+    stats_06a: dict = {}
     p_a = plot_pose_set_where(
         fp_jku, region_ids, receptor_for_frame,
         "(a) Where the JKU ligands dock in the Orai frames",
-        args.out_dir / "06a_jku_where.png", lig_label=_jlabel)
+        args.out_dir / "06a_jku_where.png", lig_label=_jlabel,
+        stats_out=stats_06a, set_label="JKU ligands")
     sub = {l: f"~{r.nearest_jku and _jlabel(r.nearest_jku)} {r.max_tanimoto:.2f}"
            for l, r in sim.set_index("ligand").iterrows()}
     p_b = None
+    stats_06b: dict = {}
     if not fp_sim_top.empty:
         p_b = plot_pose_set_where(
             fp_sim_top, region_ids, receptor_for_frame,
             f"(b) Where chemically-similar benchmark ligands dock "
             f"(top {args.top_n}/tool, ECFP4 Tanimoto ≥ {args.similar_threshold})",
             args.out_dir / "06b_similar_where.png",
-            lig_label=str, lig_sublabel=sub)
+            lig_label=str, lig_sublabel=sub,
+            stats_out=stats_06b, set_label="chemically-similar benchmark ligands")
     p_c = None
+    stats_06c: dict = {}
     if not fp_sim_top.empty:
         fp_jku_shared = fp_jku[fp_jku["frame"].isin(shared_frames)]
+        stats_06c = _jku_similar_gtest(fp_jku_shared, fp_sim_top, region_ids,
+                                       len(jku_ligs))
         p_c = plot_jku_vs_similar(fp_jku_shared, fp_sim_top, region_ids, reg_sig,
-                                  args.out_dir / "06c_jku_vs_similar.png", args.top_n)
+                                  args.out_dir / "06c_jku_vs_similar.png", args.top_n,
+                                  gtest_record=stats_06c)
 
     made = [p.name for p in (p_a, p_b, p_c) if p is not None]
     if made:
@@ -1601,7 +1855,8 @@ def run_jku_similarity_analysis(args, fp_bench, region_sum, feats, fold, km_reg,
         "shared_frames": shared_frames,
         "n_similar_benchmark_ligands": len(similar_ligs),
         "similar_threshold": args.similar_threshold, "top_n": args.top_n,
-        "jku_figures": made,
+        "jku_figures": made, "stats_06c": stats_06c,
+        "stats_06a": stats_06a, "stats_06b": stats_06b,
     }
 
 
@@ -1739,14 +1994,23 @@ def main() -> None:
         lcc.to_csv(args.out_dir / "ligandcluster_consensus.csv", index=False)
 
     # ── (4) figures ─────────────────────────────────────────────────
+    # Statistical tests annotate each figure and are also collected here for the
+    # region_stats.json sidecar. Every test is wrapped in try/except inside the plot
+    # so a failure degrades to the test-free figure and never aborts the pipeline.
     print("\nGenerating figures …")
-    plot_region_overview(fp, region_sum, all_methods, all_frames,
-                         args.out_dir / "01_region_overview.png")
+    region_stats: dict = {}
+    region_stats["01_region_overview"] = plot_region_overview(
+        fp, region_sum, all_methods, all_frames,
+        args.out_dir / "01_region_overview.png") or {}
     plot_ligand_clusters(desc, prof, lfeats, args.out_dir / "02_ligand_chemo_clusters.png")
     if not lcr.empty:
-        plot_ligandcluster_region(lcr, lcc, args.out_dir / "03_ligandcluster_region_consensus.png")
+        region_stats["03_ligandcluster_region"] = plot_ligandcluster_region(
+            lcr, lcc, args.out_dir / "03_ligandcluster_region_consensus.png",
+            fp=fp) or {}
     if not per_lig.empty:
-        plot_consistency(per_lig, region_sum, args.out_dir / "04_ligand_consistency.png")
+        region_stats["04_ligand_consistency"] = plot_consistency(
+            per_lig, region_sum, args.out_dir / "04_ligand_consistency.png",
+            fp=fp) or {}
 
     # Per-snapshot 3D views + combined pose PDBs share a global region→colour map
     # (so a region keeps its colour across every snapshot, figure and viewer) and a
@@ -1787,6 +2051,20 @@ def main() -> None:
         jku_summary = run_jku_similarity_analysis(
             args, fp, region_sum, feats, fold, km_reg, remap_reg,
             region_colors, receptor_for_frame, raw)
+        if jku_summary.get("stats_06c"):
+            region_stats["06c_jku_vs_similar"] = jku_summary["stats_06c"]
+        if jku_summary.get("stats_06a"):
+            region_stats["06a_jku_where"] = jku_summary["stats_06a"]
+        if jku_summary.get("stats_06b"):
+            region_stats["06b_similar_where"] = jku_summary["stats_06b"]
+
+    # Full numeric results for every annotated figure (recoverable next to the PNGs).
+    try:
+        (args.out_dir / "region_stats.json").write_text(
+            json.dumps(region_stats, indent=2))
+        print(f"  statistical results → {args.out_dir / 'region_stats.json'}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ! could not write region_stats.json: {exc}")
 
     # ── (5) printed answer + summary.json ───────────────────────────
     print("\n=== (a) Consensus regions shared across ligands ===")

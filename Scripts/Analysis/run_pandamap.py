@@ -251,7 +251,7 @@ def parse_rank(method: str, pose_name: str) -> int:
 # Pose loading
 # ──────────────────────────────────────────────────────────────────────────
 
-_PROVENANCE = ("pocket_source", "clamp_variant", "refine_variant", "smina_affinity", "pocket_id", "optimizer")
+_PROVENANCE = ("pocket_source", "clamp_variant", "refine_variant", "smina_affinity", "pocket_id", "optimizer", "pb_valid")
 
 
 def _load_allowed_ids(path: Path) -> set[str]:
@@ -269,12 +269,22 @@ def load_poses_from_csv(cfg: PandaMapConfig) -> list[dict]:
         raise ValueError(f"PB CSV missing columns: {missing}")
     df["docking_method"] = df["docking_method"].astype(str).str.lower()
 
-    if cfg.pb_valid_only:
-        checks = [c for c in CANONICAL_TEST_COLUMNS if c in df.columns]
-        if checks:
-            sub = df[checks].copy()
-            coerce_test_cols_to_bool(sub, checks)
-            df = df[sub.all(axis=1)].copy()
+    # Compute PoseBusters validity per pose ALWAYS, so it can be carried into the
+    # fingerprint output as a 'pb_valid' flag (a pose passes iff every canonical PB
+    # test is True). Only DROP invalid poses when pb_valid_only is on; otherwise every
+    # pose is fingerprinted and merely tagged — giving full tool×complex coverage while
+    # letting downstream still select valid-only. (Tools with catastrophic geometry,
+    # e.g. EquiBind, otherwise vanish from complexes where all their top poses fail PB.)
+    df = df.copy()
+    checks = [c for c in CANONICAL_TEST_COLUMNS if c in df.columns]
+    if checks:
+        sub = df[checks].copy()
+        coerce_test_cols_to_bool(sub, checks)
+        df["_pb_valid"] = sub.all(axis=1).to_numpy()
+    else:
+        df["_pb_valid"] = pd.NA
+    if cfg.pb_valid_only and checks:
+        df = df[df["_pb_valid"]].copy()
 
     poses = []
     for _, r in df.iterrows():
@@ -293,6 +303,7 @@ def load_poses_from_csv(cfg: PandaMapConfig) -> list[dict]:
             "pose_name": pose_name,
             "pose_rank": parse_rank(r["docking_method"], pose_name),
             "protein_file": str(r["protein_file_used"]) if _col(r, "protein_file_used") else None,
+            "pb_valid": (bool(r["_pb_valid"]) if pd.notna(r["_pb_valid"]) else None),
         }
         for c in _PROVENANCE:
             if c in df.columns:
@@ -814,6 +825,12 @@ def main() -> None:
     ap.add_argument("--render", action=argparse.BooleanOptionalAction, default=None,
                     help="render 2D PNG maps (slow). Default from config.")
     ap.add_argument("--overwrite", action="store_true", default=None)
+    ap.add_argument("--pb-valid-only", action=argparse.BooleanOptionalAction, default=None,
+                    help="Fingerprint only PoseBusters-valid poses (config 'pb_valid_only'). "
+                         "Use --no-pb-valid-only to fingerprint ALL top-N poses regardless of "
+                         "validity (every pose is still tagged pb_valid) — gives full "
+                         "tool×complex coverage when a tool's top poses all fail PB "
+                         "(e.g. EquiBind's distorted geometry).")
     ap.add_argument("--best-equibind-only", action="store_true", default=None,
                     help="Map only the single best EquiBind variant (highest PB-Valid AND "
                          "RMSD ≤ 2 Å = oracle_pb_valid_and_rmsd2_%%, from --oracle-summary) "
@@ -859,6 +876,8 @@ def main() -> None:
         cfg.render_images = args.render
     if args.overwrite is not None:
         cfg.overwrite = args.overwrite
+    if args.pb_valid_only is not None:
+        cfg.pb_valid_only = args.pb_valid_only
     if args.best_equibind_only is not None:
         cfg.best_equibind_only = args.best_equibind_only
     if args.equibind_variant is not None:

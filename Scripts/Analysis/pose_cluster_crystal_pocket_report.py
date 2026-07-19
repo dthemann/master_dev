@@ -75,6 +75,7 @@ silence_rdkit_2d3d_warning()
 from pocket_comparison_report import (          # noqa: E402
     parse_fpocket, parse_p2rank, _load_ids, _label_panels,
 )
+import stats_utils as su                         # noqa: E402  (shared, unit-tested)
 
 from rdkit import Chem                            # noqa: E402
 from rdkit.Chem import rdMolAlign                 # noqa: E402
@@ -1193,6 +1194,45 @@ _SRC_ORACLE = {
 }
 
 
+def _reach_stats_sink(out_dir, key, payload):
+    """Merge one figure's numeric stats into ``descriptor_reach_stats.json``.
+
+    Kept separate from the homogeneity figure's dedicated
+    ``crystal_cluster_homogeneity_stats.json``; collects the lightweight per-figure
+    tests added for the summary / top-N / descriptor figures so the annotated
+    numbers stay recoverable. Best-effort: a write failure never breaks the run.
+    """
+    try:
+        p = Path(out_dir) / "descriptor_reach_stats.json"
+        blob = {}
+        if p.exists():
+            try:
+                blob = json.loads(p.read_text())
+            except Exception:
+                blob = {}
+        blob[key] = payload
+        p.write_text(json.dumps(blob, indent=2, default=str))
+    except Exception as e:                                     # pragma: no cover
+        print(f"  [stats] could not write descriptor_reach_stats.json: {e}")
+
+
+def _hit_rate_paired(d, thr):
+    """Paired-binary comparison of 'oracle center within thr Å' across sources.
+
+    Per-complex unit of analysis; a NaN oracle (source produced no pose) counts as
+    a miss so every complex stays a complete row across all sources. Returns the
+    ``su.paired_proportions`` dict (Cochran Q omnibus + pairwise McNemar/Holm +
+    Wilson CIs) or None when there are too few sources / complexes.
+    """
+    labels = [s for s in _SRC_ORACLE if _SRC_ORACLE[s] in d]
+    cols = {s: (pd.to_numeric(d[_SRC_ORACLE[s]], errors="coerce") <= thr)
+                 .fillna(False).astype(int).to_numpy()
+            for s in labels}
+    if len(cols) < 2 or len(d) < 8:
+        return None
+    return su.paired_proportions(cols, labels=list(cols))
+
+
 def _panel_oracle_ecdf(ax, d, thr, detail_xlim=None):
     """ECDF of oracle center-to-crystal distance per source.
 
@@ -1238,19 +1278,44 @@ def _panel_oracle_ecdf(ax, d, thr, detail_xlim=None):
 
 def _panel_hit_rate(ax, d, thr):
     """Hit-rate@thr per source (oracle center within thr Å of the crystal)."""
-    def rate(col):
-        v = pd.to_numeric(d[col], errors="coerce").dropna()
-        return float((v <= thr).mean()) if len(v) else np.nan
     labels = list(_SRC_ORACLE)
-    oracle_rates = [rate(_SRC_ORACLE[s]) for s in labels]
+    hits, tots, oracle_rates = [], [], []
+    for s in labels:
+        v = pd.to_numeric(d[_SRC_ORACLE[s]], errors="coerce").dropna()
+        n_s = len(v); k_s = int((v <= thr).sum())
+        hits.append(k_s); tots.append(n_s)
+        oracle_rates.append(k_s / n_s if n_s else np.nan)
     x = np.arange(len(labels))
     ax.bar(x, oracle_rates, color=[TOOL_COLORS.get(s, "#8172B3") for s in labels])
-    for xi, v in zip(x, oracle_rates):
+    # Wilson 95% CI error bars (same k/n as each displayed rate).
+    tops = list(oracle_rates)
+    try:
+        yerr = np.zeros((2, len(labels)))
+        for i, (r, k, n) in enumerate(zip(oracle_rates, hits, tots)):
+            if r == r and n:
+                lo, hi = su.wilson_ci(k, n)
+                yerr[0, i] = max(0.0, r - lo); yerr[1, i] = max(0.0, hi - r)
+                tops[i] = hi
+        ax.errorbar(x, [r if r == r else 0 for r in oracle_rates], yerr=yerr,
+                    fmt="none", ecolor="0.25", elinewidth=1.1, capsize=3, zorder=5)
+    except Exception as e:                                     # pragma: no cover
+        print(f"  [stats] hit-rate Wilson CI skipped: {e}")
+    for xi, v, t in zip(x, oracle_rates, tops):
         if v == v:
-            ax.text(xi, v + 0.01, f"{v:.0%}", ha="center", fontsize=9)
+            ax.text(xi, min(1.12, t + 0.02), f"{v:.0%}", ha="center", fontsize=9)
     ax.set_xticks(x); ax.set_xticklabels(labels, rotation=30, ha="right")
     ax.set_ylim(0, 1.18); ax.set_ylabel("fraction within thr")
-    ax.set_title(f"Finds the true site (oracle ≤ {thr:g} Å)")
+    # Paired-binary omnibus across sources (same complexes; per-complex unit).
+    title = f"Finds the true site (oracle ≤ {thr:g} Å)"
+    try:
+        res = _hit_rate_paired(d, thr)
+        if res is not None:
+            o = res["omnibus"]
+            title += (f"\nCochran Q={o['Q']:.1f}, {su.fmt_p(o['p'])} "
+                      f"{su.p_stars(o['p'])} (paired across sources)")
+    except Exception as e:                                     # pragma: no cover
+        print(f"  [stats] hit-rate paired omnibus skipped: {e}")
+    ax.set_title(title)
 
 
 def _panel_triangulation(ax, d, thr):
@@ -1332,6 +1397,18 @@ def _fig_summary(df, thr, out_dir):
         p = out_dir / fname
         fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
         saved.append(p)
+
+    # ── sidecar: full paired-binary stats behind summary_hit_rate.png ────
+    try:
+        res = _hit_rate_paired(d, thr)
+        if res is not None:
+            _reach_stats_sink(out_dir, "summary_hit_rate", {
+                "thr_A": float(thr), "n_complexes": int(len(d)),
+                "unit": "per-complex boolean (oracle center ≤ thr); NaN oracle = miss",
+                "rates": res["rates"], "omnibus": res["omnibus"],
+                "pairwise": res["pairwise"]})
+    except Exception as e:                                     # pragma: no cover
+        print(f"  [stats] summary_hit_rate sidecar skipped: {e}")
 
     # ── new graph: the Panel-A detail, zoomed to 0–5 Å (no inset) ────────
     fig, a = plt.subplots(figsize=(7.0, 5.2))
@@ -2108,6 +2185,10 @@ def _fig_topN_crystal_matrix(df_rank, out_dir, eq_variant=None):
                              constrained_layout=True, squeeze=False)
     flat = axes.ravel()
     im = None
+    # per-tool presence over the fixed complex order (reused every bucket)
+    present_vec = {t: np.array([t in present.get(p, set()) for p in proteins], bool)
+                   for t in T}
+    matrix_stats = {}
     for i, N in enumerate(buckets):
         ax = flat[i]; col = i % ncols
         cnt = np.zeros((nT, nT)); both = np.zeros((nT, nT))
@@ -2133,17 +2214,59 @@ def _fig_topN_crystal_matrix(df_rank, out_dir, eq_variant=None):
                            ha="right", rotation_mode="anchor", fontsize=8)
         ax.set_yticklabels([_TOOL_DISPLAY.get(t, t) for t in T] if col == 0
                            else [""] * nT)
+        # ── per-cell inferential stats (same helpers as the reach-curves companion):
+        #    diagonal  → Wilson 95% CI on the marginal reach rate;
+        #    off-diag  → SIGNED phi / Fisher co-reach association vs independence
+        #                (AutoDock sits at a ceiling → 'fails' margin too thin → n/e).
+        #    Depths are NESTED cumulative thresholds, so they are not corrected as a
+        #    family; the diagonal marginal-RATE comparison (Cochran Q/McNemar) lives
+        #    in the topN_crystal_reach_curves companion, not duplicated here.
+        cell_note = {}; bstat = {"diagonal": {}, "offdiagonal": {}}
+        try:
+            hitv = {t: np.array([(reach.get(p, {}).get(t, np.inf) <= N)
+                                 for p in proteins], int) for t in T}
+            for a in range(nT):
+                ta = T[a]; mask = present_vec[ta]
+                k = int(hitv[ta][mask].sum()); nn = int(mask.sum())
+                lo, hi = su.wilson_ci(k, nn) if nn else (np.nan, np.nan)
+                cell_note[(a, a)] = f"CI {lo:.0%}–{hi:.0%}" if nn else ""
+                bstat["diagonal"][ta] = {"k": k, "n": nn,
+                                         "rate": (k / nn if nn else None),
+                                         "wilson_ci": [float(lo), float(hi)]}
+            for a in range(nT):
+                for b in range(a):                       # strictly lower triangle
+                    ta, tb = T[a], T[b]; m2 = present_vec[ta] & present_vec[tb]
+                    assoc = su.paired_2x2_association(hitv[ta][m2], hitv[tb][m2])
+                    bstat["offdiagonal"][f"{ta}+{tb}"] = assoc
+                    cell_note[(a, b)] = (f"φ{assoc['phi']:+.2f}{su.p_stars(assoc['p'])}"
+                                         if assoc["estimable"] else "n/e (ceiling)")
+            if n_all:
+                mask_all = present_vec[T[0]] & present_vec[T[1]] & present_vec[T[2]]
+                allc = su.consensus_perm_test(
+                    np.column_stack([hitv[t][mask_all] for t in T]), n_perm=10000)
+                bstat["all_three"] = allc
+        except Exception as e:                           # pragma: no cover
+            print(f"  [stats] topN matrix cell stats skipped (top-{N}): {e}")
+            allc = None
+        matrix_stats[f"top{N}"] = bstat
         for a in range(nT):
             for b in range(nT):
                 if b > a or both[a, b] == 0:
                     continue
-                ax.text(b, a, f"{M[a, b]:.0%}\n{int(cnt[a, b])}", ha="center",
-                        va="center", color="white" if M[a, b] > 0.55 else "black",
-                        fontsize=9)
+                note = cell_note.get((a, b), "")
+                label = f"{M[a, b]:.0%}\n{int(cnt[a, b])}" + (f"\n{note}" if note else "")
+                ax.text(b, a, label, ha="center", va="center",
+                        color="white" if M[a, b] > 0.55 else "black", fontsize=8)
         if n_all:
+            perm_line = ""
+            if bstat.get("all_three"):
+                ka = bstat["all_three"]["k"]
+                exp_all = bstat["all_three"]["expected"][ka]
+                perm_line = (f"\nobs {all3} vs exp {exp_all:.0f}, "
+                             f"perm {su.fmt_p(bstat['all_three']['p_all_agree_two_sided'])}")
             ax.text(0.96, 0.96, "All 3 tools reach crystal:\n"
-                    f"{all3}/{n_all} ({all3 / n_all:.0%})", transform=ax.transAxes,
-                    ha="right", va="top", fontsize=8,
+                    f"{all3}/{n_all} ({all3 / n_all:.0%})" + perm_line,
+                    transform=ax.transAxes, ha="right", va="top", fontsize=7,
                     bbox=dict(boxstyle="round,pad=0.4", fc="#f5f5f5", ec="#bbbbbb"))
         ax.set_title(f"Top-{N}")
     for j in range(nb, nrows * ncols):       # hide any unused grid cell
@@ -2151,9 +2274,23 @@ def _fig_topN_crystal_matrix(df_rank, out_dir, eq_variant=None):
     if im is not None:
         fig.colorbar(im, ax=list(flat), fraction=0.046, pad=0.02,
                      label="fraction of complexes")
+    _reach_stats_sink(out_dir, "topN_crystal_cluster_matrix", {
+        "n_complexes": int(n_total),
+        "unit": "per-complex boolean (best rank in crystal cluster ≤ N)",
+        "note": "diagonal = Wilson CI on marginal reach; off-diagonal = signed-phi / "
+                "Fisher co-reach association vs independence (+ redundant, − complementary); "
+                "depths are nested cumulative thresholds (not an independent family); the "
+                "marginal-rate omnibus (Cochran Q/McNemar) is in topN_crystal_reach_curves.",
+        "buckets": matrix_stats})
     fig.suptitle("Both tools reach the CRYSTAL cluster within top-N poses "
                  "(diagonal = one tool alone)\n"
                  f"n={n_total} complexes; {_equibind_rank_note(eq_variant)}", fontsize=12)
+    fig.supxlabel(
+        "Diagonal: reach rate + Wilson 95% CI.   Off-diagonal: co-reach % + count + "
+        "signed φ co-reach vs independence (Fisher two-sided; + redundant, − complementary; "
+        "AutoDock pairs at ceiling = n/e).   Depths are nested cumulative thresholds — "
+        "not an independent test family.",
+        fontsize=7.0, color="0.35")
     p = out_dir / "topN_crystal_cluster_matrix.png"
     fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
     return p
@@ -2234,6 +2371,80 @@ def _fig_topN_crystal_reach_curves(df_rank, out_dir, eq_variant=None):
         ax.set_xlabel("Ranking depth (number of top poses considered, N)")
         ax.set_xticks(Ns); ax.set_xlim(Ns[0] - 0.3, Ns[-1] + 0.3); ax.set_ylim(0, 1.02)
         ax.grid(alpha=0.25); ax.set_axisbelow(True); ax.legend(fontsize=8)
+    axR.legend(fontsize=8, loc="upper left")   # keep lower-right clear for the stat box
+    # ── paired-binary comparison across the three tools at each labelled depth ──
+    #    ('reaches the crystal cluster within top-N' per complex per tool; the same
+    #    `proteins` are the paired units). Annotate the top-1 omnibus; sidecar full.
+    try:
+        if n_total >= 8:
+            depth_stats = {}
+            reach_bool = {}
+            for N in mark:
+                cols = {t: np.array([reach.get(p, {}).get(t, np.inf) <= N
+                                     for p in proteins], int) for t in T}
+                reach_bool[N] = cols
+                depth_stats[f"top{N}"] = su.paired_proportions(cols, labels=list(T))
+            o1 = depth_stats.get(f"top{mark[0]}", {}).get("omnibus") if mark else None
+            if o1:
+                axL.text(0.02, 0.02,
+                         f"top-{mark[0]} across tools: Cochran Q={o1['Q']:.1f}, "
+                         f"{su.fmt_p(o1['p'])} {su.p_stars(o1['p'])}",
+                         transform=axL.transAxes, fontsize=8, va="bottom",
+                         bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="0.7",
+                                   alpha=0.85))
+            # ── co-reach ASSOCIATION at top-1: the off-diagonal's unique content ──
+            #    Do two tools reach the crystal cluster on the SAME complexes more
+            #    than their marginal rates predict? Signed phi / Haldane odds ratio +
+            #    two-sided Fisher (vs McNemar, which only tests equal marginal RATES
+            #    and ignores the joint-reach cell). AutoDock sits at a top-1 ceiling,
+            #    so its pairs have a near-empty 'fails' margin → not estimable.
+            cooc = None
+            if mark:
+                N1 = mark[0]; rb = reach_bool[N1]
+                pair_assoc = {f"{pr[0]}+{pr[1]}": su.paired_2x2_association(
+                    rb[pr[0]], rb[pr[1]]) for pr in pairs}
+                est = [(pr, pair_assoc[f"{pr[0]}+{pr[1]}"]) for pr in pairs
+                       if pair_assoc[f"{pr[0]}+{pr[1]}"]["estimable"]]
+                if est:                            # Holm across the estimable pairs only
+                    for (pr, aa), ph in zip(est, su.holm([a2["p"] for _, a2 in est])):
+                        aa["p_holm"] = float(ph); aa["star"] = su.p_stars(ph)
+                allc = su.consensus_perm_test(
+                    np.column_stack([rb[t] for t in T]), n_perm=10000)
+                lines = [f"Top-{N1} co-reach vs independence (n={n_total}):"]
+                for pr in pairs:
+                    a2 = pair_assoc[f"{pr[0]}+{pr[1]}"]
+                    nm = f"{_TOOL_DISPLAY[pr[0]]}+{_TOOL_DISPLAY[pr[1]]}"
+                    if a2["estimable"]:
+                        lines.append(
+                            f"{nm}: {a2['observed']} obs / {a2['expected']:.0f} exp  "
+                            f"φ={a2['phi']:+.2f}  OR={a2['odds_ratio']:.1f}"
+                            f"[{a2['or_ci'][0]:.1f}–{a2['or_ci'][1]:.1f}]  "
+                            f"{su.fmt_p(a2.get('p_holm', a2['p']))} {a2.get('star', '')}")
+                    else:
+                        lines.append(f"{nm}: AutoDock at ceiling → not estimable")
+                ka = allc["k"]
+                lines.append(
+                    f"All 3: {int(allc['observed'][ka])} obs / "
+                    f"{allc['expected'][ka]:.0f} exp  "
+                    f"(2-sided perm {su.fmt_p(allc['p_all_agree_two_sided'])})")
+                axR.text(0.98, 0.03, "\n".join(lines), transform=axR.transAxes,
+                         ha="right", va="bottom", fontsize=6.5,
+                         bbox=dict(boxstyle="round,pad=0.35", fc="white", ec="0.7",
+                                   alpha=0.92))
+                cooc = {"depth": int(N1),
+                        "null": "independence of the two per-complex reach indicators",
+                        "effect": "signed phi / Haldane OR (+ redundant, − complementary)",
+                        "pairs": pair_assoc, "all_three": allc}
+            _reach_stats_sink(out_dir, "topN_crystal_reach_curves", {
+                "n_complexes": int(n_total),
+                "unit": "per-complex boolean (best rank in crystal cluster ≤ N)",
+                "depths": depth_stats,
+                "cooccurrence_top1": cooc})
+        else:
+            axL.text(0.02, 0.02, f"n={n_total} too small — exploratory",
+                     transform=axL.transAxes, fontsize=8, va="bottom", color="0.4")
+    except Exception as e:                                     # pragma: no cover
+        print(f"  [stats] topN reach paired test skipped: {e}")
     fig.suptitle("Reaching the crystal cluster vs ranking depth "
                  "(evolution of the top-N matrix values)\n"
                  f"n={n_total} complexes; {_equibind_rank_note(eq_variant)}", fontsize=12)
@@ -2458,6 +2669,35 @@ def _jonckheere(groups):
     return float(JT), float(z), float(2 * norm.sf(abs(z)))
 
 
+def _partial_spearman(x, y, z):
+    """First-order partial Spearman corr(x, y | z): the rank association between
+    x and y after removing what each shares with the control variable z. Uses the
+    standard partial-correlation formula on Spearman coefficients (no extra deps).
+    Returns (partial_rho, p, components{rho_xy, rho_xz, rho_yz, n})."""
+    from scipy.stats import spearmanr, t as tdist
+    x = np.asarray(x, float); y = np.asarray(y, float); z = np.asarray(z, float)
+    m = ~(np.isnan(x) | np.isnan(y) | np.isnan(z))
+    x, y, z = x[m], y[m], z[m]
+    n = len(x)
+    if n < 5:
+        return np.nan, np.nan, {}
+    rxy = float(spearmanr(x, y)[0]); rxz = float(spearmanr(x, z)[0])
+    ryz = float(spearmanr(y, z)[0])
+    comps = {"rho_xy": round(rxy, 3), "rho_xz": round(rxz, 3),
+             "rho_yz": round(ryz, 3), "n": int(n)}
+    denom = np.sqrt(max((1 - rxz ** 2) * (1 - ryz ** 2), 0.0))
+    if denom == 0:
+        return np.nan, np.nan, comps
+    rp = float(np.clip((rxy - rxz * ryz) / denom, -1.0, 1.0))
+    df = n - 3                                          # n - 2 - (1 control var)
+    if df <= 0 or abs(rp) >= 1:
+        p = np.nan
+    else:
+        tstat = rp * np.sqrt(df / (1 - rp ** 2))
+        p = float(2 * tdist.sf(abs(tstat), df))
+    return rp, p, comps
+
+
 def _consensus_perm_test(R, n_perm=10000, seed=42):
     """Permutation test: do tools reach the crystal cluster on the SAME
     complexes more than if their per-complex successes were independent?
@@ -2598,8 +2838,13 @@ def _homogeneity_stats(comp, reach_R, internal, internal_prot, rad_by_n,
         JT, zD, pD = _jonckheere(gD)
         nt = np.array([p[0] for p in nt_radius_pairs], float)
         rr = np.array([p[1] for p in nt_radius_pairs], float)
+        cs = np.array([p[2] for p in nt_radius_pairs], float)
         m = ~np.isnan(rr)
         rho, prho = spearmanr(nt[m], rr[m]) if m.sum() > 2 else (np.nan, np.nan)
+        # Control for the mechanical confound: radius (max pose->center) grows with
+        # the cluster's pose count, and more-consensus clusters hold more poses.
+        # Partial Spearman(radius, n_tools | pose_count) removes that.
+        rho_p, prho_p, comps = _partial_spearman(rr, nt, cs)
         rep["D_radius_trend"] = {
             "test": "Jonckheere-Terpstra (ordered 1<2<3 tools)",
             "JT": round(JT, 1), "z": round(zD, 3), "p": float(pD),
@@ -2607,10 +2852,22 @@ def _homogeneity_stats(comp, reach_R, internal, internal_prot, rad_by_n,
             "n": {f"{k}_tools": int(len(gD[k - 1])) for k in (1, 2, 3)},
             "medians": {f"{k}_tools": round(float(np.median(gD[k - 1])), 3)
                         for k in (1, 2, 3)},
+            "posecount_control": {
+                "method": "partial Spearman(radius, n_tools | crystal-cluster "
+                          "pose count)",
+                "partial_rho": (round(rho_p, 3) if rho_p == rho_p else None),
+                "partial_p": prho_p,
+                "rho_radius_vs_posecount": comps.get("rho_xz"),
+                "rho_ntools_vs_posecount": comps.get("rho_yz"),
+                "n": comps.get("n"),
+                "reading": "if partial_rho collapses toward 0 / loses "
+                           "significance, the raw trend is a pose-count artifact; "
+                           "if it survives, agreement widens the site beyond mere "
+                           "pose count."},
             "caveat": "radius = max(pose->center) grows mechanically with the "
                       "number of poses in the cluster, and more-consensus "
-                      "clusters tend to hold more poses; treat the trend as "
-                      "confounded unless controlled for pose count."}
+                      "clusters tend to hold more poses; see posecount_control "
+                      "for the confound-adjusted trend."}
     return rep
 
 
@@ -2655,6 +2912,13 @@ def _print_homogeneity_stats(rep):
         line(f"(D) radius trend| Jonckheere-Terpstra z={d['z']} p={_fmt_p(d['p'])} "
              f"{_p_stars(d['p'])}  Spearman rho={d['spearman_rho']} "
              f"(p={_fmt_p(d['spearman_p'])})  n={d['n']}")
+        pc = d.get("posecount_control", {})
+        if pc:
+            line(f"      pose-count control: partial rho={pc.get('partial_rho')} "
+                 f"(p={_fmt_p(pc.get('partial_p'))} {_p_stars(pc.get('partial_p'))}) "
+                 f"| radius~pose# rho={pc.get('rho_radius_vs_posecount')}, "
+                 f"n_tools~pose# rho={pc.get('rho_ntools_vs_posecount')}")
+            line(f"      → {pc.get('reading')}")
         line(f"      CAVEAT: {d['caveat']}")
 
 
@@ -2704,6 +2968,7 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None,
             internal[t].append(s)
             internal_prot[t][_prot] = s
     radius = {}
+    cluster_size = {}                        # #poses in the crystal-closest pocket
     for r in ok:
         if not r.get("has_crystal"):
             continue
@@ -2712,14 +2977,17 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None,
             continue
         cp = min(pk, key=lambda p: _dist(p["center"], cr))
         radius[r["protein"]] = float(cp.get("radius", np.nan))
+        cluster_size[r["protein"]] = int(cp.get("size", 0))
     rad_by_n = {k: [] for k in (1, 2, 3)}
-    nt_radius_pairs = []                     # (n_tools, radius) per complex for Spearman
+    # (n_tools, radius, crystal-cluster pose count) per complex for the trend +
+    # its pose-count-controlled partial correlation.
+    nt_radius_pairs = []
     for prot in proteins:
         k = int(n_tools_per.get(prot, 0))
         rv = radius.get(prot, np.nan)
         if k in rad_by_n and rv == rv:
             rad_by_n[k].append(rv)
-        nt_radius_pairs.append((k, rv))
+        nt_radius_pairs.append((k, rv, cluster_size.get(prot, np.nan)))
 
     stats_rep = None
     if stats:
@@ -2835,8 +3103,16 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None,
     titleD = "Spatial spread vs consensus richness"
     if stats_rep and stats_rep.get("D_radius_trend"):
         dd = stats_rep["D_radius_trend"]
-        titleD += (f"\nJonckheere–Terpstra trend p={_fmt_p(dd['p'])}; "
-                   f"ρ={dd['spearman_rho']:+.2f}")
+        titleD += f"\nJonckheere–Terpstra trend p={_fmt_p(dd['p'])}"
+        pc = dd.get("posecount_control", {})
+        pr = pc.get("partial_rho")
+        if isinstance(pr, (int, float)):
+            axD.text(0.5, 0.035,
+                     f"Spearman ρ={dd['spearman_rho']:+.2f}  →  partial ρ={pr:+.2f}"
+                     f"  (control: cluster pose count)", transform=axD.transAxes,
+                     ha="center", va="bottom", fontsize=8, family="monospace",
+                     color="0.2", bbox=dict(boxstyle="round,pad=0.3",
+                     facecolor="white", edgecolor="0.7", alpha=0.85))
     axD.set_title(titleD)
     axD.grid(axis="y", alpha=0.25); axD.set_axisbelow(True)
 
@@ -3183,6 +3459,31 @@ def _fig_descriptor_quality(df_complex, features_csv, out_dir,
         ax.text(i, 0.4, f"≤2Å: {near:.0f}%\nPB-valid&≤2Å: {val:.0f}%\nn={len(g)}",
                 ha="center", va="bottom", fontsize=8)
     ax.axhline(2, color="green", ls="--", lw=1)
+    # Ro5 pass vs fail are INDEPENDENT groups -> Mann-Whitney U + Cliff's delta.
+    try:
+        a = pd.to_numeric(grp[0][1]["oracle_all"], errors="coerce").to_numpy()
+        b = pd.to_numeric(grp[1][1]["oracle_all"], errors="coerce").to_numpy()
+        mw = su.mannwhitney_cliffs(a, b)
+        if mw is not None and min(mw["n_a"], mw["n_b"]) >= 3:
+            lo, hi = mw["delta_ci"]
+            ax.text(0.5, 0.98,
+                    f"Mann-Whitney {su.fmt_p(mw['p'])} {su.p_stars(mw['p'])} · "
+                    f"Cliff's δ={mw['cliffs_delta']:.2f} [{lo:.2f}, {hi:.2f}]",
+                    transform=ax.transAxes, ha="center", va="top", fontsize=8,
+                    bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="0.7",
+                              alpha=0.85))
+            _reach_stats_sink(out_dir, "descriptor_accuracy_vs_ro5", {
+                "measure": "oracle_all_rmsd_A", "design": "independent (Ro5 pass vs fail)",
+                "test": "Mann-Whitney U + Cliff's delta",
+                "n_pass": mw["n_a"], "n_fail": mw["n_b"],
+                "median_pass": mw["medians"][0], "median_fail": mw["medians"][1],
+                "U": mw["U"], "p": mw["p"], "cliffs_delta": mw["cliffs_delta"],
+                "delta_ci": [lo, hi]})
+        else:
+            ax.text(0.5, 0.98, "n too small — exploratory", transform=ax.transAxes,
+                    ha="center", va="top", fontsize=8, color="0.4")
+    except Exception as e:                                     # pragma: no cover
+        print(f"  [stats] Ro5 Mann-Whitney skipped: {e}")
     ax.set_title("Pose accuracy vs Lipinski Rule-of-Five compliance")
     ax.set_ylabel("Best oracle RMSD to crystal (Å)")
     ax.grid(alpha=0.2); ax.set_axisbelow(True)
@@ -3214,24 +3515,54 @@ def _fig_descriptor_quality(df_complex, features_csv, out_dir,
 
     # (C) Spearman correlation of each property (+ PCs) with pose error (geometry)
     feats = [f for f in PCA_FEATURES if f in d.columns] + [c for c in ("PC1", "PC2", "PC3") if c in d.columns]
-    rhos = []
+    rhos = []          # [feature, rho, p_raw, n]
     for f in feats:
         v = pd.to_numeric(d[f], errors="coerce")
         m = v.notna() & d["best_oracle_rmsd"].notna()
         if m.sum() > 10:
-            rho, _ = spearmanr(v[m], d["best_oracle_rmsd"][m])
-            rhos.append((f, rho))
+            try:
+                rho, prho, nn = su.spearman(v[m].to_numpy(),
+                                            d["best_oracle_rmsd"][m].to_numpy())
+            except Exception:
+                rho, prho, nn = spearmanr(v[m], d["best_oracle_rmsd"][m])[0], np.nan, int(m.sum())
+            rhos.append([f, float(rho), float(prho), int(nn)])
     if rhos:
+        # BH-FDR across the descriptor family; stars from the q-values.
+        try:
+            qs = su.bh_fdr([r[2] for r in rhos])
+        except Exception as e:                                # pragma: no cover
+            print(f"  [stats] descriptor BH-FDR skipped: {e}")
+            qs = [np.nan] * len(rhos)
+        for r, q in zip(rhos, qs):
+            r.append(float(q))                                # r[4] = q_bh
         rhos.sort(key=lambda x: x[1])
-        vals = [r for _, r in rhos]
+        vals = [r[1] for r in rhos]
         fig, ax = plt.subplots(figsize=(6.8, 5.4))
         ax.barh(range(len(vals)), vals, color=["#C44E52" if r > 0 else "#4C72B0" for r in vals])
-        ax.set_yticks(range(len(vals))); ax.set_yticklabels([nice(f) for f, _ in rhos], fontsize=8)
+        ax.set_yticks(range(len(vals))); ax.set_yticklabels([nice(r[0]) for r in rhos], fontsize=8)
         ax.axvline(0, color="k", lw=0.8)
-        ax.set_title("Which properties track pose error?\n(Spearman ρ vs RMSD; red = worse, blue = better)")
+        try:
+            for i, r in enumerate(rhos):
+                star = su.p_stars(r[4]) if len(r) > 4 else ""
+                if star and star != "ns":
+                    ax.text(r[1] + (0.012 if r[1] >= 0 else -0.012), i, star,
+                            va="center", ha="left" if r[1] >= 0 else "right",
+                            fontsize=9, fontweight="bold")
+        except Exception as e:                                # pragma: no cover
+            print(f"  [stats] descriptor stars skipped: {e}")
+        ax.set_title("Which properties track pose error?\n"
+                     "(Spearman ρ vs RMSD; red = worse, blue = better; * = BH-FDR q<0.05)")
         ax.set_xlabel("Spearman correlation with best oracle RMSD")
         ax.grid(alpha=0.2, axis="x"); ax.set_axisbelow(True)
         _save(fig, "descriptor_property_correlations.png")
+        try:
+            _reach_stats_sink(out_dir, "descriptor_property_correlations", {
+                "measure": "best_oracle_rmsd", "n_complexes": int(len(d)),
+                "multiplicity": f"BH-FDR across {len(rhos)} descriptor rows",
+                "rows": [{"feature": r[0], "rho": r[1], "p_raw": r[2], "n": r[3],
+                          "q_bh": r[4] if len(r) > 4 else None} for r in rhos]})
+        except Exception as e:                                # pragma: no cover
+            print(f"  [stats] descriptor correlation sidecar skipped: {e}")
 
     # (D) PCA chemical space coloured by accuracy (geometry)
     if "PC1" in d and "PC2" in d:
