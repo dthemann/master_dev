@@ -1,7 +1,7 @@
 Orai Experimental-vs-Control contrasts at the LIGAND unit (pseudoreplication-free re-test)
 ############################################################################################
 
-generated 2026-08-16 14:48:15 by Scripts/Analysis/orai_ligand_level_contrasts.py
+generated 2026-08-16 14:50:28 by Scripts/Analysis/orai_ligand_level_contrasts.py
 
 WHY: the shipped Orai cross-panel sidecars treat the (MD frame x ligand) pair as the
 independent unit. The four Orai1 frames are snapshots of the SAME receptor, so a
@@ -420,6 +420,13 @@ F. CONCLUSION -- what the prose may cite
   AT THE LIGAND UNIT, 2 contrast(s) across ALL families reach adjusted
   p < 0.05: B:Calinski–Harabasz / DiffDock (Holm/BH 0.031, n_exp=3), C:DiffDock <-> EquiBind (Holm/BH 0.006, n_exp=2)
   (for comparison, 18 do at the (frame x ligand) unit).
+
+  NOTE one contrast moves the OTHER way: DiffDock's Calinski-Harabasz index goes from
+  Holm 0.074 at the (frame x ligand) unit to Holm 0.031 at the ligand unit. That is not
+  new evidence -- collapsing to 3 ligands removes the within-ligand spread, so the three
+  medians land further into the Benchmark tail (Cliff's delta +0.48 -> +0.89) while the
+  18-test Holm family loses its other small p-values. Treat it as descriptive too, and do
+  NOT promote it to a finding.
 
   OF THE THREE HEADLINE CONTRASTS THE THESIS REPORTS, ONE 'survives' Holm at the ligand
   unit -- the DiffDock<->EquiBind consensus distance -- and it rests on TWO experimental
