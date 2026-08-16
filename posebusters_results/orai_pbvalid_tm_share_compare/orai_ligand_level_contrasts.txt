@@ -1,0 +1,456 @@
+Orai Experimental-vs-Control contrasts at the LIGAND unit (pseudoreplication-free re-test)
+############################################################################################
+
+generated 2026-08-16 14:48:15 by Scripts/Analysis/orai_ligand_level_contrasts.py
+
+WHY: the shipped Orai cross-panel sidecars treat the (MD frame x ligand) pair as the
+independent unit. The four Orai1 frames are snapshots of the SAME receptor, so a
+ligand's four units are repeated measures of ONE receptor-ligand system. With three
+experimental ligands the effective n is 3, not 12 -- the (frame x ligand) tests are
+anti-conservative for the ligand-generalisation question. Every family below is
+recomputed at BOTH units with the same machinery (two-sided Mann-Whitney U,
+Cliff's delta with a percentile-bootstrap 95% CI, then Holm or BH-FDR within the
+stated family). Nothing was re-docked; all inputs are committed CSVs.
+
+UNIT DEFINITIONS
+  frame x ligand : one row per (MD frame, ligand) -- reproduces the shipped numbers.
+  ligand         : each ligand collapsed to the MEDIAN of its per-frame values
+                   FIRST, so one ligand contributes exactly one observation.
+
+ORIENTATION: every Cliff's delta is Benchmark vs Experimental, so delta > 0 means the
+Benchmark (control) values are higher. NOTE the shipped
+orai_cluster_quality_compare_stats.txt prints delta with Experimental as the first
+group, i.e. with the OPPOSITE sign; the p-values are unaffected (U is symmetric).
+
+SCOPE / ligand exclusions
+  ligand-name exclusion patterns applied (from the compare script): ['gsk7975a-deprot']
+  -> the 'deprotonated' GSK-7975A build is excluded everywhere, so the Experimental
+     set is 3 ligands (2-APB-NH2, Synta-66, GSK-7975A protonated) x 4 MD frames.
+
+============================================================================================
+SOURCES
+============================================================================================
+  A1/A2 yield + TM             posebusters_results/orai_pbvalid_tm_share_compare/pbvalid_tm_share_per_unit.csv
+  B cluster quality (exp)      posebusters_results/orai_jku/pose_clusters/cluster_quality_per_tool.csv
+  B cluster quality (bench)    posebusters_results/orai_benchmark/pose_clusters/cluster_quality_per_tool.csv
+  C per_pair (exp)             posebusters_results/orai_jku/pose_clusters/per_pair.csv
+  C per_pair (bench)           posebusters_results/orai_benchmark/pose_clusters/per_pair.csv
+  D1 PandaMap totals           pandamap_results/orai_interaction_compare/pandamap_pose_totals.csv
+  D2 PandaMap types (exp)      pandamap_results/orai_jku/pandamap_pose_summary.csv
+  D2 PandaMap types (bench)    pandamap_results/orai_benchmark/pandamap_pose_summary.csv
+
+============================================================================================
+A. PoseBusters-valid yield and transmembrane survival
+============================================================================================
+A1. PB-valid share of PRODUCED poses
+------------------------------------
+  Two families (A1, A2), Holm across the 3 tools within each -- exactly as in
+  section 2b of pbvalid_tm_share_compare_stats.txt.
+  correction: Holm across the 3-test family (PB-valid share), applied SEPARATELY at each unit.
+
+  contrast                               unit           n_exp  n_bch   med_exp   med_bch   delta      p_raw      p_adj  sig
+  -------------------------------------------------------------------------------------------------------------------------
+  AutoDock Vina                          frame x ligand    12   1201   100.00%   100.00%   -0.16      0.195      0.195  ns
+  AutoDock Vina                          ligand             3    305   100.00%   100.00%   -0.10      0.566      0.566  ns
+
+  DiffDock                               frame x ligand    12   1215   100.00%    80.00%   -0.49      0.003      0.009  **
+  DiffDock                               ligand             3    308    95.00%    83.89%   -0.68      0.044      0.131  ns
+
+  EquiBind                               frame x ligand    12   1215     5.00%    30.00%   +0.30      0.067      0.135  ns
+  EquiBind                               ligand             3    308    15.00%    30.00%   +0.36      0.278      0.556  ns
+
+
+A2. outside-TM (usable) share of PRODUCED poses
+-----------------------------------------------
+  correction: Holm across the 3-test family (outside-TM (usable) share), applied SEPARATELY at each unit.
+
+  contrast                               unit           n_exp  n_bch   med_exp   med_bch   delta      p_raw      p_adj  sig
+  -------------------------------------------------------------------------------------------------------------------------
+  AutoDock Vina                          frame x ligand    12   1201    70.00%    90.00%   +0.37      0.018      0.055  ns
+  AutoDock Vina                          ligand             3    305    70.00%    95.00%   +0.74      0.023      0.069  ns
+
+  DiffDock                               frame x ligand    12   1215    65.00%    71.43%   +0.16      0.333      0.667  ns
+  DiffDock                               ligand             3    308    65.00%    75.00%   +0.16      0.632      1.000  ns
+
+  EquiBind                               frame x ligand    12   1215     0.00%     0.00%   +0.02      0.832      0.832  ns
+  EquiBind                               ligand             3    308     0.00%     0.00%   +0.08      0.621      1.000  ns
+
+
+============================================================================================
+B. Reference-free cluster quality (pose_set == 'raw')
+============================================================================================
+B. Per-tool cluster-quality metrics
+-----------------------------------
+  Holm across the full 6-metric x 3-tool family, matching
+  panels/orai_cluster_quality_compare_stats.txt.
+  correction: Holm across the 18-test family (cluster quality ('raw' cloud)), applied SEPARATELY at each unit.
+
+  contrast                               unit           n_exp  n_bch   med_exp   med_bch   delta      p_raw      p_adj  sig
+  -------------------------------------------------------------------------------------------------------------------------
+  Silhouette / AutoDock Vina             frame x ligand    11   1169      0.67      0.72   +0.25      0.161      1.000  ns
+  Silhouette / AutoDock Vina             ligand             3    305      0.53      0.71   +0.48      0.152      1.000  ns
+
+  Silhouette / DiffDock                  frame x ligand    12   1126      0.17      0.42   +0.53      0.002      0.031  *
+  Silhouette / DiffDock                  ligand             3    302      0.21      0.42   +0.72      0.032      0.516  ns
+
+  Silhouette / EquiBind                  frame x ligand     8    743      0.52      0.52   +0.00      0.986      1.000  ns
+  Silhouette / EquiBind                  ligand             3    280      0.62      0.52   -0.22      0.521      1.000  ns
+
+  Calinski–Harabasz / AutoDock Vina      frame x ligand    11   1169    169.33    584.38   +0.44      0.012      0.194  ns
+  Calinski–Harabasz / AutoDock Vina      ligand             3    305    269.09    641.19   +0.76      0.016      0.279  ns
+
+  Calinski–Harabasz / DiffDock           frame x ligand    12   1126     79.27    195.79   +0.48      0.004      0.074  ns
+  Calinski–Harabasz / DiffDock           ligand             3    302     78.55    209.10   +0.89      0.002      0.031  *
+
+  Calinski–Harabasz / EquiBind           frame x ligand     8    743     27.69     15.75   -0.39      0.055      0.766  ns
+  Calinski–Harabasz / EquiBind           ligand             3    280     25.71     15.91   -0.44      0.191      1.000  ns
+
+  Davies–Bouldin / AutoDock Vina         frame x ligand    11   1169      0.09      0.07   -0.23      0.189      1.000  ns
+  Davies–Bouldin / AutoDock Vina         ligand             3    305      0.09      0.07   -0.45      0.181      1.000  ns
+
+  Davies–Bouldin / DiffDock              frame x ligand    12   1126      0.09      0.12   +0.22      0.187      1.000  ns
+  Davies–Bouldin / DiffDock              ligand             3    302      0.10      0.12   +0.26      0.441      1.000  ns
+
+  Davies–Bouldin / EquiBind              frame x ligand     8    743      0.40      0.48   +0.34      0.094      1.000  ns
+  Davies–Bouldin / EquiBind              ligand             3    280      0.45      0.48   +0.38      0.258      1.000  ns
+
+  Compactness / AutoDock Vina            frame x ligand    12   1201      0.62      0.55   -0.12      0.481      1.000  ns
+  Compactness / AutoDock Vina            ligand             3    305      0.54      0.55   -0.18      0.593      1.000  ns
+
+  Compactness / DiffDock                 frame x ligand    12   1195      0.34      0.57   +0.17      0.306      1.000  ns
+  Compactness / DiffDock                 ligand             3    306      0.32      0.55   +0.27      0.430      1.000  ns
+
+  Compactness / EquiBind                 frame x ligand    12   1215      1.29      1.42   +0.23      0.165      1.000  ns
+  Compactness / EquiBind                 ligand             3    308      1.30      1.46   +0.41      0.221      1.000  ns
+
+  Separation / AutoDock Vina             frame x ligand    11   1169     19.96     17.32   -0.07      0.698      1.000  ns
+  Separation / AutoDock Vina             ligand             3    305     18.19     17.67   -0.17      0.616      1.000  ns
+
+  Separation / DiffDock                  frame x ligand    12   1195     12.03     10.77   -0.19      0.255      1.000  ns
+  Separation / DiffDock                  ligand             3    306     12.31     11.12   -0.21      0.539      1.000  ns
+
+  Separation / EquiBind                  frame x ligand     8    743      6.60      6.70   -0.12      0.555      1.000  ns
+  Separation / EquiBind                  ligand             3    280      6.40      6.73   -0.05      0.879      1.000  ns
+
+  Bootstrap stability / AutoDock Vina    frame x ligand    12   1201      0.75      0.78   +0.13      0.454      1.000  ns
+  Bootstrap stability / AutoDock Vina    ligand             3    305      0.79      0.78   +0.15      0.648      1.000  ns
+
+  Bootstrap stability / DiffDock         frame x ligand    12   1186      0.66      0.70   +0.39      0.020      0.296  ns
+  Bootstrap stability / DiffDock         ligand             3    305      0.66      0.70   +0.54      0.110      1.000  ns
+
+  Bootstrap stability / EquiBind         frame x ligand    12   1215      0.80      0.88   +0.13      0.419      1.000  ns
+  Bootstrap stability / EquiBind         ligand             3    308      0.84      0.89   +0.33      0.327      1.000  ns
+
+
+============================================================================================
+C. Inter-tool consensus-site distance
+============================================================================================
+C. Distance between the tools' consensus sites (A)
+--------------------------------------------------
+  Holm across the 4 tool-pair contrasts, matching
+  panels/orai_tool_agreement_compare_stats.txt.
+  correction: Holm across the 4-test family (inter-tool consensus distance (A)), applied SEPARATELY at each unit.
+
+  contrast                               unit           n_exp  n_bch   med_exp   med_bch   delta      p_raw      p_adj  sig
+  -------------------------------------------------------------------------------------------------------------------------
+  AutoDock Vina <-> DiffDock             frame x ligand    11   1189     30.12     28.36   -0.30      0.092      0.275  ns
+  AutoDock Vina <-> DiffDock             ligand             3    305     51.87     30.11   -0.55      0.107      0.322  ns
+
+  AutoDock Vina <-> EquiBind             frame x ligand     3    468     27.18     25.96   -0.04      0.900      0.900  ns
+  AutoDock Vina <-> EquiBind             ligand             2    206     26.70     26.81   +0.00      0.995      0.995  ns
+
+  DiffDock <-> EquiBind                  frame x ligand     3    481     47.64     30.67   -0.91      0.007      0.027  *
+  DiffDock <-> EquiBind                  ligand             2    209     53.03     28.83   -0.97      0.001      0.006  **
+
+  All pairs (mean per pair)              frame x ligand    11   1204     30.12     29.53   -0.22      0.215      0.429  ns
+  All pairs (mean per pair)              ligand             3    308     42.23     29.96   -0.45      0.193      0.387  ns
+
+
+============================================================================================
+D. PandaMap interaction families
+============================================================================================
+D1. Total interactions per pose
+-------------------------------
+  Poses aggregated to the per-complex MEAN first (shipped convention); the ligand
+  unit then takes the median of a ligand's per-complex means across its frames.
+  Holm across the 3 tools.
+  correction: Holm across the 3-test family (PandaMap total interactions per pose), applied SEPARATELY at each unit.
+
+  contrast                               unit           n_exp  n_bch   med_exp   med_bch   delta      p_raw      p_adj  sig
+  -------------------------------------------------------------------------------------------------------------------------
+  AutoDock Vina                          frame x ligand    11   1161     29.67     25.67   -0.20      0.254      0.254  ns
+  AutoDock Vina                          ligand             3    298     29.17     25.83   -0.20      0.555      1.000  ns
+
+  DiffDock                               frame x ligand    12   1204     18.17     15.67   -0.27      0.103      0.205  ns
+  DiffDock                               ligand             3    306     15.67     16.17   -0.19      0.563      1.000  ns
+
+  EquiBind                               frame x ligand     1    118  -- n too small to test --
+  EquiBind                               ligand             1     79  -- n too small to test --
+
+
+D2. Interaction-type profile -- BH-FDR WITHIN each tool
+----------------------------------------------------
+  DATA AVAILABILITY. pandamap_results/orai_interaction_compare/ does NOT contain a
+  per-unit interaction-type table: pandamap_type_profile.csv is already collapsed to
+  one mean-per-pose per (dataset, tool, type) (91 rows), and pandamap_residue_hotspots.csv
+  is likewise pre-aggregated. Only pandamap_pose_totals.csv is per pose, and it carries
+  the TOTAL only (section D1). The per-type counts therefore come from the upstream
+  pandamap_results/orai_{jku,benchmark}/pandamap_pose_summary.csv, read through the
+  compare script's OWN load_dataset() so the variant picks and the top-N caps are
+  identical to the shipped run (verified: the frame x ligand column below reproduces
+  the shipped BH values exactly).
+  variants selected: {'autodock': 'autodock_gnina', 'diffdock': 'diffdock_smina', 'equibind': 'equibind_unguided_gnina'} (exp) / {'autodock': 'autodock_gnina', 'diffdock': 'diffdock_smina', 'equibind': 'equibind_unguided_gnina'} (bench)
+  poses per tool: exp {'autodock': 31, 'diffdock': 36, 'equibind': 1} / bench {'autodock': 3406, 'diffdock': 3524, 'equibind': 233}
+  EquiBind has 1 PB-valid non-TM experimental pose, so its type family is untestable at either unit.
+  The count columns below are the arm MEAN of the per-unit values, matching the
+  'mean/pose' the shipped sidecar prints; medians are in the companion CSV.
+
+  PandaMap interaction-type profile (AutoDock Vina)
+  -------------------------------------------------
+    correction: BH-FDR across the 15-test family (PandaMap interaction-type profile (AutoDock Vina)), applied SEPARATELY at each unit.
+
+  contrast                               unit           n_exp  n_bch  mean_exp  mean_bch   delta      p_raw      p_adj  sig
+  -------------------------------------------------------------------------------------------------------------------------
+  Hydrogen bonds                         frame x ligand    11   1161      2.42      3.85   +0.42      0.016      0.034  *
+  Hydrogen bonds                         ligand             3    298      2.39      3.88   +0.52      0.125      0.307  ns
+
+  Carbon–π                               frame x ligand    11   1161      3.24      2.57   -0.38      0.028      0.047  *
+  Carbon–π                               ligand             3    298      3.33      2.58   -0.51      0.127      0.307  ns
+
+  π–π stacking                           frame x ligand    11   1161      3.00      2.42   -0.35      0.044      0.066  ns
+  π–π stacking                           ligand             3    298      3.17      2.43   -0.51      0.130      0.307  ns
+
+  Donor–π                                frame x ligand    11   1161      1.76      1.66   -0.03      0.843      0.843  ns
+  Donor–π                                ligand             3    298      1.67      1.64   +0.02      0.960      0.960  ns
+
+  Amide–π                                frame x ligand    11   1161      0.97      0.89   -0.10      0.569      0.657  ns
+  Amide–π                                ligand             3    298      1.00      0.88   -0.14      0.687      0.859  ns
+
+  Hydrophobic                            frame x ligand    11   1161      5.48      3.50   -0.64    2.7e-04      0.002  **
+  Hydrophobic                            ligand             3    298      5.44      3.56   -0.68      0.042      0.307  ns
+
+  Ionic                                  frame x ligand    11   1161      0.00      0.44   +0.37      0.015      0.034  *
+  Ionic                                  ligand             3    298      0.00      0.42   +0.39      0.184      0.307  ns
+
+  Halogen bonds                          frame x ligand    11   1161      0.76      0.19   -0.41      <1e-4    9.1e-04  ***
+  Halogen bonds                          ligand             3    298      0.89      0.19   -0.53      0.011      0.164  ns
+
+  Cation–π                               frame x ligand    11   1161      2.09      2.25   +0.07      0.686      0.735  ns
+  Cation–π                               ligand             3    298      2.06      2.18   +0.11      0.754      0.870  ns
+
+  Salt bridge                            frame x ligand    11   1161      0.00      0.44   +0.37      0.015      0.034  *
+  Salt bridge                            ligand             3    298      0.00      0.42   +0.39      0.184      0.307  ns
+
+  Covalent                               frame x ligand    11   1161      0.00      0.04   +0.10      0.266      0.362  ns
+  Covalent                               ligand             3    298      0.00      0.02   +0.09      0.598      0.816  ns
+
+  Alkyl–π                                frame x ligand    11   1161      6.36      4.75   -0.45      0.011      0.034  *
+  Alkyl–π                                ligand             3    298      6.22      4.86   -0.48      0.151      0.307  ns
+
+  Attractive charge                      frame x ligand    11   1161      0.00      0.44   +0.37      0.015      0.034  *
+  Attractive charge                      ligand             3    298      0.00      0.42   +0.39      0.184      0.307  ns
+
+  π–cation                               frame x ligand    11   1161      1.82      1.98   +0.10      0.558      0.657  ns
+  π–cation                               ligand             3    298      1.89      1.94   +0.03      0.936      0.960  ns
+
+  Repulsion                              frame x ligand    11   1161      0.00      0.44   +0.32      0.025      0.047  *
+  Repulsion                              ligand             3    298      0.00      0.41   +0.35      0.222      0.332  ns
+
+
+  PandaMap interaction-type profile (DiffDock)
+  --------------------------------------------
+    correction: BH-FDR across the 15-test family (PandaMap interaction-type profile (DiffDock)), applied SEPARATELY at each unit.
+
+  contrast                               unit           n_exp  n_bch  mean_exp  mean_bch   delta      p_raw      p_adj  sig
+  -------------------------------------------------------------------------------------------------------------------------
+  Hydrogen bonds                         frame x ligand    12   1204      1.31      2.47   +0.54      0.001      0.004  **
+  Hydrogen bonds                         ligand             3    306      1.44      2.43   +0.56      0.097      0.242  ns
+
+  Carbon–π                               frame x ligand    12   1204      1.47      1.40   -0.08      0.645      0.675  ns
+  Carbon–π                               ligand             3    306      1.39      1.39   -0.06      0.853      0.907  ns
+
+  π–π stacking                           frame x ligand    12   1204      1.19      1.29   +0.07      0.675      0.675  ns
+  π–π stacking                           ligand             3    306      1.17      1.28   +0.12      0.722      0.833  ns
+
+  Donor–π                                frame x ligand    12   1204      0.78      1.20   +0.33      0.047      0.070  ns
+  Donor–π                                ligand             3    306      0.61      1.20   +0.57      0.091      0.242  ns
+
+  Amide–π                                frame x ligand    12   1204      0.89      0.56   -0.40      0.015      0.039  *
+  Amide–π                                ligand             3    306      1.06      0.54   -0.73      0.029      0.122  ns
+
+  Hydrophobic                            frame x ligand    12   1204      3.42      2.36   -0.58    5.6e-04      0.003  **
+  Hydrophobic                            ligand             3    306      3.39      2.33   -0.72      0.031      0.122  ns
+
+  Ionic                                  frame x ligand    12   1204      0.00      0.22   +0.27      0.040      0.067  ns
+  Ionic                                  ligand             3    306      0.00      0.20   +0.33      0.242      0.364  ns
+
+  Halogen bonds                          frame x ligand    12   1204      1.17      0.16   -0.48      <1e-4      <1e-4  ***
+  Halogen bonds                          ligand             3    306      1.17      0.16   -0.53      0.009      0.122  ns
+
+  Cation–π                               frame x ligand    12   1204      1.53      1.32   -0.17      0.310      0.423  ns
+  Cation–π                               ligand             3    306      1.50      1.30   -0.25      0.455      0.620  ns
+
+  Salt bridge                            frame x ligand    12   1204      0.00      0.22   +0.27      0.040      0.067  ns
+  Salt bridge                            ligand             3    306      0.00      0.20   +0.33      0.242      0.364  ns
+
+  Covalent                               frame x ligand    12   1204      0.00      0.01   +0.04      0.472      0.545  ns
+  Covalent                               ligand             3    306      0.00      0.00   +0.01      0.907      0.907  ns
+
+  Alkyl–π                                frame x ligand    12   1204      5.06      3.31   -0.59    3.8e-04      0.003  **
+  Alkyl–π                                ligand             3    306      5.00      3.34   -0.72      0.033      0.122  ns
+
+  Attractive charge                      frame x ligand    12   1204      0.00      0.22   +0.27      0.040      0.067  ns
+  Attractive charge                      ligand             3    306      0.00      0.20   +0.33      0.242      0.364  ns
+
+  π–cation                               frame x ligand    12   1204      1.31      1.13   -0.14      0.413      0.516  ns
+  π–cation                               ligand             3    306      1.17      1.09   -0.14      0.687      0.833  ns
+
+  Repulsion                              frame x ligand    12   1204      0.00      0.37   +0.34      0.016      0.039  *
+  Repulsion                              ligand             3    306      0.00      0.36   +0.39      0.190      0.364  ns
+
+
+  PandaMap interaction-type profile (EquiBind)
+  --------------------------------------------
+    correction: BH-FDR across the 15-test family (PandaMap interaction-type profile (EquiBind)), applied SEPARATELY at each unit.
+
+  contrast                               unit           n_exp  n_bch  mean_exp  mean_bch   delta      p_raw      p_adj  sig
+  -------------------------------------------------------------------------------------------------------------------------
+  Hydrogen bonds                         frame x ligand     1    118  -- n too small to test --
+  Hydrogen bonds                         ligand             1     79  -- n too small to test --
+
+  Carbon–π                               frame x ligand     1    118  -- n too small to test --
+  Carbon–π                               ligand             1     79  -- n too small to test --
+
+  π–π stacking                           frame x ligand     1    118  -- n too small to test --
+  π–π stacking                           ligand             1     79  -- n too small to test --
+
+  Donor–π                                frame x ligand     1    118  -- n too small to test --
+  Donor–π                                ligand             1     79  -- n too small to test --
+
+  Amide–π                                frame x ligand     1    118  -- n too small to test --
+  Amide–π                                ligand             1     79  -- n too small to test --
+
+  Hydrophobic                            frame x ligand     1    118  -- n too small to test --
+  Hydrophobic                            ligand             1     79  -- n too small to test --
+
+  Ionic                                  frame x ligand     1    118  -- n too small to test --
+  Ionic                                  ligand             1     79  -- n too small to test --
+
+  Halogen bonds                          frame x ligand     1    118  -- n too small to test --
+  Halogen bonds                          ligand             1     79  -- n too small to test --
+
+  Cation–π                               frame x ligand     1    118  -- n too small to test --
+  Cation–π                               ligand             1     79  -- n too small to test --
+
+  Salt bridge                            frame x ligand     1    118  -- n too small to test --
+  Salt bridge                            ligand             1     79  -- n too small to test --
+
+  Covalent                               frame x ligand     1    118  -- n too small to test --
+  Covalent                               ligand             1     79  -- n too small to test --
+
+  Alkyl–π                                frame x ligand     1    118  -- n too small to test --
+  Alkyl–π                                ligand             1     79  -- n too small to test --
+
+  Attractive charge                      frame x ligand     1    118  -- n too small to test --
+  Attractive charge                      ligand             1     79  -- n too small to test --
+
+  π–cation                               frame x ligand     1    118  -- n too small to test --
+  π–cation                               ligand             1     79  -- n too small to test --
+
+  Repulsion                              frame x ligand     1    118  -- n too small to test --
+  Repulsion                              ligand             1     79  -- n too small to test --
+
+
+============================================================================================
+E. Reconciliation of the silhouette n (11/12/8 vs 15/16/10)
+============================================================================================
+  cluster_quality_per_tool.csv (Orai x Experimental), pose_set == 'raw':
+    rows per tool, ALL ligands            : {'autodock': 16, 'diffdock': 16, 'equibind': 16}
+    NON-NULL silhouette, ALL ligands      : {'autodock': 15, 'diffdock': 16, 'equibind': 10}    <- the 15/16/10 in the question
+    rows per tool after ligand exclusion  : {'autodock': 12, 'diffdock': 12, 'equibind': 12}
+    NON-NULL silhouette after exclusion   : {'autodock': 11, 'diffdock': 12, 'equibind': 8}     <- the 11/12/8 the sidecar reports
+
+  TWO filters, applied in this order, explain the whole gap:
+    (1) LIGAND EXCLUSION. load_quality() passes the compare script's
+        DEFAULT_EXCLUDE_LIGANDS = ['gsk7975a-deprot'] through
+        drop_excluded(), removing ['gsk7975a-deprot-OPT'] -- the
+        radical-not-phenolate GSK-7975A build (see the JKU GSK-deprot note).
+        rows dropped per tool          : {'autodock': 4, 'diffdock': 4, 'equibind': 4}
+        NON-NULL silhouettes dropped   : {'autodock': 4, 'diffdock': 4, 'equibind': 2}
+    (2) NON-NULL METRIC. write_quality_stats() does
+        pd.to_numeric(...).dropna() per metric, so rows whose silhouette is
+        undefined are not counted. Every null-silhouette row here has
+        n_clusters == 1 (all-single-cluster: True) --
+        silhouette is undefined for a single cluster. Those rows:
+          Orai1WT-START-Fr0      gsk7975a-prot-OPT      autodock  n_poses=10 n_clusters=1
+          Orai1WT-MDSnap-Fr300   2abp-nh2-OPT           equibind  n_poses=10 n_clusters=1
+          Orai1WT-MDSnap-Fr300   Synta-66-OPT-Singlet   equibind  n_poses=10 n_clusters=1
+          Orai1WT-START-Fr0      Synta-66-OPT-Singlet   equibind  n_poses=10 n_clusters=1
+          Orai1WT-MDSnap-Fr499   gsk7975a-deprot-OPT    equibind  n_poses=10 n_clusters=1
+          Orai1WT-START-Fr0      gsk7975a-deprot-OPT    equibind  n_poses=10 n_clusters=1
+          Orai1WT-START-Fr0      gsk7975a-prot-OPT      equibind  n_poses=10 n_clusters=1
+
+  So: 15/16/10  -(1) 4/4/2 deprot rows->  11/12/8. Nothing is silently lost;
+  the sidecar's n is the correct one for its stated scope.
+
+  WHICH SILHOUETTE NUMBER IS DEFENSIBLE?
+    The shipped p_holm = 0.031 rests on raw p = 0.001702 at the
+    (frame x ligand) unit (n_exp = 12 vs 1126); this script reproduces both exactly, so the
+    shipped sidecar is internally correct for the scope it declares.
+    The competing raw p = 0.00035 is a DIFFERENT SCOPE, not a different unit: it is the
+    same (frame x ligand) test with the excluded gsk7975a-deprot ligand PUT BACK
+    (n_exp = 16 vs 1126) -- i.e. 4 extra units of the chemically wrong radical build.
+    At the LIGAND unit the same contrast is raw p = 0.03223, Holm p = 0.5157
+    on n_exp = 3 ligands -- NOT significant. (The 0.0132
+    figure sometimes quoted for the ligand unit likewise re-admits the deprot ligand,
+    n_exp = 4.)
+    DEFENSIBLE ANSWER: at the shipped unit, the shipped pair (raw 0.0017 / Holm 0.031)
+    is the defensible one -- 0.00035 only arises by re-admitting an excluded ligand.
+    At the ligand unit, which is the unit the generalisation claim needs, NEITHER is
+    defensible as an inferential result: the DiffDock silhouette gap is descriptive.
+
+============================================================================================
+F. CONCLUSION -- what the prose may cite
+============================================================================================
+  THE THREE HEADLINE CONTRASTS, frame x ligand -> ligand (adjusted p within family):
+    1. PB-valid yield, DiffDock            Holm 0.009 -> 0.131   (n_exp 12 -> 3)   DOES NOT SURVIVE
+    2. Cluster silhouette, DiffDock        Holm 0.031 -> 0.516   (n_exp 12 -> 3)   DOES NOT SURVIVE
+    3. Consensus distance, DiffDock<->EquiBind  Holm 0.027 -> 0.006  (n_exp 3 -> 2)   nominally survives, on TWO ligands
+
+  AT THE LIGAND UNIT, 2 contrast(s) across ALL families reach adjusted
+  p < 0.05: B:Calinski–Harabasz / DiffDock (Holm/BH 0.031, n_exp=3), C:DiffDock <-> EquiBind (Holm/BH 0.006, n_exp=2)
+  (for comparison, 18 do at the (frame x ligand) unit).
+
+  OF THE THREE HEADLINE CONTRASTS THE THESIS REPORTS, ONE 'survives' Holm at the ligand
+  unit -- the DiffDock<->EquiBind consensus distance -- and it rests on TWO experimental
+  ligands (only 2 of the 3 ever yielded a scoreable EquiBind pose), which is below any
+  reasonable threshold for an inferential claim. The other two, including the PB-valid
+  yield contrast the thesis currently reports as surviving Holm at p = 0.009, do not.
+
+  HONEST CHARACTERISATION FOR THE PROSE:
+    With three experimental ligands the Orai Experimental-vs-Control comparison is
+    DESCRIPTIVE, not inferential. Report medians, per-ligand points and Cliff's delta as
+    effect sizes, and state the direction of the difference; do NOT claim statistical
+    significance for any Experimental-vs-Control contrast. Where an adjusted p is quoted
+    at all it must be labelled as the (frame x ligand) unit, flagged as pseudoreplicated
+    (frames are snapshots of one receptor-ligand system), and paired with the ligand-unit
+    value from this sidecar. The interaction-type contrasts currently reported as
+    surviving Benjamini-Hochberg are in the same position: none survives at the ligand
+    unit (section D2).
+
+============================================================================================
+CAVEATS
+============================================================================================
+  * The ligand unit fixes the FRAME pseudoreplication only. Three experimental
+    ligands remain three ligands. With n_exp = 3 (or 2) the entire test statistic is
+    the rank position of those few values inside a ~300-ligand reference
+    distribution: a small p means 'all 2-3 experimental ligands sit in the
+    Benchmark tail', which one atypical ligand can create or destroy. Such a p
+    is a statement about THOSE ligands, not evidence that the next experimental
+    ligand would behave the same way.
+  * The two arms are UNPAIRED (different ligand sets), so no paired test applies.
+  * Cliff's delta bootstrap CIs at n_exp = 3 span most of [-1, 1]; they are printed
+    in the CSV for completeness, not as a precision claim.
+  * Frames of one ligand are correlated but NOT identical (different receptor
+    snapshots), so the median-over-frames collapse is a conservative summary, not
+    a claim that the frames carry no information.
