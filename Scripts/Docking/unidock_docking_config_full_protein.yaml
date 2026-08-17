@@ -1,0 +1,70 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Uni-Dock (GPU) TILED whole-protein docking — Benchmark set
+# Consumed by Scripts/Docking/run_unidock_tiled.py (and the notebook cell that
+# imports its main()). Docks the SAME complexes as the AutoDock full-protein cells
+# by reusing their prepared receptor/ligand PDBQT + whole-protein box, but covers
+# each box with overlapping 0.375 Å sub-boxes so Uni-Dock's GPU grid caps
+# (<=128 pts/axis, <=531441 pts total) are respected while keeping AutoDock's
+# 0.375 Å resolution. See the module docstring for the full rationale.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Engine (separate conda env; called by absolute path, no activation needed) ──
+unidock_bin: /home/manndo/anaconda3/envs/unidock/bin/unidock
+scoring: vina                 # vina | vinardo | ad4
+# auto preserves the requested settings. Uni-Dock 1.2.0 paired mode silently
+# hard-codes vina / 0.375 Å / 3 kcal/mol, so this config's 6 kcal/mol range makes
+# auto select ordinary per-tile invocations. Setting paired explicitly with an
+# incompatible tuple is rejected instead of silently changing the experiment.
+execution_mode: auto          # auto | standard | paired
+
+# ── Inputs: REUSE what the AutoDock Vina full-protein cell prepared ────────────
+prep_base: Dockings/vina_results_full_protein_vina_scoring   # per-complex <ID>/_staging/…
+converter: mgl_tools          # receptor prep variant to reuse (matches prep_tool: mgltools)
+
+# ── Outputs ────────────────────────────────────────────────────────────────────
+output_dir: Dockings/unidock_results_full_protein_vina_scoring
+log_dir:    Dockings/Logs/unidock_logs_full_protein_vina_scoring
+overwrite: false              # true starts a fresh generation; an interrupted generation resumes
+keep_tiles: false             # delete only the active generation's scratch after a successful merge
+
+# ── Tiling geometry ────────────────────────────────────────────────────────────
+subbox_size: 29.0             # W (Å): largest cube that fits 0.375 Å under the GPU caps (79^3)
+spacing: 0.375                # AutoDock-parity grid spacing
+overlap_slack: 1.0            # Å added to the ligand DIAMETER for seam safety (overlap = diameter + slack)
+
+# ── Empty-box prefilter (skip sub-boxes that are mostly solvent) ───────────────
+prefilter_cutoff: 8.0         # Å; receptor heavy atoms within box+cutoff can interact
+prefilter_min_atoms: 10       # skip a sub-box with <= this many receptor heavy atoms in range
+
+# ── Search parameters (per sub-box) ────────────────────────────────────────────
+# NOTE: per-box runtime is grid-precompute-bound, so exhaustiveness barely changes
+# wall-time. It is kept LOW (8, Uni-Dock's default) on purpose: exhaustiveness 32
+# in each of dozens–thousands of sub-boxes would be a huge, uneven over-search vs
+# single-box AutoDock. Total effort (Σ exhaustiveness over sub-boxes) is recorded
+# per complex in docking_summary.json for honest effort accounting.
+exhaustiveness: 8
+num_modes: 30
+energy_range: 6
+seed: 42
+
+# ── GPU batching ───────────────────────────────────────────────────────────────
+# Used only when execution_mode resolves to paired. Uni-Dock docks the ligand
+# against many sub-boxes in one GPU job. The limit is
+# HOST RAM (grid precompute ≈ 2.4 GB/sub-box), NOT GPU memory: 6 ≈ 14 GB RSS on a
+# 32 GB machine (safe); 8 is tight; 16-at-once OOM-kills. Do not raise past ~8.
+paired_batch_size: 6
+
+# ── Selection / limits ─────────────────────────────────────────────────────────
+# Complexes to skip entirely. Pre-seeded with the two that dominate runtime:
+#   7ZXV_45D — 27 Å flexible ligand (barely fits a 29 Å box → ~23k sub-boxes)
+#   8F4J_PHO — 41 600-atom receptor + 147×176×157 Å box (~10k sub-boxes)
+exclude:
+- 7ZXV_45D
+- 8F4J_PHO
+
+# Receptor-size cap ("time budget by receptor size"): skip any complex whose
+# receptor exceeds this many heavy atoms (bigger receptor → slower grid precompute
+# and larger box → more sub-boxes). null = no cap.
+# Distribution across the 308 benchmark receptors: median 3659, p75 6067,
+# p90 8884, max 41600 (8F4J_PHO). E.g. 10000 would drop only the largest few.
+max_receptor_atoms: null

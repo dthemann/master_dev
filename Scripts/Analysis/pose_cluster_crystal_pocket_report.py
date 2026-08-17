@@ -81,7 +81,9 @@ from rdkit import Chem                            # noqa: E402
 from rdkit.Chem import rdMolAlign                 # noqa: E402
 
 TOOLS = ("autodock", "diffdock", "equibind")
-TOOL_COLORS = {"autodock": "#4C72B0", "diffdock": "#55A868", "equibind": "#C44E52"}
+# Per-tool palette shared across every figure — matches 09f_pbvalid_yield_boxplot
+# (posebusters_pose_comparison.py): AutoDock=blue, DiffDock=orange, EquiBind=green.
+TOOL_COLORS = {"autodock": "#1f77b4", "diffdock": "#ff7f0e", "equibind": "#2ca02c"}
 TOOL_MARKERS = {"autodock": "o", "diffdock": "^", "equibind": "s"}
 
 
@@ -1662,7 +1664,7 @@ _SRC_ORACLE = {
     "equibind": "equibind_oracle_centroid_dist", "ensemble": "ens_oracle_dist",
     "fpocket": "fpocket_oracle_dist", "p2rank": "p2rank_oracle_dist",
 }
-_SRC_COLOR = {"autodock": "#4C72B0", "diffdock": "#55A868", "equibind": "#C44E52",
+_SRC_COLOR = {"autodock": "#1f77b4", "diffdock": "#ff7f0e", "equibind": "#2ca02c",
               "ensemble": "#8172B3", "fpocket": "#CCB974", "p2rank": "#64B5CD"}
 
 
@@ -2147,6 +2149,22 @@ def _fig_rank1_cluster_matrix(df_rank, out_dir, eq_variant=None):
     return p
 
 
+# Figure captions (footnotes) for the top-N matrix + its companion stats table.
+# Kept off the figures themselves and written to topN_crystal_cluster_matrix_caption.txt.
+_TOPN_MATRIX_CAPTION = (
+    "Each cell: co-reach % (both tools land >=1 top-N pose in the crystal cluster) "
+    "over the count of such complexes; diagonal = one tool alone. Inferential "
+    "statistics (Wilson CIs, signed co-reach phi, permutation tests) are in the "
+    "companion table topN_crystal_cluster_matrix_stats.png.")
+_TOPN_STATS_TABLE_CAPTION = (
+    "Reach rate = fraction of complexes with >=1 top-N pose in the crystal-closest "
+    "cluster (Wilson 95% CI). Co-reach phi = signed association of the two tools' "
+    "per-complex reach vs independence (two-sided Fisher; + redundant, - complementary; "
+    "n/e when a tool sits at a reach ceiling). All three = observed vs expected joint "
+    "reach, 10 000-shuffle permutation p. Depths are nested cumulative thresholds - not "
+    "an independent test family.")
+
+
 def _fig_topN_crystal_matrix(df_rank, out_dir, eq_variant=None):
     """Buckets: pairwise matrices of both tools reaching the CRYSTAL cluster within
     the top-N ranked poses, for N = 1, 5, 10, 15.
@@ -2211,9 +2229,9 @@ def _fig_topN_crystal_matrix(df_rank, out_dir, eq_variant=None):
         im = ax.imshow(np.ma.masked_where(~tri, M), cmap=cmap, vmin=0, vmax=1)
         ax.set_xticks(range(nT)); ax.set_yticks(range(nT))
         ax.set_xticklabels([_TOOL_DISPLAY.get(t, t) for t in T], rotation=45,
-                           ha="right", rotation_mode="anchor", fontsize=8)
+                           ha="right", rotation_mode="anchor", fontsize=12)
         ax.set_yticklabels([_TOOL_DISPLAY.get(t, t) for t in T] if col == 0
-                           else [""] * nT)
+                           else [""] * nT, fontsize=12)
         # ── per-cell inferential stats (same helpers as the reach-curves companion):
         #    diagonal  → Wilson 95% CI on the marginal reach rate;
         #    off-diag  → SIGNED phi / Fisher co-reach association vs independence
@@ -2221,7 +2239,9 @@ def _fig_topN_crystal_matrix(df_rank, out_dir, eq_variant=None):
         #    Depths are NESTED cumulative thresholds, so they are not corrected as a
         #    family; the diagonal marginal-RATE comparison (Cochran Q/McNemar) lives
         #    in the topN_crystal_reach_curves companion, not duplicated here.
-        cell_note = {}; bstat = {"diagonal": {}, "offdiagonal": {}}
+        #    These feed the companion table topN_crystal_cluster_matrix_stats.png; the
+        #    heatmap cells themselves stay purely descriptive (co-reach % + count).
+        bstat = {"diagonal": {}, "offdiagonal": {}}
         try:
             hitv = {t: np.array([(reach.get(p, {}).get(t, np.inf) <= N)
                                  for p in proteins], int) for t in T}
@@ -2229,7 +2249,6 @@ def _fig_topN_crystal_matrix(df_rank, out_dir, eq_variant=None):
                 ta = T[a]; mask = present_vec[ta]
                 k = int(hitv[ta][mask].sum()); nn = int(mask.sum())
                 lo, hi = su.wilson_ci(k, nn) if nn else (np.nan, np.nan)
-                cell_note[(a, a)] = f"CI {lo:.0%}–{hi:.0%}" if nn else ""
                 bstat["diagonal"][ta] = {"k": k, "n": nn,
                                          "rate": (k / nn if nn else None),
                                          "wilson_ci": [float(lo), float(hi)]}
@@ -2238,8 +2257,6 @@ def _fig_topN_crystal_matrix(df_rank, out_dir, eq_variant=None):
                     ta, tb = T[a], T[b]; m2 = present_vec[ta] & present_vec[tb]
                     assoc = su.paired_2x2_association(hitv[ta][m2], hitv[tb][m2])
                     bstat["offdiagonal"][f"{ta}+{tb}"] = assoc
-                    cell_note[(a, b)] = (f"φ{assoc['phi']:+.2f}{su.p_stars(assoc['p'])}"
-                                         if assoc["estimable"] else "n/e (ceiling)")
             if n_all:
                 mask_all = present_vec[T[0]] & present_vec[T[1]] & present_vec[T[2]]
                 allc = su.consensus_perm_test(
@@ -2253,22 +2270,15 @@ def _fig_topN_crystal_matrix(df_rank, out_dir, eq_variant=None):
             for b in range(nT):
                 if b > a or both[a, b] == 0:
                     continue
-                note = cell_note.get((a, b), "")
-                label = f"{M[a, b]:.0%}\n{int(cnt[a, b])}" + (f"\n{note}" if note else "")
-                ax.text(b, a, label, ha="center", va="center",
-                        color="white" if M[a, b] > 0.55 else "black", fontsize=8)
-        if n_all:
-            perm_line = ""
-            if bstat.get("all_three"):
-                ka = bstat["all_three"]["k"]
-                exp_all = bstat["all_three"]["expected"][ka]
-                perm_line = (f"\nobs {all3} vs exp {exp_all:.0f}, "
-                             f"perm {su.fmt_p(bstat['all_three']['p_all_agree_two_sided'])}")
+                ax.text(b, a, f"{M[a, b]:.0%}\n{int(cnt[a, b])}", ha="center",
+                        va="center",
+                        color="white" if M[a, b] > 0.55 else "black", fontsize=12)
+        if n_all:                            # descriptive three-way count (perm p → table)
             ax.text(0.96, 0.96, "All 3 tools reach crystal:\n"
-                    f"{all3}/{n_all} ({all3 / n_all:.0%})" + perm_line,
-                    transform=ax.transAxes, ha="right", va="top", fontsize=7,
-                    bbox=dict(boxstyle="round,pad=0.4", fc="#f5f5f5", ec="#bbbbbb"))
-        ax.set_title(f"Top-{N}")
+                    f"{all3}/{n_all} ({all3 / n_all:.0%})",
+                    transform=ax.transAxes, ha="right", va="top", fontsize=11,
+                    bbox=dict(boxstyle="round,pad=0.6", fc="#f5f5f5", ec="#bbbbbb"))
+        ax.set_title(f"Top-{N}", fontsize=14)
     for j in range(nb, nrows * ncols):       # hide any unused grid cell
         flat[j].axis("off")
     if im is not None:
@@ -2285,14 +2295,131 @@ def _fig_topN_crystal_matrix(df_rank, out_dir, eq_variant=None):
     fig.suptitle("Both tools reach the CRYSTAL cluster within top-N poses "
                  "(diagonal = one tool alone)\n"
                  f"n={n_total} complexes; {_equibind_rank_note(eq_variant)}", fontsize=12)
-    fig.supxlabel(
-        "Diagonal: reach rate + Wilson 95% CI.   Off-diagonal: co-reach % + count + "
-        "signed φ co-reach vs independence (Fisher two-sided; + redundant, − complementary; "
-        "AutoDock pairs at ceiling = n/e).   Depths are nested cumulative thresholds — "
-        "not an independent test family.",
-        fontsize=7.0, color="0.35")
     p = out_dir / "topN_crystal_cluster_matrix.png"
     fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    tbl_path = _fig_topN_crystal_matrix_stats_table(
+        matrix_stats, buckets, n_total, out_dir, eq_variant)
+    # figure captions (footnotes) live in a txt sidecar, not on the figures
+    cap = ("topN_crystal_cluster_matrix.png / topN_crystal_cluster_matrix_stats.png"
+           " — figure captions\n"
+           f"n={n_total} complexes; {_equibind_rank_note(eq_variant)}\n"
+           + "=" * 72 + "\n\n"
+           "topN_crystal_cluster_matrix.png:\n" + _TOPN_MATRIX_CAPTION + "\n")
+    if tbl_path:
+        cap += ("\ntopN_crystal_cluster_matrix_stats.png:\n"
+                + _TOPN_STATS_TABLE_CAPTION + "\n")
+    cap_path = out_dir / "topN_crystal_cluster_matrix_caption.txt"
+    cap_path.write_text(cap)
+    print(f"  Caption TXT: {cap_path}")
+    return [p, tbl_path] if tbl_path else p
+
+
+def _fig_topN_crystal_matrix_stats_table(matrix_stats, buckets, n_total, out_dir,
+                                         eq_variant=None):
+    """Companion statistics table for topN_crystal_cluster_matrix.png.
+
+    The matrix panels now carry only the descriptive co-reach %/counts; every
+    inferential quantity that used to crowd the cells lives here instead, one
+    column per depth bucket:
+      · diagonal  → marginal crystal-reach rate + Wilson 95 % CI (one row per tool);
+      · off-diag  → signed co-reach association φ + two-sided Fisher p (one row per
+                    tool pair; 'n/e' when a tool sits at a reach ceiling);
+      · all three → observed vs expected joint reach + permutation p.
+    """
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    if not matrix_stats:
+        return None
+    T = list(TOOLS)
+    depth_keys = [f"top{N}" for N in buckets]
+    col_labels = ["Statistic"] + [f"Top-{N}" for N in buckets]
+
+    def _pair_assoc(bstat, t1, t2):
+        od = bstat.get("offdiagonal", {})
+        return od.get(f"{t1}+{t2}") or od.get(f"{t2}+{t1}")
+
+    rows = []                                    # (label, [cell per depth], group_key)
+    # diagonal — marginal crystal-reach rate + Wilson CI
+    for t in T:
+        cells = []
+        for dk in depth_keys:
+            d = matrix_stats.get(dk, {}).get("diagonal", {}).get(t)
+            if d and d.get("n") and d.get("rate") is not None:
+                lo, hi = d["wilson_ci"]
+                cells.append(f"{d['rate']:.0%}  [{lo:.0%}–{hi:.0%}]")
+            else:
+                cells.append("—")
+        rows.append((f"{_TOOL_DISPLAY.get(t, t)} — reach rate", cells, "reach"))
+    # off-diagonal — signed co-reach association φ + Fisher p
+    pairs = [("autodock", "diffdock"), ("autodock", "equibind"),
+             ("diffdock", "equibind")]
+    for t1, t2 in pairs:
+        cells = []
+        for dk in depth_keys:
+            a = _pair_assoc(matrix_stats.get(dk, {}), t1, t2)
+            if a and a.get("estimable"):
+                cells.append(f"φ={a['phi']:+.2f}  {su.fmt_p(a['p'])} {su.p_stars(a['p'])}")
+            elif a:
+                cells.append("n/e (ceiling)")
+            else:
+                cells.append("—")
+        rows.append((f"{_TOOL_DISPLAY[t1]} + {_TOOL_DISPLAY[t2]} — co-reach φ",
+                     cells, "coreach"))
+    # all three — observed vs expected joint reach + permutation p
+    cells = []
+    for dk in depth_keys:
+        allc = matrix_stats.get(dk, {}).get("all_three")
+        if allc:
+            k = allc["k"]
+            cells.append(f"{int(allc['observed'][k])} obs / {allc['expected'][k]:.0f} exp  "
+                         f"perm {su.fmt_p(allc['p_all_agree_two_sided'])}")
+        else:
+            cells.append("—")
+    rows.append(("All three reach — obs vs exp (perm)", cells, "all3"))
+
+    group_fc = {"reach": "#eef3f8", "coreach": "#f4f0f7", "all3": "#f0f5ee"}
+    cell_text = [[lab] + cs for lab, cs, _ in rows]
+    fig_w = 3.4 + 2.7 * len(buckets)
+    fig_h = 0.5 * (len(rows) + 1) + 1.7
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    ax.axis("off")
+    tbl = ax.table(cellText=cell_text, colLabels=col_labels, loc="upper center",
+                   cellLoc="center")
+    tbl.auto_set_font_size(False); tbl.set_fontsize(8.5); tbl.scale(1, 1.6)
+    for (r_i, c_i), cell in tbl.get_celld().items():
+        cell.set_edgecolor("0.85")
+        if r_i == 0:                             # header row
+            cell.set_text_props(fontweight="bold"); cell.set_facecolor("#e6e9ec")
+        else:
+            cell.set_facecolor(group_fc.get(rows[r_i - 1][2], "white"))
+            if c_i == 0:                         # statistic label column
+                cell.get_text().set_ha("left"); cell.PAD = 0.03
+                cell.set_text_props(fontweight="bold")
+    fig.suptitle("Top-N crystal-cluster reach — inferential statistics  "
+                 "(companion to topN_crystal_cluster_matrix.png)\n"
+                 f"n={n_total} complexes; {_equibind_rank_note(eq_variant)}",
+                 fontsize=11)   # caption/footnote → topN_crystal_cluster_matrix_caption.txt
+    fig.subplots_adjust(left=0.02, right=0.98, top=0.82, bottom=0.05)
+    p = out_dir / "topN_crystal_cluster_matrix_stats.png"
+    fig.savefig(p, dpi=150, bbox_inches="tight"); plt.close(fig)
+    # plain-text sidecar of the same table (monospace, aligned) so the numbers
+    # are copy-pasteable without transcribing the PNG.
+    header = (col_labels, *cell_text)
+    widths = [max(len(str(r[c])) for r in header) for c in range(len(col_labels))]
+    def _line(vals):
+        return "  ".join(str(v).ljust(widths[c]) for c, v in enumerate(vals)).rstrip()
+    lines = ["Top-N crystal-cluster reach — inferential statistics",
+             "(companion to topN_crystal_cluster_matrix.png)",
+             f"n={n_total} complexes; {_equibind_rank_note(eq_variant)}",
+             "=" * (sum(widths) + 2 * (len(widths) - 1)),
+             _line(col_labels),
+             "-" * (sum(widths) + 2 * (len(widths) - 1))]
+    lines += [_line(r) for r in cell_text]
+    lines += ["", _TOPN_STATS_TABLE_CAPTION]
+    txt_path = out_dir / "topN_crystal_cluster_matrix_stats.txt"
+    txt_path.write_text("\n".join(lines) + "\n")
+    print(f"  Stats TXT: {txt_path}")
     return p
 
 
@@ -2590,7 +2717,7 @@ def _ablation_pairwise_matrix_text(st):
     """Render the full Holm-adjusted pairwise McNemar family (``st`` from
     :func:`_ablation_paired_stats`) as a compact lower-triangular star matrix,
     rules ordered by precision@1 (best first). Same significance-star vocabulary
-    as the sibling homogeneity figure's ``_pair_stars``."""
+    (:func:`_p_stars`) as the other stats sidecars."""
     pairs = st.get("pairwise_mcnemar_holm") or []
     prec = st.get("precision_at_1") or {}
     if not pairs or not prec:
@@ -2606,6 +2733,60 @@ def _ablation_pairwise_matrix_text(st):
         lines.append(f"{ab.get(r, r):>4} {cells}")
     lines.append("*** p<.001  ** p<.01  * p<.05")
     return "\n".join(lines)
+
+
+_ABLATION_RULE_NAME = {"size": "size (legacy count)", "ntools": "consensus (n tools)",
+                       "tight": "tightest spread", "confidence": "confidence-weighted",
+                       "medoid": "consensus + medoid"}
+
+
+def _format_ablation_stats(st, ranking_rho, match_thr, n_total):
+    """Plain-text rendering of the precision@1 ranking-ablation statistics (panel F
+    of cluster_quality_metrics.png) for the *_stats.txt sidecar and the console.
+
+    Carries every test that used to be annotated on the panel: the Spearman ranking-
+    enrichment, the Cochran-Q omnibus, the per-rule precision@1, and the full Holm-
+    adjusted pairwise McNemar family (as a readable list plus the compact star matrix).
+    """
+    nm = _ABLATION_RULE_NAME
+    out = ["cluster_quality_metrics.png — precision@1 ranking-ablation statistics",
+           f"n={n_total} complexes; rank-1 pocket within {match_thr:g} Å of crystal",
+           "stars: * p<.05  ** p<.01  *** p<.001 (Holm-adjusted McNemar)",
+           "=" * 72]
+    if ranking_rho is not None:
+        out.append(f"ranking enrichment: Spearman rho={ranking_rho:+.3f}")
+    if not st:
+        out.append("paired ablation tests unavailable (no-crystal dataset or too few "
+                   "scored complexes).")
+        return "\n".join(out)
+    out.append(f"omnibus (paired): Cochran Q={st['cochran_q']} df={st['df']} "
+               f"p={_fmt_p(st['p_omnibus'])} {_p_stars(st['p_omnibus'])} "
+               f"(k={st['k']} rules, n={st['n_omnibus']} complexes)")
+    prec = st.get("precision_at_1", {})
+    out.append("")
+    out.append("precision@1 by ranking rule (best first):")
+    for r in sorted(prec, key=lambda k: prec[k], reverse=True):
+        out.append(f"    {nm.get(r, r):<24} {prec[r]:.1%}")
+    out.append("")
+    out.append("pairwise McNemar (a beats b; Holm-adjusted across the full family):")
+    for pr in st.get("pairwise_mcnemar_holm", []):
+        out.append(f"    {nm.get(pr['a'], pr['a']):<22} beats "
+                   f"{nm.get(pr['b'], pr['b']):<22} "
+                   f"wins {pr['a_wins']}/{pr['b_wins']} (n={pr['n_pairs']})  "
+                   f"p_raw={_fmt_p(pr['p_raw'])}  p_Holm={_fmt_p(pr['p_holm'])} "
+                   f"{_p_stars(pr['p_holm'])}")
+    cvs = st.get("consensus_vs_size_mcnemar")
+    if cvs:
+        out.append("")
+        out.append("headline — consensus vs legacy size: consensus wins "
+                   f"{cvs['consensus_wins']}, size wins {cvs['size_wins']} "
+                   f"(n={cvs['n_pairs']})  p_raw={_fmt_p(cvs['p_raw'])}  "
+                   f"p_Holm={_fmt_p(cvs['p_holm'])} {_p_stars(cvs['p_holm'])}")
+    mtxt = _ablation_pairwise_matrix_text(st)
+    if mtxt:
+        out.append("")
+        out.append(mtxt)
+    return "\n".join(out)
 
 
 def _wilcoxon_rankbiserial(x, y):
@@ -2871,10 +3052,13 @@ def _homogeneity_stats(comp, reach_R, internal, internal_prot, rad_by_n,
     return rep
 
 
-def _print_homogeneity_stats(rep):
+def _format_homogeneity_stats(rep):
+    """Render the homogeneity statistical tests as a plain-text block (shared by
+    the console printout and the crystal_cluster_homogeneity_stats.txt sidecar)."""
+    out = ["  ── crystal_cluster_homogeneity.png statistics ──"]
+
     def line(s=""):
-        print("    " + s)
-    print("\n  ── crystal_cluster_homogeneity.png statistics ──")
+        out.append("    " + s)
     a = rep.get("A_pose_counts")
     if a:
         line(f"(A) pose counts | Friedman chi2={a['chi2']} df={a['df']} "
@@ -2920,6 +3104,11 @@ def _print_homogeneity_stats(rep):
                  f"n_tools~pose# rho={pc.get('rho_ntools_vs_posecount')}")
             line(f"      → {pc.get('reading')}")
         line(f"      CAVEAT: {d['caveat']}")
+    return "\n".join(out)
+
+
+def _print_homogeneity_stats(rep):
+    print("\n" + _format_homogeneity_stats(rep))
 
 
 def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None,
@@ -2998,18 +3187,12 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None,
             warnings.warn(f"homogeneity stats failed: {e}")
             stats_rep = None
 
-    def _short(t):                              # AutoDock Vina -> AV, DiffDock -> DD
-        return "".join(w[0] for w in _TOOL_DISPLAY.get(t, t).split())
-
-    def _pair_stars(posthoc, key="p_holm"):
-        # "AV-DD *** | AV-EB *** | DD-EB **" from a post-hoc list
-        segs = []
-        for h, (i, j) in zip(posthoc, [(0, 1), (0, 2), (1, 2)]):
-            segs.append(f"{_short(T[i])}-{_short(T[j])} {_p_stars(h[key])}")
-        return "Holm post-hoc:  " + "  |  ".join(segs)
-
     rng = np.random.default_rng(42)
-    tri_col = ["#C44E52", "#DD8452", "#55A868"]
+    # consensus-count palette for panels B & D (1 / 2 / all-3 tools): a purple
+    # sequential ramp (light→dark = more consensus), deliberately distinct from the
+    # per-tool colours (AutoDock blue / DiffDock green / EquiBind red) so a bar/box is
+    # never confused with a tool.
+    tri_col = ["#CBB9E0", "#9B72C0", "#6A3D9A"]
     fig, axes = plt.subplots(2, 2, figsize=(13.2, 10.4))
     axA, axB, axC, axD = axes.ravel()
 
@@ -3027,14 +3210,7 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None,
     axA.set_xticks([1, 2, 3]); axA.set_xticklabels([_TOOL_DISPLAY.get(t, t) for t in T])
     axA.set_ylabel("Poses a tool places in the crystal cluster\n(top-15 scope)")
     axA.set_ylim(-0.5, 18)
-    titleA = "Pose contribution per tool"
-    if stats_rep and stats_rep.get("A_pose_counts"):
-        a = stats_rep["A_pose_counts"]
-        titleA += (f"\nFriedman χ²={a['chi2']:.1f}, p={_fmt_p(a['p'])}, "
-                   f"Kendall W={a['kendall_w']:.2f}")
-        axA.text(2, 17.0, _pair_stars(a["posthoc_wilcoxon_holm"]), ha="center",
-                 va="center", fontsize=7.6, family="monospace", color="0.25")
-    axA.set_title(titleA)
+    axA.set_title("Pose contribution per tool")  # tests → *_stats.txt sidecar
     axA.grid(axis="y", alpha=0.25); axA.set_axisbelow(True)
 
     xs = [1, 2, 3]
@@ -3047,11 +3223,7 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None,
     axB.set_ylim(0, (max(fr) if fr else 1) + 0.12)
     axB.set_ylabel(f"Fraction of complexes (n={n_total})")
     axB.set_xlabel("Number of tools contributing ≥1 pose")
-    titleB = "Consensus richness of the crystal cluster"
-    if stats_rep and stats_rep.get("B_consensus"):
-        b = stats_rep["B_consensus"]
-        titleB += f"\nvs independence null: permutation p={_fmt_p(b['p_omnibus'])}"
-    axB.set_title(titleB)
+    axB.set_title("Consensus richness of the crystal cluster")  # tests → *_stats.txt
     axB.grid(axis="y", alpha=0.25); axB.set_axisbelow(True)
 
     bp = axC.boxplot([internal[t] if internal[t] else [np.nan] for t in T],
@@ -3064,24 +3236,15 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None,
         if yy:
             axC.scatter(rng.normal(i, 0.05, len(yy)), yy, s=7,
                         color=TOOL_COLORS[t], alpha=0.25, zorder=1)
-        axC.text(i, -0.08, f"n={len(yy)}", ha="center", va="top", fontsize=8,
-                 color=TOOL_COLORS[t])
+        # n= over each box (blended transform: x in data, y in axes fraction) so the
+        # label never falls below the axis and gets clipped
+        axC.text(i, 0.98, f"n={len(yy)}", transform=axC.get_xaxis_transform(),
+                 ha="center", va="top", fontsize=8, color=TOOL_COLORS[t])
     axC.set_xticks([1, 2, 3]); axC.set_xticklabels([_TOOL_DISPLAY.get(t, t) for t in T])
     axC.set_ylabel("Std. of a tool's pose distances to the\ncrystal centroid, within the cluster (Å)")
-    titleC = "Internal tightness of each tool's own poses"
-    _c_top = None
-    if stats_rep and stats_rep.get("C_tightness"):
-        c = stats_rep["C_tightness"]
-        titleC += (f"\nKruskal–Wallis H={c['H']:.1f}, p={_fmt_p(c['p'])}, "
-                   f"ε²={c['epsilon_sq']:.2f}")
-        _all = [v for t in T for v in internal[t]]
-        _c_top = (max(_all) * 1.16 if _all else None)
-        if _c_top:
-            axC.text(2, max(_all) * 1.08, _pair_stars(c["posthoc_dunn_holm"]),
-                     ha="center", va="center", fontsize=7.6, family="monospace",
-                     color="0.25")
-    axC.set_title(titleC)
-    axC.set_ylim(-0.15, _c_top)
+    axC.set_title("Internal tightness of each tool's own poses")  # tests → *_stats.txt
+    _all_c = [v for t in T for v in internal[t]]
+    axC.set_ylim(-0.02, (max(_all_c) * 1.14 if _all_c else None))   # headroom for n= labels
     axC.grid(axis="y", alpha=0.25); axC.set_axisbelow(True)
 
     dataD = [rad_by_n[k] if rad_by_n[k] else [np.nan] for k in xs]
@@ -3100,37 +3263,27 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None,
     axD.set_xticks(xs); axD.set_xticklabels(["1 tool", "2 tools", "all 3 tools"])
     axD.set_ylabel("Crystal-cluster radius (max pose->center, Å)")
     axD.set_xlabel("Number of tools contributing to the crystal cluster")
-    titleD = "Spatial spread vs consensus richness"
-    if stats_rep and stats_rep.get("D_radius_trend"):
-        dd = stats_rep["D_radius_trend"]
-        titleD += f"\nJonckheere–Terpstra trend p={_fmt_p(dd['p'])}"
-        pc = dd.get("posecount_control", {})
-        pr = pc.get("partial_rho")
-        if isinstance(pr, (int, float)):
-            axD.text(0.5, 0.035,
-                     f"Spearman ρ={dd['spearman_rho']:+.2f}  →  partial ρ={pr:+.2f}"
-                     f"  (control: cluster pose count)", transform=axD.transAxes,
-                     ha="center", va="bottom", fontsize=8, family="monospace",
-                     color="0.2", bbox=dict(boxstyle="round,pad=0.3",
-                     facecolor="white", edgecolor="0.7", alpha=0.85))
-    axD.set_title(titleD)
+    axD.set_title("Spatial spread vs consensus richness")  # tests → *_stats.txt
     axD.grid(axis="y", alpha=0.25); axD.set_axisbelow(True)
 
     _label_panels(axes)
-    suptitle = ("How homogeneous is the crystal-closest cluster?  "
-                "Composition, internal tightness and spatial spread\n"
-                f"n={n_total} complexes; top-15 poses per tool; "
-                f"{_equibind_rank_note(eq_variant)}")
-    if stats_rep:
-        suptitle += "   ·   stars: * p<.05  ** p<.01  *** p<.001 (Holm)"
-    fig.suptitle(suptitle, fontsize=13)
+    fig.suptitle("How homogeneous is the crystal-closest cluster?  "
+                 "Composition, internal tightness and spatial spread", fontsize=13)
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     p = out_dir / "crystal_cluster_homogeneity.png"
     fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
     if stats_rep:
         (out_dir / "crystal_cluster_homogeneity_stats.json").write_text(
             json.dumps(stats_rep, indent=2, default=str))
+        header = ("crystal_cluster_homogeneity.png — statistical tests\n"
+                  f"n={n_total} complexes; top-15 poses per tool; "
+                  f"{_equibind_rank_note(eq_variant)}\n"
+                  "stars: * p<.05  ** p<.01  *** p<.001 (Holm-adjusted)\n"
+                  + "=" * 72 + "\n")
+        txt_path = out_dir / "crystal_cluster_homogeneity_stats.txt"
+        txt_path.write_text(header + _format_homogeneity_stats(stats_rep) + "\n")
         _print_homogeneity_stats(stats_rep)
+        print(f"  Stats TXT:  {txt_path}")
         print(f"  Stats JSON: {out_dir / 'crystal_cluster_homogeneity_stats.json'}")
     return p
 
@@ -3246,7 +3399,7 @@ def _fig_cluster_quality(df, ablation, ranking_rho, out_dir, match_thr,
         a.set_ylabel("Number of complexes")
         a.grid(alpha=0.25); a.set_axisbelow(True)
 
-    fig, ax = plt.subplots(2, 3, figsize=(16.5, 9.5))
+    fig, ax = plt.subplots(3, 2, figsize=(11, 14.25))
 
     # (A) Silhouette
     _hist(ax[0, 0], _col("silhouette"),
@@ -3261,7 +3414,7 @@ def _fig_cluster_quality(df, ablation, ranking_rho, out_dir, match_thr,
           "Calinski-Harabasz index (98th-pctile clipped)", "#55A868")
 
     # (C) Davies-Bouldin
-    _hist(ax[0, 2], _col("db_score"),
+    _hist(ax[1, 0], _col("db_score"),
           "Davies-Bouldin index (k≥2 only)\nlower = better",
           "Davies-Bouldin index", "#C44E52")
 
@@ -3269,11 +3422,12 @@ def _fig_cluster_quality(df, ablation, ranking_rho, out_dir, match_thr,
     comp = pd.to_numeric(df.get("compactness"), errors="coerce")
     sep = pd.to_numeric(df.get("separation"), errors="coerce")
     m = comp.notna() & sep.notna()
-    a = ax[1, 0]
+    a = ax[1, 1]
     if m.any():
         a.scatter(comp[m], sep[m], s=18, alpha=0.5, color="#8172B3", edgecolors="none")
-        a.axhline(float(match_thr), color="k", ls="--", lw=0.8,
+        a.axhline(float(match_thr), color="red", ls="--", lw=0.8,
                   label=f"match threshold {match_thr:g} Å")
+        a.set_ylim(0, 30)
         a.legend(fontsize=8)
     else:
         a.text(0.5, 0.5, "no data", ha="center", va="center",
@@ -3284,14 +3438,14 @@ def _fig_cluster_quality(df, ablation, ranking_rho, out_dir, match_thr,
     a.grid(alpha=0.25); a.set_axisbelow(True)
 
     # (E) bootstrap stability
-    _hist(ax[1, 1], _col("boot_stability"),
+    _hist(ax[2, 0], _col("boot_stability"),
           f"Bootstrap stability ({stability_boot} resamples)\nreproducibility of the partition",
           "Mean best-cluster Jaccard overlap", "#CCB974",
           ref=[(0.75, "stable ≥0.75", "#2ca02c"),
                (0.5, "dissolved <0.5", "#d62728")])
 
     # (F) precision@1 ranking ablation
-    a = ax[1, 2]
+    a = ax[2, 1]
     rule_lab = {"size": "size (legacy count)", "ntools": "consensus (n tools)",
                 "tight": "tightest spread", "confidence": "confidence-weighted",
                 "medoid": "consensus + medoid"}
@@ -3318,25 +3472,11 @@ def _fig_cluster_quality(df, ablation, ranking_rho, out_dir, match_thr,
     else:
         a.text(0.5, 0.5, "no data", ha="center", va="center",
                transform=a.transAxes, color="0.5")
-    ttl = f"Precision@1 — rank-1 pocket within {match_thr:g} Å of crystal (default = consensus)"
-    if ranking_rho is not None:
-        ttl += f"\nranking enrichment Spearman ρ={ranking_rho:.2f}"
+    # Spearman enrichment, Cochran-Q omnibus and the Holm-adjusted pairwise McNemar
+    # family are moved off the panel → cluster_quality_metrics_stats.txt.
     st = _ablation_paired_stats(df)
-    if st:
-        # omnibus in the title; the full pairwise family (incl. consensus vs size)
-        # is the star matrix below, and the console/summary.json carry the counts.
-        ttl += (f"\nCochran Q={st['cochran_q']:.1f}, p={_fmt_p(st['p_omnibus'])} "
-                f"(paired, k={st['k']}, n={st['n_omnibus']})")
-    a.set_title(ttl)
-    # complete Holm-adjusted pairwise McNemar family as a lower-triangular star matrix
-    if bars and st:
-        mtxt = _ablation_pairwise_matrix_text(st)
-        if mtxt:
-            a.text(0.985, 0.03, mtxt, transform=a.transAxes, ha="right", va="bottom",
-                   family="monospace", fontsize=6.0, color="0.15", zorder=5,
-                   linespacing=1.25,
-                   bbox=dict(boxstyle="round,pad=0.3", facecolor="white",
-                             edgecolor="0.75", alpha=0.92))
+    a.set_title("Precision@1 — rank-1 pocket within "
+                f"{match_thr:g} Å of crystal\n(default = consensus)")
     a.set_xlabel("Precision@1 (fraction of complexes)")
     a.grid(axis="x", alpha=0.25); a.set_axisbelow(True)
 
@@ -3346,6 +3486,12 @@ def _fig_cluster_quality(df, ablation, ranking_rho, out_dir, match_thr,
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     p = out_dir / "cluster_quality_metrics.png"
     fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    if st or ranking_rho is not None:
+        txt = _format_ablation_stats(st, ranking_rho, match_thr, len(df))
+        txt_path = out_dir / "cluster_quality_metrics_stats.txt"
+        txt_path.write_text(txt + "\n")
+        print("\n" + txt)
+        print(f"  Stats TXT:  {txt_path}")
     return p
 
 
@@ -3706,6 +3852,236 @@ def _save_analysis_cache(cache_path: Path, sig: dict, ok: list) -> None:
             pass
 
 
+# ════════════════════════════════════════════════════════════════════════
+# Rank-1 pose quality cross-tab — near-native (RMSD < 2 Å) × crystal cluster
+# ════════════════════════════════════════════════════════════════════════
+# Produced in BOTH pose-set flavours on EVERY run, independent of --pb-valid-only,
+# so a single invocation always yields the all-poses AND the PB-valid table:
+#   • all_poses — rank-1 = each tool's native top pick (Vina mode 1 / DiffDock
+#     confidence-1 / EquiBind best-affinity), clustered over ALL poses; INCLUDES
+#     rank-1 poses that fail PoseBusters.
+#   • pb_valid  — rank-1 = each tool's best PoseBusters-valid pose (survivors
+#     re-ranked), clustered over the PB-valid poses only.
+# Each flavour uses its OWN clustering (the crystal-closest cluster is defined on
+# that pose set), so the two tables reproduce what a plain vs --pb-valid-only run
+# each give. The flavour matching the main run reuses its analysis; the other is
+# computed with a lite clustering pass (bootstrap + placement-mode analysis off).
+
+def _compute_ok_lite(csv, eq_variant, ids, pb_valid_only, dd_variant, args,
+                     cents_seed=None):
+    """Per-complex clustering pass for the rank-1 cross-tab with the expensive
+    bootstrap-stability + placement-mode passes OFF (n_boot=0, do_placement=False):
+    the cross-tab only needs each pose's rank, RMSD-to-crystal and crystal-cluster
+    membership. ``cents_seed`` reuses centroids the main run already extracted; only
+    poses missing from it are (re)loaded, so when the main run is all-poses the
+    PB-valid subset pass needs no new centroid extraction. Same pose loading and
+    per-complex outlier removal as the main analysis loop, so counts match a real
+    run of the corresponding mode."""
+    df = load_poses(csv, eq_variant, ids, pb_valid_only, dd_variant)
+    if df.empty:
+        return []
+    complexes = sorted(df["protein"].unique())
+    if args.limit:
+        complexes = complexes[:args.limit]
+        df = df[df["protein"].isin(complexes)].copy()
+    cents = dict(cents_seed) if cents_seed else {}
+    missing = sorted(set(df["pose_file"].unique()) - set(cents))
+    if missing:
+        with ProcessPoolExecutor(max_workers=max(1, args.workers)) as ex:
+            for path, cx, cy, cz, na in ex.map(_extract_centroid, missing, chunksize=64):
+                if cx is not None:
+                    cents[path] = (cx, cy, cz)
+    keep_idx = []                                   # same per-complex outlier removal as main
+    for cid, sub in df.groupby("protein"):
+        cc = np.asarray([cents[f] for f in sub["pose_file"] if f in cents])
+        if len(cc) == 0:
+            continue
+        med = np.median(cc, axis=0)
+        for i, f in zip(sub.index, sub["pose_file"]):
+            c = cents.get(f)
+            if c is not None and np.linalg.norm(np.asarray(c) - med) <= args.outlier_dist:
+                keep_idx.append(i)
+    df = df.loc[keep_idx].copy()
+    results = []
+    for cid in complexes:
+        sub = df[df["protein"] == cid]
+        if sub.empty:
+            continue
+        crystal = crystal_centroid(Path(args.benchmark_dir), cid)
+        stem = f"{cid}_protein"
+        fp_out = Path(args.fpocket_dir) / f"{stem}_out"
+        pr_csv = Path(args.p2rank_dir) / f"{stem}.pdb_predictions.csv"
+        fp_pockets = parse_fpocket(fp_out)[:args.top_n_pockets] if fp_out.exists() else []
+        pr_pockets = parse_p2rank(pr_csv)[:args.top_n_pockets] if pr_csv.exists() else []
+        res = analyze_complex(cid, sub, cents, crystal, fp_pockets, pr_pockets,
+                              args.match_thr, False, args.mode_rmsd_thr,
+                              args.rmsd_pose_cap, args.site_cluster,
+                              args.pocket_radius, args.rank_by, 0)
+        results.append(res)
+    return [r for r in results if not r.get("skipped")]
+
+
+def _rank1_quality_counts(ok):
+    """Per-tool contingency of the rank-1 pose over (near-native RMSD < 2 Å) ×
+    (in the crystal-closest cluster), read from the rank-1 rows of ``ok`` (the
+    ``_per_rank`` payload). ``ic``/``rm`` may be NaN (no crystal / uncomputable
+    RMSD); a NaN counts as a failure of that axis."""
+    agg = {t: dict(n=0, both=0, near_only=0, cluster_only=0, neither=0, nan_rmsd=0)
+           for t in TOOLS}
+    for r in ok:
+        if not r.get("has_crystal"):
+            continue
+        for (_cid, t, rp, _cd, rm, ic, _cl) in r.get("_per_rank", []):
+            if rp != 1 or t not in agg:
+                continue
+            a = agg[t]
+            a["n"] += 1
+            has_rmsd = (rm == rm)
+            near = has_rmsd and (rm < 2.0)
+            if not has_rmsd:
+                a["nan_rmsd"] += 1
+            incl = bool(ic) if not (isinstance(ic, float) and ic != ic) else False
+            if near and incl:
+                a["both"] += 1
+            elif near and not incl:
+                a["near_only"] += 1
+            elif (not near) and incl:
+                a["cluster_only"] += 1
+            else:
+                a["neither"] += 1
+    return agg
+
+
+_RANK1_QUALITY_MODES = [
+    ("all_poses", False,
+     "all rank-1 poses — native top pick per tool (incl. PB-invalid); all-poses clustering"),
+    ("pb_valid", True,
+     "PB-valid rank-1 poses — best pose passing PoseBusters (re-ranked); PB-valid clustering"),
+]
+
+
+def _fig_rank1_quality_crosstab(df_ct, out_dir, eq_variant=None, dd_variant="diffdock"):
+    """Two stacked tables (all_poses / pb_valid) of the per-tool rank-1 quality
+    contingency for the notebook + thesis. Purely descriptive counts."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    if df_ct.empty:
+        return None
+    cols = [("tool_display", "tool"), ("n", "N"),
+            ("near_and_in_cluster", "<2Å & in\ncluster"),
+            ("fail_near_andor_cluster", "fail ≥1\n(and/or)"),
+            ("not_near_native", "not <2Å"),
+            ("not_in_crystal_cluster", "not in\ncluster"),
+            ("fail_both", "complete\nmiss")]
+    modes = [("all_poses", "All rank-1 poses (native top pick — incl. PB-invalid)"),
+             ("pb_valid", "PB-valid rank-1 poses (best PoseBusters-valid pose)")]
+    fig, axes = plt.subplots(len(modes), 1, figsize=(9.2, 4.6), constrained_layout=True)
+    for ax, (key, sub_title) in zip(np.atleast_1d(axes), modes):
+        ax.axis("off")
+        ax.set_title(sub_title, fontsize=9.5, fontweight="bold", loc="left")
+        d = df_ct[df_ct["pose_set"] == key]
+        if d.empty:
+            ax.text(0.5, 0.5, "(no data)", ha="center")
+            continue
+        cell = [[str(r[c]) for c, _ in cols] for _, r in d.iterrows()]
+        tbl = ax.table(cellText=cell, colLabels=[h for _, h in cols],
+                       cellLoc="center", loc="center")
+        tbl.auto_set_font_size(False)
+        tbl.set_fontsize(8.5)
+        tbl.scale(1, 1.6)
+        for (row, _c), cellobj in tbl.get_celld().items():
+            if row == 0:
+                cellobj.set_facecolor("#e8eef4")
+                cellobj.set_text_props(fontweight="bold")
+    fig.suptitle("Rank-1 pose quality — near-native (RMSD < 2 Å) × crystal cluster, per tool\n"
+                 f"Benchmark; {_equibind_rank_note(eq_variant)}",
+                 fontsize=11, fontweight="bold")
+    p = out_dir / "rank1_quality_crosstab.png"
+    fig.savefig(p, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return p
+
+
+def _rank1_quality_crosstabs(csv, eq_variant, ids, dd_variant, args, out_dir,
+                             ok_main, cents_seed=None, render_png=True):
+    """Write the per-tool rank-1 quality cross-tab in BOTH pose-set flavours
+    (all_poses + pb_valid): a CSV, a human-readable TXT and (unless render_png is
+    False) a PNG. The flavour whose ``--pb-valid-only`` state matches the main run
+    reuses ``ok_main``; the other is computed with a lite clustering pass."""
+    records, txt_blocks = [], []
+    for key, pb_only, desc in _RANK1_QUALITY_MODES:
+        if bool(pb_only) == bool(args.pb_valid_only) and ok_main:
+            ok_m = ok_main
+        else:
+            ok_m = _compute_ok_lite(csv, eq_variant, ids, pb_only, dd_variant, args,
+                                    cents_seed=cents_seed)
+        agg = _rank1_quality_counts(ok_m)
+        head = (f"{'tool':22s} {'N':>4} | {'<2Å&inCl':>8} {'<2Åonly':>7} {'inClonly':>8} "
+                f"{'neither':>7} | {'not<2Å':>6} {'notInCl':>7} {'fail≥1':>6} {'failboth':>8}")
+        lines = [f"[{key}]  {desc}", head, "-" * len(head)]
+        for t in TOOLS:
+            a = agg[t]
+            n = a["n"]
+            if n == 0:
+                continue
+            both = a["both"]
+            not_near = a["cluster_only"] + a["neither"]
+            not_cl = a["near_only"] + a["neither"]
+            fail_any = n - both
+            records.append(dict(
+                pose_set=key, tool=t, tool_display=_TOOL_DISPLAY[t], n=n,
+                near_and_in_cluster=both, near_not_in_cluster=a["near_only"],
+                far_but_in_cluster=a["cluster_only"], neither=a["neither"],
+                not_near_native=not_near, not_in_crystal_cluster=not_cl,
+                fail_near_andor_cluster=fail_any, fail_both=a["neither"],
+                pct_fully_correct=round(100 * both / n, 1),
+                pct_fail_any=round(100 * fail_any / n, 1),
+                nan_rmsd=a["nan_rmsd"]))
+            lines.append(f"{_TOOL_DISPLAY[t]:22s} {n:>4} | {both:>8} {a['near_only']:>7} "
+                         f"{a['cluster_only']:>8} {a['neither']:>7} | {not_near:>6} "
+                         f"{not_cl:>7} {fail_any:>6} {a['neither']:>8}")
+        txt_blocks.append("\n".join(lines))
+
+    df_ct = pd.DataFrame(records)
+    csv_path = out_dir / "rank1_quality_crosstab.csv"
+    df_ct.to_csv(csv_path, index=False)
+
+    header = [
+        "Rank-1 pose quality — near-native (RMSD < 2 Å) × crystal-closest cluster, per tool",
+        f"Benchmark; {_equibind_rank_note(eq_variant)}; DiffDock variant = {dd_variant}.",
+        "Both flavours are written on EVERY run, independent of --pb-valid-only:",
+        "  • all_poses — rank-1 = each tool's native top pick (Vina mode 1 / DiffDock",
+        "    confidence-1 / EquiBind best-affinity); clustering over ALL poses; includes",
+        "    rank-1 poses that FAIL PoseBusters.",
+        "  • pb_valid  — rank-1 = each tool's best PoseBusters-valid pose (valid poses",
+        "    re-ranked); clustering over the PB-valid poses only.",
+        "=" * 78,
+    ]
+    key_lines = [
+        "",
+        "Column key:",
+        "  N        = complexes with a rank-1 pose for that tool",
+        "  <2Å&inCl = rank-1 near-native AND in the crystal cluster (fully correct)",
+        "  <2Åonly  = near-native but NOT in the crystal cluster (rare edge case)",
+        "  inClonly = in the crystal cluster but RMSD ≥ 2 Å (right pocket, wrong pose)",
+        "  neither  = both fail (complete miss)",
+        "  not<2Å   = RMSD ≥ 2 Å            (= inClonly + neither)",
+        "  notInCl  = outside the crystal cluster (= <2Åonly + neither)",
+        "  fail≥1   = not < 2 Å AND/OR not in cluster (= N − <2Å&inCl)  ← the 'and/or' count",
+        "  failboth = neither near-native nor in cluster",
+    ]
+    txt_path = out_dir / "rank1_quality_crosstab.txt"
+    txt_path.write_text("\n".join(header) + "\n\n" + "\n\n".join(txt_blocks) + "\n"
+                        + "\n".join(key_lines) + "\n")
+
+    png_path = _fig_rank1_quality_crosstab(df_ct, out_dir, eq_variant, dd_variant) \
+        if render_png else None
+    print(f"  Rank-1 quality cross-tab (all_poses + pb_valid) → {csv_path.name}, "
+          f"{txt_path.name}" + (f", {png_path.name}" if png_path else ""))
+    return csv_path
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -3807,6 +4183,7 @@ def main(argv=None) -> int:
     # ── reuse the cached per-complex analysis when the inputs are unchanged ──
     sig = _analysis_signature(args, eq_variant, dd_variant)
     cache_path = out_dir / "analysis_cache.pkl"
+    main_cents: Dict[str, Tuple[float, float, float]] = {}   # reused by the rank-1 cross-tab
     ok = None if args.force else _load_analysis_cache(cache_path, sig)
     if ok is not None:
         print(f"Reusing cached analysis: {len(ok)} complexes (inputs unchanged; "
@@ -3834,6 +4211,7 @@ def main(argv=None) -> int:
                 if cx is not None:
                     cents[path] = (cx, cy, cz)
         print(f"  loaded {len(cents)}/{len(files)} centroids")
+        main_cents = cents          # seed the rank-1 cross-tab so it skips re-extraction
 
         # ── per-complex outlier removal (>outlier-dist from median) ──────
         keep_idx = []
@@ -3972,6 +4350,16 @@ def main(argv=None) -> int:
                            "cluster": None if cl is None else int(cl)})
     df_rank = pd.DataFrame(prrows)
     df_rank.to_csv(out_dir / "per_rank_distance.csv", index=False)
+
+    # ── rank-1 pose quality cross-tab — BOTH pose-set flavours, every run ──
+    # (all_poses + pb_valid, near-native × crystal-cluster), independent of the
+    # --pb-valid-only flag; wrapped so an add-on failure never breaks the report.
+    try:
+        _rank1_quality_crosstabs(csv, eq_variant, ids, dd_variant, args, out_dir,
+                                 ok_main=ok, cents_seed=main_cents,
+                                 render_png=not args.no_plot)
+    except Exception as e:                                   # pragma: no cover
+        print(f"  [rank1-quality] cross-tab skipped: {e}")
 
     # ── aggregate report ─────────────────────────────────────────────────
     dc = df_complex[df_complex["has_crystal"]] if "has_crystal" in df_complex else df_complex

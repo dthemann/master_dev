@@ -35,7 +35,7 @@ force_pocket: true
 clamp_pose_to_pocket: true
 clamp_mode: "off"          # no-op for unguided poses (clampON == clampOFF on benchmark); quoted so YAML keeps the string
 refine_mode: "on"          # single refined variant only (the benchmark-best refiner below); quoted so YAML keeps the string
-refine_tool: smina         # smina | gnina | both — gnina is the benchmark-best unguided variant (physics + CNN rescore)
+refine_tool: gnina         # smina | gnina | both — gnina is the benchmark-best unguided variant (physics + CNN rescore)
 smina_search: local_only
 smina_autobox_add: 4.0
 smina_cpu: 1
@@ -71,9 +71,9 @@ uff_add_hydrogens: true
 uff_strip_nonstandard: true
 uff_vdw_thresh: 10.0
 gpu_batch_size: 8
-n_parallel_workers: 0
+n_parallel_workers: 30
 parallel_conformer_gen: true
-skip_existing: true       # TEMP: force full re-dock so the June smina poses are regenerated
+skip_existing: false       # TEMP: force full re-dock so the June smina poses are regenerated
                            # with gnina refinement. In refine_mode:on both refiners write the
                            # SAME filename (unguided_NNN.sdf, no suffix), so skip_existing:true
                            # sees the existing smina file and skips. Revert to true once the

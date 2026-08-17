@@ -3,27 +3,58 @@
 # Validates poses produced by the three benchmark docking cells in
 # Master_Docking.ipynb against the PoseBuster Benchmark receptors.
 #
-# The notebook cell that drives this config first stages the benchmark
-# docking outputs into the flat layout each collector expects, under
-# `posebusters_results/_benchmark_staging/`.
+# DiffDock and EquiBind are staged as symlinked combo directories. AutoDock is
+# read directly from the completed full-protein Vina tree so its original
+# receptor stem/provenance cannot be erased by flat-link renaming.
 
 work_dir: /home/manndo/master_dev
 
-# Staged receptors: symlinks to <pdb_id>_protein.pdb for every benchmark complex.
+# Legacy schema field; ignored by receptor_policy: prepared_per_pose below.
+# No shared receptor staging file participates in this benchmark.
 receptors_dir: posebusters_results/_benchmark_staging/receptors
 
-# Staged docking outputs (created by the notebook cell):
-#   autodock/  : <pdb_id>__<pdb_id>_vina_out.pdbqt symlinks
+# Docking outputs:
+#   autodock   : nested completed full-protein Vina outputs
+#   unidock    : transactionally complete tiled Uni-Dock merged outputs (optional;
+#                uncomment only after that campaign has completed)
 #   diffdock/  : <pdb_id>__<pdb_id>/ subdir with the SDF poses
 #   equibind/  : <pdb_id>__<pdb_id>/ subdir with the SDF poses
 docking_directories:
-  autodock:        posebusters_results/_benchmark_staging/autodock
+  autodock:        Dockings/vina_results_full_protein_vina_scoring
+  # unidock:       Dockings/unidock_results_full_protein_vina_scoring
   diffdock:        posebusters_results/_benchmark_staging/diffdock
   equibind_guided: posebusters_results/_benchmark_staging/equibind
 
-# "dock" runs PoseBusters with the receptor; falls back to "mol" if the
-# receptor PDB cannot be resolved for a given pose.
+# Validate every pose against the prepared receptor used by its final
+# receptor-dependent docking stage. Missing methods/receptors are fatal; the
+# benchmark must never silently become a two-method or ligand-only run.
 config_mode: dock
+receptor_policy: prepared_per_pose
+require_all_methods: true
+require_validation_receptors: true
+# Fatal on any failed pose inside the collected three-method intersection.
+# Incomplete combo directories are warned about and excluded before intersection.
+require_complete_results: true
+# Reproducibility lock for the currently finalized cohort. 7WCF_ACP is now
+# counted: its EquiBind run was re-finalized (guided_results.json reconstructed
+# from the 244 loadable refined pose SDFs; 4 corrupt partial-write SDFs dropped),
+# so all three methods now have it. Cohort raised 302 -> 303. The remaining gap
+# to 307 is the 5 DiffDock preprocessing skips (7B2C_TP7, 7D6O_MTE, 7FRX_O88,
+# 7M31_TDR, 8F4J_PHO).
+expected_common_combinations: 303
+validation_receptor_directories:
+  autodock:        Dockings/vina_results_full_protein_vina_scoring
+  # Uni-Dock reuses the exact prepared AutoDock receptor tree, not its output tree.
+  # unidock:       Dockings/vina_results_full_protein_vina_scoring
+  diffdock:        Dockings/Benchmark_DiffDock
+  equibind_guided: Dockings/Benchmark_Equibind
+
+# When AutoDock optimization outputs are present, select exactly one rank/geometry
+# family for a canonical three-/four-tool comparison. Remove the block to validate
+# every committed original/smina/gnina variant side by side.
+# variant_filter:
+#   autodock: original       # or smina / gnina
+#   unidock: tiled
 
 save_interval: 200
 overwrite: false
@@ -31,8 +62,8 @@ num_workers: 0
 
 # ---------------------------------------------------------------------------
 # Performance / stability (added to stop long runs stalling after a few 1000
-# poses). Every key below is optional; the value shown is the built-in default,
-# so leaving them out keeps the same behaviour.
+# poses). These values are explicit benchmark choices; they are not all the
+# runner's generic defaults.
 # ---------------------------------------------------------------------------
 
 # Suppress warning chatter — all Python warnings (incl. the repeated pandas
@@ -57,13 +88,11 @@ limit_worker_threads: true
 # null to keep workers alive for the whole run. CLI: --max-tasks-per-child.
 worker_maxtasks: 200
 
-# Per-pose wall-clock cap (seconds) for a single PoseBusters bust() call. A
-# pathological ligand can otherwise send the 50-conformer ensemble into an
-# effectively unbounded compute and stall a worker. A timed-out pose is counted
-# separately, skipped (NOT written to the results CSV, so a resume run retries
-# it), and its path is appended to posebusters_timeouts.txt next to the results
-# CSV. Set to 0 or null to disable. CLI: --pose-timeout.
-pose_timeout: 180
+# Per-pose killing would change benchmark coverage relative to a normal stock
+# PoseBusters call, so it is disabled here. The pool-level stall watchdog below
+# can still recover from a dead/wedged worker, and require_complete_results makes
+# any unrecovered pose fatal instead of publishing a partial benchmark.
+pose_timeout: null
 
 # Stall recovery. A dead worker — e.g. OOM-killed under memory pressure, which
 # this WSL2 box is prone to (swap already heavily used) — makes the Pool's
@@ -88,61 +117,15 @@ monitor: true
 monitor_interval: 30
 
 # All PoseBusters CSVs / PNGs land here:
-output_base_dir: posebusters_results/benchmark
+output_base_dir: posebusters_results/benchmark_full_protein_vina_scoring
 
-# Bond-order template SDFs for AutoDock PDBQT -> SDF conversion.
-# The benchmark crystal ligands serve as perfect templates.
+# Bond-order templates for legacy PDBQTs without embedded Meeko SMILES. Current
+# Vina outputs use the embedded SMILES and fail closed if Meeko cannot export.
 ligand_template_dirs:
   - Data/PoseBuster Benchmark Set
 
 copy_proved_poses: true
 make_plots: true
 
-# HETATM keep-mode (preferred). Validate against EXACTLY the atoms the docker
-# saw: keep only the injected cofactor+metal set and strip every other HETATM
-# (buffers, glycans, cognate-ligand remnants, stray chloride, ...). "auto"
-# pulls the same DEFAULT_KEEP_COFACTORS|DEFAULT_KEEP_METALS that the docking
-# step injects when `retain_hetatm_residues: true`, so the two stay in lock-step
-# and PoseBusters can only ever flag clashes against atoms Vina was given.
-# Set to an explicit list to override, or remove/false to fall back to the
-# explicit `strip_hetatm_residues` list below.
-keep_hetatm_residues: auto
-
-# Legacy explicit-strip list. IGNORED while keep_hetatm_residues is set above;
-# retained for reference / for runs that disable keep-mode.
-strip_hetatm_residues:
-  # waters / heavy-atom waters
-  - HOH
-  - WAT
-  - DOD
-  # solvents & cryoprotectants
-  - EDO   # ethylene glycol
-  - GOL   # glycerol
-  - DMS   # DMSO
-  - PEG   # polyethylene glycol
-  - PGE   # triethylene glycol
-  - MPD   # 2-methyl-2,4-pentanediol
-  - IPA   # isopropanol
-  - BME   # beta-mercaptoethanol
-  - MES   # MES buffer
-  - EPE   # HEPES buffer
-  - TRS   # Tris buffer
-  - BTB   # Bis-tris buffer
-  - BCN   # bicine buffer
-  - CIT   # citrate
-  - IMD   # imidazole (often crystallisation aid, not cofactor)
-  # small acidic / ionic crystallisation additives
-  - FMT   # formate
-  - ACT   # acetate
-  - SO4   # sulfate
-  - PO4   # phosphate
-  - NO3   # nitrate
-  - CO3   # carbonate
-  - NH4   # ammonium
-  - SCN   # thiocyanate
-  - IOD   # iodide
-  - BR    # bromide
-  # benign monatomic halides commonly from buffer (kept conservative; metal
-  # coordination Cl/Na can be re-added by clearing this entry):
-  # - CL
-  # - NA
+# No HETATM allow/deny list is used in this benchmark. Receptor membership is
+# derived from the immutable prepared artifact associated with each pose.

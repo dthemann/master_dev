@@ -28,7 +28,7 @@ smina_timeout_s: 300
 smina_receptor_ext: .pdb
 smina_executable: ''
 gnina_executable: ''
-gnina_use_gpu: false
+gnina_use_gpu: true
 use_protein_cropping: true
 pocket_crop_radius: 8.0
 pocket_crop_buffer: 3.0
@@ -75,4 +75,4 @@ uff_vdw_thresh: 10.0
 gpu_batch_size: 8
 n_parallel_workers: 0
 parallel_conformer_gen: true
-skip_existing: true
+skip_existing: false

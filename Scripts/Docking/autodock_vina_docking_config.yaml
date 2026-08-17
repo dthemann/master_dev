@@ -1,26 +1,94 @@
-receptors_dir: Data/Receptors
-ligand_dirs:
+# ═══════════════════════════════════════════════════════════════════════════════
+# AutoDock Vina — docking configuration
+# Consumed by Scripts/Docking/run_autodock.py (line refs below are into that file).
+# The Benchmark notebook cell (Master_Docking.ipynb) loads this as its base config
+# and overrides output_dir / log_dir / box_mode per run; the box_* keys are read by
+# that cell, every other key by run_autodock.py.
+# Every key falls back to a code default if omitted — the default is noted per key.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Inputs ───────────────────────────────────────────────────────────────────
+receptors_dir: Data/Receptors     # dir of receptor PDBs to prep + dock (input_dir to run_workflow; a pdbqt/ subdir is created under it)
+ligand_dirs:                      # list of ligand folders; each becomes a results subfolder (<dirname>_<converter>), ligands globbed from its pdbqt/
 - Data/Ligands/JKU
-prep_tool: both
-skip_pdb_validation: false
-process_postfixes: false
-repair_terminals: false
-output_dir: Dockings/vina_results
-log_dir: Dockings/Logs/vina_logs
-vina_bin: /home/manndo/AutoDock-Vina/build/linux/release/vina
-scoring_function: vina
-autogrid_bin: /usr/local/bin/autogrid4
-batch_mode: null
-batch_size: 10
-batch_timeout: 900
-exhaustiveness: 32
-num_modes: 10
-energy_range: 3
-seed: 42
-timeout_per_complex: 600
-max_workers: 1
-cpus_per_worker: 32
-overwrite_existing: false
-overwrite_poses: false
-overwrite_error_log: false
-retain_hetatm_residues: true
+prep_tool: both                   # receptor converter(s): mgltools | meeko | both (both = prep+dock with each separately)
+
+# ── Receptor preparation (forwarded to prep_docking.run_workflow) ────────────
+skip_pdb_validation: false        # true → skip PDBFixer cleanup, dock the original PDBs as-is
+process_postfixes: false          # append process suffixes (_PDBQT/_REPAIRED) to prepped filenames
+repair_terminals: false           # true → run terminal-residue repair after PDBFixer (emits a _REPAIRED PDB)
+
+# ── Outputs ──────────────────────────────────────────────────────────────────
+output_dir: Dockings/vina_results   # base results dir (per ligand-dir × converter subfolders + docking/failed-docking logs)
+log_dir: Dockings/Logs/vina_logs    # dir for Vina per-ligand and batch stdout logs
+
+# ── Vina executable & scoring ────────────────────────────────────────────────
+vina_bin: /home/manndo/AutoDock-Vina/build/linux/release/vina   # path to the Vina executable (checked exists + executable)
+scoring_function: vina            # vina (plain) | vinardo (--scoring vinardo) | ad4 (--maps --scoring ad4, needs autogrid)
+autogrid_bin: /usr/local/bin/autogrid4   # autogrid4 path; only used when scoring_function: ad4 (precomputes grid maps)
+
+# ── Batch docking (Vina --batch: many ligands, one receptor) ─────────────────
+batch_mode: null                  # null = auto-batch when >1 ligand | true = force batch | false = per-ligand docking
+batch_size: 10                    # ligands per --batch invocation (0 = all ligands in one batch)
+batch_timeout: 900                # wall-clock cap per batch subprocess, seconds (0 → derive as timeout_per_complex × n_ligands)
+
+# ── Search parameters (mapped to Vina flags) ─────────────────────────────────
+exhaustiveness: 32                # search thoroughness = number of Monte-Carlo runs (--exhaustiveness); higher = more thorough, slower
+num_modes: 30                     # max binding modes / poses returned (--num_modes)
+energy_range: 6                   # keep poses within this many kcal/mol of the best (--energy_range)
+seed: 42                          # RNG seed for reproducibility (--seed); omit/null → random seed
+
+# ── Concurrency (see the max_workers × cpus_per_worker trade-off) ────────────
+timeout_per_complex: 600          # per-docking wall-clock cap, seconds (0 = unlimited); also the basis of a derived batch timeout
+max_workers: 1                    # concurrent dockings (ThreadPoolExecutor); non-batch path only — batch runs one receptor at a time
+cpus_per_worker: 32               # CPU threads handed to each Vina process (--cpu); omit/null → Vina auto-detects
+
+# ── Overwrite / rerun control ────────────────────────────────────────────────
+overwrite_existing: true          # re-dock and overwrite existing poses instead of skipping (OR'd with overwrite_poses)
+overwrite_poses: true             # companion of overwrite_existing; either being true forces re-docking
+overwrite_error_log: true         # clear the failed-docking log at start and retry previously-failed combos
+failed_job_policy: retry          # retry preserved prior failures when overwrite_error_log is false
+retain_hetatm_residues: true      # HETATMs kept in the prepped receptor: null/false = off | true = default cofactor+metal list | list[str] = those resnames
+
+# ── Post-dock optimisation + gnina/smina re-ranking (optional) ───────────────
+# When enabled, every Vina pose is locally minimised against the receptor (boxed
+# around the pose, so it stays in the pocket) and re-scored. The original Vina
+# ranking is preserved (autodock_rank); a parallel ranking on the optimiser's
+# minimised affinity is added (optimized_rank). Optimised poses go to a per-complex
+# docking/optimized_<tool>/ subfolder (SDF) and both rankings + scores land in
+# <output_dir>/<subfolder>/optimization_log.csv. Overridable with CLI --optimize.
+optimization: none                # none/off/'' (disabled) | smina | gnina | all. The requested "autodock + gnina" variant = gnina
+optimize_search: minimize         # minimize → --minimize (pure energy min) | local_only → local MC in the pocket
+optimize_rank_by: minimized_affinity  # score that drives optimized_rank: minimized_affinity (kcal/mol, default; matches diffdock rerank) | cnn_affinity | cnn_score (gnina-only; smina falls back to minimized_affinity)
+optimize_scoring: default         # explicitly pinned empirical minimization objective (--scoring); default = smina/Vina-derived gnina default
+optimize_autobox_add: 4.0         # Å padding around the pose for the smina/gnina autobox (--autobox_add)
+optimize_top_n: 0                 # only optimise/re-rank the top-N Vina poses per complex (0 = all poses)
+optimize_cpu: 1                   # CPU threads for the optimiser subprocess (--cpu)
+optimize_seed: 42                 # RNG seed forwarded to smina/gnina (--seed); omit → falls back to the docking seed
+optimize_timeout: 300             # per-pose optimiser timeout, seconds; on expiry the original Vina pose + rank are kept
+gnina_use_gpu: false              # false → append --no_gpu to gnina (keeps its CNN off the GPU); smina ignores this
+gnina_gpu_preflight: true         # when GPU is requested, fail before docking if no CUDA device is visible
+gnina_cnn_scoring: rescore        # explicitly pinned: CNN scores final empirical pose but does not move atoms
+gnina_cnn_model: crossdock_default2018_ensemble  # explicit built-in ensemble passed through --cnn
+gnina_cnn_model_file: ''          # optional custom torch model; when set, passed through --cnn_model instead
+smina_executable: ''              # smina binary; '' → PATH lookup (shutil.which)
+gnina_executable: /home/manndo/docking_tools/gnina   # gnina wrapper (self-seeds CUDA/cuDNN libs); '' → PATH lookup
+gnina_lib_dirs: []                # extra dirs prepended to LD_LIBRARY_PATH for the gnina subprocess (usually unneeded — the wrapper handles it)
+mk_export_executable: ''          # Meeko mk_export for pose PDBQT→SDF rebuild (drops macrocycle glue atoms); '' → PATH lookup (mk_export.py)
+optimize_require_mk_export: true  # fail preflight if exact REMARK-SMILES reconstruction is unavailable
+obabel_executable: ''             # Open Babel; fallback PDBQT→SDF for non-Meeko poses; '' → PATH lookup (obabel)
+
+# ── AutoDock search-box definition (Benchmark set, notebook cell "box_from_sdf") ──
+# box_mode controls how the Vina search box is built for each benchmark complex:
+#   "ligand"        → box centred on the crystal ligand, each dimension = the
+#                     ligand's extent along that axis + box_padding Å (local
+#                     re-docking; the current/default protocol).
+#   "whole_protein" → NO ligand restriction. Dock against the entire receptor
+#                     using the whole-protein box produced during receptor prep
+#                     (blind docking). This "removes" the crystal-ligand box.
+#                     WARNING: far slower and much lower pose-recovery success;
+#                     it turns the benchmark from pocket re-docking into blind
+#                     docking, so results are not comparable to the ligand-box
+#                     runs and every AutoDock benchmark complex must be re-docked.
+box_mode: ligand
+box_padding: 10.0   # Å added to the ligand's per-axis extent (5 Å/side); ligand mode only

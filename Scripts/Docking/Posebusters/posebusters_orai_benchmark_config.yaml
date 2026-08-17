@@ -13,11 +13,24 @@ docking_directories:
   diffdock:        Dockings/Orai_Benchmark_DiffDock
   equibind_guided: Dockings/Orai_Benchmark_Equibind
 
+# Variant restriction — validate only ONE variant per tool. Each DiffDock pose is
+# tagged with its optimizer (original / smina / gnina — rank*.sdf vs the
+# optimized_<tool>/ subfolders) and each EquiBind pose with its refine_variant
+# (raw / smina / gnina, from its SDF tags); AutoDock has a single variant. List
+# the variant(s) to KEEP per tool; a tool left out keeps every variant. This
+# limits the busted set to AutoDock + DiffDock(smina) + EquiBind(gnina).
+# Comment the block out (or delete it) to bust every variant again.
+variant_filter:
+  diffdock:        smina    # keep only smina-optimised DiffDock poses (drop original + gnina)
+  equibind_guided: gnina    # keep only gnina-refined EquiBind poses (drop raw + smina)
+
 config_mode: dock          # use receptor-aware "dock" PoseBusters profile
 output_base_dir: posebusters_results/orai_benchmark
 save_interval: 200
-overwrite: false
-num_workers: null          # null -> all available CPU cores
+overwrite: false            # re-bust ALL poses
+                           # (same filenames), so resume (overwrite:false) would skip them and
+                           # keep stale results. Revert to false for normal incremental runs.
+num_workers: 30          # null -> all available CPU cores
 make_plots: true
 copy_proved_poses: true
 

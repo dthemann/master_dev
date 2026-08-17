@@ -4,7 +4,7 @@ ligand_dirs:
 diffdock_dir: /home/manndo/docking_tools/DiffDock
 diffdock_python: /home/manndo/anaconda3/envs/diffdock/bin/python
 diffdock_conda_env: diffdock
-num_samples: 10
+num_samples: 30
 inference_steps: 20
 device: cuda:0
 timeout_per_complex: 600
@@ -14,9 +14,9 @@ batch_mode: true
 batch_size: 15
 group_by_receptor: true
 max_workers: 1
-overwrite_existing: false
-overwrite_error_log: false
-optimization: gnina
+overwrite_existing: true
+overwrite_error_log: true
+optimization: smina
 optimize_search: minimize
 optimize_autobox_add: 4.0
 optimize_cpu: 1

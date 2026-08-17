@@ -1,0 +1,109 @@
+# PoseBusters config — Benchmark full-protein multi-engine campaign
+# ==================================================================
+# Validates the whole-protein benchmark dockings produced by
+# Master_Docking_AD_Full_Protein.ipynb across every engine/variant:
+#
+#   autodock          AutoDock Vina scoring   (+ gnina/smina optimized variants)
+#   autodock_vinardo  AutoDock Vinardo scoring(+ gnina/smina optimized variants)
+#   unidock           tiled Uni-Dock (GPU)    — reuses the Vina prepared receptor
+#   unidock2          single-shot Uni-Dock2   — retains its exact prepared receptor
+#   diffdock          DiffDock                — staged <pdb>__<pdb>/ SDF combos
+#   equibind_guided   EquiBind                — staged <pdb>__<pdb>/ SDF combos
+#
+# WIRE-BUT-DON'T-DOCK: most engines above are still being docked. This config is
+# lenient by design (require_all_methods / require_complete_results = false, no
+# cohort lock) so the run can be executed at any point: an engine with NO output
+# is skipped, and an engine that is only PARTIALLY docked is validated for
+# whatever it has WITHOUT collapsing the shared cohort (see optional_methods).
+# Re-run as each campaign completes; the runner resumes and only busts new poses.
+#
+# AutoDock / Uni-Dock / Uni-Dock2 outputs are read directly from their result
+# trees so committed pose/receptor provenance survives; DiffDock and EquiBind
+# are staged as symlinked combo dirs by the notebook cell before this runs.
+
+work_dir: /home/manndo/master_dev
+
+# Legacy schema field; ignored under receptor_policy: prepared_per_pose.
+receptors_dir: posebusters_results/_benchmark_staging/receptors
+
+# AutoDock (Vina + Vinardo) and Uni-Dock/Uni-Dock2 are read directly from their
+# result trees (original receptor provenance preserved); DiffDock + EquiBind are
+# the symlinked combo dirs the notebook cell stages under _benchmark_staging.
+docking_directories:
+  autodock:          Dockings/vina_results_full_protein_vina_scoring
+  autodock_vinardo:  Dockings/vina_results_full_protein_vinardo_scoring
+  unidock:           Dockings/unidock_results_full_protein_vina_scoring
+  unidock2:          Dockings/unidock2_results_full_protein_vina_scoring
+  diffdock:          posebusters_results/_benchmark_staging/diffdock
+  equibind_guided:   posebusters_results/_benchmark_staging/equibind
+
+# Validate every pose against the exact receptor its docking stage used.
+config_mode: dock
+receptor_policy: prepared_per_pose
+require_validation_receptors: true
+
+# Lenient cohort policy for the incremental multi-engine campaign:
+#   require_all_methods:false      → an engine with no output is skipped, not fatal
+#   require_complete_results:false → a still-incomplete engine can't fail the run
+#   expected_common_combinations:null → no cohort lock while engines are in flux
+# Flip require_all_methods/require_complete_results back to true and set the
+# expected count once ALL target engines are fully docked, for a final locked run.
+require_all_methods: false
+require_complete_results: false
+expected_common_combinations: null
+
+# The shared cohort is the intersection over the REQUIRED methods (autodock,
+# diffdock, equibind_guided — the finalized three). The new engines are
+# OPTIONAL: they are busted for whatever cohort complexes they cover but never
+# shrink the cohort, so a partial Vinardo/Uni-Dock/Uni-Dock2 run cannot collapse
+# the benchmark down to its own subset. Drop an engine from this list once it is
+# fully docked to make it a cohort-defining method again.
+optional_methods:
+  - autodock_vinardo
+  - unidock
+  - unidock2
+
+validation_receptor_directories:
+  autodock:          Dockings/vina_results_full_protein_vina_scoring
+  autodock_vinardo:  Dockings/vina_results_full_protein_vinardo_scoring
+  # Uni-Dock reuses the exact prepared AutoDock receptor tree. Uni-Dock2 instead
+  # validates against the engine-prepared PDB retained and hashed beside each
+  # committed output; its schema-3 manifest is authoritative.
+  unidock:           Dockings/vina_results_full_protein_vina_scoring
+  unidock2:          Dockings/unidock2_results_full_protein_vina_scoring
+  diffdock:          Dockings/Benchmark_DiffDock
+  equibind_guided:   Dockings/Benchmark_Equibind
+
+# When the AutoDock/DiffDock optimizer outputs are present, restrict to exactly
+# one rank/geometry family per tool for a canonical comparison. Remove the block
+# to validate every committed original/smina/gnina variant side by side.
+# variant_filter:
+#   autodock: original       # or smina / gnina  (covers Vina AND Vinardo scoring)
+#   diffdock: smina
+
+save_interval: 200
+overwrite: false
+num_workers: 0
+
+# ---------------------------------------------------------------------------
+# Performance / stability (see posebusters_benchmark_config.yaml for the full
+# rationale; identical values are used here).
+# ---------------------------------------------------------------------------
+quiet: true
+limit_worker_threads: true
+worker_maxtasks: 200
+pose_timeout: null
+stall_timeout: null
+max_restarts: 5
+monitor: true
+monitor_interval: 30
+
+# All PoseBusters CSVs / PNGs land here (matches the notebook's analysis cells).
+output_base_dir: posebusters_results/benchmark_full_protein_vina_scoring
+
+# Bond-order templates for legacy PDBQTs without embedded Meeko SMILES.
+ligand_template_dirs:
+  - Data/PoseBuster Benchmark Set
+
+copy_proved_poses: true
+make_plots: true

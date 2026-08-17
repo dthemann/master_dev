@@ -7,7 +7,8 @@ Reads posebusters_filtered_results.csv and produces:
     3. Cleveland dot plot: top-N receptor-ligand pairs comparing valid poses per method.
     4. Boxplot: distribution of per-pair valid poses per method.
     5. Heatmap: per-check pass rate per method (column labels carry each variant's n).
-    6/7. Bar chart: PB-validity per variant, one figure per tool (EquiBind / DiffDock);
+    6/7. Bar chart: PB-validity per variant, one figure per tool
+         (EquiBind / AutoDock / DiffDock);
          7b: the same as a base-method × optimizer validity matrix (heatmap).
     8. (--rmsd-sweep-max) Sweep: PB-valid poses vs RMSD-to-crystal cutoff, as two figures
        — 8a cumulative count and 8b yield (% of the method's poses).
@@ -143,10 +144,20 @@ _CLAMP_ORDER = {None: 0, "clampON": 1, "clampOFF": 2}
 # Green family for EquiBind variants (cycled if more than this many appear).
 _EQ_PALETTE = ["#2ca02c", "#74c476", "#1b7837", "#a6dba0",
                "#006d2c", "#5aae61", "#00441b", "#c7e9c0"]
+# Blue family for AutoDock smina/gnina optimizer variants (raw uses the base
+# blue in _BASE_COLORS). Optimizer variants are separate methods: combining
+# them with the Vina output would mix different geometries and ranking axes.
+_AD_PALETTE = ["#6baed6", "#08519c"]
 # Orange family for DiffDock smina/gnina optimizer variants (raw uses the base
 # orange in _BASE_COLORS; these are the lighter/darker shades for the variants).
 _DD_PALETTE = ["#ffbb78", "#d95f02", "#fdae6b", "#a63603"]
-_BASE_COLORS = {"autodock": "#1f77b4", "diffdock": "#ff7f0e"}
+_BASE_COLORS = {
+    "autodock": "#1f77b4",           # AutoDock Vina (blue)
+    "autodock_vinardo": "#17becf",   # AutoDock Vinardo (cyan)
+    "unidock": "#9467bd",            # Uni-Dock tiled (purple)
+    "unidock2": "#8c564b",           # Uni-Dock2 (brown)
+    "diffdock": "#ff7f0e",           # DiffDock (orange)
+}
 
 # Per-run display-label overrides (method key -> label). Populated in main() when
 # --best-equibind-only is active, where the single retained EquiBind variant is
@@ -178,6 +189,20 @@ def _pretty_method(m: str) -> str:
         return _LABEL_OVERRIDES[m]
     if m == "autodock":
         return "AutoDock Vina"
+    if m == "autodock_smina":
+        return "AutoDock Vina (smina-opt)"
+    if m == "autodock_gnina":
+        return "AutoDock Vina (gnina-opt)"
+    if m == "autodock_vinardo":
+        return "AutoDock Vinardo"
+    if m == "autodock_vinardo_smina":
+        return "AutoDock Vinardo (smina-opt)"
+    if m == "autodock_vinardo_gnina":
+        return "AutoDock Vinardo (gnina-opt)"
+    if m == "unidock":
+        return "Uni-Dock"
+    if m == "unidock2":
+        return "Uni-Dock2"
     if m == "diffdock":
         return "DiffDock"
     if m == "diffdock_smina":
@@ -198,8 +223,19 @@ def _pretty_method(m: str) -> str:
 
 
 def _method_sort_key(m: str):
-    if m == "autodock":
-        return (0, 0, 0, 0)
+    # Bucket 0 groups the Vina-family engines (AutoDock Vina then Vinardo, then
+    # Uni-Dock / Uni-Dock2); bucket 1 = DiffDock, bucket 2 = EquiBind.
+    if m.startswith("autodock_vinardo"):
+        return (0, 10 + {"autodock_vinardo": 0, "autodock_vinardo_smina": 1,
+                         "autodock_vinardo_gnina": 2}.get(m, 3), 0, 0)
+    if m.startswith("autodock"):
+        # Raw Vina first, then its smina/gnina post-optimization variants.
+        return (0, {"autodock": 0, "autodock_smina": 1,
+                    "autodock_gnina": 2}.get(m, 3), 0, 0)
+    if m == "unidock":
+        return (0, 20, 0, 0)
+    if m == "unidock2":
+        return (0, 21, 0, 0)
     if m.startswith("diffdock"):
         # raw DiffDock first, then smina-/gnina-optimised variants.
         return (1, {"diffdock": 0, "diffdock_smina": 1, "diffdock_gnina": 2}.get(m, 3), 0, 0)
@@ -219,6 +255,7 @@ def _method_order(df: pd.DataFrame) -> list[str]:
 def _method_colors(order: list[str]) -> dict[str, object]:
     colors: dict[str, object] = {}
     eq = [m for m in order if m.startswith("equibind")]
+    ad = [m for m in order if m.startswith("autodock") and m not in _BASE_COLORS]
     # DiffDock optimizer variants share an orange family (base orange = raw).
     dd = [m for m in order if m.startswith("diffdock") and m not in _BASE_COLORS]
     leftover = plt.cm.tab10.colors
@@ -226,6 +263,8 @@ def _method_colors(order: list[str]) -> dict[str, object]:
     for m in order:
         if m in _BASE_COLORS:
             colors[m] = _BASE_COLORS[m]
+        elif m in ad:
+            colors[m] = _AD_PALETTE[ad.index(m) % len(_AD_PALETTE)]
         elif m in eq:
             colors[m] = _EQ_PALETTE[eq.index(m) % len(_EQ_PALETTE)]
         elif m in dd:
@@ -334,6 +373,61 @@ def _apply_equibind_split(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _classify_autodock(row) -> str:
+    """Optimizer axis for one AutoDock pose: original | smina | gnina.
+
+    Current PoseBusters exports carry an explicit ``optimizer`` field.  The
+    path/method fallbacks keep older exports readable without ever pooling an
+    ``optimized_*`` pose into the raw Vina bucket.
+    """
+    opt = (_col_value(row, "optimizer") or "").lower()
+    if opt in ("smina", "gnina"):
+        return opt
+    if opt in ("original", "raw", "native", "none"):
+        return "original"
+    method = str(row.get("docking_method", "")).strip().lower()
+    if method.endswith("_smina"):
+        return "smina"
+    if method.endswith("_gnina"):
+        return "gnina"
+    name = " ".join(str(row.get(k, "")) for k in ("pose_name", "pose_file")).lower()
+    if "optimized_smina" in name:
+        return "smina"
+    if "optimized_gnina" in name:
+        return "gnina"
+    return "original"
+
+
+def _autodock_scoring_base(method: str) -> str:
+    """AutoDock scoring base of a method key — 'autodock' (Vina) or
+    'autodock_vinardo' — with any optimizer suffix stripped, so the split is
+    idempotent and never merges Vinardo into Vina."""
+    mm = str(method).strip().lower()
+    for suf in ("_smina", "_gnina"):
+        if mm.endswith(suf):
+            mm = mm[: -len(suf)]
+            break
+    return "autodock_vinardo" if mm.startswith("autodock_vinardo") else "autodock"
+
+
+def _apply_autodock_split(df: pd.DataFrame) -> pd.DataFrame:
+    """Give every AutoDock optimizer its own stable method and axis label,
+    preserving the scoring base (Vina vs Vinardo)."""
+    df["ad_optimizer"] = pd.NA
+    is_ad = df["docking_method"].str.startswith("autodock")
+    if not is_ad.any():
+        return df
+    ad_idx = df.index[is_ad]
+    opts = [_classify_autodock(df.loc[i]) for i in ad_idx]
+    bases = [_autodock_scoring_base(df.loc[i, "docking_method"]) for i in ad_idx]
+    df.loc[ad_idx, "docking_method"] = [
+        base if opt == "original" else f"{base}_{opt}"
+        for base, opt in zip(bases, opts)
+    ]
+    df.loc[ad_idx, "ad_optimizer"] = opts
+    return df
+
+
 def _classify_diffdock(row) -> str | None:
     """Optimizer backend for one DiffDock pose: 'smina' | 'gnina' | None (original).
 
@@ -397,6 +491,9 @@ def load_and_score(csv_path: Path, split_equibind: bool = True) -> pd.DataFrame:
     df["method_raw"] = df["docking_method"]
     if split_equibind:
         df = _apply_equibind_split(df)
+    # AutoDock's post-optimization rows have a distinct geometry and, for gnina,
+    # a distinct optimized ranking. Keep them out of the native-Vina denominator.
+    df = _apply_autodock_split(df)
     # Always separate DiffDock optimizer variants — pooling optimised poses with
     # the raw DiffDock output would corrupt the per-method pass rate. No-op when
     # no optimised poses are present (every row stays ``diffdock``).
@@ -1405,13 +1502,15 @@ def plot_equibind_variants(summary: pd.DataFrame, out: Path, colors: dict,
 def _variant_matrix_cell(m: str) -> tuple[str, str] | None:
     """Map a variant key to (row, column) for the base-method × optimizer validity
     matrix, or None for methods with no place in it. EquiBind and DiffDock share a
-    raw/smina/gnina optimizer axis, so both slot into the same three columns. AutoDock has
-    no optimizer axis, so — for completeness — it occupies the 'raw / original' column
-    only (its smina/gnina cells stay blank)."""
+    raw/smina/gnina optimizer axis, so all three tool families slot into the same
+    columns."""
     col_of = {"": "raw / original", "raw": "raw / original", "original": "raw / original",
               "smina": "smina", "gnina": "gnina"}
-    if m == "autodock":
-        return "AutoDock Vina", "raw / original"
+    if m.startswith("autodock"):
+        base = "autodock_vinardo" if m.startswith("autodock_vinardo") else "autodock"
+        opt = m[len(base):].lstrip("_")
+        row = "AutoDock Vinardo" if base.endswith("vinardo") else "AutoDock Vina"
+        return row, col_of.get(opt, opt)
     if m.startswith("diffdock"):
         opt = m[len("diffdock"):].lstrip("_")            # "", "smina", "gnina"
         return "DiffDock", col_of.get(opt, opt)
@@ -1429,9 +1528,8 @@ def plot_variant_validity_matrix(summary: pd.DataFrame, out: Path,
     """Heatmap of PB-validity (%) per variant — the matrix view of the per-tool variant
     bar charts (figs 06/07). Rows are the base method (AutoDock, DiffDock, and EquiBind by
     pocket × clamp); columns are the shared optimizer axis (raw/original, smina, gnina);
-    each cell is that variant's PB-valid fraction. AutoDock has no optimizer variants, so
-    only its raw/original cell is filled. Returns False when fewer than two variant cells
-    exist (nothing worth a matrix)."""
+    each cell is that variant's PB-valid fraction. Returns False when fewer than two
+    variant cells exist (nothing worth a matrix)."""
     cells: dict[str, dict[str, float]] = {}
     for m in summary.index:
         rc = _variant_matrix_cell(str(m))
@@ -2034,6 +2132,12 @@ def main() -> None:
                               args.out_dir / "06_equibind_variant_validity.png",
                               colors_full, stats=stats):
         figures.append("06_equibind_variant_validity.png")
+    if plot_tool_variant_comparison(
+            summary_full, args.out_dir / "06a_autodock_variant_validity.png",
+            colors_full, prefix="autodock", tool_label="AutoDock Vina",
+            subtitle="(native Vina vs smina- / gnina-optimised and re-ranked)",
+            stats=stats):
+        figures.append("06a_autodock_variant_validity.png")
     if plot_tool_variant_comparison(
             summary_full, args.out_dir / "07_diffdock_variant_validity.png",
             colors_full, prefix="diffdock", tool_label="DiffDock",

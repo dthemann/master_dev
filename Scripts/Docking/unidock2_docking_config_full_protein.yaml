@@ -1,0 +1,87 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# Uni-Dock2 (GPU) whole-protein docking — Benchmark set
+# DRIVER CONFIG ONLY: consumed by Scripts/Docking/run_unidock2.py (and the
+# notebook cell that imports its main()). Do not pass this flat file directly to
+# `unidock2`; the driver validates it and emits the nested per-complex engine YAML.
+# Uses the same benchmark IDs, ligand start conformers, and numeric
+# whole-protein boxes as the AutoDock full-protein cells. The staged raw PDB is
+# passed to Uni-Dock2, which performs tool-specific receptor preparation; this is
+# therefore input parity, not prepared-receptor parity. Uni-Dock2 (v0.6.3) manages
+# its GPU grid internally and docks each box in one shot — no sub-box tiling.
+# See the run_unidock2.py module docstring for the full rationale.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Engine (separate `unidock2` conda env; called by absolute path, no activation) ──
+unidock2_bin: /home/manndo/anaconda3/envs/unidock2/bin/unidock2
+
+# ── Inputs: REUSE what the AutoDock Vina full-protein cell staged ──────────────
+prep_base: Dockings/vina_results_full_protein_vina_scoring   # per-complex <ID>/_staging/…
+converter: mgl_tools          # which staged box.txt (…_mgl_tools.box.txt) to reuse
+# This file is authoritative: only listed IDs may run. Staged directories not in
+# the list are rejected/reported rather than silently expanding the benchmark.
+ids_file: Data/PoseBuster Benchmark Set/posebusters_pdb_ccd_ids.txt
+
+# ── Outputs ────────────────────────────────────────────────────────────────────
+output_dir: Dockings/unidock2_results_full_protein_vina_scoring   # <ID>/<ID>_unidock2_out.sdf
+log_dir:    Dockings/Logs/unidock2_logs_full_protein_vina_scoring
+overwrite:  false             # skip only a validated SDF + matching completion manifest
+
+# ── Search parameters (per complex; Uni-Dock2 "Advanced"/"Settings" block) ─────
+# num_pose / energy_range / seed mirror the AutoDock full-protein config (30 modes,
+# 6 kcal/mol window, seed 42). `free` is required for Uni-Dock2 to honor the
+# explicit exhaustiveness and mc_steps values; preset modes such as `balance`
+# replace them internally. NOTE: Uni-Dock2 exhaustiveness is NOT the same quantity
+# as Vina/AutoDock exhaustiveness (32) — do not read them as effort parity.
+exhaustiveness: 512
+randomize:      true          # randomize the start conformation before MC search
+mc_steps:       40
+opt_steps:      -1            # Uni-Dock2 heuristic local-optimization step count
+refine_steps:   5
+num_pose:       30
+energy_range:   6.0
+seed:           42
+rmsd_limit:     1.0           # min inter-pose RMSD when de-duplicating output poses
+use_tor_lib:    false
+energy_decomp:  false
+search_mode:    free          # custom mode: honor exhaustiveness + mc_steps above
+task:           screen        # Uni-Dock2 docking task profile
+gpu_device_id:  0
+# Every cooperating process targeting this physical GPU must use this same lock.
+# The driver holds it only for the Uni-Dock2 subprocess, including direct calls.
+gpu_lock_file: /tmp/master_docking_gpu0.lock
+n_cpu:          1             # one ligand/call; avoid Uni-Dock2's default 32-worker pool
+
+# ── Receptor/ligand preprocessing protocol (pin v0.6.3 defaults explicitly) ──
+construct_ff:                false
+template_docking:            false
+compute_center:              true   # engine parser default; CLI box center remains authoritative
+covalent_ligand:             false
+preserve_receptor_hydrogen:  false
+engine_checkpoint:           false
+
+# ── Robustness guards ──────────────────────────────────────────────────────────
+# Per-complex wall-clock limit. GPU docking is ~2 s; wall-time is dominated by
+# CPU-side receptor prep (~14 s at ~1.3k heavy atoms, ~85 s at the ~3.7k median).
+# A few 20k-42k-atom receptors take many minutes — this kills any complex that
+# overruns so the batch keeps going; the process group is reaped, driver-owned
+# scratch/partial output is removed, and the complex is retried on the next run.
+# Raise it if you want the giants to finish rather than time out.
+timeout_s: 1200               # 20 min
+# Wait through normal GNINA batches using the same GPU. This is outside the
+# engine timeout; expiry reports genuine prolonged contention and stops all
+# further launches. Thirty seconds is too short when two 30-pose GNINA rescoring
+# batches are active and can repeatedly reacquire the cooperative lock.
+gpu_lock_timeout_s: 1800      # 30 min
+terminate_grace_s: 5.0        # SIGTERM grace period before SIGKILL + reap
+
+# null creates isolated per-generation scratch under /tmp/unidock2_driver_<uid>/
+# and removes it after every normal, failed, timed-out, or interrupted attempt.
+scratch_dir: null
+
+# Optionally pre-skip very large receptors (heavy-atom count) instead of waiting
+# for them to time out. null = attempt all. Input-protein ATOM heavy-count proxy:
+# median 3646, p90 8761, p95 11626, max 41600 (8F4J_PHO); 15 exceed 12k.
+max_receptor_atoms: null
+
+# Complexes to skip entirely (by <ID>). Empty by default.
+exclude: []

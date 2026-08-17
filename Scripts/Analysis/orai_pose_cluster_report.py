@@ -65,7 +65,15 @@ from pose_cluster_crystal_pocket_report import (   # noqa: E402
     load_heavy_atom_mol, centroid_from_mol, _extract_centroid,
     SimpleKMedoids, _select_k, cluster_sites, _centroid_dm,
     pockets_from_labels, _dist,
+    _internal_indices, _bootstrap_stability,          # reference-free cluster-quality
 )
+from pose_topn import top_n_allowlist                 # noqa: E402  top-N pose cap
+
+# Optional top-N pose allowlist (pose_file strings). When set (by --top-n-poses),
+# load_poses keeps only these poses. Computed once in main() from the FULL pose set,
+# so the cap is "top-N first, then the TM / PB-valid filters" for every load path.
+_TOPN_ALLOW: Optional[set] = None
+
 try:                                                # shared, unit-tested stats helpers
     import stats_utils as su                        # noqa: E402
 except Exception:                                   # pragma: no cover
@@ -152,6 +160,8 @@ def load_poses(csv: Path, ids: Optional[set],
     df["pb_valid"] = _derive_pb_valid(df)
     keep = ["tool", "frame", "ligand", "pose_file", "pb_valid"]
     df = df[[c for c in keep if c in df.columns]].copy()
+    if _TOPN_ALLOW is not None:                       # top-N-poses cap (see main())
+        df = df[df["pose_file"].astype(str).isin(_TOPN_ALLOW)].copy()
     if ids is not None:
         df = df[df["ligand"].isin(ids)].copy()
     df = df[df["pose_file"].astype(str).map(lambda p: Path(str(p)).exists())].copy()
@@ -1434,6 +1444,437 @@ def fig_descriptor_quality(pairs: pd.DataFrame, features_csv: str, out_dir: Path
     return p
 
 
+# ════════════════════════════════════════════════════════════════════════
+# Reference-free per-tool cluster QUALITY  (+ raw-vs-filtered tightening)
+# ------------------------------------------------------------------------
+# The panels above answer WHERE the tools bind and whether they AGREE. This
+# block answers a different question — for each tool ON ITS OWN, how well-formed
+# is the cloud of poses it produces for a (frame, ligand) pair? With no crystal
+# there is no RMSD-to-native, so "quality" is read from internal-validity indices
+# on the 3D centroid cloud (silhouette / Calinski–Harabasz / Davies–Bouldin,
+# compactness vs separation) plus a bootstrap-Jaccard STABILITY of the dominant
+# cluster (does it survive resampling?). Each tool is clustered on its own poses
+# so the tools compare head to head; ``n_poses`` is recorded because CH/DB/
+# silhouette are pose-count sensitive (AutoDock ~10, DiffDock up to ~30, EquiBind
+# was sampled ~30/pair but is thinned by the pore + PoseBusters filters). Two pose
+# populations are scored so the effect of filtering is a first-class output:
+#   raw       — every generated pose (incl. transmembrane + PB-invalid)
+#   filtered  — the pore set (transmembrane-excluded) ∩ PoseBusters-valid
+# ════════════════════════════════════════════════════════════════════════
+
+# (key, short label, y-axis label, higher_is_better)
+QUALITY_METRICS = [
+    ("silhouette",  "Silhouette",          "Silhouette (−1…1)",                       True),
+    ("ch_score",    "Calinski–Harabasz",   "Calinski–Harabasz index",                 True),
+    ("db_score",    "Davies–Bouldin",      "Davies–Bouldin index",                    False),
+    ("compactness", "Compactness",         "Within-cluster spread (Å)",               False),
+    ("separation",  "Separation",          "Nearest-cluster distance (Å)",            True),
+    ("stability",   "Bootstrap stability", "Dominant-cluster Jaccard stability (0…1)", True),
+]
+_QM_LABEL = {k: (short, ylab, hb) for k, short, ylab, hb in QUALITY_METRICS}
+
+
+def _order_tools(values) -> List[str]:
+    """Canonical tool order (AutoDock, DiffDock, EquiBind) then any extras."""
+    seen = set(str(v) for v in values)
+    ordered = [t for t in ("autodock", "diffdock", "equibind") if t in seen]
+    ordered += [t for t in sorted(seen) if t not in ordered]
+    return ordered
+
+
+def compute_tool_cluster_quality(df: pd.DataFrame, pose_set: str,
+                                 site_method: str, pocket_radius: float,
+                                 min_poses: int = 3, n_boot: int = 25,
+                                 cap_n: int = 0, seed: int = 0) -> List[dict]:
+    """One row per (frame, ligand, tool): internal cluster-validity indices +
+    bootstrap stability of that tool's own centroid cloud. ``pose_set`` labels the
+    input population ('raw' or 'filtered') so raw-vs-filtered pairs on identity."""
+    rows: List[dict] = []
+    rng = np.random.RandomState(seed)
+    keys = [k for k, *_ in QUALITY_METRICS]
+    for (frame, ligand, tool), sub in df.groupby(["frame", "ligand", "tool"]):
+        C = np.vstack(sub["_cent"].to_numpy())
+        n = len(C)
+        if cap_n and n > cap_n:                       # optional pose-count equalisation
+            C = C[rng.choice(n, cap_n, replace=False)]; n = cap_n
+        row = {"frame": frame, "ligand": ligand, "tool": tool,
+               "pose_set": pose_set, "n_poses": int(n),
+               "n_clusters": int(n >= 1), "dominant_frac": np.nan}
+        if n < min_poses:                             # too few poses to form/score clusters
+            row.update({k: np.nan for k in keys})
+            rows.append(row)
+            continue
+        dm = _centroid_dm(C)
+        labels, k, sil = cluster_sites(dm, C, site_method, pocket_radius)
+        idx = _internal_indices(C, labels)
+        stab, _ = _bootstrap_stability(C, labels, site_method, pocket_radius, n_boot=n_boot, seed=seed)
+        sizes = np.bincount(labels)
+        row.update({
+            "n_clusters": int(k),
+            "dominant_frac": round(float(sizes.max()) / n, 3),
+            "silhouette": round(float(sil), 3) if sil == sil else np.nan,
+            "ch_score": idx["ch_score"], "db_score": idx["db_score"],
+            "compactness": idx["compactness"], "separation": idx["separation"],
+            "stability": stab,
+        })
+        rows.append(row)
+    return rows
+
+
+def _raw_and_pore_csv(per_pose_csv: str, raw_override: Optional[str]) -> Tuple[Path, Path]:
+    """Resolve the (raw, pore) pose CSVs for the raw-vs-filtered comparison.
+    raw  = every generated pose (…filtered_results.csv, incl. transmembrane + PB-invalid).
+    pore = the transmembrane-excluded set (…filtered_results.no_tm.csv)."""
+    p = Path(per_pose_csv); name = p.name
+    if name.endswith(".no_tm.csv"):
+        pore = p
+        raw = Path(raw_override) if raw_override else p.with_name(name[:-len(".no_tm.csv")] + ".csv")
+    else:
+        raw = Path(raw_override) if raw_override else p
+        cand = (p.with_name(name[:-len(".csv")] + ".no_tm.csv")
+                if name.endswith(".csv") else p)
+        pore = cand if cand.exists() else p
+    return raw, pore
+
+
+# ── quality figures (descriptive only; inferential tests -> *_stats.txt) ────
+
+def _quality_boxplot(ax, qs: pd.DataFrame, metric: str, tools: List[str]):
+    short, ylab, hb = _QM_LABEL[metric]
+    present = [(t, pd.to_numeric(qs[qs.tool == t][metric], errors="coerce").dropna().to_numpy())
+               for t in tools]
+    pos = np.arange(len(present))
+    bp = ax.boxplot([v if v.size else np.array([np.nan]) for _, v in present],
+                    positions=pos, widths=0.6, patch_artist=True, showfliers=False,
+                    medianprops=dict(color="black"))
+    for patch, (t, _) in zip(bp["boxes"], present):
+        patch.set_facecolor(_style(t)[1]); patch.set_alpha(0.75)
+    for p_, (t, v) in zip(pos, present):              # jitter small-n so the box isn't a lie
+        if 0 < v.size <= 80:
+            jit = (np.linspace(-1, 1, v.size) if v.size > 1 else np.zeros(1)) * 0.18
+            ax.scatter(np.full(v.size, p_) + jit, v, s=9, color=_style(t)[1],
+                       edgecolor="white", lw=0.3, zorder=3)
+    ax.set_xticks(pos)
+    ax.set_xticklabels([f"{_style(t)[0]}\n(n={v.size})" for t, v in present], fontsize=8)
+    ax.set_ylabel(ylab, fontsize=9)
+    ax.set_title(f"{short}  ({'↑ better' if hb else '↓ better'})", fontsize=10)
+    ax.grid(alpha=0.25, axis="y"); ax.set_axisbelow(True)
+
+
+def fig_cluster_quality(q: pd.DataFrame, out_dir: Path, pose_set: str = "raw"):
+    """Six per-tool intrinsic quality indices (silhouette, Calinski–Harabasz,
+    Davies–Bouldin, compactness, separation, bootstrap stability)."""
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    qs = q[q["pose_set"] == pose_set]
+    if qs.empty:
+        return None
+    tools = _order_tools(qs["tool"])
+    fig, ax = plt.subplots(2, 3, figsize=(18, 10))
+    for a, (key, *_rest) in zip(ax.ravel(), QUALITY_METRICS):
+        _quality_boxplot(a, qs, key, tools)
+    _label_panels(ax)
+    fig.suptitle("Per-tool intrinsic cluster QUALITY on Orai (reference-free; "
+                 f"'{pose_set}' pose cloud) — each tool clustered on its own poses; "
+                 "sparse panels (CH/DB/separation) are the multi-cluster subset (k≥2)",
+                 fontsize=12)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    p = out_dir / "orai_cluster_quality_metrics.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    return p
+
+
+def fig_cluster_compactness_separation(q: pd.DataFrame, out_dir: Path, pose_set: str = "raw"):
+    """Compactness (tightness) vs separation for every multi-cluster (frame,ligand,
+    tool): upper-left (tight + well-separated) is best."""
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    qs = q[q["pose_set"] == pose_set].copy()
+    qs = qs[pd.to_numeric(qs["separation"], errors="coerce").notna()
+            & pd.to_numeric(qs["compactness"], errors="coerce").notna()]
+    if qs.empty:
+        return None
+    tools = _order_tools(qs["tool"])
+    fig, ax = plt.subplots(figsize=(9, 7.6))
+    for t in tools:
+        g = qs[qs.tool == t]
+        x = pd.to_numeric(g["compactness"], errors="coerce").to_numpy()
+        y = pd.to_numeric(g["separation"], errors="coerce").to_numpy()
+        ax.scatter(x, y, s=22, color=_style(t)[1], alpha=0.5, edgecolor="white",
+                   lw=0.3, label=f"{_style(t)[0]} (n={len(g)})")
+        ax.plot(np.median(x), np.median(y), marker="X", ms=15, color=_style(t)[1],
+                mec="black", mew=1.3, zorder=5)
+    ax.set_xlabel("Cluster compactness — within-cluster spread (Å, lower = tighter)")
+    ax.set_ylabel("Cluster separation — nearest-cluster distance (Å, higher = better)")
+    ax.set_title("Are each tool's clusters tight AND well-separated?\n"
+                 f"(multi-cluster (frame,ligand,tool) cases, k≥2; '{pose_set}' cloud; "
+                 "upper-left = best; X = per-tool median)", fontsize=11)
+    ax.legend(fontsize=9, title="Tool (per-tool median = X)"); ax.grid(alpha=0.25)
+    ax.set_axisbelow(True)
+    fig.tight_layout()
+    p = out_dir / "orai_cluster_compactness_separation.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    return p
+
+
+_FILTER_SET_STYLE = {
+    "raw":      dict(color="#B0B0B0", hatch=None,  label="raw cloud (all generated poses)"),
+    "filtered": dict(color="#2E7D32", hatch="///", label="filtered (outside-pore ∩ PB-valid)"),
+}
+
+
+def fig_cluster_quality_filtering(q: pd.DataFrame, out_dir: Path):
+    """Does filtering to PB-valid poses outside the pore tighten each tool's clusters?
+    Raw cloud vs filtered cloud, per tool, on the metrics with an unambiguous
+    "better" direction (compactness ↓, silhouette ↑, stability ↑)."""
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    if not {"raw", "filtered"}.issubset(set(q["pose_set"])):
+        return None
+    tools = _order_tools(q["tool"])
+    metrics = [("compactness", "Within-cluster spread (Å) — lower = tighter"),
+               ("silhouette",  "Silhouette — higher = better"),
+               ("stability",   "Bootstrap stability — higher = better")]
+    fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+    width = 0.36
+    for ax, (key, ylab) in zip(axes, metrics):
+        for si, ps in enumerate(("raw", "filtered")):
+            st = _FILTER_SET_STYLE[ps]
+            data, pos = [], []
+            for ti, t in enumerate(tools):
+                v = pd.to_numeric(q[(q.tool == t) & (q.pose_set == ps)][key],
+                                  errors="coerce").dropna().to_numpy()
+                data.append(v if v.size else np.array([np.nan]))
+                pos.append(ti + (si - 0.5) * (width + 0.04))
+            bp = ax.boxplot(data, positions=pos, widths=width, patch_artist=True,
+                            showfliers=False, medianprops=dict(color="black"))
+            for box in bp["boxes"]:
+                box.set(facecolor=st["color"], alpha=0.55, hatch=st["hatch"], edgecolor="0.3")
+        ax.set_xticks(np.arange(len(tools)))
+        ax.set_xticklabels([_style(t)[0] for t in tools], fontsize=9)
+        ax.set_ylabel(ylab, fontsize=9)
+        ax.set_title(key.capitalize(), fontsize=10)
+        ax.grid(alpha=0.25, axis="y"); ax.set_axisbelow(True)
+    handles = [plt.Rectangle((0, 0), 1, 1, facecolor=_FILTER_SET_STYLE[s]["color"],
+                             alpha=0.55, hatch=_FILTER_SET_STYLE[s]["hatch"],
+                             edgecolor="0.3", label=_FILTER_SET_STYLE[s]["label"])
+               for s in ("raw", "filtered")]
+    axes[0].legend(handles=handles, fontsize=8, loc="best")
+    _label_panels(np.asarray(axes))
+    fig.suptitle("Does filtering to PB-valid poses outside the pore tighten each tool's clusters? "
+                 "Raw cloud vs filtered cloud (per tool; paired tests in "
+                 "orai_cluster_quality_stats.txt)", fontsize=12)
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    p = out_dir / "orai_cluster_quality_filtering.png"
+    fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
+    return p
+
+
+# ── quality stats (paired across tools; paired raw-vs-filtered) ─────────────
+
+def _stats_cluster_quality_paired(q: pd.DataFrame, pose_set: str = "raw") -> dict:
+    """Per metric: paired-across-tools Friedman + Wilcoxon on the per-(frame,ligand)
+    value, listwise-complete across tools (paired design; unit = (frame,ligand) pair;
+    no pose pseudoreplication). Exploratory at the JKU n."""
+    out = {"test": "friedman + wilcoxon (paired across tools)",
+           "pose_set": pose_set, "unit": "(frame,ligand) pair", "metrics": {}}
+    if su is None:
+        out["skipped"] = "stats_utils unavailable"
+        return out
+    qs = q[q["pose_set"] == pose_set]
+    tools = _order_tools(qs["tool"])
+    for key, *_ in QUALITY_METRICS:
+        piv = qs.pivot_table(index=["frame", "ligand"], columns="tool", values=key,
+                             aggfunc="first")
+        piv = piv.reindex(columns=[t for t in tools if t in piv.columns])
+        complete = piv.dropna()
+        rec = {"n_pairs_complete": int(len(complete)),
+               "medians": {t: _f(pd.to_numeric(qs[qs.tool == t][key], errors="coerce").median())
+                           for t in piv.columns}}
+        if len(complete) >= _MIN_PAIRS_WILCOXON and complete.shape[1] >= 2:
+            try:
+                rec.update(_paired_tool_test(complete))
+            except Exception as e:                      # pragma: no cover
+                rec["error"] = str(e)
+        else:
+            rec["note"] = "n too small — exploratory"
+        out["metrics"][key] = rec
+    return out
+
+
+def _stats_cluster_quality_filtering(q: pd.DataFrame) -> dict:
+    """Per tool: paired raw-vs-filtered Wilcoxon signed-rank on compactness /
+    silhouette / stability over the (frame,ligand) present in BOTH pose sets.
+    rank-biserial sign is for (filtered − raw): compactness < 0 ⇒ filtering tightens;
+    silhouette/stability > 0 ⇒ filtering improves. Holm across all (tool × metric)."""
+    out = {"test": "wilcoxon signed-rank (paired filtered vs raw)",
+           "unit": "(frame,ligand) present in BOTH pose sets", "per_tool": {}}
+    if su is None:
+        out["skipped"] = "stats_utils unavailable"
+        return out
+    metrics = ["compactness", "silhouette", "stability"]
+    entries = []
+    for t in _order_tools(q["tool"]):
+        out["per_tool"][t] = {}
+        raw = q[(q.tool == t) & (q.pose_set == "raw")].set_index(["frame", "ligand"])
+        fil = q[(q.tool == t) & (q.pose_set == "filtered")].set_index(["frame", "ligand"])
+        common = raw.index.intersection(fil.index)
+        for m in metrics:
+            if not len(common):
+                out["per_tool"][t][m] = {"n": 0, "note": "no shared (frame,ligand)"}
+                continue
+            a = pd.to_numeric(raw.loc[common, m], errors="coerce")
+            b = pd.to_numeric(fil.loc[common, m], errors="coerce")
+            mask = a.notna().to_numpy() & b.notna().to_numpy()
+            av, bv = a.to_numpy()[mask], b.to_numpy()[mask]
+            rec = {"n": int(mask.sum()),
+                   "median_raw": _f(np.median(av)) if av.size else None,
+                   "median_filtered": _f(np.median(bv)) if bv.size else None}
+            if av.size >= _MIN_PAIRS_WILCOXON:
+                try:
+                    rb, p, npair = su.wilcoxon_rankbiserial(bv, av)   # filtered vs raw
+                    rec.update({"rank_biserial": _f(rb), "p_raw": _f(p), "n_nonzero": int(npair)})
+                    if rec["p_raw"] is not None:
+                        entries.append((t, m, rec))
+                except Exception as e:                  # pragma: no cover
+                    rec["error"] = str(e)
+            else:
+                rec["note"] = "n too small — exploratory"
+            out["per_tool"][t][m] = rec
+    if entries:
+        adj = su.holm([rec["p_raw"] for *_ , rec in entries])
+        for (t, m, rec), pa in zip(entries, adj):
+            rec["p_holm"] = float(pa); rec["star"] = su.p_stars(pa)
+    return out
+
+
+def write_cluster_quality_stats_txt(out_dir: Path, q: pd.DataFrame,
+                                    paired: dict, filtering: dict) -> Path:
+    """Human-readable companion to the quality figures (tests kept OFF the panels)."""
+    L: List[str] = []
+    L.append("Orai per-tool cluster QUALITY — inferential tests (kept off the figure panels)")
+    L.append("=" * 78)
+    for ps in ("raw", "filtered"):
+        sub = q[q["pose_set"] == ps]
+        if len(sub):
+            L.append(f"  {ps:<9} pose set: {len(sub)} (frame,ligand,tool) rows, "
+                     f"{sub['ligand'].nunique()} ligands, tools "
+                     f"{sorted(sub['tool'].unique())}")
+    L.append("Unit for every test = the (frame,ligand) pair (poses within a pair are")
+    L.append("NOT treated as independent). At the Orai×JKU n these are EXPLORATORY.")
+    L.append("")
+
+    L.append("-- Per-tool differences per metric (Friedman/Wilcoxon, paired across tools; "
+             f"'{paired.get('pose_set','raw')}' cloud) --")
+    for key, short, _yl, hb in QUALITY_METRICS:
+        rec = (paired.get("metrics") or {}).get(key, {})
+        meds = rec.get("medians", {})
+        med_s = ", ".join(f"{_style(t)[0]}={meds[t]:.2f}" for t in meds
+                          if meds.get(t) is not None) or "n/a"
+        cap = _paired_summary(rec) if not rec.get("note") else rec.get("note")
+        L.append(f"  {short:<20} ({'higher' if hb else 'lower'} = better)  "
+                 f"n_complete={rec.get('n_pairs_complete', 0)}")
+        L.append(f"      medians: {med_s}")
+        L.append(f"      test: {cap or 'n/a'}")
+    L.append("")
+
+    L.append("-- Does filtering (pore ∩ PB-valid) tighten each tool's clusters? "
+             "(Wilcoxon, paired filtered vs raw; Holm across tool×metric) --")
+    L.append("   compactness rank-biserial<0 ⇒ tighter after filtering; "
+             "silhouette/stability>0 ⇒ better.")
+    for t, per_m in (filtering.get("per_tool") or {}).items():
+        L.append(f"  {_style(t)[0]}:")
+        for m in ("compactness", "silhouette", "stability"):
+            rec = per_m.get(m, {})
+            mr, mf = rec.get("median_raw"), rec.get("median_filtered")
+            base = (f"raw={mr:.2f}→filt={mf:.2f}" if mr is not None and mf is not None
+                    else "n/a")
+            if rec.get("p_raw") is not None:
+                pv = rec.get("p_holm", rec["p_raw"])
+                tail = (f"  rb={rec['rank_biserial']:+.2f}  p_holm={su.fmt_p(pv)} "
+                        f"{su.p_stars(pv)}  n={rec['n']}")
+            else:
+                tail = f"  ({rec.get('note', 'n/a')}; n={rec.get('n', 0)})"
+            L.append(f"      {m:<12} {base}{tail}")
+    L.append("")
+    L.append("Panels carry descriptive content only (boxes, medians); the inferential")
+    L.append("tests above are intentionally kept off the figures.")
+
+    p = out_dir / "orai_cluster_quality_stats.txt"
+    p.write_text("\n".join(L) + "\n")
+    return p
+
+
+def run_cluster_quality(args, ids, out_dir: Path, cluster_stats: dict) -> None:
+    """Load the raw + pore pose CSVs, score reference-free per-tool cluster quality
+    on both, write the table/summary/figures, and stash the tests in the sidecar.
+    Deliberately independent of --pb-valid-only/--valid-ligands-only: the raw-vs-
+    filtered comparison needs the UNFILTERED pose population."""
+    raw_csv, pore_csv = _raw_and_pore_csv(args.per_pose_csv, args.raw_per_pose_csv)
+    print("\n" + "=" * 86)
+    print("CLUSTER-QUALITY BLOCK (reference-free intrinsic quality + raw-vs-filtered)")
+    print("=" * 86)
+    print(f"  raw  pose set : {raw_csv}{'' if raw_csv.exists() else '   (MISSING)'}")
+    print(f"  pore pose set : {pore_csv}{'' if pore_csv.exists() else '   (MISSING)'}")
+
+    def _load(csv: Path) -> pd.DataFrame:
+        if not csv.exists():
+            return pd.DataFrame()
+        d = load_poses(csv, ids, args.diffdock_variant)
+        return add_centroids(d, args.workers) if not d.empty else d
+
+    rows: List[dict] = []
+    raw_df = _load(raw_csv)
+    if not raw_df.empty:
+        print(f"  raw : {len(raw_df):,} poses | tools {sorted(raw_df['tool'].unique())}")
+        rows += compute_tool_cluster_quality(
+            raw_df, "raw", args.site_cluster, args.pocket_radius,
+            args.quality_min_poses, args.quality_boot, args.quality_cap_n)
+    pore_df = _load(pore_csv)
+    filt_df = (pore_df[pore_df["pb_valid"] == True].copy()      # noqa: E712
+               if not pore_df.empty else pd.DataFrame())
+    if not filt_df.empty:
+        print(f"  filt: {len(filt_df):,} poses (pore ∩ PB-valid) | "
+              f"tools {sorted(filt_df['tool'].unique())}")
+        rows += compute_tool_cluster_quality(
+            filt_df, "filtered", args.site_cluster, args.pocket_radius,
+            args.quality_min_poses, args.quality_boot, args.quality_cap_n)
+
+    if not rows:
+        print("  No poses available for the cluster-quality block — skipped.")
+        return
+    q = pd.DataFrame(rows)
+    q.to_csv(out_dir / "cluster_quality_per_tool.csv", index=False)
+
+    # per-(tool, pose_set) aggregate — quick reference + the cross-dataset overlay.
+    agg = []
+    for (tool, ps), g in q.groupby(["tool", "pose_set"]):
+        rec = {"tool": tool, "pose_set": ps, "n_rows": int(len(g)),
+               "mean_n_poses": round(float(g["n_poses"].mean()), 2)}
+        for key, *_ in QUALITY_METRICS:
+            vals = pd.to_numeric(g[key], errors="coerce").dropna()
+            rec[f"median_{key}"] = round(float(vals.median()), 3) if len(vals) else np.nan
+            rec[f"n_{key}"] = int(len(vals))
+        agg.append(rec)
+    pd.DataFrame(agg).to_csv(out_dir / "cluster_quality_summary.csv", index=False)
+
+    # stats (guarded) + human-readable txt + sidecar keys
+    paired = _stats_cluster_quality_paired(q, pose_set="raw")
+    filtering = _stats_cluster_quality_filtering(q)
+    cluster_stats["cluster_quality_per_tool"] = paired
+    cluster_stats["cluster_quality_filtering"] = filtering
+    txt = write_cluster_quality_stats_txt(out_dir, q, paired, filtering)
+
+    if not args.no_plot:
+        for f in (fig_cluster_quality(q, out_dir, "raw"),
+                  fig_cluster_compactness_separation(q, out_dir, "raw"),
+                  fig_cluster_quality_filtering(q, out_dir)):
+            if f:
+                print(f"  Figure: {f}")
+    print(f"  Quality table : {out_dir / 'cluster_quality_per_tool.csv'}")
+    print(f"  Quality stats : {txt}")
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1474,9 +1915,44 @@ def main(argv=None) -> int:
                          "comparison and per-frame validity panels become degenerate "
                          "(everything is valid by construction) and are labelled as such.")
     ap.add_argument("--no-plot", action="store_true")
+    ap.add_argument("--cluster-quality", action="store_true",
+                    help="Additionally compute reference-free per-tool cluster-QUALITY "
+                         "metrics (silhouette / Calinski–Harabasz / Davies–Bouldin, "
+                         "compactness vs separation, bootstrap stability) and a raw-vs-"
+                         "filtered (all poses vs pore∩PB-valid) tightening analysis. "
+                         "Writes cluster_quality_per_tool.csv, cluster_quality_summary.csv, "
+                         "orai_cluster_quality_*.png and orai_cluster_quality_stats.txt.")
+    ap.add_argument("--raw-per-pose-csv", default=None,
+                    help="Unfiltered pose CSV (every generated pose incl. transmembrane + "
+                         "PB-invalid) for the raw-vs-filtered comparison; default derives it "
+                         "from --per-pose-csv by stripping the '.no_tm' suffix.")
+    ap.add_argument("--quality-min-poses", type=int, default=3,
+                    help="Min poses per (frame,ligand,tool) to score internal indices "
+                         "(CH/DB need k>=2, so >=3 poses).")
+    ap.add_argument("--quality-boot", type=int, default=25,
+                    help="Bootstrap iterations for the dominant-cluster Jaccard stability.")
+    ap.add_argument("--quality-cap-n", type=int, default=0,
+                    help="If >0, subsample each tool's poses to this cap before scoring "
+                         "quality, to remove the pose-count confound (CH/DB/silhouette are "
+                         "n-sensitive). Default 0 = use every pose.")
+    ap.add_argument("--top-n-poses", type=int, default=0,
+                    help="If >0, restrict EVERY analysis to each tool's top-N ranked poses "
+                         "per (frame, ligand) — AutoDock=Vina mode, DiffDock=confidence, "
+                         "EquiBind=gnina-energy rank. The cap is computed on the FULL "
+                         "(TM-inclusive) pose set, so it is top-N first THEN the TM/PB-valid "
+                         "filters. Use 10 to equalise tools whose raw pose budget differs "
+                         "(e.g. Orai×Experimental AutoDock/EquiBind at 30/unit).")
     args = ap.parse_args(argv)
 
     out_dir = Path(args.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
+
+    global _TOPN_ALLOW
+    if args.top_n_poses and args.top_n_poses > 0:
+        raw_csv, _pore_csv = _raw_and_pore_csv(args.per_pose_csv, args.raw_per_pose_csv)
+        allow_src = raw_csv if Path(raw_csv).exists() else Path(args.per_pose_csv)
+        _TOPN_ALLOW = top_n_allowlist(allow_src, args.top_n_poses)
+        print(f"  --top-n-poses {args.top_n_poses}: capped to {len(_TOPN_ALLOW)} pose files "
+              f"(top-{args.top_n_poses}/tool per frame×ligand, ranked on {allow_src.name})")
     ids = None
     if args.ids_file and Path(args.ids_file).exists():
         ids = {ln.strip() for ln in Path(args.ids_file).read_text().splitlines()
@@ -1646,6 +2122,15 @@ def main(argv=None) -> int:
         f3 = fig_descriptor_quality(pairs, args.features_csv, out_dir, stats_out=cluster_stats)
         if f3:
             print(f"  Figure: {f3}")
+
+    # Reference-free per-tool cluster-QUALITY block (+ raw-vs-filtered tightening).
+    # Loads its own pose populations, so it runs even under --pb-valid-only; a
+    # failure here never blocks the main report.
+    if args.cluster_quality:
+        try:
+            run_cluster_quality(args, ids, out_dir, cluster_stats)
+        except Exception as e:                          # pragma: no cover
+            print(f"  [cluster-quality] failed: {e}")
 
     try:
         (out_dir / "orai_cluster_stats.json").write_text(

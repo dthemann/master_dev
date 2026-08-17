@@ -11,13 +11,22 @@ receptors_dir: Orai
 
 # Mapping of docking-method name -> ligand/poses folder.
 # Supported method keys (registered collectors / expanders):
-#   autodock, diffdock, equibind_guided, equibind_exclusion, equibind_docked_poses
+#   autodock, unidock (or unidock_tiled), diffdock, equibind_guided,
+#   equibind_exclusion, equibind_docked_poses
 docking_directories:
   diffdock: diffdock_results/ligands_sdf_large
   # autodock: docking_ready_mgltools/docking
+  # unidock: Dockings/unidock_results_full_protein_vina_scoring
   # equibind_guided: equibind_pocket_guided
   # equibind_exclusion: equibind_spatial_exclusion_poses
   # equibind_docked_poses: equibind_docked_poses_2
+
+# Optional per-tool variant selection. Omit a tool to collect every committed
+# variant. AutoDock: original/smina/gnina; Uni-Dock: tiled; DiffDock:
+# original/smina/gnina; EquiBind: raw/smina/gnina.
+# variant_filter:
+#   autodock: gnina
+#   unidock: tiled
 
 # PoseBusters configuration mode: "dock" (with protein) or "mol" (ligand only).
 config_mode: dock

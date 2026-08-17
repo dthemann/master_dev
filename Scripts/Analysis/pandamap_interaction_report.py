@@ -208,6 +208,57 @@ def ordered_methods(methods) -> list[str]:
     return sorted([m for m in methods if m != "crystal"], key=lambda m: (method_sort_key(m), m))
 
 
+# ── docking-tool colour palette (one palette for the whole script) ───────────
+# Every figure colours a docking tool the same way, matching the PoseBusters
+# pose_comparison report: AutoDock Vina = blue, DiffDock = orange (its smina/gnina
+# optimiser variants a darker/lighter orange), and every EquiBind variant a shade
+# of green. Mirrors posebusters_pose_comparison.TOOL_COLORS; kept local (like
+# pretty_method / _eq_tokens above) so this report needs no import of that module.
+_BASE_COLORS = {"autodock": "#1f77b4", "diffdock": "#ff7f0e"}
+_DD_VARIANT_COLORS = {"diffdock_smina": "#d95f02", "diffdock_gnina": "#fdae6b"}
+# Green family for EquiBind variants (cycled if more than this many appear).
+_EQ_PALETTE = ["#2ca02c", "#74c476", "#1b7837", "#a6dba0",
+               "#006d2c", "#5aae61", "#00441b", "#c7e9c0"]
+# Common EquiBind variants pre-seeded so a variant keeps its shade regardless of
+# how many appear / which figure is drawn first.
+_EQ_PRESEED = ["equibind_unguided", "equibind_fpocket", "equibind_p2rank",
+               "equibind_unguided_gnina", "equibind_fpocket_gnina", "equibind_p2rank_gnina",
+               "equibind_unguided_raw", "equibind_fpocket_raw", "equibind_p2rank_raw",
+               "equibind_unguided_smina", "equibind_fpocket_smina", "equibind_p2rank_smina"]
+
+
+class _MethodColorMap:
+    """Stable colour per docking-tool method key. AutoDock/DiffDock are fixed;
+    EquiBind variants draw from a green palette (encounter order, cached), so a
+    given variant reads the same green in every figure of a run."""
+
+    def __init__(self):
+        self._cache = {m: _EQ_PALETTE[i % len(_EQ_PALETTE)]
+                       for i, m in enumerate(_EQ_PRESEED)}
+        self._next = len(_EQ_PRESEED)
+
+    def get(self, key, default="#7f7f7f"):
+        key = str(key)
+        if key in _BASE_COLORS:
+            return _BASE_COLORS[key]
+        if key in _DD_VARIANT_COLORS:
+            return _DD_VARIANT_COLORS[key]
+        if key == "crystal":
+            return "#555555"
+        if key.startswith("equibind"):
+            if key not in self._cache:
+                self._cache[key] = _EQ_PALETTE[self._next % len(_EQ_PALETTE)]
+                self._next += 1
+            return self._cache[key]
+        return default
+
+    def __getitem__(self, key):
+        return self.get(key)
+
+
+TOOL_COLORS = _MethodColorMap()
+
+
 # Default location of the oracle summary written by posebusters_pose_comparison.py
 # (the only place the per-variant success metrics exist), used to rank EquiBind/DiffDock
 # variants for --best-*-only (by PB-Valid AND RMSD ≤ 2 Å) when neither --oracle-summary nor a
@@ -515,30 +566,107 @@ def jaccard(a: set, b: set) -> float:
     return len(a & b) / u if u else np.nan
 
 
-# ── shared figure finalisation (pose-selection scope footer) ────────────────
+# ── shared figure finalisation + per-figure text sidecar ────────────────────
 # run_pandamap keeps only each method's top-N ranked poses per complex
 # (poses_per_combo / select_top_n), so the whole interaction analysis is built
-# from that top-N set. Every saved figure carries a uniform footer stating this,
-# so each graph makes the pose-selection scope explicit. Set once in main() from
-# the config's poses_per_combo (or inferred from the loaded data).
+# from that top-N set. Rather than stamp that scope (or any second title line)
+# onto the image, every figure carries a single companion "<stem>.txt" holding
+# what used to sit on the figure: its title, any second/subtitle line, the
+# pose-selection-scope footer (plus per-figure footnotes) and the statistical
+# results. So each graph keeps a one-line title and no footer, with the detail
+# one file away. The scope string is set once in main() from poses_per_combo.
 _POSE_SCOPE_CAPTION: str = ""
 
 
 def set_pose_scope_caption(n: "int | None") -> None:
-    """Record the top-N pose-selection scope stamped as a footer on every figure."""
+    """Record the top-N pose-selection scope written to every figure's .txt footer."""
     global _POSE_SCOPE_CAPTION
     _POSE_SCOPE_CAPTION = (
         f"Built from each method's top {n} ranked pose(s) per complex "
         f"(fewer where a method has under {n} valid poses)." if n else "")
 
 
-def _finalize_fig(fig, out: Path, dpi: int = 160) -> None:
-    """Stamp the shared pose-selection-scope footer (if set), then save + close."""
+# Per-figure text buffer, keyed by the figure's output-path string. _title /
+# _note_subtitle / _note_footer / _write_stats_txt append here; _flush_fig_txt
+# (called from main) writes one "<stem>.txt" per figure. Buffering (rather than
+# writing on the spot) keeps a single, consistently ordered file regardless of
+# whether a plot finalises the figure before or after recording its stats, and
+# keeps re-runs idempotent (the buffer is rebuilt fresh each process).
+_FIG_TXT: "dict[str, dict]" = {}
+
+
+def _fig_entry(out: Path) -> dict:
+    return _FIG_TXT.setdefault(
+        str(Path(out)), {"title": None, "subtitle": [], "footer": [], "stats": []})
+
+
+def _note_subtitle(out: Path, line) -> None:
+    """Queue a figure's moved-off subtitle line(s) for its .txt sidecar."""
+    e = _fig_entry(out)
+    for ln in ([line] if isinstance(line, str) else list(line)):
+        ln = " ".join(str(ln).split())
+        if ln and ln not in e["subtitle"]:
+            e["subtitle"].append(ln)
+
+
+def _note_footer(out: Path, foot) -> None:
+    """Queue a figure's footer / footnote line(s) for its .txt sidecar."""
+    e = _fig_entry(out)
+    for ln in ([foot] if isinstance(foot, str) else list(foot)):
+        ln = " ".join(str(ln).split())
+        if ln and ln not in e["footer"]:
+            e["footer"].append(ln)
+
+
+def _title(out: Path, text: str) -> str:
+    r"""Keep only a figure title's first line on the image; move the rest to the .txt.
+
+    Wrap every figure-level ``set_title`` / ``suptitle`` in this: it records the
+    full title and any ``\n``-separated continuation as the sidecar subtitle, and
+    returns the single first line to hand to matplotlib. Guarantees no figure
+    carries a two-line heading."""
+    parts = str(text).split("\n")
+    _fig_entry(out)["title"] = parts[0].strip()
+    _note_subtitle(out, [p for p in parts[1:] if p.strip()])
+    return parts[0].strip()
+
+
+def _finalize_fig(fig, out: Path, dpi: int = 160, caption: bool = True) -> None:
+    """Save + close. The pose-selection-scope footer is recorded to the figure's
+    "<stem>.txt" sidecar (never stamped on the image), so every graph stays
+    footer-free. ``caption`` is accepted for call-site compatibility and no longer
+    changes the image; the scope is always recorded to the sidecar."""
     if _POSE_SCOPE_CAPTION:
-        fig.text(0.5, 0.006, _POSE_SCOPE_CAPTION, ha="center", va="bottom",
-                 fontsize=7, color="#666666", style="italic")
+        _note_footer(out, _POSE_SCOPE_CAPTION)
     fig.savefig(out, dpi=dpi)
     plt.close(fig)
+
+
+def _flush_fig_txt(out_dir: Path) -> None:
+    """Write one "<stem>.txt" per figure: title, subtitle, footer, then stats.
+
+    Everything moved off the figures (second title lines, footers) plus the
+    statistical-test results, one human-readable file beside each .png."""
+    written = 0
+    for path, e in _FIG_TXT.items():
+        body: list[str] = []
+        if e["title"]:
+            body += [f"Figure: {e['title']}"]
+        if e["subtitle"]:
+            body += ["", "Subtitle:"] + [f"  {s}" for s in e["subtitle"]]
+        if e["footer"]:
+            body += ["", "Footer:"] + [f"  {f}" for f in e["footer"]]
+        for st in e["stats"]:
+            body += ["", st["header"], "=" * len(st["header"]), ""] + st["lines"]
+        text = "\n".join(body).strip()
+        if not text:
+            continue
+        try:
+            Path(path).with_suffix(".txt").write_text(text + "\n")
+            written += 1
+        except Exception as ex:
+            print(f"  [fig-txt] could not write sidecar for {Path(path).name}: {ex}")
+    print(f"  [fig-txt] wrote {written} figure text sidecar(s).")
 
 
 # ── statistical tests (stats_utils) ─────────────────────────────────────────
@@ -588,6 +716,41 @@ def _write_stats_json(out_dir: Path) -> None:
         print(f"  [stats] could not write interaction_stats.json: {e}")
 
 
+def _fmt_p_txt(p) -> str:
+    """'p=<value> <stars>' for the plain-text stats sidecars."""
+    if p is None or (isinstance(p, float) and p != p):
+        return "p=n/a"
+    val = su.fmt_p(p) if _HAVE_STATS else f"{p:.3g}"
+    star = su.p_stars(p) if _HAVE_STATS else ""
+    return f"p={val}" + (f" {star}" if star else "")
+
+
+def _write_stats_txt(fig_out: Path, header: str, lines) -> None:
+    """Record a figure's statistical test results for its sidecar ``<stem>.txt``.
+
+    Buffers into the per-figure text sidecar (flushed by ``_flush_fig_txt``) so the
+    stats share one file with the figure's moved-off subtitle and footer. The
+    figures themselves carry no test annotations (significance stars, p-values,
+    test statistics, effect sizes, CI numbers) — this file holds them instead.
+    ``lines`` may nest lists (flattened) and contain ``None`` entries (skipped).
+    Nothing is recorded when there is no content. Never raises."""
+    flat: list[str] = []
+
+    def _add(x):
+        if x is None:
+            return
+        if isinstance(x, (list, tuple)):
+            for y in x:
+                _add(y)
+        else:
+            flat.append(str(x))
+
+    _add(lines)
+    if not flat:
+        return
+    _fig_entry(fig_out)["stats"].append({"header": str(header), "lines": flat})
+
+
 def _sig_star(s) -> str:
     """Keep only a real significance star ('*','**','***'); drop 'ns'/''/None."""
     return s if s in ("*", "**", "***") else ""
@@ -615,9 +778,13 @@ def _paired_continuous_entry(wide, methods, unit: str) -> dict:
     n, k = wide.shape
     entry = {"unit": unit, "n_units": int(n),
              "methods": [pretty_method(m) for m in methods], "method_keys": list(methods)}
-    if n < _MIN_UNITS or k < 2 or not _HAVE_STATS:
+    # Friedman (via su.paired_continuous -> scipy.friedmanchisquare) requires >=3 tool
+    # series; with exactly 2 it raises, so bail with a note for k<3 (a 2-tool set only
+    # arises when a dataset lacks a tool or is pinned down to two variants).
+    if n < _MIN_UNITS or k < 3 or not _HAVE_STATS:
         entry["note"] = f"n={n} too small — exploratory (no test run)" if n < _MIN_UNITS else \
-            ("stats_utils unavailable" if not _HAVE_STATS else "need >=2 tools")
+            ("stats_utils unavailable" if not _HAVE_STATS else
+             f"only {k} tool(s) — Friedman omnibus needs >=3")
         return entry
     res = su.paired_continuous(wide, labels=list(methods))
     entry["omnibus"] = res["omnibus"]
@@ -718,8 +885,7 @@ def plot_profile(summary: pd.DataFrame, order, out: Path) -> None:
     present = [t for t in INTERACTION_TYPES if t in summary.columns and summary[t].sum() > 0]
     means = summary.groupby("method")[present].mean().reindex(order).dropna(how="all")
     methods = list(means.index)
-    cmap = plt.get_cmap("tab10")
-    mcolors = {m: cmap(i % 10) for i, m in enumerate(methods)}
+    mcolors = {m: TOOL_COLORS.get(m) for m in methods}
     y = np.arange(len(present))[::-1]
     fig, ax = plt.subplots(figsize=(9, max(4.0, 0.46 * len(present) + 1.4)))
     for yi, t in zip(y, present):
@@ -732,27 +898,30 @@ def plot_profile(summary: pd.DataFrame, order, out: Path) -> None:
     ax.set_yticks(y); ax.set_yticklabels(present)
     ax.set_xlabel("Mean count per pose")
     ax.set_ylabel("Interaction type")
-    ax.set_title("Protein-ligand interaction profile by docking method (PandaMap)")
+    ax.set_title(_title(out, "Protein-ligand interaction profile by docking method (PandaMap)"))
     ax.legend(fontsize=7, ncol=2)
     ax.grid(axis="x", alpha=0.3); ax.set_axisbelow(True)
-    # Stats: per-complex mean count per tool -> Friedman across tools per interaction
-    # type, BH-FDR across the 16 types; a star flags a type whose tools differ (FDR<0.05).
+    # Stats (per-complex mean count per tool -> Friedman across tools per interaction
+    # type, BH-FDR across the 16 types) are written to the sidecar .txt, not drawn.
     try:
         st = _interaction_count_stats(summary, order, present)
         pt = st["per_type"]
-        xmax_all = float(np.nanmax(means[present].to_numpy())) if len(present) else 1.0
-        if np.isfinite(xmax_all) and xmax_all > 0:
-            ax.set_xlim(0, xmax_all * 1.22)
-        for yi, t in zip(y, present):
-            star = _sig_star(pt.get(t, {}).get("omnibus", {}).get("star_bh", ""))
-            if star:
-                rowmax = max(means.loc[m, t] for m in methods)
-                ax.text(rowmax + 0.015 * xmax_all, yi, star, va="center", ha="left",
-                        fontsize=8, color="#555555")
         n_u = st["total"].get("n_units")
-        ax.set_title("Protein-ligand interaction profile by docking method (PandaMap)\n"
-                     "Friedman across tools per type; star = tools differ at FDR<0.05 "
-                     f"(per-complex mean count, n={n_u} complexes){_ntag(n_u)}", fontsize=10)
+        lines = ["Test: Friedman across tools of the per-complex mean count per pose, one "
+                 "test per interaction type; BH-FDR across the interaction-type family.",
+                 f"n = {n_u} complexes (listwise-complete).", ""]
+        for t in present:
+            omn = pt.get(t, {}).get("omnibus", {})
+            p = omn.get("p")
+            if p is not None and p == p:
+                bh = (f"; BH q={su.fmt_p(omn['p_bh'])} {omn.get('star_bh', '')}".rstrip()
+                      if omn.get("p_bh") is not None else "")
+                lines.append(f"  {pretty_itype(t)}: chi2({omn.get('df')})={omn.get('chi2'):.2f}, "
+                             f"{_fmt_p_txt(omn['p'])}, Kendall W={omn.get('kendall_w'):.2f}, "
+                             f"n={omn.get('n')}{bh}")
+            else:
+                lines.append(f"  {pretty_itype(t)}: {pt.get(t, {}).get('note', 'n/a')}")
+        _write_stats_txt(out, "01 — Protein-ligand interaction profile by docking method", lines)
     except Exception as e:
         print(f"  [stats] 01 interaction-profile tests skipped: {e}")
     fig.tight_layout(); _finalize_fig(fig, out)
@@ -765,31 +934,45 @@ def plot_type_heatmap_box(summary: pd.DataFrame, order, out_heat: Path, out_box:
     sns.heatmap(means, annot=True, fmt=".1f", cmap="viridis",
                 yticklabels=[pretty_method(m) for m in means.index],
                 cbar_kws={"label": "mean / pose"}, ax=ax)
-    ax.set_title("Mean interactions per pose — type × method")
+    ax.set_title(_title(out_heat, "Mean interactions per pose — type × method"))
     fig.tight_layout(); _finalize_fig(fig, out_heat)
 
     fig, ax = plt.subplots(figsize=(max(8, 1.1 * len(means)), 5))
     data = [summary[summary["method"] == m]["total_interactions"].values for m in means.index]
-    ax.boxplot(data, showmeans=True)
+    bp = ax.boxplot(data, showmeans=True, patch_artist=True)
+    for patch, m in zip(bp["boxes"], means.index):   # colour each box by its tool
+        patch.set_facecolor(TOOL_COLORS.get(m)); patch.set_alpha(0.85)
+    for med in bp["medians"]:
+        med.set_color("#333333")
     ax.set_xticks(range(1, len(means) + 1))
     ax.set_xticklabels([pretty_method(m) for m in means.index], rotation=45,
                        ha="right", rotation_mode="anchor", fontsize=8)
     ax.set_ylabel("Total interactions per pose")
-    ax.set_title("Distribution of total interactions per pose")
+    ax.set_title(_title(out_box, "Distribution of total interactions per pose"))
     ax.grid(axis="y", alpha=0.3)
-    # Stats: per-complex mean total per tool -> Friedman omnibus (paired), annotated
-    # as a subtitle with a significance star. Full pairwise sits in interaction_stats.json.
+    # Stats (per-complex mean total per tool -> Friedman omnibus + Wilcoxon pairwise)
+    # are written to the sidecar .txt, not drawn on the figure.
     try:
         st = _interaction_count_stats(summary, order, present)
-        omn = (st.get("total") or {}).get("omnibus")
+        total = st.get("total") or {}
+        omn = total.get("omnibus")
+        lines = ["Test: Friedman across tools of the per-complex mean total interactions per "
+                 "pose (paired), with Wilcoxon signed-rank pairwise (Holm-adjusted).", ""]
         if omn and omn.get("p") == omn.get("p"):
-            sub = (f"Friedman across tools (per-complex mean total): "
-                   f"χ²({omn['df']})={omn['chi2']:.1f}, {su.fmt_p(omn['p'])} "
-                   f"{su.p_stars(omn['p'])}  (Kendall W={omn['kendall_w']:.2f}, "
-                   f"n={omn['n']}){_ntag(omn['n'])}")
+            lines.append(f"Omnibus: chi2({omn['df']})={omn['chi2']:.2f}, {_fmt_p_txt(omn['p'])}, "
+                         f"Kendall W={omn['kendall_w']:.2f}, n={omn['n']} complexes.")
         else:
-            sub = f"per-complex paired test: {(st.get('total') or {}).get('note', 'n/a')}"
-        ax.set_title("Distribution of total interactions per pose\n" + sub, fontsize=10)
+            lines.append(f"Omnibus: {total.get('note', 'n/a')}")
+        if total.get("medians"):
+            lines += ["", "Per-tool median (per-complex mean total):"]
+            lines += [f"  {m}: {v:.2f}" for m, v in total["medians"].items()]
+        if total.get("pairwise"):
+            lines += ["", "Pairwise (Wilcoxon signed-rank, Holm):"]
+            for pw in total["pairwise"]:
+                rb = (f", rank-biserial={pw['rank_biserial']:+.2f}"
+                      if pw.get("rank_biserial") is not None else "")
+                lines.append(f"  {pw['a']} vs {pw['b']}: {_fmt_p_txt(pw.get('p_holm'))} (Holm){rb}")
+        _write_stats_txt(out_box, "02b — Distribution of total interactions per pose", lines)
     except Exception as e:
         print(f"  [stats] 02b total-box tests skipped: {e}")
     fig.tight_layout(); _finalize_fig(fig, out_box)
@@ -882,30 +1065,48 @@ def plot_residue_hotspots(inter: pd.DataFrame, summary: pd.DataFrame, order,
     mat = mat.reindex(columns=[m for m in order if m in mat.columns])
     top = mat.sum(axis=1).sort_values(ascending=False).head(top_n).index
     mat = mat.loc[top]
-    # Stats: per-residue McNemar across tools (per-complex contact boolean, BH-FDR
-    # across residues) + a residue×tool G-test of independence. Computed before the
-    # heatmap so the y-labels can carry a per-residue significance star.
-    ylabels = [str(r) for r in mat.index]
+    # Stats (per-residue McNemar across tools + a residue×tool G-test of independence)
+    # are computed here and written to the sidecar .txt, not stamped on the figure.
     gstat = None
+    res_stats: dict = {}
     try:
         gstat, res_stats, _n = _residue_hotspot_stats(inter, order, list(mat.index))
-        ylabels = [f"{r} {_sig_star(res_stats.get(r, {}).get('omnibus', {}).get('star_bh', ''))}".strip()
-                   for r in mat.index]
     except Exception as e:
         print(f"  [stats] 03 residue-hotspot tests skipped: {e}")
     fig, ax = plt.subplots(figsize=(max(8, 0.9 * mat.shape[1]), max(6, 0.32 * len(mat))))
     sns.heatmap(mat, annot=False, cmap="rocket_r", vmin=0, vmax=1,
-                xticklabels=[pretty_method(m) for m in mat.columns], yticklabels=ylabels,
+                xticklabels=[pretty_method(m) for m in mat.columns],
+                yticklabels=[str(r) for r in mat.index],
                 cbar_kws={"label": "fraction of poses contacting residue"}, ax=ax)
-    title = f"Residue hot-spots — top {len(mat)} contacted residues × method"
-    if gstat and gstat.get("p") == gstat.get("p"):
-        title += (f"\nG-test residue×tool: {su.fmt_p(gstat['p'])} "
-                  f"(Cramér's V={gstat['cramers_v']:.2f}); "
-                  "star = per-residue McNemar across tools, FDR<0.05")
-    ax.set_title(title, fontsize=10 if "\n" in title else 12)
+    ax.set_title(_title(out, f"Residue hot-spots — top {len(mat)} contacted residues × method"),
+                 fontsize=12)
     ax.set_ylabel("Residue"); ax.set_xlabel("")
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
     fig.tight_layout(); _finalize_fig(fig, out)
+    try:
+        lines = ["Residue hot-spots — fraction of a tool's poses contacting each top residue.", ""]
+        if gstat and gstat.get("p") == gstat.get("p"):
+            lines += ["Test 1 — G-test of independence on the residue × tool pose-contact "
+                      "counts (pooled pose contacts):",
+                      f"  G={gstat['G']:.2f}, df={gstat['df']}, {_fmt_p_txt(gstat['p'])}, "
+                      f"Cramér's V={gstat['cramers_v']:.2f}, cells with expected<5: "
+                      f"{gstat['n_low_expected']}.", ""]
+        lines.append("Test 2 — per-residue Cochran's Q / McNemar across tools on the "
+                     "per-complex contact boolean (BH-FDR across residues):")
+        for r in mat.index:
+            e = res_stats.get(r, {})
+            omn = e.get("omnibus", {})
+            p = omn.get("p")
+            if p is not None and p == p:
+                bh = (f", BH q={su.fmt_p(omn['p_bh'])} {omn.get('star_bh', '')}".rstrip()
+                      if omn.get("p_bh") is not None else "")
+                lines.append(f"  {r}: Q={omn.get('Q'):.2f}, df={omn.get('df')}, "
+                             f"{_fmt_p_txt(omn['p'])}{bh}  (n={e.get('n_units')} complexes)")
+            else:
+                lines.append(f"  {r}: {e.get('note', 'n/a')}")
+        _write_stats_txt(out, "03 — Residue hot-spots", lines)
+    except Exception as e:
+        print(f"  [stats] 03 residue-hotspot txt skipped: {e}")
     return mat
 
 
@@ -964,32 +1165,48 @@ def native_recovery(inter: pd.DataFrame, crystal: pd.DataFrame, order,
     except Exception as e:
         print(f"  [stats] 04 native-recovery tests skipped: {e}")
 
-    # bar chart of mean precision/recall/F1 (with cluster-bootstrap 95% CI error bars)
+    # bar chart of mean precision/recall/F1 (cluster-bootstrap 95% CIs + the paired
+    # F1 Friedman go to the sidecar .txt, not onto the figure)
     fig, ax = plt.subplots(figsize=(max(9, 1.2 * len(summ)), 5.5))
     x = np.arange(len(summ)); w = 0.25
     for i, col in enumerate(["precision", "recall", "f1"]):
-        est = summ[col].to_numpy(float)
-        lo = np.array([ci.get((m, col), (np.nan, np.nan, np.nan))[1] for m in summ.index])
-        hi = np.array([ci.get((m, col), (np.nan, np.nan, np.nan))[2] for m in summ.index])
-        yerr = np.vstack([np.nan_to_num(est - lo, nan=0.0), np.nan_to_num(hi - est, nan=0.0)])
-        ax.bar(x + (i - 1) * w, est, w, label=col, yerr=yerr, capsize=2,
-               error_kw={"lw": 0.8, "alpha": 0.7})
+        ax.bar(x + (i - 1) * w, summ[col].to_numpy(float), w, label=col)
     ax.set_xticks(x)
     ax.set_xticklabels([pretty_method(m) for m in summ.index], rotation=45,
                        ha="right", rotation_mode="anchor", fontsize=8)
     ax.set_ylabel("score"); ax.set_ylim(0, 1)
-    sub = ""
-    if f1_stats and f1_stats.get("omnibus") and \
-            f1_stats["omnibus"].get("p") == f1_stats["omnibus"].get("p"):
-        omn = f1_stats["omnibus"]
-        sub = (f"\nFriedman across tools (per-complex F1): {su.fmt_p(omn['p'])} "
-               f"{su.p_stars(omn['p'])} (W={omn['kendall_w']:.2f}, n={omn['n']}); "
-               f"error bars = cluster-bootstrap 95% CI{_ntag(omn['n'])}")
-    ax.set_title("Native-interaction recovery vs crystal (mean over poses)\n"
-                 "fingerprint = (interaction_type, residue)" + sub,
-                 fontsize=10 if sub else 12)
+    ax.set_title(_title(out_dir / "04_native_recovery.png",
+                        "Native-interaction recovery vs crystal (mean over poses)\n"
+                        "fingerprint = (interaction_type, residue)"), fontsize=12)
     ax.legend(); ax.grid(axis="y", alpha=0.3)
     fig.tight_layout(); _finalize_fig(fig, out_dir / "04_native_recovery.png")
+    try:
+        lines = ["Native-interaction recovery vs crystal — fingerprint = (interaction type, "
+                 "residue).", "",
+                 "Per-tool mean precision / recall / F1 with cluster-bootstrap 95% CI "
+                 "(clusters = complex):"]
+        for m in summ.index:
+            parts = []
+            for col in ["precision", "recall", "f1"]:
+                c = ci.get((m, col))
+                if c is not None and c[1] == c[1]:
+                    parts.append(f"{col} {summ.loc[m, col]:.3f} [{c[1]:.3f}, {c[2]:.3f}]")
+                else:
+                    parts.append(f"{col} {summ.loc[m, col]:.3f}")
+            lines.append(f"  {pretty_method(m)}: " + "; ".join(parts))
+        omn = (f1_stats or {}).get("omnibus")
+        if omn and omn.get("p") == omn.get("p"):
+            lines += ["", "Paired Friedman across tools (per-complex mean native-F1): "
+                          f"chi2({omn['df']})={omn['chi2']:.2f}, {_fmt_p_txt(omn['p'])}, "
+                          f"Kendall W={omn['kendall_w']:.2f}, n={omn['n']} complexes."]
+            for pw in (f1_stats or {}).get("pairwise", []):
+                rb = (f", rank-biserial={pw['rank_biserial']:+.2f}"
+                      if pw.get("rank_biserial") is not None else "")
+                lines.append(f"  {pw['a']} vs {pw['b']}: {_fmt_p_txt(pw.get('p_holm'))} (Holm){rb}")
+        _write_stats_txt(out_dir / "04_native_recovery.png",
+                         "04 — Native-interaction recovery", lines)
+    except Exception as e:
+        print(f"  [stats] 04 native-recovery txt skipped: {e}")
 
     # Stats for 04b: the 'total-miss' rate = fraction of poses recovering ZERO native
     # typed contacts (F1≈0 — literally the CDF's y-intercept), per method with a Wilson
@@ -1028,29 +1245,45 @@ def native_recovery(inter: pd.DataFrame, crystal: pd.DataFrame, order,
     except Exception as e:
         print(f"  [stats] 04b CDF total-miss tests skipped: {e}")
 
-    # F1 CDF per method (legend carries each tool's pose-level F1≈0 rate + Wilson 95% CI)
+    # F1 CDF per method (pose-level F1≈0 rate + Wilson CI and the paired Friedman go
+    # to the sidecar .txt, not into the legend / title)
     fig, ax = plt.subplots(figsize=(9, 5))
     for m in summ.index:
         vals = np.sort(rdf[rdf["method"] == m]["f1"].dropna().values)
         if not len(vals):
             continue
-        lab = pretty_method(m)
-        e = miss.get(m)
-        if e and e.get("n_poses"):
-            lo, hi = e["wilson_ci"]
-            lab += (f"  (F1≈0: {e['pose_miss_rate'] * 100:.0f}% "
-                    f"[{lo * 100:.0f}–{hi * 100:.0f}])")
-        ax.plot(vals, np.arange(1, len(vals) + 1) / len(vals) * 100, lw=2, label=lab)
+        ax.plot(vals, np.arange(1, len(vals) + 1) / len(vals) * 100, lw=2,
+                color=TOOL_COLORS.get(m), label=pretty_method(m))
     ax.set_xlabel("F1 of native interaction recovery"); ax.set_ylabel("cumulative % of poses")
-    sub = ""
-    omn = (miss_paired or {}).get("omnibus")
-    if omn and omn.get("p") == omn.get("p"):
-        sub = (f"\nTotal-miss (F1≈0) rate differs across tools: Friedman {su.fmt_p(omn['p'])} "
-               f"{su.p_stars(omn['p'])} (W={omn['kendall_w']:.2f}, n={omn['n']}){_ntag(omn['n'])}"
-               "\nlegend = pose-level F1≈0 rate [Wilson 95% CI]")
-    ax.set_title("Native-interaction recovery — F1 CDF" + sub, fontsize=10 if sub else 12)
+    ax.set_title(_title(out_dir / "04b_native_recovery_cdf.png",
+                        "Native-interaction recovery — F1 CDF"), fontsize=12)
     ax.legend(fontsize=7); ax.grid(alpha=0.3)
     fig.tight_layout(); _finalize_fig(fig, out_dir / "04b_native_recovery_cdf.png")
+    try:
+        lines = ["Total-miss rate = fraction of poses recovering ZERO native typed contacts "
+                 "(F1≈0, the CDF's y-intercept).", "",
+                 "Per-tool pose-level F1≈0 rate with Wilson 95% CI "
+                 "(poses treated as independent — pseudoreplicated screening bound):"]
+        for m in summ.index:
+            e = miss.get(m)
+            if e and e.get("n_poses"):
+                lo, hi = e["wilson_ci"]
+                extra = ""
+                cr = e.get("miss_rate_cluster_robust_ci")
+                if cr:
+                    extra = f"; cluster-robust CI [{cr[1] * 100:.0f}–{cr[2] * 100:.0f}%]"
+                lines.append(f"  {pretty_method(m)}: {e['pose_miss_rate'] * 100:.1f}% "
+                             f"({e['k']}/{e['n_poses']}) [Wilson {lo * 100:.0f}–{hi * 100:.0f}%]{extra}")
+        omn = (miss_paired or {}).get("omnibus")
+        if omn and omn.get("p") == omn.get("p"):
+            lines += ["", "Per-complex miss-fraction paired Friedman across tools "
+                          "(inference-grade comparison): "
+                          f"chi2({omn['df']})={omn['chi2']:.2f}, {_fmt_p_txt(omn['p'])}, "
+                          f"Kendall W={omn['kendall_w']:.2f}, n={omn['n']} complexes."]
+        _write_stats_txt(out_dir / "04b_native_recovery_cdf.png",
+                         "04b — Native-interaction recovery F1 CDF", lines)
+    except Exception as e:
+        print(f"  [stats] 04b CDF txt skipped: {e}")
     return summ
 
 
@@ -1074,7 +1307,17 @@ def plot_native_recovery_by_rank(per_pose: pd.DataFrame, order, out: Path,
     methods = [m for m in order if m in present]
     if not methods:
         return
-    colors = _method_colors(order)
+    # Colour each toolchain by its BASE tool so the palette matches
+    # 09f_pbvalid_yield_boxplot (AutoDock blue, DiffDock orange, EquiBind green) —
+    # the variant suffix (smina / gnina / pocket) is ignored here, mirroring 09f's
+    # tool_color_key {autodock, diffdock, equibind->equibind_unguided}.
+    def _base_tool_color(m: str) -> str:
+        if m.startswith("diffdock"):
+            return TOOL_COLORS.get("diffdock")
+        if m.startswith("equibind"):
+            return TOOL_COLORS.get("equibind_unguided")
+        return TOOL_COLORS.get(m)
+    colors = {m: _base_tool_color(m) for m in order}
     scores = [("precision", "Precision"), ("recall", "Recall"), ("f1", "F1")]
 
     rows, ranked, unranked = [], {}, {}
@@ -1110,7 +1353,7 @@ def plot_native_recovery_by_rank(per_pose: pd.DataFrame, order, out: Path,
     except Exception as e:
         print(f"  [stats] 04c rank-trend tests skipped: {e}")
 
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5), sharex=True, sharey=True)
+    fig, axes = plt.subplots(3, 1, figsize=(8.5, 12), sharex=True, sharey=True)
     for ax, (col, title) in zip(axes, scores):
         for m in methods:
             c = colors.get(m)
@@ -1122,38 +1365,49 @@ def plot_native_recovery_by_rank(per_pose: pd.DataFrame, order, out: Path,
                 ax.axhline(unranked[m][col], ls="--", lw=1.6, color=c, alpha=0.85,
                            label=f"{pretty_method(m)} (unranked)")
         ax.set_xticks(range(1, top_n + 1))
-        ax.set_xlabel("Pose rank k (1 = tool's top-ranked pose)")
+        ax.set_ylabel("Mean score vs crystal\n(typed interaction recovery)")
         ax.set_title(title)
         ax.set_ylim(0, 1); ax.grid(alpha=0.3)
-        lines = []
-        for m in methods:
-            e = (trend.get(m) or {}).get(col, {})
-            if "median_tau" in e:
-                stx = _sig_star(e.get("star_bh", "")) or "ns"
-                lines.append(f"{pretty_method(m):<9} τ={e['median_tau']:+.2f} {stx}")
-        if lines:
-            ax.text(0.97, 0.03, "rank trend (Kendall τ):\n" + "\n".join(lines),
-                    transform=ax.transAxes, fontsize=6.3, va="bottom", ha="right",
-                    family="monospace",
-                    bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="#cccccc", alpha=0.85))
-    axes[0].set_ylabel("Mean score vs crystal\n(typed interaction recovery)")
-    axes[0].legend(fontsize=7, loc="lower left")
+    axes[-1].set_xlabel("Pose rank k (1 = tool's top-ranked pose)")
     _label_panels(axes)
-    fig.suptitle("Native-interaction recovery vs crystal by pose rank  —  "
-                 "fingerprint = (interaction_type, residue), PB-valid poses only",
-                 fontsize=13, y=0.975)
-    fig.text(0.5, 0.035,
-             "Rank basis: AutoDock / DiffDock native confidence rank, EquiBind "
-             "gnina-affinity rank (a tool lacking a rank is shown as a flat baseline)\n"
-             "Box: per-complex Kendall τ(rank, score) — τ<0 ⇒ the tool's ranking puts "
-             "better poses first (one-sample Wilcoxon vs 0, BH-FDR)",
-             ha="center", va="bottom", fontsize=8, color="#444444")
-    fig.tight_layout(rect=(0, 0.12, 1, 0.945))
-    _finalize_fig(fig, out)
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, fontsize=11, ncol=len(labels),
+               loc="upper center", bbox_to_anchor=(0.5, 0.945), frameon=False)
+    fig.suptitle(_title(out,
+                        "Native-interaction recovery vs crystal by pose rank\n"
+                        "fingerprint = (interaction_type, residue), PB-valid poses only"),
+                 fontsize=13, y=0.98)
+    _note_footer(out,
+                 "Rank basis: AutoDock / DiffDock native confidence rank, EquiBind "
+                 "gnina-affinity rank (a tool lacking a rank is shown as a flat baseline)")
+    fig.tight_layout(rect=(0, 0.02, 1, 0.925))
+    _finalize_fig(fig, out, caption=False)
+    try:
+        tlines = ["Rank trend: per-complex Kendall tau(pose rank, score) -> one-sample "
+                  "Wilcoxon signed-rank vs 0, per tool, BH-FDR across the tool x metric family.",
+                  "tau<0 => the tool's own ranking puts better poses first "
+                  "(one Kendall tau per complex; a tool needs >=3 ranked poses in that complex).",
+                  ""]
+        for m in [mm for mm in methods if mm in ranked]:
+            tlines.append(f"{pretty_method(m)}:")
+            for col, name in (("precision", "Precision"), ("recall", "Recall"), ("f1", "F1")):
+                e = (trend.get(m) or {}).get(col, {})
+                if "median_tau" in e:
+                    bh = (f", BH q={su.fmt_p(e['p_bh'])} {e.get('star_bh', '')}".rstrip()
+                          if e.get("p_bh") is not None else "")
+                    tlines.append(f"  {name}: median tau={e['median_tau']:+.2f}, "
+                                  f"rank-biserial={e.get('rank_biserial'):+.2f}, "
+                                  f"{_fmt_p_txt(e.get('p_raw'))}{bh}  "
+                                  f"(n={e.get('n_complexes')} complexes)")
+                else:
+                    tlines.append(f"  {name}: {e.get('note', 'n/a')}")
+        _write_stats_txt(out, "04c — Native-interaction recovery by pose rank", tlines)
+    except Exception as e:
+        print(f"  [stats] 04c rank-trend txt skipped: {e}")
 
 
 def plot_fingerprint_similarity(inter: pd.DataFrame, crystal: pd.DataFrame, order, out: Path,
-                                depth: int = 1) -> None:
+                                depth: int = 1, show_caption: bool = True) -> None:
     """Mean cross-method Jaccard of the top-`depth` pose(s) per pair, + vs crystal.
 
     ``depth=1`` uses each method's single best (lowest pose_rank) pose. ``depth>1`` uses
@@ -1196,9 +1450,9 @@ def plot_fingerprint_similarity(inter: pd.DataFrame, crystal: pd.DataFrame, orde
                 yticklabels=[pretty_method(m) for m in labels],
                 vmin=0, vmax=1, cbar_kws={"label": "mean Jaccard"}, ax=ax)
     pose_desc = "best pose per pair" if depth == 1 else f"union of top-{depth} poses per pair"
-    ax.set_title(f"Interaction-fingerprint similarity ({pose_desc})")
+    ax.set_title(_title(out, f"Interaction-fingerprint similarity ({pose_desc})"))
     plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-    fig.tight_layout(); _finalize_fig(fig, out)
+    fig.tight_layout(); _finalize_fig(fig, out, caption=show_caption)
 
 
 # ── 06/07/08: chemical-level analyses ───────────────────────────────────────
@@ -1235,7 +1489,8 @@ def plot_chem_chemotype(summary: pd.DataFrame, desc: pd.DataFrame, out_dir: Path
         ax.set_xlabel(xlab); ax.set_ylabel(f"{ylab} / pose")
         ax.set_title(f"{ylab} vs {xlab}"); ax.grid(alpha=0.3); ax.legend(fontsize=8)
     _label_panels(axes)
-    fig.suptitle("Chemical level — interaction type vs ligand chemotype", fontsize=14)
+    fig.suptitle(_title(out_dir / "06_interaction_vs_chemotype.png",
+                        "Chemical level — interaction type vs ligand chemotype"), fontsize=14)
     fig.tight_layout(); _finalize_fig(fig, out_dir / "06_interaction_vs_chemotype.png")
     # correlation table (Pearson CSV kept for backward compatibility)
     cols = ["mw", "n_aromatic_rings", "hbd", "hba", "n_halogen", "formal_charge", "logp"]
@@ -1266,24 +1521,44 @@ def plot_chem_chemotype(summary: pd.DataFrame, desc: pd.DataFrame, out_dir: Path
         for i in range(len(cols)):
             for j in range(len(itypes)):
                 r = rho.iloc[i, j]
-                star = "*" if (q[i, j] == q[i, j] and q[i, j] < 0.05) else ""
-                annot[i, j] = "" if r != r else f"{r:.2f}{star}"
+                annot[i, j] = "" if r != r else f"{r:.2f}"
         sns.heatmap(rho.astype(float), annot=annot, fmt="", cmap="coolwarm", center=0,
                     vmin=-1, vmax=1, annot_kws={"fontsize": 8}, ax=ax)
-        ax.set_title("Spearman correlation (per complex): ligand descriptor × interaction type\n"
-                     f"star = significant at FDR<0.05  (n={n_cx} complexes){_ntag(n_cx)}",
-                     fontsize=10)
+        ax.set_title(_title(out_dir / "06b_descriptor_corr.png",
+                            "Spearman correlation (per complex): ligand descriptor × interaction type\n"
+                            f"(n={n_cx} complexes)"), fontsize=10)
         _record("06b_descriptor_corr", {
             "unit": "per-complex mean interaction count vs per-complex descriptor",
             "family": "descriptor × interaction-type grid (BH-FDR)", "n_complexes": n_cx,
             "descriptors": cols, "interaction_types": itypes,
             "rho": rho.astype(float).to_dict(), "p": pmat, "q_bh": q})
+        sig = []
+        for i, c in enumerate(cols):
+            for j, t in enumerate(itypes):
+                qq = q[i, j]
+                if qq == qq and qq < 0.05:
+                    sig.append((abs(float(rho.iloc[i, j])), c, t,
+                                float(rho.iloc[i, j]), pmat[i, j], qq))
+        sig.sort(reverse=True)
+        txt_lines = [f"Test: per-complex Spearman correlation, ligand descriptor × interaction "
+                     f"type (n={n_cx} complexes).",
+                     f"BH-FDR across the {len(cols)}×{len(itypes)} grid; significant cells "
+                     "(q<0.05), strongest first:", ""]
+        if sig:
+            for _, c, t, r, p, qq in sig:
+                txt_lines.append(f"  {c} × {pretty_itype(t)}: rho={r:+.2f}, {_fmt_p_txt(p)}, "
+                                 f"BH q={su.fmt_p(qq)}")
+        else:
+            txt_lines.append("  (no cell significant at FDR<0.05)")
+        _write_stats_txt(out_dir / "06b_descriptor_corr.png",
+                         "06b — Ligand descriptor × interaction-type correlation", txt_lines)
     except Exception as e:
         print(f"  [stats] 06b Spearman grid skipped ({e}) — Pearson heatmap.")
         ax.clear()
         sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", center=0,
                     vmin=-1, vmax=1, ax=ax)
-        ax.set_title("Correlation: ligand descriptor × interaction type")
+        ax.set_title(_title(out_dir / "06b_descriptor_corr.png",
+                            "Correlation: ligand descriptor × interaction type"))
     fig.tight_layout(); _finalize_fig(fig, out_dir / "06b_descriptor_corr.png")
 
 
@@ -1300,8 +1575,8 @@ def plot_residue_class(inter: pd.DataFrame, out: Path) -> None:
     frac.plot(kind="barh", stacked=True, ax=ax, colormap="Set2")
     ax.set_xlabel("fraction of interactions"); ax.set_ylabel("")
     title = "Residue-class preference per interaction type"
-    # Stats: G-test of independence (interaction type × residue class). Counts are
-    # pooled over poses (a categorical association test, not a per-complex test).
+    # Stats (G-test of independence, interaction type × residue class — a categorical
+    # association test on pose-pooled counts) go to the sidecar .txt, not the title.
     try:
         if _HAVE_STATS and tab.shape[0] >= 2 and tab.shape[1] >= 2 and tab.to_numpy().sum() > 0:
             g = su.gtest_independence(tab.to_numpy(float))
@@ -1310,11 +1585,14 @@ def plot_residue_class(inter: pd.DataFrame, out: Path) -> None:
                 "G": g["G"], "p": g["p"], "df": g["df"], "cramers_v": g["cramers_v"],
                 "n_low_expected": g["n_low_expected"],
                 "rows": list(tab.index), "cols": list(tab.columns), "residuals": g["residuals"]})
-            title += (f"\nG-test type×class: {su.fmt_p(g['p'])} {su.p_stars(g['p'])} "
-                      f"(Cramér's V={g['cramers_v']:.2f}; counts pooled over poses)")
+            _write_stats_txt(out, "07 — Residue-class preference per interaction type", [
+                "Test: G-test of independence, interaction type × residue class "
+                "(counts pooled over poses — a categorical association test).", "",
+                f"G={g['G']:.2f}, df={g['df']}, {_fmt_p_txt(g['p'])}, "
+                f"Cramér's V={g['cramers_v']:.2f}, cells with expected<5: {g['n_low_expected']}."])
     except Exception as e:
         print(f"  [stats] 07 residue-class G-test skipped: {e}")
-    ax.set_title(title, fontsize=10 if "\n" in title else 12)
+    ax.set_title(_title(out, title), fontsize=10 if "\n" in title else 12)
     ax.legend(title="residue class", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
     fig.tight_layout(); _finalize_fig(fig, out)
     tab.to_csv(out.with_suffix(".csv"))
@@ -1334,8 +1612,8 @@ def plot_ligand_element(inter: pd.DataFrame, out: Path) -> None:
     tab.div(tab.sum(axis=1), axis=0).plot(kind="barh", stacked=True, ax=ax, colormap="tab10")
     ax.set_xlabel("fraction of interactions"); ax.set_ylabel("")
     title = "Ligand-atom element per interaction type"
-    # Stats: G-test of independence (interaction type × ligand-atom element), counts
-    # pooled over poses (categorical association test).
+    # Stats (G-test of independence, interaction type × ligand-atom element — a
+    # categorical association test on pose-pooled counts) go to the sidecar .txt.
     try:
         if _HAVE_STATS and tab.shape[0] >= 2 and tab.shape[1] >= 2 and tab.to_numpy().sum() > 0:
             g = su.gtest_independence(tab.to_numpy(float))
@@ -1344,11 +1622,14 @@ def plot_ligand_element(inter: pd.DataFrame, out: Path) -> None:
                 "G": g["G"], "p": g["p"], "df": g["df"], "cramers_v": g["cramers_v"],
                 "n_low_expected": g["n_low_expected"],
                 "rows": list(tab.index), "cols": list(tab.columns), "residuals": g["residuals"]})
-            title += (f"\nG-test type×element: {su.fmt_p(g['p'])} {su.p_stars(g['p'])} "
-                      f"(Cramér's V={g['cramers_v']:.2f}; counts pooled over poses)")
+            _write_stats_txt(out, "08 — Ligand-atom element per interaction type", [
+                "Test: G-test of independence, interaction type × ligand-atom element "
+                "(counts pooled over poses — a categorical association test).", "",
+                f"G={g['G']:.2f}, df={g['df']}, {_fmt_p_txt(g['p'])}, "
+                f"Cramér's V={g['cramers_v']:.2f}, cells with expected<5: {g['n_low_expected']}."])
     except Exception as e:
         print(f"  [stats] 08 ligand-element G-test skipped: {e}")
-    ax.set_title(title, fontsize=10 if "\n" in title else 12)
+    ax.set_title(_title(out, title), fontsize=10 if "\n" in title else 12)
     ax.legend(title="ligand atom", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
     fig.tight_layout(); _finalize_fig(fig, out)
     tab.to_csv(out.with_suffix(".csv"))
@@ -1362,9 +1643,8 @@ def plot_ligand_element(inter: pd.DataFrame, out: Path) -> None:
 # ``inter`` / ``crystal`` frames; only 14 also needs the pose_comparison RMSD table.
 
 def _method_colors(order) -> dict:
-    """Stable per-method colour map (tab10), shared across the new figures."""
-    cmap = plt.get_cmap("tab10")
-    return {m: cmap(i % 10) for i, m in enumerate(order)}
+    """Per-tool colour map from the shared docking-tool palette (see TOOL_COLORS)."""
+    return {m: TOOL_COLORS.get(m) for m in order}
 
 
 def build_recovery_detail(inter: pd.DataFrame, crystal: pd.DataFrame):
@@ -1464,26 +1744,15 @@ def plot_type_resolved_recovery(per_type: pd.DataFrame, order, out: Path,
     rec = agg.pivot(index="interaction_type", columns="method", values="recall").reindex(index=types, columns=methods)
     prc = agg.pivot(index="interaction_type", columns="method", values="precision").reindex(index=types, columns=methods)
 
-    # Cell annotation: point value with its Wilson 95% CI on the line below (value only when
-    # the CI is unavailable), so the figure carries the CI numbers itself, not just the CSV.
+    # Cell annotation: the point value only. The Wilson 95% CI per cell moves to the
+    # sidecar .txt (written below) so the heatmap cells stay uncluttered.
     def _cell_annot(metric: str):
         vpiv = agg.pivot(index="interaction_type", columns="method", values=metric).reindex(index=types, columns=methods)
-        lo_col, hi_col = f"{metric}_lo", f"{metric}_hi"
-        if _HAVE_STATS and lo_col in agg.columns:
-            lpiv = agg.pivot(index="interaction_type", columns="method", values=lo_col).reindex(index=types, columns=methods)
-            hpiv = agg.pivot(index="interaction_type", columns="method", values=hi_col).reindex(index=types, columns=methods)
-        else:
-            lpiv = hpiv = None
         out = np.empty(vpiv.shape, dtype=object)
         for r in range(vpiv.shape[0]):
             for c in range(vpiv.shape[1]):
                 v = vpiv.iloc[r, c]
-                if pd.isna(v):
-                    out[r, c] = ""
-                elif lpiv is not None and not pd.isna(lpiv.iloc[r, c]):
-                    out[r, c] = f"{v:.2f}\n[{lpiv.iloc[r, c]:.2f}, {hpiv.iloc[r, c]:.2f}]"
-                else:
-                    out[r, c] = f"{v:.2f}"
+                out[r, c] = "" if pd.isna(v) else f"{v:.2f}"
         return out
     rec_ann, prc_ann = _cell_annot("recall"), _cell_annot("precision")
     ylabels = [f"{pretty_itype(t)}  (n={int(native.get(t, 0))})" for t in types]
@@ -1529,18 +1798,53 @@ def plot_type_resolved_recovery(per_type: pd.DataFrame, order, out: Path,
         plt.setp(ax.get_xticklabels(), rotation=30, ha="right", rotation_mode="anchor")
         plt.setp(ax.get_yticklabels(), rotation=0)
     _label_panels(axes)
-    # Legend explaining the two-line cell contents (point value over its Wilson 95% CI).
-    fig.text(0.012, 0.90, "Each cell:\nvalue\n[Wilson 95% CI]", ha="left", va="top",
-             fontsize=9, linespacing=1.4,
-             bbox=dict(boxstyle="round,pad=0.4", fc="#f5f5f5", ec="#999999"))
     pose_desc = ("top-1 pose" if depth == 1
                  else f"top-{depth} poses pooled" if depth else "all poses pooled")
-    fig.suptitle("Native-interaction recovery resolved by interaction type  —  " + pose_desc + "\n"
-                 "(A) recall = native contacts reproduced;   (B) precision = predicted contacts that are native",
+    fig.suptitle(_title(out,
+                        "Native-interaction recovery resolved by interaction type  —  " + pose_desc + "\n"
+                        "(A) recall = native contacts reproduced;   (B) precision = predicted contacts that are native"),
                  fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     _finalize_fig(fig, out)
     agg.round(4).to_csv(out.with_suffix(".csv"), index=False)
+    try:
+        pose_desc_txt = ("top-1 pose" if depth == 1
+                         else f"top-{depth} poses pooled" if depth else "all poses pooled")
+        have_ci = "recall_lo" in agg.columns
+
+        def _cell(r, val, lo, hi):
+            if pd.isna(r[val]):
+                return "n/a"
+            if have_ci and not pd.isna(r[lo]):
+                return f"{r[val]:.2f} [{r[lo]:.2f}, {r[hi]:.2f}]"
+            return f"{r[val]:.2f}"
+
+        lines = [f"Native-interaction recovery resolved by interaction type ({pose_desc_txt}).",
+                 "Pooled typed contacts per (interaction type, tool): recall=tp/(tp+fn), "
+                 "precision=tp/(tp+fp), with Wilson 95% CI per cell.",
+                 "Poses pooled -> each contact treated as independent (pseudoreplication); "
+                 "read the CIs as optimistic screening bounds.",
+                 "n (per type) = the crystal's native contacts of that type across complexes.", ""]
+        for t in types:
+            lines.append(f"{pretty_itype(t)} (n={int(native.get(t, 0))}):")
+            for m in methods:
+                row = agg[(agg["interaction_type"] == t) & (agg["method"] == m)]
+                if row.empty:
+                    continue
+                r = row.iloc[0]
+                lines.append(f"  {pretty_method(m)}: "
+                             f"recall {_cell(r, 'recall', 'recall_lo', 'recall_hi')}; "
+                             f"precision {_cell(r, 'precision', 'precision_lo', 'precision_hi')} "
+                             f"(tp={int(r['tp'])}, fn={int(r['fn'])}, fp={int(r['fp'])})")
+        if lown:
+            lines += ["", f"Low-n interaction types (native contacts < {LOWN}; CIs genuinely "
+                          "wide): " + ", ".join(pretty_itype(t) for t in sorted(lown))]
+        if satur:
+            lines += ["", "Saturated types (recall=precision=1.00 for every tool — trivially "
+                          "recovered): " + ", ".join(pretty_itype(t) for t in sorted(satur))]
+        _write_stats_txt(out, f"09 — Type-resolved native recovery ({pose_desc_txt})", lines)
+    except Exception as e:
+        print(f"  [stats] 09 type-resolved txt skipped: {e}")
 
 
 def plot_contact_decomposition(per_pose: pd.DataFrame, order, out: Path,
@@ -1567,8 +1871,9 @@ def plot_contact_decomposition(per_pose: pd.DataFrame, order, out: Path,
     ax.set_xticks(x); ax.set_xticklabels([pretty_method(m) for m in methods], rotation=20, ha="right")
     ax.set_ylabel("Mean number of typed contacts per pose")
     pose_desc = "top-1 pose" if depth == 1 else f"mean over top-{depth} poses"
-    ax.set_title(f"Matched / missed / spurious interaction contacts vs the crystal — {pose_desc}\n"
-                 "(typed contact = interaction type + residue)")
+    ax.set_title(_title(out,
+                        f"Matched / missed / spurious interaction contacts vs the crystal — {pose_desc}\n"
+                        "(typed contact = interaction type + residue)"))
     ax.legend(fontsize=8); ax.grid(axis="y", alpha=0.3); ax.set_axisbelow(True)
     fig.tight_layout(); _finalize_fig(fig, out)
     means.round(3).to_csv(out.with_suffix(".csv"))
@@ -1615,41 +1920,46 @@ def plot_contact_decomposition_by_rank(per_pose: pd.DataFrame, order, out: Path,
     ax.set_xlabel("Pose rank k (1 = tool's top-ranked pose)")
     ax.set_ylabel("Mean number of typed contacts per pose")
     ax.set_ylim(bottom=0); ax.grid(alpha=0.3); ax.set_axisbelow(True)
-    ax.set_title("Matched / missed / spurious interaction contacts vs the crystal, by pose rank\n"
-                 "(typed contact = interaction type + residue)",
-                 fontsize=10)
-    fig.text(0.5, 0.035,
-             "Box: per-complex Kendall τ(rank, ·) — matched τ<0 (falls with rank) & spurious τ>0 "
-             "(rises) both ⇒ ranking orders quality",
-             ha="center", va="bottom", fontsize=8, color="#444444")
-    # reserve a right margin so the two legends sit fully inside the figure
-    fig.subplots_adjust(left=0.08, right=0.68, top=0.88, bottom=0.15)
+    # Title at the very top; the two legends sit between it and the plot as two
+    # centered horizontal rows (Tool above Contact class) so neither overlaps the other.
+    fig.suptitle(_title(out,
+                        "Matched / missed / spurious interaction contacts vs the crystal, by pose rank\n"
+                        "(typed contact = interaction type + residue)"), fontsize=11, y=0.98)
+    fig.subplots_adjust(left=0.08, right=0.97, top=0.74, bottom=0.10)
     from matplotlib.lines import Line2D
     tool_handles = [Line2D([0], [0], color=colors.get(m), lw=3) for m in methods]
     class_handles = [Line2D([0], [0], color="0.35", lw=2, ls=ls) for _, _, ls in classes]
-    leg1 = ax.legend(tool_handles, [pretty_method(m) for m in methods], title="Tool",
-                     loc="upper left", bbox_to_anchor=(1.03, 1.0), fontsize=9)
-    ax.add_artist(leg1)
-    ax.legend(class_handles, [lab for _, lab, _ in classes], title="Contact class",
-              loc="upper left", bbox_to_anchor=(1.03, 0.5), fontsize=9)
-    # per-tool rank-trend summary (matched + spurious), tucked under the two legends
-    tlines = ["rank trend (Kendall τ):"]
-    for m in methods:
-        parts = []
-        for col, short in (("tp", "match"), ("fp", "spur")):
-            e = (trend.get(m) or {}).get(col, {})
-            if "median_tau" in e:
-                stx = _sig_star(e.get("star_bh", "")) or "ns"
-                parts.append(f"{short} {e['median_tau']:+.2f}{stx}")
-        if parts:
-            tlines.append(f"{pretty_method(m):<10} " + "  ".join(parts))
-    if len(tlines) > 1:
-        ax.text(1.03, 0.30, "\n".join(tlines), transform=ax.transAxes, fontsize=7.5,
-                va="top", ha="left", family="monospace",
-                bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="#cccccc", alpha=0.9))
-    _finalize_fig(fig, out)
+    fig.legend(tool_handles, [pretty_method(m) for m in methods], title="Tool",
+               loc="upper center", bbox_to_anchor=(0.5, 0.905), ncol=min(len(methods), 6),
+               fontsize=9, frameon=True)
+    fig.legend(class_handles, [lab for _, lab, _ in classes], title="Contact class",
+               loc="upper center", bbox_to_anchor=(0.5, 0.83), ncol=len(classes),
+               fontsize=9, frameon=True)
+    _finalize_fig(fig, out, caption=False)
     (df.groupby(["method", "pose_rank"])[["tp", "fn", "fp"]].mean().round(3)
      .to_csv(out.with_suffix(".csv")))
+    try:
+        tlines = ["Rank trend: per-complex Kendall tau(pose rank, contact count) -> one-sample "
+                  "Wilcoxon signed-rank vs 0, per tool, BH-FDR across the tool x class family.",
+                  "matched (tp) tau<0 (falls with rank) or missed/spurious (fn/fp) tau>0 (rises) "
+                  "=> the tool's ranking orders pose quality.", ""]
+        classlabels = [("tp", "matched"), ("fn", "missed"), ("fp", "spurious")]
+        for m in methods:
+            tlines.append(f"{pretty_method(m)}:")
+            for col, name in classlabels:
+                e = (trend.get(m) or {}).get(col, {})
+                if "median_tau" in e:
+                    bh = (f", BH q={su.fmt_p(e['p_bh'])} {e.get('star_bh', '')}".rstrip()
+                          if e.get("p_bh") is not None else "")
+                    tlines.append(f"  {name}: median tau={e['median_tau']:+.2f}, "
+                                  f"rank-biserial={e.get('rank_biserial'):+.2f}, "
+                                  f"{_fmt_p_txt(e.get('p_raw'))}{bh}  "
+                                  f"(n={e.get('n_complexes')} complexes)")
+                else:
+                    tlines.append(f"  {name}: {e.get('note', 'n/a')}")
+        _write_stats_txt(out, "10b — Contact decomposition by pose rank", tlines)
+    except Exception as e:
+        print(f"  [stats] 10b rank-trend txt skipped: {e}")
 
 
 def plot_residue_confusion(inter: pd.DataFrame, crystal: pd.DataFrame, order,
@@ -1718,8 +2028,9 @@ def plot_residue_confusion(inter: pd.DataFrame, crystal: pd.DataFrame, order,
     for ax in axes:
         plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
     _label_panels(axes)
-    fig.suptitle(f"Per-residue native-contact recovery (top {len(top_native)} hot-spot residues) "
-                 f"and hallucinated non-native contacts (top {len(top_spur)})", fontsize=13)
+    fig.suptitle(_title(out,
+                        f"Per-residue native-contact recovery (top {len(top_native)} hot-spot residues) "
+                        f"and hallucinated non-native contacts (top {len(top_spur)})"), fontsize=13)
     fig.tight_layout(); _finalize_fig(fig, out)
     rec_mat.round(3).to_csv(out.with_name(out.stem + "_recovery.csv"))
     spur_mat.round(3).to_csv(out.with_name(out.stem + "_spurious.csv"))
@@ -1759,6 +2070,20 @@ def plot_typed_vs_loose(per_pose: pd.DataFrame, order, out: Path) -> None:
             "unit": "per-complex mean recall, loose vs strict (Wilcoxon signed-rank)",
             "family": "per-tool Wilcoxon (BH-FDR)",
             "per_method": {pretty_method(m): v for m, v in per_m.items()}})
+        lines = ["Test: per-complex paired Wilcoxon signed-rank of loose vs strict native "
+                 "recall (aggregated to one value per complex), BH-FDR across tools.",
+                 "gap = loose − strict mean recall (poses hitting the native residue but "
+                 "forming a different interaction type).", ""]
+        for m in methods:
+            gap = loose.get(m, np.nan) - strict.get(m, np.nan)
+            v = per_m.get(m)
+            if v:
+                lines.append(f"  {pretty_method(m)}: gap={gap:+.2f}, "
+                             f"rank-biserial={v['rank_biserial']:+.2f}, "
+                             f"{_fmt_p_txt(v.get('p_bh', v.get('p_raw')))} (BH), n={v['n']}")
+            else:
+                lines.append(f"  {pretty_method(m)}: gap={gap:+.2f}  (no test — small n)")
+        _write_stats_txt(out, "12 — Typed vs loose native recall", lines)
     except Exception as e:
         print(f"  [stats] 12 typed-vs-loose test skipped: {e}")
     x = np.arange(len(methods)); w = 0.38
@@ -1768,15 +2093,15 @@ def plot_typed_vs_loose(per_pose: pd.DataFrame, order, out: Path) -> None:
     for xi, m in enumerate(methods):
         s, ll = strict.values[xi], loose.values[xi]
         if np.isfinite(s) and np.isfinite(ll):
-            st = _sig_star(stars.get(m, ""))
-            ax.annotate(f"gap {ll - s:.2f}{(' ' + st) if st else ''}", (xi, ll),
+            ax.annotate(f"gap {ll - s:.2f}", (xi, ll),
                         textcoords="offset points", xytext=(0, 4), ha="center",
                         fontsize=7, color="#333333")
     ax.set_xticks(x); ax.set_xticklabels([pretty_method(m) for m in methods], rotation=20, ha="right")
     ax.set_ylabel("Mean recall of native contacts"); ax.set_ylim(0, 1)
-    ax.set_title("Right residue, wrong chemistry: typed vs loose native recall\n"
-                 "(gap = poses that hit the native residue but form a different interaction type)\n"
-                 "star = per-complex Wilcoxon loose>strict, FDR<0.05", fontsize=10)
+    ax.set_title(_title(out,
+                        "Right residue, wrong chemistry: typed vs loose native recall\n"
+                        "(gap = poses that hit the native residue but form a different interaction type)"),
+                 fontsize=11)
     ax.legend(fontsize=8); ax.grid(axis="y", alpha=0.3); ax.set_axisbelow(True)
     fig.tight_layout(); _finalize_fig(fig, out)
 
@@ -1817,22 +2142,30 @@ def plot_native_f1_oracle(per_pose: pd.DataFrame, order, out: Path) -> None:
             "unit": "per-complex oracle vs top-1 native-F1 (Wilcoxon signed-rank)",
             "family": "per-tool Wilcoxon (BH-FDR)",
             "per_method": {pretty_method(m): v for m, v in per_m.items()}})
+        lines = ["Test: per-complex paired Wilcoxon signed-rank of oracle (best pose in set) "
+                 "vs the tool's own top-1 native-F1 (one value per complex), BH-FDR across tools.",
+                 "gap = recovery the tool's own ranking leaves on the table.", ""]
+        for m in methods:
+            o = oracle.get(m, np.nan); t1 = top1.get(m, np.nan)
+            v = per_m.get(m)
+            base = f"  {pretty_method(m)}: oracle F1={o:.2f}, top-1 F1={t1:.2f}, gap={o - t1:+.2f}"
+            if v:
+                lines.append(base + f", rank-biserial={v['rank_biserial']:+.2f}, "
+                             f"{_fmt_p_txt(v.get('p_bh', v.get('p_raw')))} (BH), n={v['n']}")
+            else:
+                lines.append(base + "  (no test — small n)")
+        _write_stats_txt(out, "13 — Native-F1 oracle vs top-ranked pose", lines)
     except Exception as e:
         print(f"  [stats] 13 native-F1 oracle test skipped: {e}")
     x = np.arange(len(methods)); w = 0.38
     fig, ax = plt.subplots(figsize=(max(9, 2.0 * len(methods)), 5.5))
     ax.bar(x - w / 2, oracle.values, w, label="best native-F1 pose in the set (interaction oracle)", color="#55A868")
     ax.bar(x + w / 2, top1.values, w, label="native-F1 of the tool's own top-ranked pose", color="#937860")
-    for xi, m in enumerate(methods):
-        st = _sig_star(stars.get(m, ""))
-        if st and np.isfinite(oracle.values[xi]) and np.isfinite(top1.values[xi]):
-            ax.text(xi, max(oracle.values[xi], top1.values[xi]) + 0.02, st,
-                    ha="center", va="bottom", fontsize=9, color="#333333")
     ax.set_xticks(x); ax.set_xticklabels([pretty_method(m) for m in methods], rotation=20, ha="right")
     ax.set_ylabel("Mean native-interaction recovery F1"); ax.set_ylim(0, 1)
-    ax.set_title("Interaction-recovery F1: oracle vs the tool's top-ranked pose\n"
-                 "gap = recovery the tool's own ranking leaves on the table\n"
-                 "star = per-complex Wilcoxon oracle>top-1, FDR<0.05", fontsize=10)
+    ax.set_title(_title(out,
+                        "Interaction-recovery F1: oracle vs the tool's top-ranked pose\n"
+                        "gap = recovery the tool's own ranking leaves on the table"), fontsize=11)
     ax.legend(fontsize=8); ax.grid(axis="y", alpha=0.3); ax.set_axisbelow(True)
     fig.tight_layout(); _finalize_fig(fig, out)
     d.groupby("method")[["oracle_f1", "top1_f1"]].mean().round(3).to_csv(out.with_suffix(".csv"))
@@ -1879,12 +2212,7 @@ def plot_rmsd_vs_recovery(per_pose: pd.DataFrame, metrics_csv: Path, order, out:
     if ps and _HAVE_STATS:
         for m, q in zip(keys, su.bh_fdr(ps)):
             per_m[m]["p_bh"] = float(q); per_m[m]["star_bh"] = su.p_stars(q)
-    legend = []
-    for m in methods:
-        e = per_m[m]
-        st = _sig_star(e.get("star_bh", ""))
-        legend.append(f"{pretty_method(m)}  (n={e['coverage']}, "
-                      f"ρ={e['rho']:.2f}{(' ' + st) if st else ''})")
+    legend = [f"{pretty_method(m)}  (n={per_m[m]['coverage']} poses)" for m in methods]
     # Test 3 — do the tools differ in how tightly RMSD couples to recovery?
     # Fisher r-to-z on each method's Spearman rho, pairwise, Holm across the pairs.
     # Bonett-Wright SE for Spearman: var(z)=(1+rho^2/2)/(n-3). The methods share
@@ -1940,39 +2268,17 @@ def plot_rmsd_vs_recovery(per_pose: pd.DataFrame, metrics_csv: Path, order, out:
                  "but different poses) — screening approximation. Split at RMSD=2 Å; "
                  "Cliff's delta = P(F1|<2Å > F1|>=2Å) - P(<)."})
 
-    # Compact on-figure annotation for tests 3 & 4 (detail lives in interaction_stats.json).
-    annot: list = []
-    if fisher:
-        annot.append("Between-method coupling (Fisher z on ρ, Holm):")
-        for e in fisher:
-            st = _sig_star(e.get("star_holm", "")) or "ns"
-            annot.append(f"  {e['pair'][0]} vs {e['pair'][1]}: Δρ={e['delta_rho']:+.2f} {st}")
-    if thr:
-        if annot:
-            annot.append("")
-        annot.append("Native-F1 median  (<2 Å | ≥2 Å):")
-        for m in methods:
-            if m in thr:
-                t = thr[m]
-                st = _sig_star(t.get("star_holm", "")) or "ns"
-                annot.append(f"  {pretty_method(m)}: {t['median_f1_lt2']:.2f} | "
-                             f"{t['median_f1_ge2']:.2f}  (δ={t['cliffs_delta']:+.2f} {st})")
     ax.axvline(2.0, color="#888888", ls="--", lw=1)
     ax.annotate("2 Å", (2.05, 0.985), color="#666666", fontsize=8, ha="left", va="top")
     ax.set_xlabel("RMSD to crystal ligand (Å)")
     ax.set_ylabel("Native-interaction recovery F1")
-    ax.set_title("Geometry vs chemistry: does low RMSD predict recovering native contacts?\n"
-                 "per-method Spearman (pooled poses); star = FDR<0.05 across methods",
-                 fontsize=10)
+    ax.set_title(_title(out, "Geometry vs chemistry: does low RMSD predict recovering native contacts?"),
+                 fontsize=12)
     # Cap the RMSD axis at 10 Å — far-off decoy poses beyond this only compress the
     # informative 0–10 Å range (per-method Spearman ρ above is still over all poses).
     ax.set_xlim(0, 10); ax.set_ylim(-0.02, 1.02)
     ax.legend(legend, fontsize=8, loc="upper right"); ax.grid(alpha=0.3); ax.set_axisbelow(True)
-    if annot:
-        ax.text(0.015, 0.02, "\n".join(annot), transform=ax.transAxes, fontsize=6.8,
-                va="bottom", ha="left", family="monospace", zorder=6,
-                bbox=dict(boxstyle="round,pad=0.4", fc="white", ec="#bbbbbb", alpha=0.88))
-    fig.tight_layout(); _finalize_fig(fig, out)
+    fig.tight_layout(); _finalize_fig(fig, out, caption=False)
     j[key + ["rmsd", "f1", "recall", "precision"]].to_csv(out.with_suffix(".csv"), index=False)
     # Compact per-figure stats sidecar (tidy long form) — the three tests behind the
     # annotations, so the panel's numbers are reproducible without parsing the pooled
@@ -2002,6 +2308,36 @@ def plot_rmsd_vs_recovery(per_pose: pd.DataFrame, metrics_csv: Path, order, out:
                           "U": t["U"], "p_raw": t["p_raw"], "p_adj": t.get("p_holm"),
                           "p_adj_method": "Holm", "stars": t.get("star_holm", "")})
     pd.DataFrame(srows).to_csv(out.with_name(out.stem + "_stats.csv"), index=False)
+    try:
+        tlines = ["Unit: per pose (pooled) — RMSD-to-crystal vs native-interaction F1.",
+                  "Fisher-z treats methods as independent samples (they share complexes but "
+                  "different poses) — a screening approximation.", "",
+                  "Per-method Spearman correlation (BH-FDR across methods):"]
+        for m in methods:
+            e = per_m[m]
+            bh = (f", BH q={su.fmt_p(e['p_bh'])} {e.get('star_bh', '')}".rstrip()
+                  if e.get("p_bh") is not None else "")
+            tlines.append(f"  {pretty_method(m)}: rho={e['rho']:+.2f}, "
+                          f"{_fmt_p_txt(e.get('p_raw'))}{bh}  (n={e['coverage']} poses)")
+        if fisher:
+            tlines += ["", "Between-method coupling (Fisher r-to-z on rho, Holm):"]
+            for e in fisher:
+                tlines.append(f"  {e['pair'][0]} vs {e['pair'][1]}: Δrho={e['delta_rho']:+.2f}, "
+                              f"z={e['z']:+.2f}, {_fmt_p_txt(e.get('p_holm'))} (Holm)")
+        if thr:
+            tlines += ["", "2 Å threshold (Mann-Whitney U on F1, <2Å vs ≥2Å; Cliff's delta, Holm):"]
+            for m in methods:
+                if m not in thr:
+                    continue
+                t = thr[m]
+                tlines.append(f"  {pretty_method(m)}: median F1 {t['median_f1_lt2']:.2f} "
+                              f"(<2Å, n={t['n_lt2']}) vs {t['median_f1_ge2']:.2f} "
+                              f"(≥2Å, n={t['n_ge2']}); Cliff's delta={t['cliffs_delta']:+.2f} "
+                              f"[{t['delta_ci'][0]:+.2f}, {t['delta_ci'][1]:+.2f}], "
+                              f"{_fmt_p_txt(t.get('p_holm'))} (Holm)")
+        _write_stats_txt(out, "14 — Geometry vs chemistry (RMSD vs native-F1)", tlines)
+    except Exception as e:
+        print(f"  [stats] 14 txt skipped: {e}")
     print(f"  RMSD-vs-recovery: joined {len(j)} poses "
           f"({', '.join(f'{m}={int((j.method==m).sum())}' for m in methods)}).")
 
@@ -2067,16 +2403,18 @@ def plot_pair_overlays(inter: pd.DataFrame, crystal: pd.DataFrame, per_pose: pd.
         ax.set_xticklabels([pretty_method(c) for c in cols], rotation=45, ha="right", fontsize=7)
         ax.set_yticks(range(len(contacts)))
         ax.set_yticklabels([f"{it}:{rn}{rnum}" for (it, rn, rnum, ch) in contacts], fontsize=6)
-        ax.set_title(f"{p}\nmean native-F1 {pair_f1.get((p, l), np.nan):.2f}", fontsize=9)
+        ax.set_title(str(p), fontsize=9)
+        _note_subtitle(out, f"{p}: mean native-F1 {pair_f1.get((p, l), np.nan):.2f}")
     handles = [matplotlib.patches.Patch(color=c, label=lbl) for c, lbl in
                (("#C44E52", "native contact (crystal)"), ("#55A868", "recovered by pose"),
                 ("#8172B3", "spurious (non-native)"), ("#F2F2F2", "absent"))]
-    # lift the legend into its own band (bbox y=0.05) and reserve the bottom 10% so it
-    # clears the pose-scope footer that _finalize_fig stamps at the very bottom edge.
+    # lift the legend into its own band (bbox y=0.05); the bottom 10% reserved by the
+    # tight_layout rect below keeps it clear of the panels.
     fig.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, 0.05),
                ncol=4, fontsize=8, frameon=False)
     _label_panels(axes)
-    fig.suptitle("Crystal-vs-pose interaction overlays (top-ranked pose per method)", fontsize=13)
+    fig.suptitle(_title(out, "Crystal-vs-pose interaction overlays (top-ranked pose per method)"),
+                 fontsize=13)
     fig.tight_layout(rect=(0, 0.10, 1, 1)); _finalize_fig(fig, out)
 
 
@@ -2251,6 +2589,8 @@ def main() -> None:
     depth_pool = min(5, poses_per_combo) if poses_per_combo else 5
 
     order = ordered_methods(summary["method"].unique())
+    for _m in order:                 # seed the shared tool-colour cache in canonical
+        TOOL_COLORS.get(_m)          # order so every EquiBind variant's green is stable
     print(f"Loaded {len(summary)} poses, {len(inter)} interaction rows, "
           f"{len(crystal)} crystal rows. Methods: {order}")
     if poses_per_combo:
@@ -2271,7 +2611,8 @@ def main() -> None:
         plot_fingerprint_similarity(inter, crystal, order,
                                     out_dir / "05_fingerprint_similarity.png", depth=1)
         plot_fingerprint_similarity(inter, crystal, order,
-                                    out_dir / "05_fingerprint_similarity_top5.png", depth=depth_pool)
+                                    out_dir / "05_fingerprint_similarity_top5.png",
+                                    depth=depth_pool, show_caption=False)
 
         # Deeper crystal-vs-pose comparison (figs 09-15). One residue-level detail
         # pass feeds the type-resolved, decomposition, gap and oracle figures.
@@ -2317,6 +2658,9 @@ def main() -> None:
 
     # Recoverable numeric sidecar for every test annotated on the figures above.
     _write_stats_json(out_dir)
+    # One "<stem>.txt" per figure: its one-line title, moved-off subtitle, footer
+    # and the statistical results (everything no longer drawn on the image).
+    _flush_fig_txt(out_dir)
 
     print(f"\nReport written to: {out_dir.resolve()}")
     for f in sorted(out_dir.glob("*.png")):

@@ -12,7 +12,11 @@
 work_dir: /home/manndo/master_dev
 
 # ── Input — Mode A (PoseBusters CSV from run_posebusters) ─────────────────
-pb_csv: posebusters_results/orai_benchmark/dock/posebusters_filtered_results.csv
+# TRANSMEMBRANE-EXCLUDED pose set: poses docked in the TM1 conduction pore
+# (Arg91↔Glu106) are removed by the transmembrane-exclusion cell in
+# Master_Docking.ipynb (Scripts/Analysis/orai_transmembrane_exclusion.py). Point
+# at the raw posebusters_filtered_results.csv to analyse ALL poses instead.
+pb_csv: posebusters_results/orai_benchmark/dock/posebusters_filtered_results.no_tm.csv
 pb_valid_only: true        # true → only poses that passed every PoseBusters test
 
 # ── Crystal reference: none for Orai ──────────────────────────────────────

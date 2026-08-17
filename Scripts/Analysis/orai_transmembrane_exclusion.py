@@ -68,11 +68,37 @@ Per dataset out-dir (default posebusters_results/<ds>/transmembrane_filter/):
   summary.json                -- counts by method / frame
 
   fig_tool_tm_loss.png        -- per tool: of all produced poses, how many PB-valid
-                                 ones are lost to the TM vs survive (+ tool_tm_loss_summary.csv)
+                                 ones are lost to the TM vs survive (+ tool_tm_loss_summary.csv).
+                                 Descriptive only; all inferential tests live in
+                                 fig_tool_tm_loss_stats.txt (and tm_stats.json).
+  fig_tool_tm_loss_stats.txt  -- the statistics that used to be printed on the figure
+                                 panel (per-tool loss + Wilson CI, toolchain x fate
+                                 G-test, per-(frame,ligand) paired loss test).
   fig_pbvalid_lost_matrix.png -- Orai frame x ligand matrix of PB-valid poses lost to
                                  the TM (+ pbvalid_lost_matrix.csv)
   fig_rank_survival.png       -- pose rank vs number of PB-valid poses OUTSIDE the TM
                                  (the potentially-valuable poses; + rank_survival.csv)
+
+Cross-dataset combined figures (<out-root>/transmembrane_filter_combined/, built from
+both datasets' persisted tm_pose_classification.csv unless --no-combined):
+  fig_tool_tm_loss.png         -- two panels, Exp. Ligands (Orai x JKU) and
+                                  Benchmark x Orai, of the per-tool PB-valid fate
+  fig_tool_tm_survival_box.png -- box+whisker (jittered per-unit points) of TM-filter
+                                  survival per (frame x ligand): survival rate + count,
+                                  per tool x category
+  fig_tool_tm_loss_stats.txt   -- statistics for both combined figures
+  fig_rank_recovery_comparison.png   -- how well each tool's NATIVE pose ranking surfaces
+                                  valuable poses (PB-valid & outside TM): cumulative
+                                  recovery@N per complex (fraction with >=1 valuable pose
+                                  in the top-N), Exp. vs Benchmark, Wilson 95% CI +
+                                  availability ceiling. Per-complex normalised so the two
+                                  datasets are comparable despite the ~100x count gap.
+  fig_rank_enrichment_comparison.png -- marginal per-rank hit-rate (is the k-th ranked pose
+                                  valuable?) + base-rate line; isolates ranking SKILL from
+                                  overall yield (declining = score concentrates valid poses
+                                  at the top; flat = validity-blind score)
+  fig_rank_comparison_stats.txt      -- recoverable counts/CIs + small-n / pseudoreplication
+                                  caveats for the two rank-comparison figures
 
 Toolchains / optimizer variants
 -------------------------------
@@ -126,11 +152,30 @@ try:
 except Exception:                                   # pragma: no cover
     _HAVE_MPL = False
 
-# Per-tool identity colours (fixed order, shared with orai_pose_cluster_report.py).
+# Shared (A)/(B)/... panel labeller for the multi-panel combined figures.
+try:
+    from pocket_comparison_report import _label_panels  # noqa: E402
+except Exception:                                   # pragma: no cover
+    def _label_panels(axes, fontsize: int = 13) -> None:
+        import string
+        flat = list(axes.ravel()) if hasattr(axes, "ravel") else (
+            list(axes) if isinstance(axes, (list, tuple)) else [axes])
+        i = 0
+        for ax in flat:
+            if ax is None:
+                continue
+            ax.set_title(f"({string.ascii_uppercase[i % 26]})", loc="left",
+                         fontweight="bold", fontsize=fontsize)
+            i += 1
+
+# Per-tool identity colours (fixed order). Matches the tool palette of the
+# pose_comparison 09f_pbvalid_yield_boxplot figure (posebusters_pose_comparison.py
+# TOOL_COLORS): AutoDock=tab:blue, DiffDock=tab:orange, EquiBind=tab:green (the
+# equibind_unguided green the 09f box uses).
 TOOL_STYLE = {
-    "autodock": ("AutoDock Vina", "#4C72B0", "o"),
-    "diffdock": ("DiffDock", "#55A868", "^"),
-    "equibind": ("EquiBind", "#C44E52", "s"),
+    "autodock": ("AutoDock Vina", "#1f77b4", "o"),
+    "diffdock": ("DiffDock", "#ff7f0e", "^"),
+    "equibind": ("EquiBind", "#2ca02c", "s"),
 }
 # Fate of a produced pose (semantic outcome palette; hatch on the "lost" segment
 # so the survive/lost distinction is not carried by colour alone — CVD-safe).
@@ -253,6 +298,20 @@ AXIAL_FRAC_LO, AXIAL_FRAC_HI = -4.0, 5.0   # centroid position along R91→E106 
 DATASETS = {
     "orai_benchmark": "posebusters_results/orai_benchmark/dock/posebusters_filtered_results.csv",
     "orai_jku": "posebusters_results/orai_jku/dock/posebusters_filtered_results.csv",
+}
+
+# Display categories for the cross-dataset (combined) figures. Orai × JKU are the
+# experimental ("Exp.") ligands; orai_benchmark are the PoseBuster-benchmark ligands
+# docked into Orai. Ordered Exp. first, Benchmark second.
+CATEGORY_LABELS = {
+    "orai_jku": "Exp. Ligands",
+    "orai_benchmark": "Benchmark ligands × Orai",
+}
+CATEGORY_ORDER = ["orai_jku", "orai_benchmark"]
+# category identity colours (distinct from the fate palette used inside each bar)
+CATEGORY_COLOUR = {
+    "Exp. Ligands":              "#8172B3",   # muted purple
+    "Benchmark ligands × Orai":  "#64B5CD",   # muted cyan
 }
 
 
@@ -667,12 +726,30 @@ def _apply_equibind_gnina_rank(out: pd.DataFrame) -> int:
     return n
 
 
-def make_figures(out: pd.DataFrame, out_dir: Path, name: str,
-                 dd_variant: str = "gnina", eb_variant: str = "gnina") -> None:
-    """Three PB-valid-focused figures + their data CSVs (see module docstring)."""
-    if not _HAVE_MPL:
-        print("  matplotlib unavailable — skipping figures")
-        return
+def _coerce_bool(s: pd.Series) -> pd.Series:
+    """Coerce a possibly-string pb_valid column to real bools (CSV round-trips can
+    yield 'True'/'False' object dtype, which breaks `== True` masks). NaN/unknown
+    → False (matches the old `== True` semantics, and never invents validity)."""
+    if s.dtype == bool:
+        return s
+    m = {"True": True, "true": True, "1": True, "1.0": True, True: True, 1: True, 1.0: True,
+         "False": False, "false": False, "0": False, "0.0": False, False: False, 0: False, 0.0: False}
+
+    def _one(v):
+        if isinstance(v, float) and v != v:          # NaN
+            return False
+        return m.get(v, bool(v) if isinstance(v, (int, float, bool)) else False)
+    return s.map(_one).astype(bool)
+
+
+def _prep_fate(out: pd.DataFrame, dd_variant: str, eb_variant: str):
+    """Select the reported optimizer variant per tool, tag every pose with its fate
+    (survive / lost_tm / unplaced / nonvalid) and build the plotting scaffolding
+    shared by the per-dataset and combined figures.
+
+    Returns (df, pv, st, order, tc_style, base_of, counts, totals), or None when the
+    selection is empty. `df` is a copy carrying _base/variant/toolchain/_fate.
+    """
     df = out.copy()
     df["_base"] = df["docking_method"].map(_tool_key)
     if "variant" not in df.columns:
@@ -687,6 +764,12 @@ def make_figures(out: pd.DataFrame, out_dir: Path, name: str,
             | ((df["_base"] == "diffdock") & df["variant"].map(lambda v: _variant_matches(v, dd_variant)))
             | ((df["_base"] == "equibind") & df["variant"].map(lambda v: _variant_matches(v, eb_variant))))
     df = df[keep].copy()
+    if df.empty:
+        return None
+    if "pb_valid" in df.columns:
+        df["pb_valid"] = _coerce_bool(df["pb_valid"])
+    else:
+        df["pb_valid"] = False
     pv = df["pb_valid"] == True                                    # noqa: E712
     st = df["analysis_status"]
     df["_fate"] = np.where(~pv, "nonvalid",
@@ -703,158 +786,207 @@ def make_figures(out: pd.DataFrame, out_dir: Path, name: str,
             mk = TOOL_STYLE[base][2] if i == 0 else _EXTRA_MK[(i - 1) % len(_EXTRA_MK)]
             tc_style[tc] = (TOOL_STYLE[base][1], mk)
     if not order:
-        print("  no poses for the selected variant — skipping figures")
-        return
+        return None
+    counts = {tc: df[df["toolchain"] == tc]["_fate"].value_counts() for tc in order}
+    totals = {tc: int((df["toolchain"] == tc).sum()) for tc in order}
+    return df, pv, st, order, tc_style, base_of, counts, totals
 
-    # ── Statistics (shared stats_utils; each block wrapped so a stats failure
-    #    degrades to the current test-free figure and never breaks the pipeline).
-    #    tm_stats.json next to the figures holds the full numeric results. ────────
-    tm_stats: Dict = {
+
+def _compute_fig1_stats(df: pd.DataFrame, pv: pd.Series, order: List[str],
+                        counts: Dict, name: str):
+    """Toolchain × fate statistics for the PB-valid-loss figure. Returns
+    (f1_dict, small_n). Numbers are identical to the previous in-figure test; they
+    now live in the sidecar txt/json instead of being drawn on the panel. Never
+    raises — a failure degrades to a minimal dict."""
+    st = df["analysis_status"]
+    f1: Dict = {
         "dataset": name,
         "unit_of_analysis_caveat": (
             "Counts below are individual POSES — pseudoreplicated: each tool emits "
             "many correlated poses per (frame, ligand) unit. The G-test / "
             "Cochran-Armitage p-values are computed on pose counts and therefore "
             "OVERSTATE significance; the honest independent unit is the "
-            "(frame, ligand) pair (Orai x JKU has only ~3 ligands x 4 frames). "
-            "Per-(frame,ligand) loss-fraction aggregates and n_units are reported "
-            "alongside so the pooled result can be read against the real unit."),
+            "(frame, ligand) pair. Per-(frame,ligand) loss-fraction aggregates and "
+            "n_units are reported alongside so the pooled result can be read against "
+            "the real unit."),
     }
-    # independent-unit count (frame x ligand pairs carrying >=1 PB-valid pose)
     try:
         _u = df.loc[pv, ["protein", "ligand"]].drop_duplicates()
         n_units = int(len(_u))
         n_ligands = int(df.loc[pv, "ligand"].nunique())
     except Exception:
         n_units = n_ligands = 0
-    # Orai x JKU has only ~3-4 distinct ligands: too few independent chemotypes for
-    # formal inference, so its conclusions are labelled exploratory. Benchmark's
-    # hundreds of ligands are not. Trigger on few units OR few distinct ligands.
     small_n = (n_units < 12) or (n_ligands < 10)
-    tm_stats["n_frame_ligand_units_with_pbvalid"] = n_units
-    tm_stats["n_distinct_ligands"] = n_ligands
-    tm_stats["small_n_exploratory"] = bool(small_n)
-
-    # ── Figure 1: per-toolchain PB-valid fate (produced → survive vs lost-to-TM) ──
-    counts = {tc: df[df["toolchain"] == tc]["_fate"].value_counts() for tc in order}
-    totals = {tc: int((df["toolchain"] == tc).sum()) for tc in order}
-    ymax = max(totals.values()) if totals else 1
-
-    # toolchain x fate contingency table -> G-test of independence (+ Cramer's V,
-    # adjusted residuals); per-tool TM-loss fraction with Wilson CI; per-(frame,
-    # ligand) aggregate of the loss fraction (the pseudoreplication-free view).
+    f1["n_frame_ligand_units_with_pbvalid"] = n_units
+    f1["n_distinct_ligands"] = n_ligands
+    f1["small_n_exploratory"] = bool(small_n)
+    if not _HAVE_SU:
+        return f1, small_n
     _fate_keys = [k for k, _lab, _c, _h in _FATE]     # survive, lost_tm, unplaced, nonvalid
-    fig1_ci = {tc: (None, None) for tc in order}       # Wilson CI on lost/PB-valid
-    fig1_resid = {tc: None for tc in order}            # adjusted residual, lost_tm cell
-    fig1_flag = {tc: False for tc in order}            # |resid| > 2 on lost_tm
-    g_title = ""
-    perunit_title = ""       # pseudoreplication-free per-(frame,ligand) loss-test caption
-    if _HAVE_SU:
+    try:
+        f1["unit"] = "poses (pseudoreplicated — see unit_of_analysis_caveat)"
+        f1["fate_categories"] = _fate_keys
+        f1["toolchains"] = list(order)
+        # Wilson CI on the per-tool TM-loss fraction (lost_tm / PB-valid)
+        per_tool = {}
+        for tc in order:
+            nvalid = int(((df["toolchain"] == tc) & pv).sum())
+            nlost = int(counts[tc].get("lost_tm", 0))
+            lo, hi = su.wilson_ci(nlost, nvalid) if nvalid else (float("nan"), float("nan"))
+            per_tool[tc] = {"pb_valid": nvalid, "lost_tm": nlost,
+                            "loss_fraction": (nlost / nvalid) if nvalid else None,
+                            "wilson_ci": [lo, hi]}
+        f1["per_toolchain_loss_fraction"] = per_tool
+        # G-test on the toolchain × fate table (drop all-zero rows/cols)
+        tbl = np.array([[int(counts[tc].get(k, 0)) for k in _fate_keys]
+                        for tc in order], float)
+        keep_r = tbl.sum(1) > 0
+        keep_c = tbl.sum(0) > 0
+        rows_k = [tc for tc, kr in zip(order, keep_r) if kr]
+        cols_k = [k for k, kc in zip(_fate_keys, keep_c) if kc]
+        sub = tbl[np.ix_(keep_r, keep_c)]
+        if sub.shape[0] >= 2 and sub.shape[1] >= 2:
+            g = su.gtest_independence(sub)
+            resid = np.asarray(g["residuals"])
+            f1["gtest"] = {"G": g["G"], "p": g["p"], "df": g["df"],
+                           "cramers_v": g["cramers_v"],
+                           "n_low_expected": g["n_low_expected"],
+                           "rows": rows_k, "cols": cols_k,
+                           "adjusted_residuals": resid.tolist()}
+            if "lost_tm" in cols_k:
+                jc = cols_k.index("lost_tm")
+                f1["lost_tm_residual_flagged"] = [rows_k[ir] for ir in range(len(rows_k))
+                                                  if abs(float(resid[ir, jc])) > 2.0]
+        else:
+            f1["gtest"] = {"skipped": "table has <2 non-empty rows/cols"}
+        # pseudoreplication-free view: per-(frame,ligand) loss fraction per tool
+        agg = {}
+        for tc in order:
+            s = df[(df["toolchain"] == tc) & pv]
+            if s.empty:
+                continue
+            fr = (s.assign(_l=(s["analysis_status"] == "transmembrane").astype(float))
+                    .groupby(["protein", "ligand"])["_l"].mean())
+            agg[tc] = {"n_units": int(fr.size),
+                       "mean_per_unit_loss_fraction": float(fr.mean()) if fr.size else None,
+                       "per_unit_loss_fraction": {f"{a}|{b}": float(v)
+                                                  for (a, b), v in fr.items()}}
+        f1["per_frame_ligand_loss_fraction"] = agg
+        # pseudoreplication-FREE paired test across tools on the per-unit loss fraction
         try:
-            f1: Dict = {"unit": "poses (pseudoreplicated — see unit_of_analysis_caveat)",
-                        "fate_categories": _fate_keys, "toolchains": list(order)}
-            # Wilson CI on the per-tool TM-loss fraction (lost_tm / PB-valid)
-            per_tool = {}
+            unit_mat = pd.DataFrame({tc: pd.Series(agg[tc]["per_unit_loss_fraction"])
+                                     for tc in order if tc in agg})
+            put: Dict = {"test": "friedman + wilcoxon (paired across tools)",
+                         "quantity": "per-(frame,ligand) TM-loss fraction",
+                         "unit": "(frame,ligand) pair"}
+            boot = {}
             for tc in order:
-                nvalid = int(((df["toolchain"] == tc) & pv).sum())
-                nlost = int(counts[tc].get("lost_tm", 0))
-                lo, hi = su.wilson_ci(nlost, nvalid) if nvalid else (float("nan"), float("nan"))
-                fig1_ci[tc] = (lo, hi)
-                per_tool[tc] = {"pb_valid": nvalid, "lost_tm": nlost,
-                                "loss_fraction": (nlost / nvalid) if nvalid else None,
-                                "wilson_ci": [lo, hi]}
-            f1["per_toolchain_loss_fraction"] = per_tool
-            # G-test on the toolchain x fate table (drop all-zero rows/cols so
-            # chi2_contingency has valid marginals)
-            tbl = np.array([[int(counts[tc].get(k, 0)) for k in _fate_keys]
-                            for tc in order], float)
-            keep_r = tbl.sum(1) > 0
-            keep_c = tbl.sum(0) > 0
-            rows_k = [tc for tc, kr in zip(order, keep_r) if kr]
-            cols_k = [k for k, kc in zip(_fate_keys, keep_c) if kc]
-            sub = tbl[np.ix_(keep_r, keep_c)]
-            if sub.shape[0] >= 2 and sub.shape[1] >= 2:
-                g = su.gtest_independence(sub)
-                resid = np.asarray(g["residuals"])
-                f1["gtest"] = {"G": g["G"], "p": g["p"], "df": g["df"],
-                               "cramers_v": g["cramers_v"],
-                               "n_low_expected": g["n_low_expected"],
-                               "rows": rows_k, "cols": cols_k,
-                               "adjusted_residuals": resid.tolist()}
-                # map the lost_tm-column residual back to each toolchain
-                if "lost_tm" in cols_k:
-                    jc = cols_k.index("lost_tm")
-                    for ir, tc in enumerate(rows_k):
-                        z = float(resid[ir, jc])
-                        fig1_resid[tc] = z
-                        fig1_flag[tc] = abs(z) > 2.0
-                    f1["lost_tm_residual_flagged"] = [tc for tc in rows_k if fig1_flag[tc]]
-                g_title = (f"G={g['G']:.1f}, {su.fmt_p(g['p'])} {su.p_stars(g['p'])}, "
-                           f"Cramer's V={g['cramers_v']:.2f}")
+                vals = np.array(list(agg.get(tc, {}).get("per_unit_loss_fraction", {}).values()), float)
+                if vals.size:
+                    est, blo, bhi = su.bootstrap_ci(vals, statistic=np.mean)
+                    boot[tc] = {"mean": float(est), "ci": [float(blo), float(bhi)],
+                                "n_units": int(vals.size)}
+            put["per_tool_mean_ci"] = boot
+            complete = unit_mat.dropna()
+            put["n_units_complete"] = int(len(complete))
+            if len(complete) >= 5 and complete.shape[1] >= 3:
+                put.update(su.paired_continuous(complete, labels=list(complete.columns)))
+            elif len(complete) >= 5 and complete.shape[1] == 2:
+                a, b = list(complete.columns)
+                rb, p, npair = su.wilcoxon_rankbiserial(complete[a].to_numpy(float),
+                                                        complete[b].to_numpy(float))
+                put["pairwise"] = [{"a": a, "b": b, "rank_biserial": float(rb),
+                                    "p_raw": float(p), "star": su.p_stars(p), "n": int(npair)}]
             else:
-                f1["gtest"] = {"skipped": "table has <2 non-empty rows/cols"}
-            # pseudoreplication-free view: per-(frame,ligand) loss fraction per tool
-            agg = {}
-            for tc in order:
-                s = df[(df["toolchain"] == tc) & pv]
-                if s.empty:
-                    continue
-                fr = (s.assign(_l=(s["analysis_status"] == "transmembrane").astype(float))
-                        .groupby(["protein", "ligand"])["_l"].mean())
-                agg[tc] = {"n_units": int(fr.size),
-                           "mean_per_unit_loss_fraction": float(fr.mean()) if fr.size else None,
-                           "per_unit_loss_fraction": {f"{a}|{b}": float(v)
-                                                      for (a, b), v in fr.items()}}
-            f1["per_frame_ligand_loss_fraction"] = agg
-            # pseudoreplication-FREE test: paired across tools on the per-(frame,
-            # ligand) loss fraction (one value per unit per tool), listwise-complete
-            # → Friedman + Kendall's W + Wilcoxon/Holm; plus a bootstrap CI on each
-            # tool's MEAN per-unit loss fraction. Honest companion to the pooled-pose
-            # G-test / Wilson CI above (whose unit is the pseudoreplicated pose).
-            try:
-                unit_mat = pd.DataFrame({tc: pd.Series(agg[tc]["per_unit_loss_fraction"])
-                                         for tc in order if tc in agg})
-                put: Dict = {"test": "friedman + wilcoxon (paired across tools)",
-                             "quantity": "per-(frame,ligand) TM-loss fraction",
-                             "unit": "(frame,ligand) pair"}
-                boot = {}
-                for tc in order:
-                    vals = np.array(list(agg.get(tc, {}).get("per_unit_loss_fraction", {}).values()), float)
-                    if vals.size:
-                        est, blo, bhi = su.bootstrap_ci(vals, statistic=np.mean)
-                        boot[tc] = {"mean": float(est), "ci": [float(blo), float(bhi)],
-                                    "n_units": int(vals.size)}
-                put["per_tool_mean_ci"] = boot
-                complete = unit_mat.dropna()
-                put["n_units_complete"] = int(len(complete))
-                if len(complete) >= 5 and complete.shape[1] >= 3:
-                    res = su.paired_continuous(complete, labels=list(complete.columns))
-                    put.update(res)
-                    om = res["omnibus"]
-                    perunit_title = (f"per-(frame,ligand) loss Friedman {su.p_stars(om['p'])} "
-                                     f"{su.fmt_p(om['p'])} (W={om['kendall_w']:.2f}, n={om['n']})")
-                elif len(complete) >= 5 and complete.shape[1] == 2:
-                    a, b = list(complete.columns)
-                    rb, p, npair = su.wilcoxon_rankbiserial(complete[a].to_numpy(float),
-                                                            complete[b].to_numpy(float))
-                    put["pairwise"] = [{"a": a, "b": b, "rank_biserial": float(rb),
-                                        "p_raw": float(p), "star": su.p_stars(p), "n": int(npair)}]
-                    perunit_title = (f"per-(frame,ligand) loss Wilcoxon {su.p_stars(p)} "
-                                     f"{su.fmt_p(p)} (n={npair})")
-                else:
-                    put["note"] = "n too small — exploratory"
-                    perunit_title = "per-(frame,ligand) loss: n too small — exploratory"
-                f1["per_frame_ligand_loss_test"] = put
-            except Exception as e:                    # pragma: no cover
-                f1["per_frame_ligand_loss_test"] = {"error": str(e)}
-            if small_n:
-                f1["note"] = "exploratory — few independent (frame,ligand) units"
-            tm_stats["fig_tool_tm_loss"] = f1
+                put["note"] = "n too small — exploratory"
+            f1["per_frame_ligand_loss_test"] = put
         except Exception as e:                        # pragma: no cover
-            print(f"  [warn] fig_tool_tm_loss stats failed: {e}")
-            tm_stats["fig_tool_tm_loss"] = {"error": str(e)}
+            f1["per_frame_ligand_loss_test"] = {"error": str(e)}
+        if small_n:
+            f1["note"] = "exploratory — few independent (frame,ligand) units"
+    except Exception as e:                            # pragma: no cover
+        f1["error"] = str(e)
+    return f1, small_n
 
-    fig, ax = plt.subplots(figsize=(1.9 * len(order) + 3.5, 6.2))
+
+def _fig1_stats_text(f1: Dict) -> str:
+    """Render the toolchain×fate statistics (previously drawn on the panel) as a
+    human-readable sidecar. Consumes the dict from _compute_fig1_stats."""
+    L: List[str] = []
+    name = f1.get("dataset", "")
+    L.append(f"PB-valid poses lost to the transmembrane vs surviving — statistics")
+    L.append(f"dataset / category: {name}")
+    L.append("=" * 72)
+    L.append("")
+    L.append(f1.get("unit_of_analysis_caveat", ""))
+    L.append("")
+    L.append(f"independent (frame×ligand) units with ≥1 PB-valid pose : "
+             f"{f1.get('n_frame_ligand_units_with_pbvalid', '?')}")
+    L.append(f"distinct ligands                                       : "
+             f"{f1.get('n_distinct_ligands', '?')}")
+    if f1.get("small_n_exploratory"):
+        L.append("→ EXPLORATORY: too few independent units/ligands for formal inference.")
+    L.append("")
+
+    ptl = f1.get("per_toolchain_loss_fraction", {})
+    if ptl:
+        L.append("Per-toolchain TM loss of PB-valid poses (pose-level, pseudoreplicated):")
+        L.append(f"  {'toolchain':16s} {'PB-valid':>9s} {'lost→TM':>8s} {'loss%':>7s}  Wilson-95%-CI")
+        for tc, d in ptl.items():
+            nv = d.get("pb_valid", 0); nl = d.get("lost_tm", 0)
+            lf = d.get("loss_fraction"); ci = d.get("wilson_ci", [None, None])
+            lfp = f"{100 * lf:.0f}%" if lf is not None else "n/a"
+            cip = (f"[{100 * ci[0]:.0f}–{100 * ci[1]:.0f}]%"
+                   if ci and ci[0] is not None and ci[0] == ci[0] else "")
+            L.append(f"  {tc:16s} {nv:9d} {nl:8d} {lfp:>7s}  {cip}")
+        L.append("")
+
+    g = f1.get("gtest", {})
+    if g and "G" in g:
+        L.append("Toolchain × fate contingency — G-test of independence (pose-level):")
+        line = (f"  G={g['G']:.2f}, df={g['df']}, {su.fmt_p(g['p']) if _HAVE_SU else 'p='+str(g['p'])} "
+                f"{su.p_stars(g['p']) if _HAVE_SU else ''}, Cramér's V={g['cramers_v']:.3f}")
+        if g.get("n_low_expected"):
+            line += f", {g['n_low_expected']} low-expected cell(s)"
+        L.append(line)
+        flagged = f1.get("lost_tm_residual_flagged", [])
+        if flagged:
+            L.append(f"  |adjusted residual|>2 on the lost-to-TM cell: {', '.join(flagged)}")
+        L.append("")
+    elif g.get("skipped"):
+        L.append(f"Toolchain × fate G-test skipped: {g['skipped']}")
+        L.append("")
+
+    put = f1.get("per_frame_ligand_loss_test", {})
+    if put and "error" not in put:
+        L.append("Pseudoreplication-free view — per-(frame×ligand) TM-loss fraction, paired across tools:")
+        for tc, b in put.get("per_tool_mean_ci", {}).items():
+            L.append(f"  {tc:16s} mean loss {100 * b['mean']:.0f}%  "
+                     f"CI[{100 * b['ci'][0]:.0f}–{100 * b['ci'][1]:.0f}]%  (n_units={b['n_units']})")
+        om = put.get("omnibus")
+        if om and om.get("p") == om.get("p"):
+            L.append(f"  omnibus Friedman: χ²={om['chi2']:.2f}, "
+                     f"{su.fmt_p(om['p']) if _HAVE_SU else 'p='+str(om['p'])} "
+                     f"{su.p_stars(om['p']) if _HAVE_SU else ''}, Kendall W={om['kendall_w']:.2f}, n={om['n']}")
+        for pr in put.get("pairwise", []) or []:
+            star = pr.get("star", su.p_stars(pr.get("p_holm", pr.get("p_raw"))) if _HAVE_SU else "")
+            pval = pr.get("p_holm", pr.get("p_raw"))
+            L.append(f"  {pr['a']} vs {pr['b']}: rank-biserial={pr['rank_biserial']:.2f}, "
+                     f"p={pval:.3g} {star} (n={pr['n']})")
+        if put.get("note"):
+            L.append(f"  note: {put['note']}")
+        L.append("")
+    return "\n".join(L).rstrip() + "\n"
+
+
+def _draw_fate_bars(ax, df: pd.DataFrame, pv: pd.Series, order: List[str],
+                    counts: Dict, totals: Dict, title: str, ymax=None,
+                    annotate: bool = True) -> None:
+    """Descriptive stacked fate bars for one dataset on a supplied axis. Draws the
+    survive/lost/unplaced/nonvalid segments + a produced/PB-valid/lost annotation.
+    Carries NO inferential statistics (those live in the sidecar txt)."""
+    if ymax is None:
+        ymax = max(totals.values()) if totals else 1
     x = np.arange(len(order)); bottoms = np.zeros(len(order))
     for key, label, colour, hatch in _FATE:
         vals = np.array([int(counts[tc].get(key, 0)) for tc in order], float)
@@ -865,41 +997,60 @@ def make_figures(out: pd.DataFrame, out_dir: Path, name: str,
                 ax.text(xi, b + v / 2, f"{int(v)}", ha="center", va="center",
                         fontsize=8, color="#222")
         bottoms += vals
-    for xi, tc in enumerate(order):
-        nvalid = int(((df["toolchain"] == tc) & pv).sum())
-        nlost = int(counts[tc].get("lost_tm", 0))
-        pct = 100 * nlost / nvalid if nvalid else 0
-        lo, hi = fig1_ci.get(tc, (None, None))
-        ci_txt = (f" [{100 * lo:.0f}–{100 * hi:.0f}]"
-                  if lo is not None and lo == lo else "")   # Wilson 95% CI, %
-        mark = " ‡" if fig1_flag.get(tc) else ""            # |adj. residual|>2 on lost_tm
-        ax.text(xi, totals[tc] + 0.015 * ymax,
-                f"produced {totals[tc]}\nPB-valid {nvalid}\n"
-                f"lost to TM {nlost} ({pct:.0f}%{ci_txt}){mark}",
-                ha="center", va="bottom", fontsize=8, color="#222")
+    if annotate:
+        for xi, tc in enumerate(order):
+            nvalid = int(((df["toolchain"] == tc) & pv).sum())
+            nlost = int(counts[tc].get("lost_tm", 0))
+            pct = 100 * nlost / nvalid if nvalid else 0
+            ax.text(xi, totals[tc] + 0.015 * ymax,
+                    f"produced {totals[tc]}\nPB-valid {nvalid}\n"
+                    f"lost to TM {nlost} ({pct:.0f}%)",
+                    ha="center", va="bottom", fontsize=8, color="#222")
     ax.set_xticks(x); ax.set_xticklabels(order)
     ax.set_ylabel("Number of poses produced")
-    _sub = []
-    if g_title:
-        _sub.append(f"toolchain×fate {g_title}")
-    if perunit_title:
-        _sub.append(perunit_title + " — pseudoreplication-free unit")
-    if any(fig1_flag.values()):
-        _sub.append("‡ = |adjusted residual|>2 for the lost-to-TM cell")
-    _sub.append("bracket = Wilson 95% CI on % PB-valid lost; counts are poses "
-                "(pseudoreplicated)" + (" · exploratory (few units)" if small_n else ""))
-    ax.set_title(f"PB-valid poses lost to the transmembrane vs surviving, per toolchain  ({name})",
-                 fontsize=11)
     ax.margins(y=0.18)
+    ax.set_title(title, fontsize=11)
+    ax.spines[["top", "right"]].set_visible(False)
+
+
+def make_figures(out: pd.DataFrame, out_dir: Path, name: str,
+                 dd_variant: str = "gnina", eb_variant: str = "gnina") -> None:
+    """Three PB-valid-focused figures + their data CSVs (see module docstring)."""
+    if not _HAVE_MPL:
+        print("  matplotlib unavailable — skipping figures")
+        return
+    prep = _prep_fate(out, dd_variant, eb_variant)
+    if prep is None:
+        print("  no poses for the selected variant — skipping figures")
+        return
+    df, pv, st, order, tc_style, base_of, counts, totals = prep
+    ymax = max(totals.values()) if totals else 1
+
+    # ── Statistics: computed once, then written to sidecars (fig_tool_tm_loss_stats.txt
+    #    + tm_stats.json). They are no longer drawn on the panel — the figure stays
+    #    purely descriptive (per user request). ───────────────────────────────────
+    tm_stats: Dict = {"dataset": name}
+    f1, small_n = _compute_fig1_stats(df, pv, order, counts, name)
+    tm_stats["unit_of_analysis_caveat"] = f1.get("unit_of_analysis_caveat")
+    tm_stats["n_frame_ligand_units_with_pbvalid"] = f1.get("n_frame_ligand_units_with_pbvalid")
+    tm_stats["n_distinct_ligands"] = f1.get("n_distinct_ligands")
+    tm_stats["small_n_exploratory"] = f1.get("small_n_exploratory")
+    tm_stats["fig_tool_tm_loss"] = f1
+    try:
+        (out_dir / "fig_tool_tm_loss_stats.txt").write_text(_fig1_stats_text(f1))
+        print(f"  stats → {out_dir/'fig_tool_tm_loss_stats.txt'}")
+    except Exception as e:                            # pragma: no cover
+        print(f"  [warn] writing fig_tool_tm_loss_stats.txt failed: {e}")
+
+    # ── Figure 1: per-toolchain PB-valid fate (produced → survive vs lost-to-TM).
+    #    Descriptive only; no inferential tests, no footnote. ──────────────────────
+    fig, ax = plt.subplots(figsize=(1.9 * len(order) + 3.5, 6.2))
+    _draw_fate_bars(ax, df, pv, order, counts, totals,
+                    f"PB-valid poses lost to the transmembrane vs surviving, per toolchain  "
+                    f"({CATEGORY_LABELS.get(name, name)})",
+                    ymax=ymax)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.07), ncol=2,
               frameon=False, fontsize=8)
-    ax.spines[["top", "right"]].set_visible(False)
-    if _sub:
-        _half = (len(_sub) + 1) // 2                       # wrap footnote onto 2 lines
-        _foot = "\n".join(("   ·   ".join(_sub[:_half]),
-                           "   ·   ".join(_sub[_half:]))).strip()
-        fig.text(0.5, -0.14, _foot, ha="center", va="top",
-                 fontsize=8, color="0.35")
     fig.tight_layout()
     fig.savefig(out_dir / "fig_tool_tm_loss.png", dpi=130, bbox_inches="tight")
     plt.close(fig)
@@ -984,7 +1135,8 @@ def make_figures(out: pd.DataFrame, out_dir: Path, name: str,
             tm_stats["fig_pbvalid_lost_matrix"] = {"error": str(e)}
 
     _t2 = (f"PB-valid poses lost to the transmembrane, per Orai frame × ligand{col_note}\n"
-           f"cell = lost / total PB-valid (% of PB-valid lost)   ({name})")
+           f"cell = lost / total PB-valid (% of PB-valid lost)   "
+           f"({CATEGORY_LABELS.get(name, name)})")
     if ca_title:
         _t2 += ("\n" + ca_title
                 + ("  · exploratory" if small_n else "")
@@ -1020,7 +1172,8 @@ def make_figures(out: pd.DataFrame, out_dir: Path, name: str,
                   "EquiBind gnina energy)")
     ax.set_ylabel("Number of PB-valid poses outside the transmembrane")
     ax.set_title(f"Potentially valuable poses by rank\n"
-                 f"solid = PB-valid & outside TM   ·   dashed = all PB-valid   ({name})",
+                 f"solid = PB-valid & outside TM   ·   dashed = all PB-valid   "
+                 f"({CATEGORY_LABELS.get(name, name)})",
                  fontsize=11)
     # cap the x-axis at the AutoDock/DiffDock scoring depth so those tools stay
     # readable; EquiBind's deeper gnina-energy-ranked tail is clipped.
@@ -1087,6 +1240,562 @@ def make_figures(out: pd.DataFrame, out_dir: Path, name: str,
             print(f"  [warn] writing tm_stats.json failed: {e}")
 
     print("  figures → fig_tool_tm_loss.png, fig_pbvalid_lost_matrix.png, fig_rank_survival.png")
+
+
+# ---------------------------------------------------------------------------
+# Cross-dataset (combined) figures: Exp. Ligands vs Benchmark × Orai
+# ---------------------------------------------------------------------------
+def _survival_units(df: pd.DataFrame, pv: pd.Series) -> Dict[str, pd.DataFrame]:
+    """Per-(frame×ligand) TM-survival of PB-valid poses, per toolchain. The TM
+    filter only acts on PLACED poses (kept + transmembrane); off-protein poses are
+    excluded from the denominator. Returns {toolchain: DataFrame[protein, ligand,
+    n_placed, n_survive, rate]}; units with no placed PB-valid pose are dropped."""
+    st = df["analysis_status"]
+    sub = df[pv & st.isin(["kept", "transmembrane"])].copy()
+    if sub.empty:
+        return {}
+    sub["_keep"] = (sub["analysis_status"] == "kept").astype(float)
+    out: Dict[str, pd.DataFrame] = {}
+    for tc, g in sub.groupby("toolchain"):
+        agg = (g.groupby(["protein", "ligand"])["_keep"]
+                 .agg(n_placed="size", n_survive="sum").reset_index())
+        agg["rate"] = agg["n_survive"] / agg["n_placed"].clip(lower=1)
+        out[str(tc)] = agg
+    return out
+
+
+def _draw_survival_boxes(ax, data_by_cat: Dict[str, Dict[str, np.ndarray]],
+                         tools: List[str], cat_labels: List[str], ylabel: str,
+                         ymax: Optional[float] = None) -> None:
+    """Grouped box+whisker with jittered points. For each tool, one box per category
+    side by side (coloured by category). Empty groups are skipped but keep their slot."""
+    rng = np.random.default_rng(0)
+    n_cat = max(len(cat_labels), 1)
+    width = 0.8 / n_cat
+    box_data, positions, colours = [], [], []
+    for ti, tool in enumerate(tools):
+        for ci, cat in enumerate(cat_labels):
+            vals = np.asarray(data_by_cat.get(cat, {}).get(tool, []), float)
+            vals = vals[~np.isnan(vals)]
+            pos = ti + (ci - (n_cat - 1) / 2.0) * width
+            colour = CATEGORY_COLOUR.get(cat, "#888888")
+            if vals.size:
+                box_data.append(vals); positions.append(pos); colours.append(colour)
+                # jittered per-unit points. Small-n groups (the Exp. category) get
+                # prominent markers — the points, not the quartiles, are the signal
+                # there; large-n groups (Benchmark) get small low-alpha dots so they
+                # read as a density cloud instead of an overplotted slab.
+                jit = (rng.random(vals.size) - 0.5) * width * 0.6
+                if vals.size <= 40:
+                    ax.scatter(pos + jit, vals, s=13, color=colour, edgecolor="white",
+                               linewidth=0.3, alpha=0.9, zorder=3)
+                else:
+                    ax.scatter(pos + jit, vals, s=4, color=colour, edgecolor="none",
+                               alpha=0.22, zorder=2)
+    if box_data:
+        bp = ax.boxplot(box_data, positions=positions, widths=width * 0.85,
+                        patch_artist=True, showfliers=False,
+                        medianprops=dict(color="#222", linewidth=1.4),
+                        whiskerprops=dict(color="#555"), capprops=dict(color="#555"))
+        for patch, c in zip(bp["boxes"], colours):
+            patch.set_facecolor(c); patch.set_alpha(0.35); patch.set_edgecolor(c)
+    ax.set_xticks(range(len(tools)))
+    ax.set_xticklabels(tools)
+    ax.set_xlim(-0.6, len(tools) - 0.4)
+    ax.set_ylabel(ylabel)
+    if ymax is not None:
+        ax.set_ylim(0, ymax)
+    ax.grid(True, axis="y", alpha=0.25)
+    ax.spines[["top", "right"]].set_visible(False)
+
+
+def make_category_figures(class_paths: Dict[str, Path], out_dir: Path,
+                          dd_variant: str = "gnina", eb_variant: str = "gnina") -> None:
+    """Cross-dataset figures splitting the per-tool TM analysis into the two ligand
+    CATEGORIES — Exp. Ligands (Orai × JKU) and Benchmark × Orai — reading each
+    dataset's persisted tm_pose_classification.csv:
+
+      fig_tool_tm_loss.png          -- two category panels of the per-tool PB-valid
+                                       fate (produced → survive vs lost-to-TM)
+      fig_tool_tm_survival_box.png  -- box+whisker (jittered points) of TM-survival
+                                       per (frame×ligand) unit, tool × category
+      fig_tool_tm_loss_stats.txt    -- all statistics for both figures (moved off the
+                                       panels)
+    """
+    if not _HAVE_MPL:
+        print("  matplotlib unavailable — skipping combined figures")
+        return
+    usecols = ["dataset", "docking_method", "protein", "ligand", "pose_file",
+               "gnina_affinity", "refine_variant", "pb_valid", "variant",
+               "toolchain", "pose_rank", "analysis_status"]
+    cats = []
+    for ds in CATEGORY_ORDER:
+        p = class_paths.get(ds)
+        if not p or not Path(p).exists():
+            print(f"  combined: {CATEGORY_LABELS.get(ds, ds)} classification not found ({p}) — skipping it")
+            continue
+        try:
+            raw = pd.read_csv(p, usecols=lambda c: c in usecols, low_memory=False)
+        except Exception as e:                        # pragma: no cover
+            print(f"  [warn] combined: cannot read {p}: {e}")
+            continue
+        prep = _prep_fate(raw, dd_variant, eb_variant)
+        if prep is None:
+            print(f"  combined: no poses for the selected variant in {ds} — skipping it")
+            continue
+        df, pv, st, order, tc_style, base_of, counts, totals = prep
+        f1, small_n = _compute_fig1_stats(df, pv, order, counts, CATEGORY_LABELS[ds])
+        cats.append({"ds": ds, "label": CATEGORY_LABELS[ds], "df": df, "pv": pv,
+                     "order": order, "counts": counts, "totals": totals,
+                     "f1": f1, "small_n": small_n,
+                     "survival": _survival_units(df, pv)})
+    if not cats:
+        print("  combined: no dataset classification CSVs available — skipping combined figures")
+        return
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # canonical tool order across categories (variant already selected)
+    tools: List[str] = []
+    for c in cats:
+        for tc in c["order"]:
+            if tc not in tools:
+                tools.append(tc)
+    _rank = {"AutoDock Vina": 0, "DiffDock": 1, "DiffDock*": 1, "EquiBind": 2, "EquiBind*": 2}
+    tools.sort(key=lambda t: (_rank.get(t, 9), t))
+    cat_labels = [c["label"] for c in cats]
+
+    # ── Combined figure 1: two category panels of the per-tool PB-valid fate ──
+    ncol = len(cats)
+    fig, axes = plt.subplots(1, ncol, figsize=(6.2 * ncol, 6.6), squeeze=False)
+    axes = axes.ravel()
+    for ax, c in zip(axes, cats):
+        _draw_fate_bars(ax, c["df"], c["pv"], c["order"], c["counts"], c["totals"],
+                        c["label"])
+    _label_panels(axes[:len(cats)])
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=len(_FATE),
+               frameon=False, fontsize=9, bbox_to_anchor=(0.5, -0.02))
+    fig.suptitle("PB-valid poses lost to the transmembrane vs surviving, per toolchain",
+                 fontsize=13, y=0.99)
+    fig.tight_layout(rect=(0, 0.05, 1, 0.97))
+    fig.savefig(out_dir / "fig_tool_tm_loss.png", dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+    # ── Combined figure 2: TM-survival per (frame×ligand) unit, tool × category ──
+    #    Panel A = survival RATE (normalised — recommended); Panel B = survival COUNT
+    #    (the literal "how many survive"). Box+whisker + jittered per-unit points; for
+    #    the small-n Exp. category the individual points carry the real information.
+    rate_by_cat = {c["label"]: {tc: sv["rate"].to_numpy(float) for tc, sv in c["survival"].items()}
+                   for c in cats}
+    count_by_cat = {c["label"]: {tc: sv["n_survive"].to_numpy(float) for tc, sv in c["survival"].items()}
+                    for c in cats}
+    fig, (axR, axC) = plt.subplots(1, 2, figsize=(6.6 * 2, 5.6))
+    _draw_survival_boxes(axR, rate_by_cat, tools, cat_labels,
+                         "TM-survival rate of PB-valid poses\n(kept / [kept + inside-TM], per frame×ligand)",
+                         ymax=1.02)
+    axR.set_title("Survival rate (normalised)", fontsize=11)
+    cmax = 0.0
+    for cat in cat_labels:
+        for tc in tools:
+            v = count_by_cat.get(cat, {}).get(tc, np.array([]))
+            if len(v):
+                cmax = max(cmax, float(np.nanmax(v)))
+    _draw_survival_boxes(axC, count_by_cat, tools, cat_labels,
+                         "PB-valid poses surviving the TM filter\n(count per frame×ligand unit)",
+                         ymax=cmax * 1.08 + 1)
+    axC.set_title("Survival count", fontsize=11)
+    _label_panels([axR, axC])
+    cat_handles = [plt.Line2D([0], [0], marker="s", linestyle="none",
+                              markerfacecolor=CATEGORY_COLOUR.get(cat, "#888"),
+                              markeredgecolor="white", markersize=10, label=cat)
+                   for cat in cat_labels]
+    fig.legend(handles=cat_handles, loc="lower center", ncol=len(cat_labels),
+               frameon=False, fontsize=10, bbox_to_anchor=(0.5, -0.02))
+    fig.suptitle("TM-filter survival of PB-valid poses, per toolchain "
+                 "(each point = one frame × ligand)", fontsize=13, y=1.0)
+    fig.tight_layout(rect=(0, 0.06, 1, 0.96))
+    fig.savefig(out_dir / "fig_tool_tm_survival_box.png", dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+    # ── stats sidecar (both figures) ──
+    lines: List[str] = []
+    lines.append("PB-valid TM loss / survival — statistics (combined Exp. vs Benchmark)")
+    lines.append("#" * 72)
+    lines.append("")
+    for c in cats:
+        lines.append(f"########## {c['label']}  ({c['ds']}) ##########")
+        lines.append("")
+        lines.append(_fig1_stats_text(c["f1"]))
+        lines.append("")
+    lines.append("=" * 72)
+    lines.append("TM-filter survival per (frame × ligand) unit  (box-plot figure)")
+    lines.append("rate = PB-valid poses kept / (kept + inside-TM); count = PB-valid poses kept")
+    lines.append("=" * 72)
+    lines.append("")
+    lines.append(f"  {'category':18s} {'tool':16s} {'n_units':>7s} "
+                 f"{'median_rate':>11s} {'IQR_rate':>16s} {'median_count':>12s}")
+    for c in cats:
+        for tc in tools:
+            sv = c["survival"].get(tc)
+            if sv is None or sv.empty:
+                continue
+            r = sv["rate"].to_numpy(float); n = sv["n_survive"].to_numpy(float)
+            q1, q3 = np.percentile(r, [25, 75])
+            lines.append(f"  {c['label']:18s} {tc:16s} {len(sv):7d} "
+                         f"{np.median(r):11.2f} [{q1:.2f}–{q3:.2f}]{'':6s} {np.median(n):12.1f}")
+    lines.append("")
+    # cross-category test per tool (Exp vs Benchmark) on the survival RATE
+    if _HAVE_SU and len(cats) == 2:
+        a_lab, b_lab = cats[0]["label"], cats[1]["label"]
+        lines.append(f"Cross-category Mann–Whitney (survival rate: {a_lab} vs {b_lab}), per tool:")
+        for tc in tools:
+            sa = cats[0]["survival"].get(tc)
+            sb = cats[1]["survival"].get(tc)
+            if sa is None or sb is None or sa.empty or sb.empty:
+                continue
+            res = su.mannwhitney_cliffs(sa["rate"].to_numpy(float), sb["rate"].to_numpy(float))
+            if not res:
+                continue
+            lines.append(f"  {tc:16s} U={res['U']:.0f}, {su.fmt_p(res['p'])} "
+                         f"{su.p_stars(res['p'])}, Cliff's δ={res['cliffs_delta']:+.2f} "
+                         f"(n_{a_lab.split()[0]}={res['n_a']}, n_{b_lab.split()[0]}={res['n_b']})")
+        lines.append("")
+        lines.append("NOTE: Exp. Ligands has only ~3 ligands × 4 frames — its boxes summarise very")
+        lines.append("few units, so the jittered points (not the quartiles) carry the real signal.")
+    try:
+        (out_dir / "fig_tool_tm_loss_stats.txt").write_text("\n".join(lines).rstrip() + "\n")
+        print(f"  combined stats → {out_dir/'fig_tool_tm_loss_stats.txt'}")
+    except Exception as e:                            # pragma: no cover
+        print(f"  [warn] writing combined stats txt failed: {e}")
+    print(f"  combined figures → {out_dir/'fig_tool_tm_loss.png'}, "
+          f"{out_dir/'fig_tool_tm_survival_box.png'}")
+
+
+# ---------------------------------------------------------------------------
+# Cross-dataset RANK-quality comparison: how well does each tool's native pose
+# ranking surface valuable poses (PB-valid & outside TM), Exp. Ligands vs
+# Benchmark ligands × Orai?  Normalised per-complex views, so the two datasets
+# are comparable despite the ~100× complex-count gap (1202 vs 12).
+# ---------------------------------------------------------------------------
+# dataset marker/linestyle (colour comes from CATEGORY_COLOUR; the redundant
+# marker+dash keeps the two series distinguishable without relying on colour).
+CATEGORY_MARK = {"orai_jku": ("^", "--"), "orai_benchmark": ("o", "-")}
+# panel order for the rank-comparison figures: strongest → weakest overall yield,
+# so the (near-)empty EquiBind panel lands last and reads as the deliberate
+# "catastrophe" panel rather than as missing data.
+_RANK_PANEL_ORDER = {"diffdock": 0, "autodock": 1, "equibind": 2}
+
+
+def _first_valuable_rank(tool_df: pd.DataFrame, universe: pd.MultiIndex) -> pd.Series:
+    """Smallest native rank carrying a VALUABLE pose (PB-valid & outside TM), per
+    complex, reindexed onto the full shared `universe` of (protein, ligand) pairs.
+    A complex the tool never produced / never got a valuable pose for → np.inf, so
+    it counts as a MISS at every rank depth (the full-universe denominator refuses
+    to reward a tool for silently dropping hard complexes)."""
+    val = tool_df[tool_df["valuable"]]
+    if val.empty:
+        mr = pd.Series(dtype=float)
+    else:
+        mr = val.groupby(["protein", "ligand"])["pose_rank"].min()
+    return mr.reindex(universe).astype(float).fillna(np.inf)
+
+
+def _recovery_stats(tool_df: pd.DataFrame, universe: pd.MultiIndex, max_rank: int) -> Dict:
+    """Cumulative recovery@N (fraction of the shared universe with ≥1 valuable pose
+    among the tool's top-N ranked poses) + Wilson 95% CI, plus the availability
+    ceiling (≥1 valuable pose ANYWHERE in the full ranked list, incl. ranks >N)."""
+    first = _first_valuable_rank(tool_df, universe)
+    n = int(len(first))
+    ns = list(range(1, max_rank + 1))
+    rec_k = [int((first <= N).sum()) for N in ns]
+    lo, hi = [], []
+    for k in rec_k:
+        a, b = su.wilson_ci(k, n) if (n and _HAVE_SU) else (float("nan"), float("nan"))
+        lo.append(a); hi.append(b)
+    ceil_k = int(np.isfinite(first).sum())
+    ca, cb = su.wilson_ci(ceil_k, n) if (n and _HAVE_SU) else (float("nan"), float("nan"))
+    produced = int(tool_df.drop_duplicates(["protein", "ligand"]).shape[0])
+    return {"N": ns, "n": n, "k": rec_k,
+            "frac": [k / n if n else float("nan") for k in rec_k],
+            "lo": lo, "hi": hi, "ceiling_k": ceil_k,
+            "ceiling": ceil_k / n if n else float("nan"),
+            "ceiling_ci": (ca, cb), "produced_complexes": produced}
+
+
+def _marginal_stats(tool_df: pd.DataFrame, max_rank: int) -> Dict:
+    """Marginal per-rank hit-rate: P(the pose at EXACTLY rank k is valuable | the
+    tool produced a pose at rank k) + Wilson CI, and the pooled base rate over
+    ranks 1..max_rank. A declining profile = the native score concentrates valuable
+    poses at the top (real ranking skill); a flat profile = a validity-blind score."""
+    ns, frac, lo, hi, kk, dd = [], [], [], [], [], []
+    for k in range(1, max_rank + 1):
+        at = tool_df[tool_df["pose_rank"] == k]
+        d = int(at.drop_duplicates(["protein", "ligand"]).shape[0])
+        h = int(at[at["valuable"]].drop_duplicates(["protein", "ligand"]).shape[0])
+        a, b = su.wilson_ci(h, d) if (d and _HAVE_SU) else (float("nan"), float("nan"))
+        ns.append(k); kk.append(h); dd.append(d)
+        frac.append(h / d if d else float("nan")); lo.append(a); hi.append(b)
+    top = tool_df[tool_df["pose_rank"] <= max_rank]
+    base_d = int(len(top)); base_h = int(top["valuable"].sum())
+    return {"rank": ns, "k": kk, "d": dd, "frac": frac, "lo": lo, "hi": hi,
+            "base_rate": base_h / base_d if base_d else float("nan")}
+
+
+def make_rank_comparison_figures(class_paths: Dict[str, Path], out_dir: Path,
+                                 dd_variant: str = "gnina", eb_variant: str = "gnina",
+                                 max_rank: int = 10) -> None:
+    """Two normalised, per-complex RANK-quality comparison figures + a stats sidecar,
+    contrasting Exp. Ligands vs Benchmark ligands × Orai on how well each tool's
+    NATIVE pose ranking surfaces valuable poses (PB-valid & outside the TM):
+
+      fig_rank_recovery_comparison.png   -- cumulative recovery@N (≥1 valuable pose in
+                                            the top-N ranked poses), per tool, both
+                                            datasets, Wilson 95% CI + availability ceiling
+      fig_rank_enrichment_comparison.png -- marginal per-rank hit-rate (is the k-th ranked
+                                            pose valuable?) + per-series base-rate line;
+                                            isolates ranking SKILL from overall yield
+      fig_rank_comparison_stats.txt      -- recoverable counts/CIs + honesty caveats
+                                            (inferential dataset contrasts kept off-panel)
+    """
+    if not _HAVE_MPL:
+        print("  matplotlib unavailable — skipping rank-comparison figures")
+        return
+    usecols = ["docking_method", "protein", "ligand", "pb_valid", "variant",
+               "toolchain", "pose_rank", "analysis_status"]
+    cats: List[Dict] = []
+    for ds in CATEGORY_ORDER:
+        p = class_paths.get(ds)
+        if not p or not Path(p).exists():
+            print(f"  rank-cmp: {CATEGORY_LABELS.get(ds, ds)} classification not found ({p}) — skipping it")
+            continue
+        try:
+            raw = pd.read_csv(p, usecols=lambda c: c in usecols, low_memory=False)
+        except Exception as e:                            # pragma: no cover
+            print(f"  [warn] rank-cmp: cannot read {p}: {e}")
+            continue
+        prep = _prep_fate(raw, dd_variant, eb_variant)
+        if prep is None:
+            print(f"  rank-cmp: no poses for the selected variant in {ds} — skipping it")
+            continue
+        df = prep[0].copy()
+        df = df[df["pose_rank"].notna()].copy()
+        if df.empty:
+            continue
+        df["pose_rank"] = df["pose_rank"].astype(int)
+        df["valuable"] = (df["pb_valid"] == True) & (df["analysis_status"] == "kept")  # noqa: E712
+        universe = (df.drop_duplicates(["protein", "ligand"])
+                      .set_index(["protein", "ligand"]).index)
+        cats.append({"ds": ds, "label": CATEGORY_LABELS[ds], "df": df,
+                     "order": prep[3], "universe": universe, "n": int(len(universe))})
+    if not cats:
+        print("  rank-cmp: no dataset classification CSVs available — skipping rank-comparison figures")
+        return
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # tools present across categories, ordered strongest → weakest
+    tools: List[str] = []
+    base_of: Dict[str, str] = {}
+    for c in cats:
+        cdf = c["df"]
+        for tc in c["order"]:
+            # `order` (from _prep_fate) is computed before the pose_rank.notna()
+            # filter, so a toolchain with only NaN-ranked poses is listed here yet
+            # absent from cdf — guard the empty selection so it is skipped rather
+            # than crashing (which the blanket try/except would swallow, silently
+            # dropping the whole comparison including the valid AutoDock/DiffDock).
+            sel = cdf.loc[cdf["toolchain"] == tc, "_base"]
+            if sel.empty:
+                continue
+            if tc not in tools:
+                tools.append(tc)
+            base_of.setdefault(tc, str(sel.iloc[0]))
+    tools.sort(key=lambda t: (_RANK_PANEL_ORDER.get(base_of.get(t, ""), 9), t))
+
+    # per (tool, category) recovery + marginal stats
+    rec: Dict[str, Dict[str, Dict]] = {}
+    mrg: Dict[str, Dict[str, Dict]] = {}
+    for tc in tools:
+        rec[tc], mrg[tc] = {}, {}
+        for c in cats:
+            sub = c["df"][c["df"]["toolchain"] == tc]
+            if sub.empty:
+                continue
+            rec[tc][c["ds"]] = _recovery_stats(sub, c["universe"], max_rank)
+            mrg[tc][c["ds"]] = _marginal_stats(sub, max_rank)
+
+    def _legend(fig, extra: str):
+        h = [plt.Line2D([0], [0], color=CATEGORY_COLOUR.get(c["label"], "#888"),
+                        marker=CATEGORY_MARK[c["ds"]][0], linestyle=CATEGORY_MARK[c["ds"]][1],
+                        lw=2, ms=7, label=f"{c['label']} (n={c['n']})") for c in cats]
+        fig.legend(handles=h, loc="lower center", ncol=len(cats), frameon=False,
+                   fontsize=9.5, bbox_to_anchor=(0.5, 0.055))
+        fig.text(0.5, 0.012, extra, ha="center", va="bottom", fontsize=7.6, color="#666")
+
+    xs = list(range(1, max_rank + 1))
+    ncol = len(tools)
+
+    # ── Figure A: cumulative recovery@N ──────────────────────────────────────
+    fig, axes = plt.subplots(1, ncol, figsize=(5.0 * ncol, 5.2), sharey=True, squeeze=False)
+    axes = axes.ravel()
+    for ax, tc in zip(axes, tools):
+        ax.axvline(1, color="#999", lw=0.8, ls=":", alpha=0.5, zorder=0)  # recovery@1 guide
+        for c in cats:
+            r = rec[tc].get(c["ds"])
+            if not r:
+                continue
+            colour = CATEGORY_COLOUR.get(c["label"], "#888")
+            mk, dash = CATEGORY_MARK[c["ds"]]
+            ax.fill_between(r["N"], r["lo"], r["hi"], color=colour, alpha=0.16,
+                            hatch=("///" if c["ds"] == "orai_jku" else None),
+                            edgecolor=colour, linewidth=0)
+            ax.plot(r["N"], r["frac"], color=colour, marker=mk, ls=dash, lw=1.8, ms=6,
+                    zorder=4)
+            # availability ceiling (≥1 valuable pose anywhere in the full ranked list).
+            # Numeric label only in the EquiBind panel, where the curve sits well below
+            # the ceiling (the informative gap); on the near-saturated AutoDock/DiffDock
+            # panels the dotted line alone avoids label pile-up (exact counts → sidecar).
+            ax.axhline(r["ceiling"], color=colour, lw=1.0, ls=(0, (1, 2)), alpha=0.7)
+            if base_of.get(tc) == "equibind":
+                _va = "top" if c["ds"] == "orai_jku" else "bottom"
+                ax.text(max_rank + 0.15, r["ceiling"], f"ceiling {r['ceiling_k']}/{r['n']}",
+                        color=colour, fontsize=7.5, va=_va, ha="left")
+            # raw k/n for the tiny Exp. set at recovery@1 (the headline value), so the
+            # rate is never disguised as a smooth curve
+            if c["ds"] == "orai_jku":
+                ax.annotate(f"{r['k'][0]}/{r['n']}", (1, r["frac"][0]),
+                            textcoords="offset points", xytext=(-3, 7),
+                            ha="right", fontsize=7.5, color=colour, zorder=5)
+        base = base_of.get(tc, "")
+        # make EquiBind's benchmark zero visceral, not "empty"
+        if base == "equibind":
+            rb = rec[tc].get("orai_benchmark")
+            if rb and rb["ceiling_k"] == 0:
+                ax.text(0.5, 0.55,
+                        f"Benchmark: 0/{rb['n']} complexes ever valuable\n"
+                        "EquiBind geometry catastrophically distorted\n"
+                        "(bond angles/lengths fail ~80%)",
+                        transform=ax.transAxes, ha="center", va="center", fontsize=8,
+                        color=CATEGORY_COLOUR.get("Benchmark ligands × Orai", "#888"),
+                        style="italic")
+        ax.set_title(tc, fontsize=11)
+        ax.set_xlabel("Rank depth N (top-N native-ranked poses)")
+        ax.set_xlim(0.5, max_rank + 0.5)
+        ax.set_xticks(xs)
+        ax.set_ylim(-0.02, 1.03)
+        ax.grid(True, axis="y", alpha=0.25)
+        ax.spines[["top", "right"]].set_visible(False)
+    axes[0].set_ylabel("Complexes with ≥1 valuable pose\nin the top-N (fraction)")
+    _label_panels(axes[:len(tools)])
+    fig.suptitle("Ranking quality: does the native pose rank surface a valuable pose near the top?\n"
+                 "cumulative recovery@N   ·   valuable = PoseBusters-valid & outside the "
+                 "transmembrane   ·   dotted = availability ceiling (any rank)",
+                 fontsize=12.5, y=1.0)
+    _legend(fig, "bands = Wilson 95% CI · Exp. Ligands is exploratory (n=12; hatched band, k/n labels) · "
+                 "N is a fixed triage budget capped at 10 (EquiBind emits ~30) · overlapping bands ⇒ "
+                 "datasets statistically indistinguishable")
+    fig.tight_layout(rect=(0, 0.13, 1, 0.94))
+    fig.savefig(out_dir / "fig_rank_recovery_comparison.png", dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+    # ── Figure B: marginal per-rank hit-rate (ranking-skill decomposition) ────
+    fig, axes = plt.subplots(1, ncol, figsize=(5.0 * ncol, 5.2), sharey=True, squeeze=False)
+    axes = axes.ravel()
+    for ax, tc in zip(axes, tools):
+        for c in cats:
+            m = mrg[tc].get(c["ds"])
+            if not m:
+                continue
+            colour = CATEGORY_COLOUR.get(c["label"], "#888")
+            mk, dash = CATEGORY_MARK[c["ds"]]
+            ax.fill_between(m["rank"], m["lo"], m["hi"], color=colour, alpha=0.16,
+                            hatch=("///" if c["ds"] == "orai_jku" else None),
+                            edgecolor=colour, linewidth=0)
+            ax.plot(m["rank"], m["frac"], color=colour, marker=mk, ls=dash, lw=1.8, ms=6,
+                    zorder=4)
+            ax.axhline(m["base_rate"], color=colour, lw=1.0, ls=(0, (1, 2)), alpha=0.7)
+        base = base_of.get(tc, "")
+        if base == "equibind":
+            rb = rec[tc].get("orai_benchmark")
+            if rb and rb["ceiling_k"] == 0:
+                ax.text(0.5, 0.55, f"Benchmark: 0/{rb['n']} valuable at any rank",
+                        transform=ax.transAxes, ha="center", va="center", fontsize=8.5,
+                        color=CATEGORY_COLOUR.get("Benchmark ligands × Orai", "#888"),
+                        style="italic")
+        ax.set_title(tc, fontsize=11)
+        ax.set_xlabel("Native pose rank (1 = best-scored)")
+        ax.set_xlim(0.5, max_rank + 0.5)
+        ax.set_xticks(xs)
+        ax.set_ylim(-0.02, 1.03)
+        ax.grid(True, axis="y", alpha=0.25)
+        ax.spines[["top", "right"]].set_visible(False)
+    axes[0].set_ylabel("Pose at exactly this rank is valuable\n(fraction of complexes)")
+    _label_panels(axes[:len(tools)])
+    fig.suptitle("Ranking SKILL: is the pose at each rank position valuable?\n"
+                 "marginal per-rank hit-rate   ·   dotted = each series' base rate over ranks 1–10   ·   "
+                 "declining ⇒ score concentrates valid poses at the top; flat ⇒ validity-blind",
+                 fontsize=12.5, y=1.0)
+    _legend(fig, "bands = Wilson 95% CI · Exp. Ligands is exploratory (n=12; hatched band) · "
+                 "points above the dotted base-rate line = enrichment at that rank")
+    fig.tight_layout(rect=(0, 0.13, 1, 0.94))
+    fig.savefig(out_dir / "fig_rank_enrichment_comparison.png", dpi=130, bbox_inches="tight")
+    plt.close(fig)
+
+    # ── stats sidecar (tests kept off the panels) ────────────────────────────
+    L: List[str] = []
+    L.append("Rank-quality comparison — Exp. Ligands vs Benchmark ligands × Orai")
+    L.append("valuable pose = PoseBusters-valid AND outside the transmembrane conduction pore")
+    L.append("denominator = full shared universe of attempted (frame × ligand) complexes per")
+    L.append("dataset (a complex the tool produced no pose for counts as a MISS).")
+    L.append("#" * 74)
+    L.append("")
+    L.append("RECOVERY@N  (fraction of complexes with ≥1 valuable pose in the top-N ranked)")
+    L.append("-" * 74)
+    L.append(f"  {'category':26s} {'tool':16s} {'n':>5s} {'produced':>8s} "
+             f"{'rec@1':>14s} {'rec@10':>14s} {'ceiling':>14s}")
+    for tc in tools:
+        for c in cats:
+            r = rec[tc].get(c["ds"])
+            if not r:
+                continue
+            def _ci(k, lo, hi):
+                return f"{k}/{r['n']} [{lo*100:.0f}-{hi*100:.0f}%]"
+            L.append(f"  {c['label']:26s} {tc:16s} {r['n']:5d} {r['produced_complexes']:8d} "
+                     f"{_ci(r['k'][0], r['lo'][0], r['hi'][0]):>14s} "
+                     f"{_ci(r['k'][max_rank-1], r['lo'][max_rank-1], r['hi'][max_rank-1]):>14s} "
+                     f"{_ci(r['ceiling_k'], r['ceiling_ci'][0], r['ceiling_ci'][1]):>14s}")
+    L.append("")
+    L.append("MARGINAL PER-RANK HIT-RATE  (P[pose at rank k is valuable]); base = mean over 1–10")
+    L.append("-" * 74)
+    L.append(f"  {'category':26s} {'tool':16s} {'base':>6s} {'rank1':>8s} {'rank10':>8s}")
+    for tc in tools:
+        for c in cats:
+            m = mrg[tc].get(c["ds"])
+            if not m:
+                continue
+            def _fp(v):
+                return "n/a" if v != v else f"{v*100:.0f}%"
+            L.append(f"  {c['label']:26s} {tc:16s} {_fp(m['base_rate']):>6s} "
+                     f"{_fp(m['frac'][0]):>8s} {_fp(m['frac'][max_rank-1]):>8s}")
+    L.append("")
+    L.append("NOTES / CAVEATS")
+    L.append("-" * 74)
+    L.append("· Exp. Ligands has only ~3 ligands × 4 frames (n=12); its Wilson bands are wide")
+    L.append("  and overlap Benchmark at essentially every N — the datasets are statistically")
+    L.append("  INDISTINGUISHABLE here; the overlap is the message, not a difference.")
+    L.append("· Pseudoreplication: 4 receptor frames × ligand → complexes are correlated, so the")
+    L.append("  independent-Bernoulli Wilson band understates the true width. A complex/frame-")
+    L.append("  clustered bootstrap CI would be the honest interval; formal dataset contrasts")
+    L.append("  (two-proportion / McNemar) are underpowered at n=12 and are deliberately NOT")
+    L.append("  drawn on the panels.")
+    L.append("· 'produced' = complexes the tool actually emitted a pose for; where it is below n")
+    L.append("  the shortfall counts as recovery misses (production coverage, not ranking).")
+    try:
+        (out_dir / "fig_rank_comparison_stats.txt").write_text("\n".join(L).rstrip() + "\n")
+        print(f"  rank-cmp stats → {out_dir/'fig_rank_comparison_stats.txt'}")
+    except Exception as e:                                # pragma: no cover
+        print(f"  [warn] writing rank-comparison stats txt failed: {e}")
+    print(f"  rank-comparison figures → {out_dir/'fig_rank_recovery_comparison.png'}, "
+          f"{out_dir/'fig_rank_enrichment_comparison.png'}")
 
 
 # ---------------------------------------------------------------------------
@@ -1291,6 +2000,11 @@ def main(argv=None):
                          "(default gnina → 'EquiBind*', ranked by gnina energy).")
     ap.add_argument("--out-root", default="posebusters_results",
                     help="root under which <dataset>/transmembrane_filter is written")
+    ap.add_argument("--combined-out", default=None,
+                    help="dir for the cross-dataset (Exp. vs Benchmark) combined figures "
+                         "(default <out-root>/transmembrane_filter_combined)")
+    ap.add_argument("--no-combined", action="store_true",
+                    help="skip the combined Exp.-vs-Benchmark figures")
     args = ap.parse_args(argv)
 
     names = list(DATASETS) if args.dataset == "all" else [args.dataset]
@@ -1305,6 +2019,46 @@ def main(argv=None):
                                      ligands=args.ligands,
                                      dd_variant=args.diffdock_variant,
                                      eb_variant=args.equibind_variant))
+    # cross-dataset combined figures (Exp. Ligands vs Benchmark × Orai). Reads each
+    # dataset's persisted tm_pose_classification.csv, so it builds the full two-category
+    # figure whenever both prior runs exist — not only when both were (re)run just now.
+    if not args.no_combined:
+        class_paths = {ds: Path(args.out_root) / ds / "transmembrane_filter" /
+                       "tm_pose_classification.csv" for ds in DATASETS}
+        combined_dir = (Path(args.combined_out) if args.combined_out
+                        else Path(args.out_root) / "transmembrane_filter_combined")
+        print(f"\n=== combined figures (Exp. Ligands vs Benchmark × Orai) → {combined_dir} ===")
+        try:
+            make_category_figures(class_paths, combined_dir,
+                                  args.diffdock_variant, args.equibind_variant)
+        except Exception as e:                        # never let combined plotting kill the run
+            print(f"  [warn] combined figure generation failed: {e}")
+        try:
+            make_rank_comparison_figures(class_paths, combined_dir,
+                                         args.diffdock_variant, args.equibind_variant)
+        except Exception as e:                        # never let combined plotting kill the run
+            print(f"  [warn] rank-comparison figure generation failed: {e}")
+
+        # Cross-dataset PB-valid / TM-survival SHARE comparison (normalised so the two
+        # ligand sets are directly comparable). Additive companion — needs BOTH datasets'
+        # classification tables, so it is guarded on their presence and passed the same
+        # refine-variant selection as this run so its toolchains match the summary.
+        if all(p.exists() for p in class_paths.values()):
+            share_out = Path(args.out_root) / "orai_pbvalid_tm_share_compare"
+            print(f"\n=== PB-valid / TM-survival share comparison → {share_out} ===")
+            try:
+                from orai_pbvalid_tm_share_compare import main as _share_main
+                _share_main(["--results-root", args.out_root,
+                             "--out-dir", str(share_out),
+                             "--diffdock-variant", args.diffdock_variant,
+                             "--equibind-variant", args.equibind_variant])
+            except Exception as e:                    # never let it kill the run
+                print(f"  [warn] PB-valid/TM share comparison failed: {e}")
+        else:
+            missing = [ds for ds, p in class_paths.items() if not p.exists()]
+            print(f"  [skip] PB-valid/TM share comparison — need both datasets classified; "
+                  f"missing: {missing}")
+
     print("\n==== DONE ====")
     for s in summaries:
         print(f"{s['dataset']}: {s['n_excluded_transmembrane']}/{s['n_evaluated']} "

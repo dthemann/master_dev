@@ -790,6 +790,33 @@ def sanitize_pdbqt_atom_types(
     return n_fixed
 
 
+def _max_ring_size(path: Path) -> int:
+    """Largest ring size (atom count) of a ligand structure; 0 if unreadable/acyclic."""
+    try:
+        from rdkit import Chem
+        from rdkit import RDLogger
+        RDLogger.DisableLog("rdApp.*")
+        suffix = path.suffix.lower()
+        if suffix in (".sdf", ".mol"):
+            mol = Chem.MolFromMolFile(path.as_posix(), sanitize=False)
+        elif suffix == ".mol2":
+            mol = Chem.MolFromMol2File(path.as_posix(), sanitize=False)
+        elif suffix == ".pdb":
+            mol = Chem.MolFromPDBFile(path.as_posix(), sanitize=False)
+        else:
+            return 0
+        if mol is None:
+            return 0
+        return max((len(r) for r in mol.GetRingInfo().AtomRings()), default=0)
+    except Exception:
+        return 0
+
+
+# Glue-preserving atom-type map: still fixes Si/B for standard Vina, but KEEPS the
+# CG*/G* macrocycle glue atom types intact (see convert_ligand_with_meeko).
+_MEEKO_AD4_TYPE_MAP_KEEP_GLUE: Dict[str, str] = {"Si": "S", "B": "C"}
+
+
 def convert_ligand_with_meeko(
     ligand_path: str,
     *,
@@ -799,8 +826,34 @@ def convert_ligand_with_meeko(
     verbose: bool = True,
     add_tool_postfix: bool = False,
     use_converter_prefix: bool = False,
+    macrocycle_mode: str = "auto",
+    large_ring_threshold: int = 18,
 ) -> str:
-    """Convert a ligand structure (PDB/SDF/MOL2) to PDBQT using Meeko."""
+    """Convert a ligand structure (PDB/SDF/MOL2) to PDBQT using Meeko.
+
+    Macrocycle handling (``macrocycle_mode``):
+
+    - ``"glue"``  — Meeko's default: break a ring bond for flexibility and add the
+      CG*/G* *glue* pseudo-atoms whose closure potential pulls the ring shut during
+      docking. Gives valid ring geometry AND ring conformational sampling (best
+      quality), but ONLY works with a glue-aware engine (CPU AutoDock Vina 1.2.x).
+    - ``"rigid"`` — pass ``--rigid_macrocycles`` so the ring stays in its input
+      conformation. Safe with ANY engine (incl. Vina-GPU/AutoDock-GPU), but loses
+      ring sampling. Use this for the GPU path.
+    - ``"auto"`` (default) — glue, except rings with >= ``large_ring_threshold`` atoms
+      fall back to rigid. The soft glue restraint can't hold very large macrocycles
+      shut (tacrolimus's 21-membered ring reopens to ~20 Å in ~half its poses), so
+      those are rigidified for clean geometry.
+
+    Why this matters: the historical bug was that ``sanitize_pdbqt_atom_types``
+    remapped the glue atoms CG0/G0 -> C, silently disabling Vina's ring closure so the
+    opened ring drifted apart into one grossly stretched bond — every affected pose
+    then failed PoseBusters bond_lengths/bond_angles (the 10 macrocyclic benchmark
+    complexes had 0 valid poses). On the glue path we therefore KEEP the CG*/G* types
+    (remapping only Si/B); on the rigid path there are no glue atoms so the full map is
+    safe. For a Vina-GPU pipeline, pass ``macrocycle_mode="rigid"`` (glue is unsupported
+    there).
+    """
 
     log = _printer(verbose)
     input_path = Path(ligand_path)
@@ -816,7 +869,20 @@ def convert_ligand_with_meeko(
         tool_prefix="mko_" if use_converter_prefix else "",
     )
 
-    log(f"Running Meeko ligand prep for {input_path.name} → {output_path.name}")
+    mode = macrocycle_mode.lower()
+    if mode not in ("auto", "glue", "rigid"):
+        raise ValueError(f"macrocycle_mode must be 'auto'|'glue'|'rigid', got {macrocycle_mode!r}")
+    if mode == "auto":
+        max_ring = _max_ring_size(input_path)
+        use_rigid = max_ring >= large_ring_threshold
+        if use_rigid and verbose:
+            log(f"  macrocycle_mode=auto: largest ring {max_ring} >= {large_ring_threshold} "
+                f"→ rigid ({input_path.name})")
+    else:
+        use_rigid = (mode == "rigid")
+
+    log(f"Running Meeko ligand prep for {input_path.name} → {output_path.name} "
+        f"({'rigid macrocycles' if use_rigid else 'glue macrocycles'})")
     cmd = [
         "mk_prepare_ligand.py",
         "-i",
@@ -824,6 +890,8 @@ def convert_ligand_with_meeko(
         "-o",
         output_path.as_posix(),
     ]
+    if use_rigid:
+        cmd.append("--rigid_macrocycles")
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -835,8 +903,11 @@ def convert_ligand_with_meeko(
         message = f"Meeko ligand preparation failed for {ligand_path}: {exc}"
         raise RuntimeError(message) from exc
 
-    # Remap non-standard Meeko atom types so Vina-CUDA can parse the file
-    sanitize_pdbqt_atom_types(output_path, verbose=verbose)
+    # Remap non-standard Meeko atom types so standard Vina can parse the file. On the
+    # glue path KEEP the CG*/G* glue types (Vina needs them for ring closure); rigid
+    # has no glue atoms, so the full map applies.
+    type_map = None if use_rigid else _MEEKO_AD4_TYPE_MAP_KEEP_GLUE
+    sanitize_pdbqt_atom_types(output_path, type_map=type_map, verbose=verbose)
 
     return output_path.as_posix()
 

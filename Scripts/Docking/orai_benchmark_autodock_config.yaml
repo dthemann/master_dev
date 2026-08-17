@@ -1,6 +1,7 @@
 # ═══════════════════════════════════════════════════════════════════════════════
 # AutoDock Vina — Orai receptors × PoseBuster benchmark ligands
 # Batch mode: 50 ligands per Vina invocation per receptor
+# Per-key reference for every option: Scripts/Docking/autodock_vina_docking_config.yaml
 # ═══════════════════════════════════════════════════════════════════════════════
 
 # ── Inputs (filled in / overridden by the notebook cell) ─────────────────────
@@ -43,8 +44,33 @@ cpus_per_worker: 32
 overwrite_existing:  false
 overwrite_poses:     false
 overwrite_error_log: false
+failed_job_policy:   retry       # do not let a transient prior failure become a permanent skip
 
 # A1: retain biologically relevant HETATMs (cofactors + metal ions) in the
 # Meeko-prepared receptor PDBQTs. Orai is apo so this is typically a no-op
 # here, but keep it enabled for consistency with the main pipeline.
 retain_hetatm_residues: true
+
+# ── Post-dock optimisation + gnina/smina re-ranking (see the main config for
+# per-key docs). Off by default; set optimization: gnina to add the AutoDock+gnina
+# variant. Every Vina pose is locally minimised and re-scored while the original
+# Vina rank is preserved (autodock_rank) alongside the gnina rank (optimized_rank),
+# both written to <output_dir>/<subfolder>/optimization_log.csv. ──
+optimization:        none        # none | smina | gnina | all
+optimize_search:     minimize
+optimize_rank_by:    minimized_affinity   # | cnn_affinity | cnn_score
+optimize_scoring:    default       # explicit empirical minimization objective
+optimize_autobox_add: 4.0
+optimize_top_n:      0            # 0 = all poses (Orai×Benchmark docks 10 modes/complex)
+optimize_cpu:        4
+optimize_seed:       42
+optimize_timeout:    300
+gnina_use_gpu:       false
+gnina_gpu_preflight: true
+gnina_cnn_scoring:   rescore
+gnina_cnn_model:     crossdock_default2018_ensemble
+gnina_cnn_model_file: ''
+gnina_executable:    /home/manndo/docking_tools/gnina
+mk_export_executable: ''           # PATH lookup; resolved path/version are recorded in provenance
+optimize_require_mk_export: true   # REMARK-SMILES poses never fall back to Open Babel
+obabel_executable:   ''            # legacy non-Meeko PDBQT only

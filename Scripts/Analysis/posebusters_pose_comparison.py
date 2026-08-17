@@ -100,6 +100,29 @@ Output plots (in --out-dir):
                                        segment = ceiling reached)
     09d_alt_dumbbell.png             — same data: per (variant, depth) validity●——○accuracy
                                        dumbbell; the segment is the accurate-but-invalid share
+    09f_pbvalid_yield_boxplot.png    — "Post-Hoc Optimization and PoseBuster Validity":
+                                       box/whisker of the PoseBusters-valid YIELD of the
+                                       PRODUCED poses per variant (raw beside its smina /
+                                       gnina optimized variants, grouped by tool). Each
+                                       box = distribution across complexes of the % of a
+                                       variant's poses that pass PoseBusters; smina/gnina
+                                       refine the SAME poses (fixed denominator), so the
+                                       raw→opt shift is recovered validity. Paired Wilcoxon
+                                       signed-rank brackets (Holm across all raw→opt
+                                       contrasts) + Friedman omnibus show the gains are
+                                       significant. Tables: pbvalid_yield_by_variant.csv
+                                       (per-variant pooled + per-complex distribution) and
+                                       pbvalid_yield_per_complex.csv (the box source).
+                                       09f_pbvalid_yield_report.txt holds the FULL stats
+                                       (Friedman + Wilcoxon pairwise + raw→opt contrasts
+                                       with effect sizes / CIs / Holm p) and the figure
+                                       caption/notes (moved off the plot)
+    09f_pbvalid_yield_boxplot_all_variants.png — same yield box/whisker but showing EVERY
+                                       variant present in df_full (all EquiBind pocket ×
+                                       refine [× clamp] variants + all DiffDock variants +
+                                       AutoDock), independent of the best-variant / collapse
+                                       flags; coloured per variant, no raw→opt brackets.
+                                       Table: pbvalid_yield_by_variant_all.csv
     10_pb_valid_rmsd2_success_bars.png — Per-method success bars for the strict
                                        "≤ 2 Å & PB-valid" category alone (% of ALL
                                        complexes): Oracle (all tools) + Top-1
@@ -178,14 +201,26 @@ Output plots (in --out-dir):
                                        variants (raw DiffDock, raw EquiBind geometry ranked
                                        by gnina score; AutoDock unchanged), for a direct
                                        raw-vs-refined comparison
-    17h_pb_top30_recovery_raw_vs_refined.png — 17f + 17g in ONE figure: AutoDock once, then
-                                       each tool's raw panel directly above its refined
-                                       panel (DiffDock raw/smina*, EquiBind raw/gnina), so the
-                                       refinement benefit reads off panel-to-panel.
+    17h_pb_top{15,30}_recovery_raw_vs_refined.png — 17f + 17g in ONE figure: AutoDock once,
+                                       then each tool's raw panel directly above its refined
+                                       panel (DiffDock raw vs its collapsed refined variant —
+                                       smina or gnina per --collapse-diffdock-variant;
+                                       EquiBind raw/gnina), so the
+                                       refinement benefit reads off panel-to-panel. Rendered at
+                                       TWO pool depths — best-of-top-15 (= --top-n) and
+                                       best-of-top-30 vs rank-1 — as two standalone figures.
                                        17f/17g/17h each annotate per panel a Wilson 95% CI on
                                        the pass-all rate + exact McNemar (Holm-adjusted) for
-                                       the rank-1→top-30 gain, and raw→refined McNemar on the
+                                       the rank-1→top-N gain, and raw→refined McNemar on the
                                        refined panels; full payloads in the *_stats.json sidecar
+                                       (keys top{15,30}_recovery_raw_vs_refined). Both 17h depths
+                                       share ONE combined companion report
+                                       17h_pb_recovery_raw_vs_refined_report.txt covering all
+                                       THREE selections (top-1 · best-of-top-15 · best-of-top-30):
+                                       the full paired-test details (a separate Holm family per
+                                       figure) and a ';'-separated per-stage attrition table
+                                       (poses failed at each cascade step + %, one selection block
+                                       per depth)
     17d_pb_test_waterfall_raw_vs_best.png — Same cascade, top-1 pose, comparing the RAW pose
                                        with its best refined variant per method:
                                        DiffDock raw vs diffdock_smina (rank-1), EquiBind raw
@@ -198,6 +233,26 @@ Output plots (in --out-dir):
                                        PoseBusters tests regardless of placement, exposing
                                        where poses fail on physical-validity grounds alone
                                        (the RMSD filter otherwise removes most poses first)
+    17i_pb_rank_depth_added_pose_waterfall.png — The deepening question, per method (raw +
+                                       best refined variant), WITHOUT the RMSD ≤ 2 Å gate:
+                                       instead of one pose per complex, it pools the poses
+                                       NEWLY considered when the rank cut widens from 1 to
+                                       top-N (ranking positions 2..top-N; EquiBind gnina-
+                                       ranked) and runs the PoseBusters cascade over that
+                                       pool. Each panel's headline states the payoff — how
+                                       many poses/complexes the deeper cut adds and how many
+                                       complexes it recovers (rank-1 not PB-valid → an added
+                                       pose PB-valid); red bars = added poses each test
+                                       removes, green = added poses passing every test. CSVs
+                                       pb_rank_depth_added_pose_waterfall.csv (cascade steps)
+                                       + pb_rank_depth_added_pose_summary.csv (per-panel
+                                       payoff + independent per-test fail counts).
+    17i2_pb_rank_depth_added_pose_failbytest.png — Companion to 17i: of those rank-1→top-N
+                                       ADDED poses, how many fail EACH PoseBusters test as an
+                                       INDEPENDENT tally (a pose counted for every test it
+                                       fails, so later tests aren't masked by earlier ones as
+                                       in the cascade). Horizontal bars per method + count/%;
+                                       CSV pb_rank_depth_added_pose_failbytest.csv.
     18_topn_within_thresholds_complex.png / _pose.png — Fine-grained RMSD sweep (split
                                        into two graphs): how many of the top-N ranked poses
                                        of AutoDock Vina / DiffDock (native rank) / EquiBind
@@ -213,6 +268,49 @@ Output plots (in --out-dir):
                                        AND PoseBusters-valid (combined near-native + physically
                                        valid, matching oracle_pb_valid_and_rmsd2_%). Denominators
                                        unchanged (all complexes / all top-N poses).
+    18_topn_within_thresholds_kabsch_complex.png / _pose.png (+ _kabsch_pbvalid_*) — The
+                                       same two sweeps, but distance is the best-fit (Kabsch)
+                                       RMSD (bestfit_rmsd) instead of the as-placed RMSD: each
+                                       pose is optimally superposed onto the crystal first, so
+                                       the threshold measures conformer/shape fidelity only and
+                                       ignores where the pose was docked. Companion CSVs
+                                       topn_within_thresholds_kabsch[_pbvalid].csv. Both Kabsch
+                                       figures use a HALVED grid (0–2.5 Å = half the 0–5 Å
+                                       standard grid), since superposition collapses distances
+                                       toward zero; the PB-valid one additionally emphasises a
+                                       1 Å success line (form fidelity is a sub-Ångström question).
+                                       NOTE (all fig-18 graphs): the legend now sits between the
+                                       title and the plot, each tool's complex count n is stated
+                                       once in the title, and the caption + full complex-panel
+                                       statistics are written to a companion *_complex_report.txt
+                                       / *_pose_report.txt (only the Wilson-CI whiskers stay on
+                                       the plot).
+    18_refinement_gain_vs_depth_pbvalid.png / _kabsch_pbvalid.png — Companion to the two PB-valid
+                                       complex figures: how the raw→gnina-refined benefit evolves
+                                       as the top-N pool deepens (N = 1, 2, 3 … top_n). Top panel
+                                       = best-of-top-N success (% complexes within the figure's
+                                       success line — 2 Å for RMSD, 1 Å for Kabsch — AND PB-valid)
+                                       for the raw (dashed) vs gnina-refined (solid) variant of
+                                       DiffDock / EquiBind, plus AutoDock Vina as a single native
+                                       curve (no refinement step — its rise with N is the pure
+                                       rank-depth gain, the reference the refined tools are read
+                                       against); bottom panel = the refinement difference (gnina-
+                                       refined − raw, pp) vs depth for the refined tools. CSVs
+                                       refinement_gain_vs_depth[_kabsch]_pbvalid.csv + *_report.txt.
+    18_topn_within_thresholds_pbvalid_depths.png / _kabsch_pbvalid_depths.png — Multi-depth
+                                       version of the complex panel: the best-of-top-N curve
+                                       at THREE pool depths (top-1 = rank-1, top-15, top-30)
+                                       across the threshold sweep, for near-native (as-placed)
+                                       RMSD and Kabsch RMSD respectively. Colour = tool, line
+                                       style = depth. The value at the emphasised threshold
+                                       (2 Å RMSD / 1 Å Kabsch) is called out on each curve; the
+                                       full sweep of numbers lives in topn_within_thresholds_
+                                       [kabsch_]pbvalid_depths.csv + *_report.txt. The report
+                                       also carries the paired significance tests AT that
+                                       threshold — Cochran's Q + pairwise McNemar (Holm)
+                                       between tools per depth, and the nested ranking-headroom
+                                       (recovered share + Wilson CI) across depths within each
+                                       tool (sidecar keys within_by_depth[_kabsch]_pbvalid).
     19_within2_validity_dumbbell.png — Dumbbell per method: PB-valid share of near-native
                                        (RMSD ≤ 2 Å) poses over EVERY generated pose (circle) vs
                                        the oracle / min-RMSD pick only (diamond); each row labels
@@ -298,6 +396,32 @@ Output plots (in --out-dir):
                                        region). Needs --benchmark-dir (crystal SDFs) + the pose
                                        SDFs on disk; skips if unavailable.
 
+    21_rank_concordance.png          — How faithfully does each tool's OWN ranking reproduce
+                                       the oracle ordering of its poses (best pose → rank 1,
+                                       2nd-best → rank 2, …)? Three panels: Crystal RMSD and
+                                       Kabsch RMSD as grouped bars (% of complexes where the
+                                       rank-k pose is the k-th best), PB-validity as achieved
+                                       %-valid-by-rank vs the tool's overall-valid random baseline. AutoDock/
+                                       DiffDock ranked by native confidence, EquiBind by gnina
+                                       affinity. Writes rank_position_concordance.csv +
+                                       rank_validity_by_rank.csv.
+    21a/21b/21d_rank_vs_oracle_{crystal,kabsch,combined}.png — Individual line charts (more
+                                       informative than 21's bars): median oracle rank (± IQR band)
+                                       of the tool's rank-k pose vs k, with perfect-ranking diagonal
+                                       and random baseline (≈ N/2). 21c_validity_by_rank.png = the
+                                       PB-validity panel standalone. No stats box on any graph.
+                                       Writes rank_vs_oracle.csv.
+    22_rank_quality_whiskers.png     — Per-complex Kendall τ-b between each tool's ranking and
+                                       the oracle order, as a grouped whisker plot: one group per
+                                       criterion (Crystal RMSD, Kabsch RMSD, PB-validity, and a
+                                       Combined valid + close + form criterion), one box per tool.
+                                       τ = +1 perfect, 0 chance, −1 reversed. Writes rank_quality_tau.csv,
+                                       rank_quality_tau_summary.csv, rank_quality_stats.csv.
+    rank_quality_report.txt          — Full plain-text ranking-quality report: τ-b summary, the
+                                       cross-tool paired tests (Friedman/Kendall-W + Wilcoxon-Holm
+                                       pairwise — moved OFF the figures), rank-vs-oracle tables,
+                                       identity-match, validity-by-rank, and the PB-valid complex mix.
+
     Oracle selection (fig 20 / 20b / 20d / 20e are each written TWICE):
       <name>.png              — RMSD-greedy oracle: the single nearest pose, kept only if it
                                 is itself ≤ 2 Å AND PB-valid (matches oracle_pb_valid_and_rmsd2_%).
@@ -362,6 +486,19 @@ Output CSVs:
                                 best_topN_within_% (any of top-N), pose_within_% (of all
                                 pooled top-N poses), each with its raw count + n_pairs /
                                 n_poses_topN denominators
+    pose_validity_cascade.csv — Per docking variant (ALL of them): the pose-level cascade
+                                produced → PoseBusters-valid → RMSD ≤ 2 Å → Kabsch RMSD < 1 Å
+                                → (RMSD ≤ 2 Å & PB-valid & Kabsch < 1 Å), each stage as BOTH a
+                                pose count and the number of distinct complexes still reached
+                                (n_*_complexes / *_poses), plus the %-columns (pb_valid_%,
+                                rmsd2_%, kabsch1_%, triple_of_rmsd2_%, triple_of_all_%). Kabsch
+                                = best-fit / superposed RMSD (placement-free internal form;
+                                threshold = --form-ok-kabsch, default 1 Å). The pure ≤ 2 Å &
+                                PB-valid counts (paper headline, before the form filter) are
+                                retained as the rmsd2_pbvalid_* columns. Pooled over every
+                                produced pose — a sampling-volume view, NOT a per-complex
+                                success rate. Companion human-readable table with grouped
+                                headers + markdown: pose_validity_cascade_report.txt.
 
 Per-pose cache (so re-runs that only change --top-n stay cheap)
     The heavy per-pose scoring is written to per_pose_metrics.csv alongside a
@@ -511,12 +648,14 @@ _DEFAULT_VDW = 1.70
 CLASH_SCALE = 0.75
 CONTACT_CUTOFF = 4.0
 RMSD_THRESHOLDS = (1.0, 2.0, 5.0)
-# Fine-grained RMSD grid (Å) for the "how close is the top-ranked pose" sweep —
-# a denser set than RMSD_THRESHOLDS, stepped by 0.25 Å around the canonical 2 Å
-# docking-success line, so the sub-2 Å accuracy of the ranking tools' top poses
-# is resolved (how many of the top-N ranked poses land within 1, 1.25, 1.5 … Å).
-# Overridable via --fine-rmsd-thresholds.
-FINE_RMSD_THRESHOLDS = (1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5, 2.75, 3.0)
+# Fine-grained RMSD grid (Å) for the "how close is the top-ranked pose" sweep (fig 18).
+# The STANDARD (as-placed) RMSD runs 0 → 5 Å in 0.25 Å steps so the whole placement
+# range is resolved; the Kabsch/best-fit view uses HALF that range (0 → 2.5 Å — see
+# FINE_KABSCH_THRESHOLDS) because superposition removes placement error and collapses
+# the distances toward zero, so a form-fidelity question is sub-Ångström. Overridable
+# via --fine-rmsd-thresholds; the Kabsch grid always tracks it at half.
+FINE_RMSD_THRESHOLDS = tuple(round(0.25 * i, 2) for i in range(21))    # 0, 0.25, … 5 Å
+FINE_KABSCH_THRESHOLDS = tuple(round(t / 2.0, 4) for t in FINE_RMSD_THRESHOLDS)  # 0 … 2.5 Å
 # Canonical docking-success line (Å): the in-place RMSD-to-crystal below which a
 # pose is "near-native". Matches the 2 Å the paper and the rest of this report use.
 NEAR_NATIVE_RMSD_A = 2.0
@@ -533,9 +672,19 @@ CENTROID_THRESHOLD = 4.0
 # farther is treated as a different (decoy) pocket. Overridable via --pocket-cutoff.
 POCKET_CENTROID_CUTOFF = 6.0
 
-# Tools that produce pose rankings ordered by energy/confidence.
-# All other tools (e.g. EquiBind) are oracle-only.
-RANKING_TOOLS = frozenset({"autodock", "diffdock"})
+# Methods that produce an explicit pose ranking ordered by energy/confidence.
+# AutoDock optimizer variants use their own ``optimized_rank``; the raw method
+# uses Vina's ``autodock_rank``. Keeping all three here makes every aggregation
+# group and rank the variants independently. Other tools (e.g. EquiBind) remain
+# oracle-only unless a dedicated ranking adapter handles them.
+RANKING_TOOLS = frozenset({
+    "autodock", "autodock_smina", "autodock_gnina",
+    # Vinardo-scored AutoDock is the same Vina engine, different scoring function.
+    "autodock_vinardo", "autodock_vinardo_smina", "autodock_vinardo_gnina",
+    # Uni-Dock (tiled) and Uni-Dock2 emit affinity-ordered poses (rank = pose order).
+    "unidock", "unidock2",
+    "diffdock",
+})
 
 DEFAULT_TOP_N = 5   # ranked poses per pair to consider in Part B
 
@@ -603,7 +752,17 @@ def _paper_method_name(method_key: str) -> str | None:
 # site renders any variant — equibind_guided_smina, equibind_unguided, … — with a
 # readable label and a stable colour, with no per-plot changes.
 
-_BASE_COLORS = {"autodock": "#1f77b4", "diffdock": "#ff7f0e"}
+_BASE_COLORS = {
+    "autodock": "#1f77b4",           # AutoDock Vina (blue)
+    "autodock_vinardo": "#17becf",   # AutoDock Vinardo (cyan — AutoDock-family cousin)
+    "unidock": "#9467bd",            # Uni-Dock tiled (purple)
+    "unidock2": "#8c564b",           # Uni-Dock2 (brown)
+    "diffdock": "#ff7f0e",           # DiffDock (orange)
+}
+_AD_VARIANT_COLORS = {
+    "autodock_smina": "#6baed6", "autodock_gnina": "#08519c",
+    "autodock_vinardo_smina": "#9edae5", "autodock_vinardo_gnina": "#0e7c86",
+}
 # Green family for EquiBind variants (cycled if more than this many appear).
 _EQ_PALETTE = ["#2ca02c", "#74c476", "#1b7837", "#a6dba0",
                "#006d2c", "#5aae61", "#00441b", "#c7e9c0"]
@@ -668,6 +827,20 @@ def _pretty_method(m: str) -> str:
         return _LABEL_OVERRIDES[m]
     if m == "autodock":
         return "AutoDock Vina"
+    if m == "autodock_smina":
+        return "AutoDock Vina (smina-opt)"
+    if m == "autodock_gnina":
+        return "AutoDock Vina (gnina-opt)"
+    if m == "autodock_vinardo":
+        return "AutoDock Vinardo"
+    if m == "autodock_vinardo_smina":
+        return "AutoDock Vinardo (smina-opt)"
+    if m == "autodock_vinardo_gnina":
+        return "AutoDock Vinardo (gnina-opt)"
+    if m == "unidock":
+        return "Uni-Dock"
+    if m == "unidock2":
+        return "Uni-Dock2"
     if m == "diffdock":
         return "DiffDock"
     if m == "diffdock_smina":
@@ -716,6 +889,8 @@ class _MethodColorMap:
         key = str(key)
         if key in _BASE_COLORS:
             return _BASE_COLORS[key]
+        if key in _AD_VARIANT_COLORS:
+            return _AD_VARIANT_COLORS[key]
         if key in _DD_VARIANT_COLORS:
             return _DD_VARIANT_COLORS[key]
         if key.startswith("equibind"):
@@ -757,7 +932,10 @@ def parse_rank(method: str, pose_file: str) -> int:
     are never mistakenly selected as a valid top-k ranked pose.
     """
     name = Path(pose_file).name
-    if method == "autodock":
+    # AutoDock (Vina + Vinardo) and Uni-Dock / Uni-Dock2 all expand to per-pose
+    # SDFs named "<stem>_model<N>.sdf" (N = the tool's affinity rank, 1 = best);
+    # see run_posebusters._expand_{autodock,unidock,unidock2}_poses.
+    if method.startswith("autodock") or method.startswith("unidock"):
         m = re.search(r"_model(\d+)\.sdf$", name)
         return int(m.group(1)) if m else 999
     # Every DiffDock flavour (base + smina/gnina-optimized variants, e.g.
@@ -769,6 +947,45 @@ def parse_rank(method: str, pose_file: str) -> int:
         m = re.search(r"rank(\d+)", name)
         return int(m.group(1)) if m else 999
     return 999  # unranked tool
+
+
+def _positive_rank(value) -> int | None:
+    """Return a positive integral rank, else ``None`` (NaN-safe)."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number < 1 or not number.is_integer():
+        return None
+    return int(number)
+
+
+def _finite_number(value) -> float | None:
+    """Return a finite float for CSV provenance, otherwise ``None``."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _pose_rank(row, method: str, pose_file: str) -> int:
+    """Resolve the ranking axis for a pose without crossing variant boundaries.
+
+    Raw AutoDock poses use the immutable Vina ``autodock_rank``. Optimized
+    AutoDock variants *only* use ``optimized_rank``; falling back to the source
+    rank would silently undo gnina/smina re-ranking. Legacy raw rows may still
+    use the converted ``_modelN.sdf`` filename fallback.
+    """
+    if method.startswith("autodock") and not method.endswith(("_smina", "_gnina")):
+        return _positive_rank(row.get("autodock_rank")) or parse_rank(method, pose_file)
+    if method.startswith("autodock") and method.endswith(("_smina", "_gnina")):
+        return _positive_rank(row.get("optimized_rank")) or 999
+    if method == "unidock":
+        return _positive_rank(row.get("unidock_rank")) or parse_rank(method, pose_file)
+    if method == "unidock2":
+        return _positive_rank(row.get("unidock2_rank")) or parse_rank(method, pose_file)
+    return parse_rank(method, pose_file)
 
 
 def load_protein_heavy_atoms(pdb_path: Path) -> tuple[np.ndarray, list[str], list[tuple[str, int]]]:
@@ -1148,6 +1365,22 @@ class PoseRecord:
     refine_variant: str | None = None
     smina_affinity: float | None = None
     gnina_affinity: float | None = None
+    # AutoDock variant/ranking provenance. Both ranks remain available for a
+    # gnina/smina pose, while ``rank`` above is the axis actually used by this
+    # report (Vina rank for raw; optimized rank for optimized variants).
+    optimizer: str | None = None
+    autodock_rank: int | None = None
+    optimized_rank: int | None = None
+    rank_metric: str | None = None
+    autodock_affinity: float | None = None
+    minimized_affinity: float | None = None
+    cnn_score: float | None = None
+    cnn_affinity: float | None = None
+    # Uni-Dock families expose affinity-ordered ranks directly from the PB CSV.
+    unidock_rank: int | None = None
+    unidock_affinity: float | None = None
+    unidock2_rank: int | None = None
+    unidock2_affinity: float | None = None
 
 
 def process_pair(args) -> list[dict]:
@@ -1235,7 +1468,7 @@ def process_pair(args) -> list[dict]:
             ligand=ligand,
             pose_file=str(pose_path),
             pose_name=rec.get("pose_name", pose_path.stem),
-            rank=parse_rank(rec["docking_method"], str(pose_path)),
+            rank=_pose_rank(rec, rec["docking_method"], str(pose_path)),
             rmsd=rmsd,
             pb_rmsd=pb_rmsd,
             pb_kabsch_rmsd=pb_kabsch,
@@ -1258,6 +1491,18 @@ def process_pair(args) -> list[dict]:
             refine_variant=rec.get("refine_variant"),
             smina_affinity=rec.get("smina_affinity"),
             gnina_affinity=rec.get("gnina_affinity"),
+            optimizer=_col_value(rec, "optimizer"),
+            autodock_rank=_positive_rank(rec.get("autodock_rank")),
+            optimized_rank=_positive_rank(rec.get("optimized_rank")),
+            rank_metric=_col_value(rec, "rank_metric"),
+            autodock_affinity=_finite_number(rec.get("autodock_affinity")),
+            minimized_affinity=_finite_number(rec.get("minimized_affinity")),
+            cnn_score=_finite_number(rec.get("cnn_score")),
+            cnn_affinity=_finite_number(rec.get("cnn_affinity")),
+            unidock_rank=_positive_rank(rec.get("unidock_rank")),
+            unidock_affinity=_finite_number(rec.get("unidock_affinity")),
+            unidock2_rank=_positive_rank(rec.get("unidock2_rank")),
+            unidock2_affinity=_finite_number(rec.get("unidock2_affinity")),
         )))
     return out
 
@@ -1486,7 +1731,8 @@ def aggregate_topn_within_thresholds(
         df: pd.DataFrame, top_n: int,
         thresholds: tuple[float, ...] = FINE_RMSD_THRESHOLDS,
         eq_df: "pd.DataFrame | None" = None,
-        pb_valid_only: bool = False) -> pd.DataFrame:
+        pb_valid_only: bool = False,
+        rmsd_col: str = "rmsd") -> pd.DataFrame:
     """Fine-grained RMSD sweep of the top-ranked poses.
 
     Answers "how many of the top-N ranked poses of AutoDock Vina / DiffDock /
@@ -1506,8 +1752,11 @@ def aggregate_topn_within_thresholds(
     by gnina AFFINITY (most-negative = rank 1, ``_gnina_affinity_rank``) and appended
     as method ``equibind``. Denominators: the two complex-level columns use the tool's
     full pair count (``n_pairs``); the pose-level column uses the pooled top-N pose
-    count (``n_poses_topN``). RMSD is the symmetry-corrected heavy-atom ``rmsd`` (no
-    superposition). DiffDock's duplicated top pose is de-duplicated first.
+    count (``n_poses_topN``). The distance metric is ``rmsd_col``: by default the
+    symmetry-corrected heavy-atom ``rmsd`` (no superposition); pass
+    ``rmsd_col="bestfit_rmsd"`` for the best-fit (Kabsch) RMSD — the same pose after
+    optimal superposition, which isolates conformer/shape error from placement.
+    DiffDock's duplicated top pose is de-duplicated first.
     """
     thresholds = tuple(thresholds)
     rows = []
@@ -1529,12 +1778,12 @@ def aggregate_topn_within_thresholds(
                 .groupby(["protein", "ligand"]).first().reset_index())
         top1_hit = top1[top1["pb_valid"]] if pb_valid_only else top1
         rk_hit = ranked[ranked["pb_valid"]] if pb_valid_only else ranked
-        top1_rmsd = top1_hit["rmsd"].dropna()
-        rk_valid = rk_hit.dropna(subset=["rmsd"])
-        best_topn = (rk_valid.groupby(["protein", "ligand"])["rmsd"].min()
+        top1_rmsd = top1_hit[rmsd_col].dropna()
+        rk_valid = rk_hit.dropna(subset=[rmsd_col])
+        best_topn = (rk_valid.groupby(["protein", "ligand"])[rmsd_col].min()
                      if len(rk_valid) else pd.Series(dtype=float))
-        pose_rmsd = rk_hit["rmsd"].dropna()
-        n_poses = len(ranked["rmsd"].dropna())   # denominator: ALL top-N poses
+        pose_rmsd = rk_hit[rmsd_col].dropna()
+        n_poses = len(ranked[rmsd_col].dropna())   # denominator: ALL top-N poses
         for t in thresholds:
             top1_n = int((top1_rmsd <= t).sum())
             best_n = int((best_topn <= t).sum())
@@ -1577,7 +1826,8 @@ _TOPN_WITHIN_TEST_THRESHOLDS = (1.0, 2.0)
 def _topn_within_frames(
         df: pd.DataFrame, top_n: int,
         eq_df: "pd.DataFrame | None" = None,
-        pb_valid_only: bool = False) -> dict:
+        pb_valid_only: bool = False,
+        rmsd_col: str = "rmsd") -> dict:
     """Per method → per-complex frame feeding fig 18's paired tests.
 
     Mirrors :func:`aggregate_topn_within_thresholds` EXACTLY (same de-dup of
@@ -1607,11 +1857,11 @@ def _topn_within_frames(
         top1_hit = top1[top1["pb_valid"]] if pb_valid_only else top1
         rk_hit = ranked[ranked["pb_valid"]] if pb_valid_only else ranked
         frame = pd.DataFrame(index=idx)
-        frame["top1_rmsd"] = (pd.to_numeric(top1_hit["rmsd"], errors="coerce")
+        frame["top1_rmsd"] = (pd.to_numeric(top1_hit[rmsd_col], errors="coerce")
                               .reindex(idx) if not top1_hit.empty
                               else pd.Series(index=idx, dtype=float))
-        best = (rk_hit.dropna(subset=["rmsd"])
-                .groupby(["protein", "ligand"])["rmsd"].min())
+        best = (rk_hit.dropna(subset=[rmsd_col])
+                .groupby(["protein", "ligand"])[rmsd_col].min())
         frame["best_rmsd"] = best.reindex(idx) if len(best) else float("nan")
         frames[label] = frame
 
@@ -1629,7 +1879,10 @@ def _stats_topn_within(
         df: pd.DataFrame, top_n: int,
         eq_df: "pd.DataFrame | None" = None,
         pb_valid_only: bool = False,
-        test_thresholds: tuple[float, ...] = _TOPN_WITHIN_TEST_THRESHOLDS) -> dict | None:
+        test_thresholds: tuple[float, ...] = _TOPN_WITHIN_TEST_THRESHOLDS,
+        rmsd_col: str = "rmsd",
+        figure_base: str = "18_topn_within_thresholds",
+        metric_word: str = "within t Å") -> dict | None:
     """Paired significance tests for fig 18's complex-level panel at PRE-SPECIFIED
     RMSD thresholds (default 1 Å + 2 Å).
 
@@ -1653,7 +1906,8 @@ def _stats_topn_within(
     plotted percentages) to drive the figure's error bars. Returns the sidecar dict,
     or None when < 2 tools carry the per-complex frames.
     """
-    frames = _topn_within_frames(df, top_n, eq_df=eq_df, pb_valid_only=pb_valid_only)
+    frames = _topn_within_frames(df, top_n, eq_df=eq_df, pb_valid_only=pb_valid_only,
+                                 rmsd_col=rmsd_col)
     methods = [m for m in ("autodock", "diffdock", "equibind") if m in frames]
     if len(methods) < 2:
         return None
@@ -1726,10 +1980,10 @@ def _stats_topn_within(
             })
 
     return {
-        "figure": ("18_topn_within_thresholds_pbvalid_complex.png" if pb_valid_only
-                   else "18_topn_within_thresholds_complex.png"),
-        "metric": ("rank-1 / best-of-top-N pose within t Å AND PoseBusters-valid"
-                   if pb_valid_only else "rank-1 / best-of-top-N pose within t Å"),
+        "figure": (f"{figure_base}_pbvalid_complex.png" if pb_valid_only
+                   else f"{figure_base}_complex.png"),
+        "metric": (f"rank-1 / best-of-top-N pose {metric_word} AND PoseBusters-valid"
+                   if pb_valid_only else f"rank-1 / best-of-top-N pose {metric_word}"),
         "unit": ("(protein, ligand) complex — rank-1 / best-of-top-N hit boolean; "
                  "paired across tools on shared complexes"),
         "test": ("per-threshold Cochran's Q + pairwise exact McNemar (Holm pooled "
@@ -3351,8 +3605,8 @@ def aggregate_optimization_raw_vs_best(df: pd.DataFrame, thr: float = 2.0) -> pd
 
     ONE representative pose is chosen per complex, then aggregated over complexes:
 
-      * AutoDock Vina  — rank-1 pose (single variant; no ML-geometry optimisation,
-                         so raw ≡ final — shown once as the physics reference).
+      * AutoDock raw   — rank-1 pose under Vina's original ranking.
+      * AutoDock best  — rank-1 pose under the optimizer's own re-ranking.
       * DiffDock raw   — rank-1 pose of the un-optimised run (``diffdock``).
       * DiffDock best  — rank-1 pose of the smina-optimised run (``diffdock_smina``);
                          same DiffDock confidence ranking, refined geometry.
@@ -3390,7 +3644,8 @@ def aggregate_optimization_raw_vs_best(df: pd.DataFrame, thr: float = 2.0) -> pd
 
     # (tool, role_label, is_best, method_key, picker)
     specs = [
-        ("autodock", "final\n(rank-1)",           False, "autodock",                _rank1),
+        ("autodock", "raw\n(Vina rank-1)",       False, "autodock",                _rank1),
+        ("autodock", "gnina-opt\n(opt rank-1)",  True,  "autodock_gnina",          _rank1),
         ("diffdock", "raw\n(rank-1)",             False, "diffdock",                _rank1),
         ("diffdock", "gnina-opt\n(rank-1)",       True,  "diffdock_gnina",          _rank1),
         ("equibind", "raw\n(first pose)",         False, "equibind_unguided_raw",   _first_pose),
@@ -3427,8 +3682,8 @@ def plot_optimization_raw_vs_best(agg: pd.DataFrame, out: Path,
 
     Same light(accuracy) + dark(PB-valid subset) encoding as fig 09a/09b; bars are
     grouped by tool (colour = tool identity), raw on the left, optimised on the
-    right, with a Δ callout of the validity gain. AutoDock Vina has no ML-geometry
-    optimisation step, so it appears once as the physics reference. See
+    right, with a Δ callout of the validity gain. AutoDock uses its explicit
+    optimized ranking for the post-optimization representative. See
     ``aggregate_optimization_raw_vs_best`` for the exact per-tool pose selection.
     """
     if agg is None or agg.empty:
@@ -3517,6 +3772,926 @@ def plot_optimization_raw_vs_best(agg: pd.DataFrame, out: Path,
     plt.close(fig)
 
 
+# ── 09f: PoseBusters-valid YIELD of the produced poses — raw vs optimized ──
+# Unlike 09c/09e (one representative pose per complex), this looks at EVERY produced
+# pose: per complex, the share of a variant's poses that pass PoseBusters, then the
+# distribution of that per-complex yield across complexes as a box/whisker. smina and
+# gnina refine the SAME poses raw produced (post-hoc), so the denominator is fixed and
+# the numerator — how many survive PoseBusters — is exactly what optimization moves.
+
+# (tool, role, is_opt, method_key) — raw first, then the optimizer variants, so each
+# tool group reads raw → smina-opt → gnina-opt left to right.
+_PBVALID_YIELD_SPECS = [
+    ("autodock", "raw",       False, "autodock"),
+    ("autodock", "smina-opt", True,  "autodock_smina"),
+    ("autodock", "gnina-opt", True,  "autodock_gnina"),
+    ("diffdock", "raw",       False, "diffdock"),
+    ("diffdock", "smina-opt", True,  "diffdock_smina"),
+    ("diffdock", "gnina-opt", True,  "diffdock_gnina"),
+    ("equibind", "raw",       False, "equibind_unguided_raw"),
+    ("equibind", "smina-opt", True,  "equibind_unguided_smina"),
+    ("equibind", "gnina-opt", True,  "equibind_unguided_gnina"),
+]
+
+# The raw variant each optimized variant of a tool is measured against (the paired
+# baseline for the "did optimization help" contrasts).
+_PBVALID_YIELD_RAW = {
+    "autodock": "autodock", "diffdock": "diffdock",
+    "equibind": "equibind_unguided_raw",
+}
+
+# Figure caption / reading notes for 09f. These used to sit under the plot; per request
+# they now live only in the companion report (09f_pbvalid_yield_report.txt) so the
+# figure stays clean. Kept ASCII-friendly for plain-text viewers.
+_PBVALID_YIELD_FIGURE_NOTES = (
+    "Box/whisker of the PoseBusters-valid YIELD of the poses each variant PRODUCED, "
+    "raw beside its post-hoc-optimized variants, grouped by tool.\n"
+    "\n"
+    "  - Each box = the distribution ACROSS COMPLEXES of that variant's per-complex "
+    "yield: the % of the poses it produced for a complex that pass ALL PoseBusters "
+    "tests. The heavy line is the median (also printed above each box); the open "
+    "diamond is the mean.\n"
+    "  - Raw / reference boxes are hatched (before optimization); post-hoc-optimized "
+    "(smina / gnina) boxes are solid.\n"
+    "  - smina and gnina REFINE THE SAME POSES the raw run produced (post-hoc), so raw "
+    "and its optimized variants share the denominator (the pose count) and differ only "
+    "in how many survive PoseBusters -- the raw->opt upward shift is exactly the "
+    "validity that optimization recovers.\n"
+    "  - AutoDock Vina has no ML-geometry optimization step, so it appears once as the "
+    "physics reference (raw == final).\n"
+    "  - Significance brackets: paired Wilcoxon signed-rank on the per-complex yield "
+    "(raw vs each optimized variant), Holm-corrected across ALL raw->opt contrasts; the "
+    "bracket label is the Hodges-Lehmann median gain in percentage points (pp) plus "
+    "its significance stars.\n"
+    "  - Tick labels: 'pool' = validity pooled over ALL produced poses of that variant "
+    "(sum valid / sum produced, across every complex); n = number of complexes.\n"
+    "  - Outliers beyond the whiskers (> Q3 + 1.5*IQR) are hidden so the boxes stay "
+    "legible; the box, whiskers and printed median/mean use the full per-complex data."
+)
+
+
+def _drop_bare_diffdock_dupe(sub: pd.DataFrame, method_key: str) -> pd.DataFrame:
+    """Drop raw DiffDock's duplicate top pose when pooling ALL produced poses.
+
+    Raw DiffDock writes its rank-1 pose twice — a bare ``rankN.sdf`` beside the
+    byte-identical ``rankN_confidence-*.sdf`` — so any denominator that pools every
+    produced pose of the raw ``diffdock`` key (the pose-production cascade, the 09f
+    produced-pose yield) would otherwise count the top pose twice and bias both the
+    totals and the pooled percentages. The optimised variants (smina/gnina) are
+    confidence-named only, so they never carry the bare copy; this is a no-op for
+    every other method. Mirrors the guard in :func:`_positions_native`.
+    """
+    if method_key != "diffdock":
+        return sub
+    bare = sub["pose_name"].astype(str).str.contains(
+        r"rank\d+\.sdf$", regex=True, case=False, na=False)
+    return sub[~bare]
+
+
+def pbvalid_yield_per_complex(df_full: pd.DataFrame,
+                              specs=_PBVALID_YIELD_SPECS) -> pd.DataFrame:
+    """Per (variant, complex): what fraction of the poses a variant PRODUCED are
+    PoseBusters-valid.
+
+    One row per (method_key, protein, ligand): ``n_poses`` produced, ``n_valid`` of
+    them, and ``pct_valid`` = 100·n_valid/n_poses. ALL produced (scored) poses count
+    — the denominator is what the variant generated for that complex, so a grossly
+    distorted pose still counts against the yield (it just isn't valid). The optimizer
+    variants (smina/gnina) refine the SAME poses raw produced, so raw and its optimized
+    variants share the denominator and differ only in how many survive PoseBusters.
+
+    Requires the FULL (un-collapsed) per-pose frame so every DiffDock/EquiBind variant
+    is still present under its own method key; missing variants are skipped.
+    """
+    cols = ["tool", "role", "is_opt", "method_key", "protein", "ligand",
+            "n_poses", "n_valid", "pct_valid"]
+    frames = []
+    for tool, role, is_opt, mkey in specs:
+        sub = df_full[df_full["method"].astype(str) == mkey]
+        sub = _drop_bare_diffdock_dupe(sub, mkey)
+        if sub.empty:
+            continue
+        g = sub.assign(_v=_to_bool(sub["pb_valid"]).astype(int)).groupby(
+            ["protein", "ligand"], sort=False)
+        agg = g["_v"].agg(n_poses="size", n_valid="sum").reset_index()
+        agg["pct_valid"] = 100.0 * agg["n_valid"] / agg["n_poses"]
+        agg["tool"], agg["role"], agg["is_opt"], agg["method_key"] = \
+            tool, role, is_opt, mkey
+        frames.append(agg[cols])
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=cols)
+
+
+def aggregate_pbvalid_yield_by_variant(df_full: pd.DataFrame,
+                                       specs=_PBVALID_YIELD_SPECS) -> pd.DataFrame:
+    """Per-variant summary of the produced-pose PB-valid yield (for the CSV / table).
+
+    One row per variant: n_complexes, total poses produced & valid, the POOLED
+    validity rate (over all poses), and the per-complex yield distribution
+    (mean / median / IQR). ``median_gain_over_raw_pp`` is the median per-complex yield
+    minus the raw variant of the same tool (0 for raw / the physics reference) — the
+    headline "how much optimization added" in percentage points.
+    """
+    per = pbvalid_yield_per_complex(df_full, specs)
+    if per.empty:
+        return per
+    order = {mkey: i for i, (_, _, _, mkey) in enumerate(specs)}
+    rows = []
+    for tool, role, is_opt, mkey in specs:
+        sub = per[per["method_key"] == mkey]
+        if sub.empty:
+            continue
+        pct = sub["pct_valid"].to_numpy(float)
+        tot_poses = int(sub["n_poses"].sum())
+        n_cplx = int(len(sub))
+        n_cplx_valid = int((sub["n_valid"] >= 1).sum())   # complexes with >=1 valid pose
+        rows.append({
+            "tool": tool, "role": role, "is_opt": is_opt, "method_key": mkey,
+            "n_complexes": n_cplx,
+            # Coverage: for how many complexes does the variant produce AT LEAST ONE
+            # PB-valid pose. Distinct from n_complexes (complexes with ANY pose) — a
+            # variant can be present for all 303 yet yield zero valid poses on some.
+            "n_complexes_with_valid": n_cplx_valid,
+            "complexes_with_valid_%": round(100.0 * n_cplx_valid / max(1, n_cplx), 2),
+            "n_poses": tot_poses, "n_valid": int(sub["n_valid"].sum()),
+            "pooled_pb_valid_%": round(100.0 * sub["n_valid"].sum()
+                                       / max(1, tot_poses), 2),
+            "per_complex_mean_%": round(float(np.mean(pct)), 2),
+            "per_complex_median_%": round(float(np.median(pct)), 2),
+            "per_complex_q1_%": round(float(np.percentile(pct, 25)), 2),
+            "per_complex_q3_%": round(float(np.percentile(pct, 75)), 2),
+        })
+    out = pd.DataFrame(rows)
+    med = dict(zip(out["method_key"], out["per_complex_median_%"]))
+    def _gain(r):
+        raw_key = _PBVALID_YIELD_RAW.get(r["tool"])
+        if not r["is_opt"] or raw_key is None or raw_key not in med:
+            return 0.0
+        return round(r["per_complex_median_%"] - med[raw_key], 2)
+    out["median_gain_over_raw_pp"] = out.apply(_gain, axis=1)
+    out["_order"] = out["method_key"].map(order)
+    return out.sort_values("_order").drop(columns="_order").reset_index(drop=True)
+
+
+def _stats_pbvalid_yield(per: pd.DataFrame, specs=_PBVALID_YIELD_SPECS) -> dict | None:
+    """Paired per-complex test that optimization raises the produced-pose PB-valid
+    yield, run separately for each ML tool (DiffDock, EquiBind).
+
+    For a tool, the per-complex yields of its raw / smina-opt / gnina-opt variants
+    are a paired (same-complex) triple: Friedman + Kendall's W give the omnibus that
+    the three differ, and one-sided-in-interpretation Wilcoxon signed-rank
+    (rank-biserial effect size) gives the raw→smina and raw→gnina contrasts that are
+    the actual "did optimization help?" question, with a Hodges–Lehmann median gain
+    and bootstrap CI. Restricted to complexes scored under all three variants.
+
+    All raw→opt contrasts (across both tools) form ONE Holm family so the
+    significance stars survive multiplicity correction. Returns None on any shortfall.
+    """
+    if per is None or per.empty:
+        return None
+    tool_variants = {}
+    for tool, role, is_opt, mkey in specs:
+        if tool in _PBVALID_YIELD_RAW:
+            tool_variants.setdefault(tool, []).append((role, mkey))
+    out: dict = {}
+    contrasts: list[dict] = []                 # pooled Holm family across tools
+    for tool, variants in tool_variants.items():
+        frames = []
+        for role, mkey in variants:
+            sub = per[per["method_key"] == mkey]
+            if not sub.empty:
+                frames.append(
+                    sub.set_index(["protein", "ligand"])["pct_valid"].rename(role))
+        labels = [f.name for f in frames]
+        if len(frames) < 2 or "raw" not in labels:
+            continue
+        wide = pd.concat(frames, axis=1, join="inner").dropna()
+        if len(wide) < 3:
+            continue
+        pc = su.paired_continuous(
+            {l: wide[l].to_numpy(float) for l in labels}, labels=labels)
+        raw = wide["raw"].to_numpy(float)
+        tool_recs = []
+        for role in labels:
+            if role == "raw":
+                continue
+            opt = wide[role].to_numpy(float)
+            rb, p, npair = su.wilcoxon_rankbiserial(opt, raw)
+            gain, lo, hi = su.median_diff_ci(opt, raw, paired=True)
+            rec = {"tool": tool, "variant": role, "n": int(len(wide)),
+                   "median_raw_%": round(float(np.median(raw)), 2),
+                   "median_opt_%": round(float(np.median(opt)), 2),
+                   "median_gain_pp": round(float(gain), 2),
+                   "gain_ci": [round(float(lo), 2), round(float(hi), 2)],
+                   "rank_biserial": round(float(rb), 3) if rb == rb else None,
+                   "p_raw": float(p) if p == p else None}
+            tool_recs.append(rec)
+            contrasts.append(rec)
+        out[tool] = {"omnibus": pc["omnibus"], "medians": pc["medians"],
+                     "pairwise": pc["pairwise"], "raw_vs_opt": tool_recs,
+                     "n_complexes": int(len(wide))}
+    if not out:
+        return None
+    valid_p = [c for c in contrasts if c["p_raw"] is not None]
+    if valid_p:
+        for c, pa in zip(valid_p, su.holm([c["p_raw"] for c in valid_p])):
+            c["p_holm"] = float(pa)
+            c["star"] = su.p_stars(pa)
+    return out
+
+
+def _pbvalid_yield_contrast(stats: dict | None, tool: str, variant: str) -> dict | None:
+    """Look up one raw→opt contrast record from the 09f stats payload."""
+    if not stats or tool not in stats:
+        return None
+    for rec in stats[tool].get("raw_vs_opt", []):
+        if rec["variant"] == variant:
+            return rec
+    return None
+
+
+def _write_pbvalid_yield_report(summary: "pd.DataFrame | None", stats: dict | None,
+                                out_path: Path) -> None:
+    """Write the FULL 09f statistics + the moved-off-figure notes to a text file.
+
+    Companion to 09f_pbvalid_yield_boxplot.png / pbvalid_yield_by_variant.csv: the
+    figure caption/reading notes (moved off the plot), the per-variant produced-pose
+    PB-valid yield table, and the complete paired per-complex statistics — Friedman
+    omnibus (+ Kendall's W), the full Wilcoxon pairwise family, and the raw→opt
+    contrasts with rank-biserial effect sizes, Hodges–Lehmann median gains, 95%
+    bootstrap CIs and Holm-adjusted p-values.
+    """
+    def _p(p) -> str:
+        if p is None or p != p:
+            return "n/a"
+        if p <= 0:
+            return "<1e-300"
+        return f"{p:.3e}" if p < 1e-3 else f"{p:.4f}"
+
+    def _f(v, nd=2) -> str:
+        return "n/a" if v is None or v != v else f"{float(v):.{nd}f}"
+
+    def _sf(v, nd=3) -> str:                       # None/NaN-safe SIGNED float
+        return "n/a" if v is None or v != v else f"{float(v):+.{nd}f}"
+
+    W = 84
+    L: list[str] = []
+    L.append("=" * W)
+    L.append("Post-Hoc Optimization and PoseBuster Validity")
+    L.append("Figure 09f — PoseBusters-valid yield of the produced poses (raw vs. optimized)")
+    L.append("=" * W)
+    L.append("")
+    L.append("Source : per_pose_metrics.csv (df_full — all raw + smina/gnina variants)")
+    L.append("Tables : pbvalid_yield_by_variant.csv (per-variant),")
+    L.append("         pbvalid_yield_per_complex.csv (box source)")
+    L.append("Figure : 09f_pbvalid_yield_boxplot.png")
+    L.append("")
+    L.append("-" * W)
+    L.append("FIGURE NOTES  (moved off the plot)")
+    L.append("-" * W)
+    L.append(_PBVALID_YIELD_FIGURE_NOTES)
+    L.append("")
+
+    if summary is not None and not summary.empty:
+        L.append("-" * W)
+        L.append("PER-VARIANT SUMMARY  (produced-pose PoseBusters-valid yield)")
+        L.append("-" * W)
+        # cplx>=1v / cover% answer "for how many complexes does the variant produce AT
+        # LEAST ONE PB-valid pose" — distinct from n_cplx (complexes with ANY pose).
+        has_cover = "n_complexes_with_valid" in summary.columns
+        hdr = (f"{'tool':9s} {'role':10s} {'method_key':24s} {'n_cplx':>6s} "
+               + (f"{'cplx>=1v':>8s} {'cover%':>6s} " if has_cover else "")
+               + f"{'n_poses':>7s} {'n_valid':>7s} {'pool%':>6s} {'mean%':>6s} "
+               f"{'med%':>6s} {'Q1%':>6s} {'Q3%':>6s} {'gain_vs_raw_pp':>14s}")
+        L.append(hdr)
+        L.append("-" * len(hdr))
+        for _, r in summary.iterrows():
+            cov = (f"{int(r['n_complexes_with_valid']):>8d} "
+                   f"{r['complexes_with_valid_%']:>6.1f} " if has_cover else "")
+            L.append(f"{str(r['tool']):9s} {str(r['role']):10s} "
+                     f"{str(r['method_key']):24s} {int(r['n_complexes']):>6d} " + cov
+                     + f"{int(r['n_poses']):>7d} {int(r['n_valid']):>7d} "
+                     f"{r['pooled_pb_valid_%']:>6.1f} {r['per_complex_mean_%']:>6.1f} "
+                     f"{r['per_complex_median_%']:>6.1f} {r['per_complex_q1_%']:>6.1f} "
+                     f"{r['per_complex_q3_%']:>6.1f} {r['median_gain_over_raw_pp']:>+14.1f}")
+        L.append("")
+        if has_cover:
+            L.append("  cplx>=1v = complexes with >=1 PB-valid pose (of n_cplx); cover% = its rate")
+        L.append("  pool%   = validity pooled over ALL produced poses (sum valid / sum produced)")
+        L.append("  mean/med/Q1/Q3% = distribution across complexes of the per-complex yield")
+        L.append("  gain_vs_raw_pp  = per-complex MEDIAN yield minus the tool's raw variant (pp)")
+        L.append("  NOTE: n_cplx counts complexes with ANY pose; a variant can be present for all")
+        L.append("        of them yet still yield ZERO valid poses on some (see cplx>=1v / cover%).")
+        L.append("")
+
+    L.append("-" * W)
+    L.append("STATISTICAL RESULTS")
+    L.append("-" * W)
+    L.append("Unit of analysis : one value per complex = % of a variant's produced poses that")
+    L.append("                   are PoseBusters-valid (correlated poses aggregated per complex).")
+    L.append("Design           : paired — the SAME complexes across a tool's raw / smina-opt /")
+    L.append("                   gnina-opt variants (listwise-complete complexes only).")
+    L.append("Omnibus          : Friedman rank test (+ Kendall's W concordance), per tool.")
+    L.append("Contrasts        : Wilcoxon signed-rank (matched-pairs rank-biserial effect size);")
+    L.append("                   raw→opt gain = Hodges–Lehmann median of the paired differences")
+    L.append("                   with a 95% percentile-bootstrap CI.")
+    L.append("Multiplicity     : Holm–Bonferroni across ALL raw→opt contrasts (both tools pooled).")
+    L.append("Significance      : *** p<.001   ** p<.01   * p<.05   ns = not significant.")
+    L.append("")
+
+    if not stats:
+        L.append("No paired statistics available — optimized variants absent, or fewer than 3")
+        L.append("complexes scored under all of a tool's raw/smina/gnina variants. Re-run the")
+        L.append("report with all variants present (a --best-*-only / --collapse-plots-only")
+        L.append("flag, or --diffdock-variant all --split-equibind).")
+    else:
+        pretty = {"diffdock": "DiffDock", "equibind": "EquiBind (blind / unguided)"}
+        for tool in ("diffdock", "equibind"):
+            blk = stats.get(tool)
+            if not blk:
+                continue
+            om = blk.get("omnibus", {})
+            n = blk.get("n_complexes", om.get("n", 0))
+            L.append(f"### {pretty.get(tool, tool)}   (n = {n} complexes)")
+            L.append("")
+            meds = blk.get("medians", {})
+            if meds:
+                L.append("  Per-complex median yield:  "
+                         + ",  ".join(f"{k} = {_f(v, 1)}%" for k, v in meds.items()))
+            L.append("  Omnibus (raw vs smina-opt vs gnina-opt):")
+            L.append(f"    Friedman χ²({om.get('df', '?')}) = {_f(om.get('chi2'), 2)}, "
+                     f"p = {_p(om.get('p'))}, Kendall's W = {_f(om.get('kendall_w'), 3)}")
+            L.append("")
+            pw = blk.get("pairwise", [])
+            if pw:
+                L.append("  Pairwise Wilcoxon signed-rank (Holm within this tool's 3-pair family;")
+                L.append("  rank-biserial > 0 ⇒ the FIRST-named variant has the higher yield):")
+                for pr in pw:
+                    npair = pr.get("n")
+                    n_str = f", n={int(npair)}" if npair is not None and npair == npair else ""
+                    L.append(f"    {str(pr['a']):>9s} vs {str(pr['b']):<9s} : "
+                             f"r_rb = {_sf(pr.get('rank_biserial'))}, "
+                             f"p_raw = {_p(pr.get('p_raw'))}, "
+                             f"p_holm = {_p(pr.get('p_holm'))}  {pr.get('star', '')}{n_str}")
+                L.append("")
+            rvo = blk.get("raw_vs_opt", [])
+            if rvo:
+                L.append("  Raw → optimized (headline; Holm across all raw→opt contrasts):")
+                for rec in rvo:
+                    ci = rec.get("gain_ci", [None, None]) or [None, None]
+                    L.append(f"    raw → {str(rec['variant']):<9s} : "
+                             f"median {_f(rec.get('median_raw_%'), 1)}% → "
+                             f"{_f(rec.get('median_opt_%'), 1)}%  (n={rec.get('n', '?')})")
+                    L.append(f"        Hodges–Lehmann gain = {_sf(rec.get('median_gain_pp'), 1)} pp "
+                             f"(95% CI [{_f(ci[0], 1)}, {_f(ci[1], 1)}])")
+                    L.append(f"        rank-biserial = {_sf(rec.get('rank_biserial'))}, "
+                             f"p_raw = {_p(rec.get('p_raw'))}, "
+                             f"p_holm = {_p(rec.get('p_holm'))}  {rec.get('star', '')}")
+                L.append("")
+        if summary is not None and not summary.empty:
+            ad = summary[summary["method_key"] == "autodock"]
+            if not ad.empty:
+                a = ad.iloc[0]
+                L.append("### AutoDock Vina — physics reference (not tested)")
+                L.append("")
+                L.append("  Single variant, no ML-geometry optimization step (raw ≡ final):")
+                L.append(f"    pooled valid = {a['pooled_pb_valid_%']:.1f}%, per-complex median "
+                         f"= {a['per_complex_median_%']:.1f}% (n = {int(a['n_complexes'])}).")
+                if "n_complexes_with_valid" in a.index:
+                    L.append(f"    produces >=1 PB-valid pose for "
+                             f"{int(a['n_complexes_with_valid'])} / {int(a['n_complexes'])} "
+                             f"complexes ({a['complexes_with_valid_%']:.1f}%) — the rest yield "
+                             f"zero valid poses despite having poses.")
+                L.append("")
+
+    L.append("=" * W)
+    out_path.write_text("\n".join(L) + "\n", encoding="utf-8")
+
+
+def _all_variant_yield_specs(df_full: pd.DataFrame):
+    """09f specs for EVERY variant present in ``df_full`` — all EquiBind pocket ×
+    refine [× clamp] variants + all DiffDock variants + AutoDock — independent of the
+    best-variant / collapse flags.
+
+    Ordered AutoDock, DiffDock (raw → smina-opt → gnina-opt), then EquiBind grouped by
+    pocket (unguided, fpocket, p2rank, …) and within a pocket raw → smina-opt → gnina-opt
+    (clamp last). ``role`` carries a compact multi-line per-variant label for the ticks.
+    """
+    present = set(df_full["method"].astype(str).unique())
+    specs = []
+    for mkey, role in (("autodock", "raw"), ("autodock_smina", "smina-opt"),
+                       ("autodock_gnina", "gnina-opt")):
+        if mkey in present:
+            specs.append(("autodock", role, mkey != "autodock", mkey))
+    for mkey, role in (("diffdock", "raw"), ("diffdock_smina", "smina-opt"),
+                       ("diffdock_gnina", "gnina-opt")):
+        if mkey in present:
+            specs.append(("diffdock", role, mkey != "diffdock", mkey))
+    eq = [m for m in present if m.startswith("equibind")]
+    pocket_order = {"unguided": 0, "fpocket": 1, "p2rank": 2, "guided": 3}
+    refine_order = {None: 0, "raw": 0, "smina": 1, "gnina": 2}
+    def _order(m):
+        p, r, c = _eq_tokens(m)
+        return (pocket_order.get(p, 9), refine_order.get(r, 9), c or "")
+    for m in sorted(eq, key=_order):
+        p, r, c = _eq_tokens(m)
+        bits = [p or "equibind",
+                {"smina": "smina-opt", "gnina": "gnina-opt"}.get(r, "raw")]
+        if c:
+            bits.append("clamp on" if c == "clampON" else "clamp off")
+        specs.append(("equibind", "\n".join(bits), r in ("smina", "gnina"), m))
+    return specs
+
+
+def _cascade_label(mkey: str) -> str:
+    """Table label for the pose-validity cascade, in the paper's variant style
+    ('DiffDock (raw)', 'DiffDock + smina', 'EquiBind unguided (raw)', …)."""
+    if mkey == "autodock":
+        return "AutoDock Vina (raw)"
+    if mkey == "autodock_smina":
+        return "AutoDock Vina + smina"
+    if mkey == "autodock_gnina":
+        return "AutoDock Vina + gnina"
+    if mkey == "diffdock":
+        return "DiffDock (raw)"
+    if mkey == "diffdock_smina":
+        return "DiffDock + smina"
+    if mkey == "diffdock_gnina":
+        return "DiffDock + gnina"
+    if mkey.startswith("equibind"):
+        pocket, refine, clamp = _eq_tokens(mkey)
+        pk = {"unguided": "unguided", "fpocket": "fpocket",
+              "p2rank": "P2Rank", "guided": "guided"}.get(pocket or "", pocket or "")
+        head = f"EquiBind {pk}".rstrip()
+        suffix = {"smina": " + smina", "gnina": " + gnina"}.get(refine or "", " (raw)")
+        lab = f"{head}{suffix}"
+        if clamp:
+            lab += " [clamp on]" if clamp == "clampON" else " [clamp off]"
+        return lab
+    return mkey
+
+
+def aggregate_pose_validity_cascade(df_full: pd.DataFrame, specs=None,
+                                    kabsch_thr: float = FORM_OK_KABSCH_A) -> pd.DataFrame:
+    """Pose-level validity/accuracy cascade per docking variant.
+
+    For every variant present in ``df_full`` this pools ALL of the poses it produced
+    (the produced-pose denominator, the same one the 09f yield uses) and walks the
+    cascade::
+
+        produced  →  PoseBusters-valid  →  RMSD ≤ 2 Å  →  Kabsch RMSD < thr Å
+                  →  RMSD ≤ 2 Å AND PB-valid AND Kabsch RMSD < thr Å
+
+    Two placement-free "form" filters live in the middle/end: ``Kabsch RMSD < thr``
+    (default 1 Å, ``kabsch_thr``) is the best-fit / superposed heavy-atom RMSD — the
+    ligand's INTERNAL conformation regardless of where it was placed (PoseBusters'
+    ``pb_kabsch_rmsd``, our own Kabsch fit as fallback, stored in ``bestfit_rmsd``).
+    The final column is the strict apex: a pose that is near-native (≤ 2 Å), physically
+    valid (PB), AND has the correct form (Kabsch < thr).
+
+    Each stage is reported BOTH as a pose count (how many poses survive the filter)
+    and as a complex count (how many distinct (protein, ligand) complexes still have
+    at least one surviving pose). The pose count is the pooled sampling volume; the
+    complex count is how many of the targets are actually covered at that stage —
+    they answer different questions (a variant can pour thousands of valid poses into
+    a handful of easy complexes, or spread a few valid poses across many).
+
+    Percentage columns:
+      pb_valid_%          — PB-valid poses / produced poses.
+      rmsd2_%             — RMSD ≤ 2 Å poses / produced poses.
+      kabsch1_%           — Kabsch RMSD < thr poses / produced poses.
+      triple_of_rmsd2_%   — (≤ 2 Å & PB-valid & Kabsch < thr) / (≤ 2 Å) poses.
+      triple_of_all_%     — (≤ 2 Å & PB-valid & Kabsch < thr) / produced poses.
+
+    The pure ``rmsd2_pbvalid_*`` columns (≤ 2 Å & PB-valid, the previous headline that
+    matches the PoseBusters paper) are RETAINED in the CSV for reference — the fixed-
+    width / markdown tables show the stricter triple as the final category instead.
+
+    Uses the FULL (un-collapsed) per-pose frame so every DiffDock/EquiBind variant is
+    present under its own method key. Crystal RMSD and Kabsch RMSD that are NaN never
+    satisfy their thresholds. Validity is the canonical PB-valid flag (``_to_bool``).
+    """
+    if specs is None:
+        specs = _all_variant_yield_specs(df_full)
+    cols = ["tool", "role", "is_opt", "method_key", "label",
+            "n_complexes", "n_poses",
+            "pb_valid_complexes", "pb_valid_poses", "pb_valid_%",
+            "rmsd2_complexes", "rmsd2_poses", "rmsd2_%",
+            "kabsch1_complexes", "kabsch1_poses", "kabsch1_%",
+            # Pure ≤2Å & PB-valid (paper headline) — kept in the CSV for reference.
+            "rmsd2_pbvalid_complexes", "rmsd2_pbvalid_poses",
+            "rmsd2_pbvalid_of_rmsd2_%", "rmsd2_pbvalid_of_all_%",
+            # Strict apex: ≤2Å & PB-valid & Kabsch < thr.
+            "triple_complexes", "triple_poses",
+            "triple_of_rmsd2_%", "triple_of_all_%"]
+    rows = []
+    for tool, role, is_opt, mkey in specs:
+        sub = df_full[df_full["method"].astype(str) == mkey]
+        sub = _drop_bare_diffdock_dupe(sub, mkey)
+        if sub.empty:
+            continue
+        cplx = sub["protein"].astype(str) + "\x00" + sub["ligand"].astype(str)
+        pbv = _to_bool(sub["pb_valid"])
+        le2 = pd.to_numeric(sub["rmsd"], errors="coerce") <= 2.0
+        # Best-fit (Kabsch) RMSD: bestfit_rmsd already coalesces PoseBusters'
+        # pb_kabsch_rmsd with our own fit; fall back defensively for older caches.
+        if "bestfit_rmsd" in sub.columns:
+            kcol = sub["bestfit_rmsd"]
+        elif "pb_kabsch_rmsd" in sub.columns:
+            kcol = sub["pb_kabsch_rmsd"]
+        else:
+            kcol = pd.Series(np.nan, index=sub.index)
+        kab = pd.to_numeric(kcol, errors="coerce") < kabsch_thr
+        both = le2 & pbv
+        triple = both & kab
+        n_poses = int(len(sub))
+        pb_p, rm_p = int(pbv.sum()), int(le2.sum())
+        k1_p, bo_p, tr_p = int(kab.sum()), int(both.sum()), int(triple.sum())
+        _nc = lambda mask: int(cplx[mask].nunique())
+        rows.append({
+            "tool": tool, "role": role, "is_opt": is_opt, "method_key": mkey,
+            "label": _cascade_label(mkey),
+            "n_complexes": int(cplx.nunique()), "n_poses": n_poses,
+            # Percentages kept at full precision — rounded once, at display / CSV-write
+            # time, so a single rate can't drift a digit via double rounding.
+            "pb_valid_complexes": _nc(pbv), "pb_valid_poses": pb_p,
+            "pb_valid_%": 100.0 * pb_p / max(1, n_poses),
+            "rmsd2_complexes": _nc(le2), "rmsd2_poses": rm_p,
+            "rmsd2_%": 100.0 * rm_p / max(1, n_poses),
+            "kabsch1_complexes": _nc(kab), "kabsch1_poses": k1_p,
+            "kabsch1_%": 100.0 * k1_p / max(1, n_poses),
+            "rmsd2_pbvalid_complexes": _nc(both), "rmsd2_pbvalid_poses": bo_p,
+            "rmsd2_pbvalid_of_rmsd2_%": (100.0 * bo_p / rm_p
+                                         if rm_p else float("nan")),
+            "rmsd2_pbvalid_of_all_%": 100.0 * bo_p / max(1, n_poses),
+            "triple_complexes": _nc(triple), "triple_poses": tr_p,
+            "triple_of_rmsd2_%": (100.0 * tr_p / rm_p if rm_p else float("nan")),
+            "triple_of_all_%": 100.0 * tr_p / max(1, n_poses),
+        })
+    return pd.DataFrame(rows, columns=cols)
+
+
+def _cascade_groups(kabsch_thr: float = FORM_OK_KABSCH_A):
+    """Fixed-width column layout for the cascade text/markdown table: (group, [(header,
+    width, key, kind)]) where kind 'i' = thousands-separated int, 'p' = 1-dp percent
+    ('—' for NaN). The Kabsch threshold is folded into the two form-based headers."""
+    kv = f"{kabsch_thr:g}"
+    return [
+        ("Produced", [("Cplx", 5, "n_complexes", "i"),
+                      ("Poses", 7, "n_poses", "i")]),
+        ("PoseBusters-valid", [("Cplx", 5, "pb_valid_complexes", "i"),
+                               ("Poses", 7, "pb_valid_poses", "i"),
+                               ("%", 6, "pb_valid_%", "p")]),
+        ("RMSD ≤ 2 Å", [("Cplx", 5, "rmsd2_complexes", "i"),
+                        ("Poses", 7, "rmsd2_poses", "i"),
+                        ("%", 6, "rmsd2_%", "p")]),
+        (f"Kabsch RMSD < {kv} Å", [("Cplx", 5, "kabsch1_complexes", "i"),
+                                   ("Poses", 7, "kabsch1_poses", "i"),
+                                   ("%", 6, "kabsch1_%", "p")]),
+        (f"≤ 2 Å & PB-valid & Kabsch < {kv} Å",
+         [("Cplx", 5, "triple_complexes", "i"),
+          ("Poses", 7, "triple_poses", "i"),
+          ("% of ≤2Å", 9, "triple_of_rmsd2_%", "p"),
+          ("% all", 6, "triple_of_all_%", "p")]),
+    ]
+
+
+def _render_pose_validity_cascade_table(cascade: pd.DataFrame,
+                                        kabsch_thr: float = FORM_OK_KABSCH_A) -> str:
+    """Fixed-width, grouped-header rendering of the cascade DataFrame (a pose count and
+    a complex count under each stage)."""
+    LBL_W, GAP, GGAP = 27, "  ", "   "
+    groups = _cascade_groups(kabsch_thr)
+
+    def _fmt(v, kind: str) -> str:
+        if kind == "i":
+            return f"{int(v):,}"
+        if v is None or (isinstance(v, float) and v != v):
+            return "—"
+        return f"{float(v):.1f}"
+
+    grp_hdr = " " * LBL_W
+    sub_hdr = f"{'Docking variant':<{LBL_W}}"
+    for gname, fields in groups:
+        block_w = sum(w for _, w, _, _ in fields) + len(GAP) * (len(fields) - 1)
+        grp_hdr += GGAP + gname.center(block_w)
+        sub_hdr += GGAP + GAP.join(f"{h:>{w}}" for h, w, _, _ in fields)
+    rule = "-" * len(sub_hdr)
+
+    lines = [grp_hdr, sub_hdr, rule]
+    for _, r in cascade.iterrows():
+        cells = f"{str(r['label']):<{LBL_W}}"
+        for _, fields in groups:
+            cells += GGAP + GAP.join(
+                f"{_fmt(r[key], kind):>{w}}" for _, w, key, kind in fields)
+        lines.append(cells)
+    return "\n".join(lines)
+
+
+def _write_pose_validity_cascade_report(cascade: pd.DataFrame, out_path: Path,
+                                        kabsch_thr: float = FORM_OK_KABSCH_A) -> str:
+    """Write the pose-level validity/accuracy cascade as a fixed-width + markdown
+    table with reading notes; return the fixed-width table (also printed by main)."""
+    if cascade is None or cascade.empty:
+        out_path.write_text("No variants present — pose validity cascade is empty.\n")
+        return ""
+
+    kv = f"{kabsch_thr:g}"
+    table = _render_pose_validity_cascade_table(cascade, kabsch_thr)
+    W = max(84, len(table.splitlines()[1]))
+
+    L: list[str] = []
+    L.append("=" * W)
+    L.append("Pose-level validity & accuracy cascade  (per docking variant)")
+    L.append("=" * W)
+    L.append("")
+    L.append("Source : per_pose_metrics.csv (df_full — ALL raw + smina/gnina variants)")
+    L.append("Table  : pose_validity_cascade.csv")
+    L.append("")
+    L.append("Every variant's ENTIRE produced-pose pool is walked through the cascade")
+    L.append(f"  produced -> PoseBusters-valid -> RMSD <= 2 A -> Kabsch RMSD < {kv} A")
+    L.append(f"           -> RMSD <= 2 A AND PB-valid AND Kabsch RMSD < {kv} A,")
+    L.append("reported at each stage as BOTH a pose count and the number of distinct")
+    L.append("(protein, ligand) complexes that still have >= 1 surviving pose.")
+    L.append("")
+    L.append(table)
+    L.append("")
+    L.append("-" * W)
+    L.append("COLUMN KEY")
+    L.append("-" * W)
+    L.append("Cplx / Poses      = complexes with >=1 qualifying pose  /  qualifying poses.")
+    L.append("Produced          = every pose the variant generated (the denominator).")
+    L.append("PoseBusters-valid = poses passing ALL canonical PoseBusters checks;")
+    L.append("                    %   = PB-valid poses / produced poses.")
+    L.append("RMSD <= 2 A       = poses within 2 A crystal RMSD (near-native placement);")
+    L.append("                    %   = <=2 A poses / produced poses.")
+    L.append(f"Kabsch RMSD < {kv} A   = poses whose best-fit / SUPERPOSED heavy-atom RMSD is")
+    L.append("                    < the threshold — the ligand's internal CONFORMATION is")
+    L.append("                    right regardless of where it was placed (PoseBusters'")
+    L.append("                    pb_kabsch_rmsd, our own Kabsch fit as fallback);")
+    L.append(f"                    %   = Kabsch < {kv} A poses / produced poses.")
+    L.append(f"<= 2 A & PB-valid & Kabsch < {kv} A = the strict apex: poses that are")
+    L.append("                    near-native AND PB-valid (the PoseBusters-paper headline)")
+    L.append("                    AND have the correct form (Kabsch < threshold);")
+    L.append("                    % of <=2A = of the <=2 A poses, how many clear all three;")
+    L.append("                    % all     = triple-passing poses / produced poses.")
+    L.append("")
+    L.append("NOTES")
+    L.append("  * Pose counts are POOLED across complexes (pseudoreplicated) — they are a")
+    L.append("    sampling-volume view, not a per-complex success rate. The complex counts")
+    L.append("    say how many of the targets each stage actually reaches.")
+    L.append("  * RMSD is crystal (as-placed) RMSD; Kabsch is the placement-free best-fit")
+    L.append("    RMSD. A pose with no computable value never satisfies that threshold.")
+    L.append("  * The pure '<= 2 A & PB-valid' counts (paper headline, before the Kabsch")
+    L.append("    form filter) are retained in pose_validity_cascade.csv as the")
+    L.append("    rmsd2_pbvalid_* columns for reference.")
+    L.append("  * A degenerate 'EquiBind guided' variant (1 complex) may appear last; it is a")
+    L.append("    partial run, not a full benchmark variant.")
+    L.append("")
+
+    # Paste-ready markdown (one flat header row — markdown can't span group headers).
+    def _mi(v):
+        return f"{int(v):,}"
+
+    def _mp(v):
+        return "—" if v is None or (isinstance(v, float) and v != v) else f"{float(v):.1f}"
+
+    md = [
+        "MARKDOWN (paste-ready)",
+        "",
+        ("| Docking variant | Produced cplx | Produced poses | PB-valid cplx | "
+         "PB-valid poses | PB-valid % | ≤2Å cplx | ≤2Å poses | ≤2Å % | "
+         f"Kabsch<{kv}Å cplx | Kabsch<{kv}Å poses | Kabsch<{kv}Å % | "
+         f"≤2Å&PB&Kabsch<{kv}Å cplx | ≤2Å&PB&Kabsch<{kv}Å poses | "
+         "% of ≤2Å | % of all |"),
+        ("|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|"),
+    ]
+    for _, r in cascade.iterrows():
+        md.append(
+            f"| {r['label']} | {_mi(r['n_complexes'])} | {_mi(r['n_poses'])} | "
+            f"{_mi(r['pb_valid_complexes'])} | {_mi(r['pb_valid_poses'])} | {_mp(r['pb_valid_%'])} | "
+            f"{_mi(r['rmsd2_complexes'])} | {_mi(r['rmsd2_poses'])} | {_mp(r['rmsd2_%'])} | "
+            f"{_mi(r['kabsch1_complexes'])} | {_mi(r['kabsch1_poses'])} | {_mp(r['kabsch1_%'])} | "
+            f"{_mi(r['triple_complexes'])} | {_mi(r['triple_poses'])} | "
+            f"{_mp(r['triple_of_rmsd2_%'])} | {_mp(r['triple_of_all_%'])} |")
+    L.extend(md)
+    L.append("")
+
+    out_path.write_text("\n".join(L))
+    return table
+
+
+def plot_pbvalid_yield_boxplot(per: pd.DataFrame, out: Path,
+                               summary: "pd.DataFrame | None" = None,
+                               stats: dict | None = None,
+                               specs=_PBVALID_YIELD_SPECS,
+                               *, draw_brackets: bool = True,
+                               color_by_variant: bool = False,
+                               figsize: tuple = (11.4, 6.6),
+                               group_labels: "dict | None" = None,
+                               legend_loc: str = "lower center",
+                               legend_anchor: tuple = (0.5, 1.012),
+                               legend_ncol: int = 3) -> None:
+    """Fig 09f — box/whisker of the produced-pose PoseBusters-valid YIELD per variant,
+    raw beside its optimized variants, grouped by tool.
+
+    Each box is the distribution across complexes of that variant's per-complex % of
+    produced poses that pass PoseBusters. Optimization (smina/gnina) refines the SAME
+    poses raw produced, so the upward shift raw → opt is the validity it recovers.
+    Raw boxes are hatched (before); optimized/reference boxes are solid (after). Paired
+    Wilcoxon signed-rank brackets (Holm-corrected across all raw→opt contrasts) mark
+    the significance and the median percentage-point gain. Outliers beyond the whiskers
+    are hidden so the boxes stay legible.
+
+    ``draw_brackets`` off, ``color_by_variant`` on and a wider ``figsize`` render the
+    all-variants overview (every EquiBind pocket×refine variant), where per-tool raw→opt
+    brackets no longer make sense; boxes are then coloured per variant instead of per tool.
+    """
+    if per is None or per.empty:
+        return
+    # Per-variant counts for the tick labels: # complexes with >=1 PB-valid pose, and the
+    # # of PB-valid poses. The total n_complexes is the same for every variant (it lives in
+    # the title).
+    if (summary is not None and not summary.empty
+            and "n_complexes_with_valid" in summary.columns):
+        cover = dict(zip(summary["method_key"], summary["n_complexes_with_valid"]))
+        n_valid = dict(zip(summary["method_key"], summary["n_valid"]))
+    else:
+        agg = {m: g for m, g in per.groupby("method_key")}
+        cover = {m: int((g["n_valid"] >= 1).sum()) for m, g in agg.items()}
+        n_valid = {m: int(g["n_valid"].sum()) for m, g in agg.items()}
+
+    tool_color_key = {"autodock": "autodock", "diffdock": "diffdock",
+                      "equibind": "equibind_unguided"}
+    group_name = group_labels or {"autodock": "AutoDock Vina", "diffdock": "DiffDock",
+                                  "equibind": "EquiBind (blind / unguided)"}
+
+    # Assemble the boxes present, in spec order, laying out x with a wider gap between
+    # tools (same scheme as 09c).
+    intra, inter, box_w = 0.90, 0.85, 0.62
+    boxes, positions, spans = [], [], {}
+    x, prev = 0.0, None
+    xmap: dict[str, float] = {}
+    for tool, role, is_opt, mkey in specs:
+        data = per.loc[per["method_key"] == mkey, "pct_valid"].to_numpy(float)
+        data = data[~np.isnan(data)]
+        if data.size == 0:
+            continue
+        if prev is not None and tool != prev:
+            x += inter
+        q1, q3 = np.percentile(data, [25, 75])
+        inside = data[data <= q3 + 1.5 * (q3 - q1)]
+        whi = float(inside.max()) if inside.size else float(q3)
+        color = (TOOL_COLORS.get(mkey, "#888888") if color_by_variant
+                 else TOOL_COLORS.get(tool_color_key[tool], "#888888"))
+        boxes.append({"tool": tool, "role": role, "is_opt": is_opt, "mkey": mkey,
+                      "data": data, "x": x, "n": int(data.size),
+                      "median": float(np.median(data)), "whisker_hi": whi,
+                      "color": color})
+        positions.append(x); xmap[mkey] = x
+        spans.setdefault(tool, []).append(x)
+        x += intra; prev = tool
+    if not boxes:
+        return
+
+    fig, ax = plt.subplots(figsize=figsize)
+    bp = ax.boxplot([b["data"] for b in boxes], positions=positions, widths=box_w,
+                    patch_artist=True, showmeans=True, showfliers=False,
+                    medianprops=dict(color="#222222", lw=1.6),
+                    meanprops=dict(marker="D", markerfacecolor="white",
+                                   markeredgecolor="#222222", markersize=5))
+    for patch, b in zip(bp["boxes"], boxes):
+        patch.set_facecolor(b["color"])
+        if b["is_opt"]:
+            patch.set_alpha(0.72)
+        else:                                   # raw / reference read as "before"
+            patch.set_alpha(0.32)
+            patch.set_hatch("///")
+        patch.set_edgecolor(b["color"]); patch.set_linewidth(1.4)
+
+    # MEDIAN per-complex yield printed at the LEFT of the median line, inside the box. The
+    # text starts at the box's left edge so its white outline covers the median line's left
+    # tip (otherwise the line pokes out as a stray dash that reads like a minus sign).
+    import matplotlib.patheffects as _pe
+    for b in boxes:
+        ax.text(b["x"] - box_w / 2, b["median"], f"{b['median']:.1f}%",
+                ha="left", va="center", fontsize=9.0, fontweight="bold",
+                color="#111111", zorder=6,
+                path_effects=[_pe.withStroke(linewidth=3.2, foreground="white")])
+
+    # Significance brackets: raw → each optimized variant, per tool, stacked. Skipped in
+    # the all-variants overview (multiple raws per tool → per-tool brackets don't apply).
+    bracket_ceiling = 0.0
+    if draw_brackets:
+        group_top = {t: max(b["whisker_hi"] for b in boxes if b["tool"] == t)
+                     for t in spans}
+        for tool in spans:
+            raw_key = _PBVALID_YIELD_RAW.get(tool)
+            if raw_key not in xmap:
+                continue
+            opt_boxes = [b for b in boxes if b["tool"] == tool and b["is_opt"]]
+            base = max(group_top[tool] + 3.0, 24.0)     # start just above the tallest box
+            # Vertical spacing between stacked brackets must clear a full two-line label
+            # (star + gain on line 1, p-value on line 2). At the 10 pt bracket font a
+            # two-line label spans ~11 data units, so stack levels 13 units apart to keep
+            # each label from colliding with the bracket line above it.
+            for lvl, b in enumerate(sorted(opt_boxes, key=lambda z: z["x"])):
+                rec = _pbvalid_yield_contrast(stats, tool, b["role"])
+                y = base + lvl * 13.0
+                x0, x1 = xmap[raw_key], b["x"]
+                ax.plot([x0, x0, x1, x1], [y - 1.8, y, y, y - 1.8],
+                        color="0.35", lw=1.1, clip_on=False, zorder=4)
+                if rec is not None:
+                    star = rec.get("star", su.p_stars(rec.get("p_holm", rec["p_raw"])))
+                    pv = rec.get("p_holm", rec["p_raw"])
+                    txt = (f"{star}  +{rec['median_gain_pp']:.1f} pp\n{su.fmt_p(pv)}"
+                           if rec["median_gain_pp"] >= 0
+                           else f"{star}  {rec['median_gain_pp']:.1f} pp\n{su.fmt_p(pv)}")
+                else:
+                    dv = b["median"] - next(z["median"] for z in boxes
+                                            if z["mkey"] == raw_key)
+                    txt = f"+{dv:.1f} pp"
+                ax.text((x0 + x1) / 2, y + 0.4, txt, ha="center", va="bottom",
+                        fontsize=10, color="#1f7a1f", fontweight="bold",
+                        clip_on=False, zorder=5)
+                bracket_ceiling = max(bracket_ceiling, y + 12.5)
+
+    # Per-box tick labels + a second tier of tool names. The total n_complexes is the same
+    # for every variant (it lives in the title). Line 2 = counts: complexes with >=1
+    # PB-valid pose / number of PB-valid poses (e.g. DiffDock gnina-opt = 298/7276). Font
+    # shrinks a touch when many variants are shown.
+    _tick_fs = 9.6 if len(boxes) > 8 else 10.6
+    ax.set_xticks(positions)
+    ax.set_xticklabels(
+        [f"{b['role']}\n{int(cover.get(b['mkey'], 0))}/{int(n_valid.get(b['mkey'], 0))}"
+         for b in boxes], fontsize=_tick_fs)
+    ax.tick_params(axis="x", length=0, pad=6)
+    ax.tick_params(axis="y", labelsize=11.5)
+    trans = ax.get_xaxis_transform()
+    for tool, xs in spans.items():
+        lo, hi, xc = min(xs), max(xs), sum(xs) / len(xs)
+        ax.plot([lo - box_w / 2, hi + box_w / 2], [-0.205, -0.205],
+                transform=trans, color="0.45", lw=1.0, clip_on=False, zorder=1)
+        ax.text(xc, -0.225, group_name[tool], transform=trans, ha="center",
+                va="top", fontsize=13.0, fontweight="bold", clip_on=False)
+
+    ax.axhline(0, color="0.7", lw=0.8)
+    ax.set_ylabel("PoseBusters-valid poses produced\n(% of a complex's poses, per complex)",
+                  fontsize=13.0)
+    # The y-axis is a percentage, so it ENDS AT 100 %: ticks stop at 100, the y-axis line
+    # (left spine) is bounded to 0–100, and the top/right frame is dropped. Headroom above
+    # 100 is kept to the minimum needed for the significance brackets (7-variant figure);
+    # with no brackets the axis is capped just above 100 so the title sits close to the plot.
+    ax.set_ylim(-3, (bracket_ceiling + 2.0) if (draw_brackets and bracket_ceiling) else 103.0)
+    ax.set_yticks([0, 20, 40, 60, 80, 100])
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_bounds(0, 100)
+    ax.spines["bottom"].set_bounds(min(positions) - 0.75, max(positions) + 0.75)
+    ax.set_xlim(min(positions) - 0.75, max(positions) + 0.75)
+    ax.grid(axis="y", alpha=0.3)
+
+    from matplotlib.patches import Patch
+    ax.legend(handles=[
+        Patch(facecolor="0.5", alpha=0.32, hatch="///", edgecolor="0.5",
+              label="raw / reference (before optimization)"),
+        Patch(facecolor="0.5", alpha=0.72, edgecolor="0.5",
+              label="post-hoc optimized (smina / gnina)"),
+        plt.Line2D([0], [0], marker="D", color="none", markerfacecolor="white",
+                   markeredgecolor="#222222", markersize=8, label="mean")],
+        loc=legend_loc, bbox_to_anchor=legend_anchor, ncol=legend_ncol,
+        fontsize=11, framealpha=0.92)
+
+    # (The per-tool Friedman omnibus stats box was removed per request; the full
+    # statistics live in the companion report 09f_pbvalid_yield_report.txt.)
+
+    # Title carries the shared complex count (same n for every variant). When the legend
+    # is placed above the plot (anchor y >= 1.0 → "between title and graph"), the top of
+    # the figure is reserved for title + legend so they don't overlap the axes.
+    _legend_above = legend_anchor[1] >= 1.0
+    title_n = max((b["n"] for b in boxes), default=0)
+    if _legend_above:
+        # Legend rides just above the axes; reserve a thin top band for it so it clears
+        # the plot, then drop the title to sit right on top of the legend. tight_layout
+        # runs FIRST so the legend/axes settle, then the title is placed just above the
+        # (already-drawn) legend so there is no empty gap between title and graph.
+        fig.tight_layout(rect=(0, 0, 1, 0.92))
+        fig.canvas.draw()
+        _leg = ax.get_legend()
+        _leg_top = (_leg.get_window_extent(fig.canvas.get_renderer())
+                    .transformed(fig.transFigure.inverted()).y1) if _leg else 0.90
+        _title_y = min(0.995, _leg_top + 0.055)   # small gap above the legend
+        fig.suptitle(_vt(f"Post-Hoc Optimization and PoseBuster Validity   "
+                         f"(n = {title_n} complexes)"),
+                     fontsize=16.5, fontweight="bold", y=_title_y, va="top")
+    else:
+        fig.suptitle(_vt(f"Post-Hoc Optimization and PoseBuster Validity   "
+                         f"(n = {title_n} complexes)"),
+                     fontsize=16.5, fontweight="bold", y=0.995)
+        fig.tight_layout()
+    fig.savefig(out, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+
+
 # ── Top-1 vs top-N poses, raw vs refined — ranking headroom + optimization (09d) ──
 
 
@@ -3570,6 +4745,8 @@ def _gnina_affinity_rank(sub: pd.DataFrame) -> pd.Series:
 # can be read off directly; needs the FULL (un-collapsed) frame.
 _RANK1_TOPN_SPECS = [
     ("autodock", "AutoDock Vina",        "autodock",                "confidence rank",     "native"),
+    ("autodock", "AutoDock (smina-opt)", "autodock_smina",          "optimized rank",      "native"),
+    ("autodock", "AutoDock (gnina-opt)", "autodock_gnina",          "optimized rank",      "native"),
     ("diffdock", "DiffDock (raw)",       "diffdock",                "confidence rank",     "native"),
     ("diffdock", "DiffDock (gnina-opt)", "diffdock_gnina",          "confidence rank",     "native"),
     ("equibind", "EquiBind (raw)",       "equibind_unguided_raw",   "generation order",    "generation"),
@@ -4014,11 +5191,153 @@ def plot_cumulative_oracle_curve(rank_df: pd.DataFrame, top_n: int, out: Path) -
     fig.tight_layout(); fig.savefig(out, dpi=160); plt.close(fig)
 
 
-def _annotate_topn_within_stats(fig, ax, methods, payload, thr) -> None:
-    """Overlay 95 % Wilson CI whiskers at the pre-specified thresholds and a
-    Cochran's Q / pairwise-McNemar + ranking-headroom box on fig 18's complex panel
-    (A). Headline numbers are at the largest tested threshold (2 Å canonical); the
-    full pairwise matrix + the 1 Å tests live in the JSON sidecar."""
+def _write_topn_within_report(out_path: Path, *, figure_name: str, csv_name: str,
+                              title: str, panel_desc: str, notes_lines: list[str],
+                              stats: dict | None, within_df: "pd.DataFrame | None",
+                              top_n: int, success_line: float) -> None:
+    """Write fig 18's moved-off-figure caption/notes AND the FULL complex-panel paired
+    statistics to a companion text file (items 4 + 5 of the graph rework).
+
+    Mirrors :func:`_write_pbvalid_yield_report`'s layout. The plot keeps only the visual
+    Wilson-CI whiskers; every number behind them — per-threshold Cochran's Q, the full
+    pairwise exact-McNemar (Holm-pooled) family for both the rank-1 and best-of-top-N
+    curves, and the per-tool rates with 95 % Wilson CIs + ranking-headroom effect size —
+    is tabulated here so the figure stays clean.
+    """
+    def _p(p) -> str:
+        if p is None or p != p:
+            return "n/a"
+        if p <= 0:
+            return "<1e-300"
+        return f"{p:.3e}" if p < 1e-3 else f"{p:.4f}"
+
+    def _pct(v) -> str:
+        return "n/a" if v is None or v != v else f"{100 * float(v):5.1f}"
+
+    W = 92
+    L: list[str] = []
+    L.append("=" * W)
+    L.append(title)
+    L.append("=" * W)
+    L.append("")
+    L.append(f"Figure : {figure_name}")
+    L.append(f"Table  : {csv_name}")
+    L.append(f"Source : per_pose_metrics.csv  (top-{top_n} ranked poses per tool)")
+    L.append(f"Panel  : {panel_desc}")
+    L.append("")
+    L.append("-" * W)
+    L.append("FIGURE NOTES  (moved off the plot)")
+    L.append("-" * W)
+    L.extend(notes_lines)
+    L.append("")
+
+    # Per-tool percentage table straight from the plotted curve, at the whole-Ångström
+    # thresholds (a compact reproduction of what the figure's value labels showed).
+    if within_df is not None and not within_df.empty:
+        present = [m for m in ("autodock", "diffdock", "equibind")
+                   if m in set(within_df["method"].unique())]
+        ts_all = sorted(float(t) for t in within_df["rmsd_threshold_A"].unique())
+        mark_ts = [t for t in ts_all if float(t).is_integer() and t >= 1.0] or ts_all[-4:]
+        L.append("-" * W)
+        L.append("TOP-RANKED ACCURACY  (% of each tool's complexes; rank-1 / best-of-top-N)")
+        L.append("-" * W)
+        hdr = f"{'threshold_A':>11s} " + " ".join(
+            f"{TOOL_LABEL.get(m, m)[:13]:>15s}" for m in present)
+        L.append(hdr + "    [rank-1 above · best-of-top-N below]")
+        L.append("-" * len(hdr))
+        for t in mark_ts:
+            def _cell(m, col):
+                row = within_df[(within_df["method"] == m)
+                                & (within_df["rmsd_threshold_A"] == t)]
+                return f"{float(row[col].iloc[0]):5.1f}" if not row.empty else "  n/a"
+            L.append(f"{t:>11.3g} " + " ".join(f"{_cell(m, 'top1_within_%'):>15s}"
+                                                for m in present))
+            L.append(f"{'':>11s} " + " ".join(f"{_cell(m, 'best_topN_within_%'):>15s}"
+                                                for m in present))
+        L.append("")
+
+    L.append("-" * W)
+    L.append("STATISTICAL RESULTS  (complex-level paired tests)")
+    L.append("-" * W)
+    if not stats:
+        L.append("No paired statistics available (fewer than two tools carried the")
+        L.append("per-complex frames, or the stats step failed). See the figure's curves.")
+        L.append("=" * W)
+        out_path.write_text("\n".join(L) + "\n", encoding="utf-8")
+        return
+
+    L.append(f"Metric  : {stats.get('metric', '')}")
+    L.append(f"Unit    : {stats.get('unit', '')}")
+    L.append(f"Test    : {stats.get('test', '')}")
+    ts = [float(t) for t in stats.get("test_thresholds_A", ())]
+    L.append(f"Tested thresholds : {', '.join(f'{t:g} Å' for t in ts)}  "
+             f"(emphasised success line = {success_line:g} Å)")
+    L.append("Significance : *** p<.001   ** p<.01   * p<.05   ns = not significant.")
+    L.append("")
+
+    def _across_block(label, per_t_key, fam_key):
+        per_t = {round(float(r["rmsd_threshold_A"]), 4): r
+                 for r in stats.get(per_t_key, [])}
+        fam = stats.get(fam_key, [])
+        L.append(f"### {label} — across-tool HIT (paired on shared complexes)")
+        for t in ts:
+            rec = per_t.get(round(t, 4), {})
+            om = rec.get("omnibus", {})
+            n = rec.get("n_complete", "?")
+            if "Q" in om:
+                L.append(f"  @ {t:g} Å  (n={n}):  Cochran's Q({om.get('df', '?')}) "
+                         f"= {om['Q']:.2f}, p = {_p(om.get('p'))}")
+            else:
+                L.append(f"  @ {t:g} Å  (n={n}):  {om.get('status', 'omnibus n/a')}")
+            for pr in fam:
+                if abs(float(pr["rmsd_threshold_A"]) - t) > 1e-6:
+                    continue
+                a = TOOL_LABEL.get(pr["a"], pr["a"]); b = TOOL_LABEL.get(pr["b"], pr["b"])
+                L.append(f"      {a:>16s} vs {b:<16s}: "
+                         f"wins {int(pr['a_wins'])}/{int(pr['b_wins'])}, "
+                         f"p_raw = {_p(pr.get('p_raw'))}, p_holm = {_p(pr.get('p_holm'))}"
+                         f"  {pr.get('star', '')}")
+        L.append("")
+
+    _across_block("Rank-1 (solid curve)", "rank1_across_tools", "rank1_pairwise_holm")
+    _across_block("Best-of-top-N (dashed curve)", "best_topN_across_tools",
+                  "best_topN_pairwise_holm")
+
+    hr = stats.get("ranking_headroom", [])
+    if hr:
+        L.append("### Per-tool rates + 95% Wilson CIs, and ranking headroom "
+                 "(best-of-top-N − rank-1)")
+        L.append("  headroom is a NESTED effect size (rank-1 hits ⊂ best-of-top-N) — "
+                 "reported as a share with a Wilson CI, not a p-value.")
+        hdr = (f"  {'tool':>16s} {'thr_A':>6s} {'n':>4s} {'rank1%':>7s} "
+               f"{'rank1 95%CI':>15s} {'bestN%':>7s} {'bestN 95%CI':>15s} "
+               f"{'head_pp':>8s} {'head 95%CI':>15s}")
+        L.append(hdr)
+        L.append("  " + "-" * (len(hdr) - 2))
+        for r in hr:
+            t1c = r.get("top1_ci", [None, None]); btc = r.get("best_topN_ci", [None, None])
+            hdc = r.get("headroom_ci", [None, None])
+            L.append(f"  {TOOL_LABEL.get(r['method'], r['method'])[:16]:>16s} "
+                     f"{float(r['rmsd_threshold_A']):>6g} {int(r['n']):>4d} "
+                     f"{_pct(r['top1_rate']):>7s} "
+                     f"[{_pct(t1c[0])},{_pct(t1c[1])}]".rjust(15) + " "
+                     f"{_pct(r['best_topN_rate']):>7s} "
+                     f"[{_pct(btc[0])},{_pct(btc[1])}]".rjust(15) + " "
+                     f"{100 * float(r['headroom_share']):>8.1f} "
+                     f"[{_pct(hdc[0])},{_pct(hdc[1])}]".rjust(15))
+        L.append("")
+
+    L.append("=" * W)
+    out_path.write_text("\n".join(L) + "\n", encoding="utf-8")
+
+
+def _annotate_topn_within_stats(fig, ax, methods, payload, thr,
+                                text_box: bool = True) -> None:
+    """Overlay 95 % Wilson CI whiskers at the pre-specified thresholds and (only when
+    ``text_box``) a Cochran's Q / pairwise-McNemar + ranking-headroom summary box on
+    fig 18's complex panel (A). With ``text_box=False`` just the whiskers are drawn and
+    the full summary is written to the companion report text file instead. Headline
+    numbers are at the largest tested threshold; the full matrix lives in the sidecar."""
     if not payload:
         return
     ts = [float(t) for t in payload.get("test_thresholds_A", ())]
@@ -4049,6 +5368,8 @@ def _annotate_topn_within_stats(fig, ax, methods, payload, thr) -> None:
                             fmt="none", ecolor=c, elinewidth=1.3, capsize=2.5,
                             alpha=a, zorder=5)
 
+    if not text_box:
+        return
     t_hi = max(ts)
     rec = _rec_at(payload.get("rank1_across_tools", []), t_hi) or {}
     n = rec.get("n_complete", "?")
@@ -4077,23 +5398,29 @@ def _annotate_topn_within_stats(fig, ax, methods, payload, thr) -> None:
 def plot_topn_within_thresholds(within_df: pd.DataFrame, top_n: int,
                                 thresholds: tuple[float, ...], out: Path,
                                 pb_valid_only: bool = False,
-                                stats: dict | None = None) -> None:
+                                stats: dict | None = None,
+                                x_label: str = "RMSD threshold vs crystal ligand (Å)",
+                                metric_note: str = ("RMSD = symmetry-corrected "
+                                                    "heavy-atom, no superposition."),
+                                success_line: float = 2.0,
+                                csv_name: str | None = None) -> None:
     """How many of the top-ranked poses land within a fine RMSD grid.
 
     AutoDock Vina / DiffDock (native rank) + EquiBind (gnina-affinity ranked), two
-    panels sharing the x-axis (RMSD threshold t ∈ {1, 1.25, 1.5, …} Å):
+    panels sharing the x-axis (distance threshold t ∈ {1, 1.25, 1.5, …} Å):
       (A) complex level — % of complexes whose RANK-1 pose is within t (solid) and
           % with ANY of the first ``top_n`` ranked poses within t (best-of-top-N,
           dashed). The vertical gap between a tool's two curves is the accuracy its
           ranking leaves on the table below that threshold.
-      (B) pose level — % of ALL the tool's pooled top-N ranked poses within t, the
-          literal "how many of the n top-ranked poses are within t Å".
-    Dotted vertical line marks the 2 Å canonical docking-success threshold.
+      (B) pose level — % of ALL the tool's pooled top-N ranked poses within t.
+    An emphasised dotted vertical line marks ``success_line`` Å (2 Å canonical docking
+    success; 1 Å for the Kabsch/form-fidelity view).
 
-    ``stats`` (from :func:`_stats_topn_within`) drives panel A's paired tests at the
-    pre-specified thresholds: 95 % Wilson CI whiskers on each curve's marker plus a
-    Cochran's Q / pairwise-McNemar + ranking-headroom box. The full payload lives in
-    the JSON sidecar; panel B (pooled poses = pseudo-replicated) carries no tests.
+    Layout (per the graph rework): the LEGEND sits between the title and the plot; each
+    curve's complex count ``n`` is stated ONCE in the title, not per legend entry; and
+    the full caption/notes + the complete paired statistics are written to a companion
+    ``*_report.txt`` next to each PNG rather than printed on the figure — only the visual
+    95 % Wilson-CI whiskers remain on panel A.
     """
     if within_df is None or within_df.empty:
         return
@@ -4105,43 +5432,61 @@ def plot_topn_within_thresholds(within_df: pd.DataFrame, top_n: int,
 
     def _label(method):
         lab = TOOL_LABEL.get(method, method)
-        return lab + " (gnina-ranked)" if method == "equibind" else lab
+        return lab + "*" if method == "equibind" else lab
 
     def _fmt(ax):
-        ax.axvline(2.0, color="grey", ls=":", alpha=0.7, lw=1.2)
+        ax.axvline(success_line, color="grey", ls=":", alpha=0.7, lw=1.2)
         ax.set_xticks(thr)
         ax.set_xticklabels([f"{t:g}" for t in thr], rotation=45, ha="right")
-        ax.set_xlabel("RMSD threshold vs crystal ligand (Å)")
+        ax.set_xlabel(x_label)
         ax.set_ylim(0, 100); ax.grid(alpha=0.3)
 
     rank_note = ("Rank: AutoDock/DiffDock native; EquiBind has none, so it is ranked by "
-                 "gnina affinity. Dotted line = 2 Å. RMSD = symmetry-corrected heavy-atom, "
-                 "no superposition.")
-    span = f"{thr[0]:g}–{thr[-1]:g} Å"
-    # PB-valid variant: a pose only counts as a hit if it is ALSO PoseBusters-valid.
-    valid_tag  = " — PoseBusters-valid poses only" if pb_valid_only else ""
+                 f"gnina affinity. Emphasised dotted line = {success_line:g} Å. " + metric_note)
+    valid_tag  = " · PoseBusters-valid poses only" if pb_valid_only else ""
     pose_word  = "PB-valid pose" if pb_valid_only else "pose"
     title_word = "valid-pose" if pb_valid_only else "pose"
-    valid_note = (" A pose counts only if it is within t Å AND PoseBusters-valid."
-                  if pb_valid_only else "")
+    valid_note = ("A pose counts only if it is within t Å AND PoseBusters-valid."
+                  if pb_valid_only else "A pose counts if it is within t Å (no validity gate).")
+
+    # complex count (item 4b: moved from the legend labels into the title line)
+    n_pairs_by_m = {m: int(within_df[within_df["method"] == m]["n_pairs"].iloc[0])
+                    for m in methods}
+    uniq_n = sorted(set(n_pairs_by_m.values()))
+    n_note = (f"n = {uniq_n[0]} complexes" if len(uniq_n) == 1
+              else "n complexes: " + ", ".join(f"{TOOL_LABEL.get(m, m)} {n_pairs_by_m[m]}"
+                                                for m in methods))
+
+    def _finish_top_legend(fig, handles, labels, ncol, subtitle):
+        """Legend BETWEEN the title and the axes (item 3): a horizontal legend anchored
+        just under the (figure) title, above the plot."""
+        fig.subplots_adjust(top=0.80, bottom=0.13, left=0.11, right=0.965)
+        fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.895),
+                   ncol=ncol, fontsize=8, framealpha=0.9, columnspacing=1.3,
+                   handlelength=2.2, borderaxespad=0.2)
+        fig.suptitle(_vt(subtitle), fontsize=12, fontweight="bold", y=0.995)
 
     # ── Graph 1 (complex level): rank-1 (solid) + best-of-top-N (dashed) ──
-    figA, axA = plt.subplots(figsize=(8.2, 6.0))
+    figA, axA = plt.subplots(figsize=(8.6, 7.0))
+    # Handles interleaved per tool (rank-1 then best-of-top-N): matplotlib fills the
+    # horizontal legend column-major, so with ncol = #tools each column becomes one tool
+    # (rank-1 on top, best-of-top-N below) instead of the two curve types scrambling.
+    legA_h, legA_l = [], []
     for method in methods:
         sub = within_df[within_df["method"] == method].sort_values("rmsd_threshold_A")
         if sub.empty:
             continue
         color, label = TOOL_COLORS.get(method, "grey"), _label(method)
-        n_pairs = int(sub["n_pairs"].iloc[0])
-        axA.plot(sub["rmsd_threshold_A"], sub["top1_within_%"], marker="o", lw=2,
-                 color=color, label=f"{label} — top-1 (n={n_pairs})")
-        axA.plot(sub["rmsd_threshold_A"], sub["best_topN_within_%"], marker="s", ls="--",
-                 lw=2, color=color, alpha=0.75, label=f"{label} — best of top-{top_n}")
-    # Value labels at every whole-Ångström threshold (1, 2, 3, 4, 5 Å): each curve's
-    # % where it crosses that distance, in white boxes de-collided vertically so
-    # overlapping intercepts stay legible. Interior marks label to the RIGHT of a dotted
-    # reference line; the rightmost mark labels to the LEFT to stay on-axis. The 2 Å
-    # canonical success line (drawn emphasised by _fmt) is one of these marks.
+        (ln1,) = axA.plot(sub["rmsd_threshold_A"], sub["top1_within_%"], marker="o",
+                          lw=2, color=color)
+        (ln2,) = axA.plot(sub["rmsd_threshold_A"], sub["best_topN_within_%"], marker="s",
+                          ls="--", lw=2, color=color, alpha=0.75)
+        legA_h += [ln1, ln2]
+        legA_l += [f"{label} — rank-1", f"{label} — best of top-{top_n}"]
+    # Value labels at every whole-Ångström threshold: each curve's % where it crosses
+    # that distance, in white boxes de-collided vertically so overlapping intercepts stay
+    # legible. Interior marks label to the RIGHT of a reference line; the rightmost mark
+    # labels to the LEFT to stay on-axis.
     mark_ts = [t for t in thr if float(t).is_integer() and t >= 1.0]
 
     def _mark_labels(t, side):
@@ -4156,17 +5501,28 @@ def plot_topn_within_thresholds(within_df: pd.DataFrame, top_n: int,
             for col in ("top1_within_%", "best_topN_within_%"):
                 marks.append((float(row[col].iloc[0]), c))
         marks.sort(key=lambda m: m[0])
-        _gap, _prev = 5.0, None
+        _gap, _prev, placed = 5.0, None, []
         for _y, _c in marks:
             _ly = _y if _prev is None or _y - _prev >= _gap else _prev + _gap
             _prev = _ly
+            placed.append([_ly, _y, _c])
+        # Keep the de-collided stack inside the axes: when curves saturate near 100 %
+        # (e.g. the Kabsch/non-PB-valid views) the upward push can drive the top label
+        # past the axes ceiling and into the top legend band — slide the whole cluster
+        # down by the overflow so every callout stays on-axis.
+        _ceiling = 98.0
+        _overflow = (max(p[0] for p in placed) - _ceiling) if placed else 0.0
+        if _overflow > 0:
+            for _p in placed:
+                _p[0] -= _overflow
+        for _ly, _y, _c in placed:
             axA.annotate(f"{_y:.1f}", xy=(t, _y), xytext=(t + dx, _ly),
                          va="center", ha=ha, fontsize=8, fontweight="bold", color=_c,
                          bbox=dict(boxstyle="round,pad=0.15", fc="white", ec=_c,
                                    lw=0.8, alpha=0.9), zorder=6)
 
     for t in mark_ts:
-        if t != 2.0:                       # 2 Å reference line already drawn by _fmt
+        if abs(t - success_line) > 1e-9:   # success line already drawn emphasised by _fmt
             axA.axvline(t, color="0.75", ls=":", alpha=0.6, lw=1.0, zorder=1)
         _mark_labels(t, "left" if t == mark_ts[-1] else "right")
     _fmt(axA)
@@ -4174,56 +5530,721 @@ def plot_topn_within_thresholds(within_df: pd.DataFrame, top_n: int,
     axA.set_xticks([0] + thr)
     axA.set_xticklabels(["0"] + [f"{t:g}" for t in thr], rotation=45, ha="right")
     axA.set_ylabel(f"% of complexes with a {pose_word} within the threshold")
-    axA.set_title(f"Top-ranked {title_word} accuracy vs distance threshold\n"
-                  "(rank-1 solid, best-of-top-N dashed)", fontweight="bold")
-    # Stats box (below) claims the upper-left, so anchor the legend lower-right when
-    # tests are drawn; otherwise keep matplotlib's automatic best placement.
-    axA.legend(fontsize=8, **({"loc": "lower right", "framealpha": 0.9} if stats else {}))
-    # Paired significance tests at the pre-specified thresholds (Wilson CI whiskers +
-    # Cochran's Q / pairwise McNemar + ranking headroom); degrades silently if absent.
+    # Paired-test Wilson-CI whiskers only (the summary text goes to the report file).
     if stats:
         try:
-            _annotate_topn_within_stats(figA, axA, methods, stats, thr)
+            _annotate_topn_within_stats(figA, axA, methods, stats, thr, text_box=False)
         except Exception as _exc:
-            print(f"  WARNING: fig 18 complex-panel stats annotation failed ({_exc})")
-    if not pb_valid_only:   # PB-valid complex figure is shown title-less
-        figA.suptitle(_vt(f"Top-ranked {title_word} accuracy across {span}{valid_tag} \n"
-                          f"(AutoDock Vina, DiffDock, EquiBind; top-{top_n})"),
-                      fontsize=12, fontweight="bold")
-    figA.text(0.5, 0.005, "Denominator = each tool's complexes (n pairs); best-of-top-N = "
-              "the closest of the tool's first N ranked poses per complex." + valid_note
-              + " " + rank_note,
-              ha="center", va="bottom", fontsize=7.5, color="0.30", wrap=True)
-    figA.tight_layout(rect=(0, 0.05, 1, 0.96 if not pb_valid_only else 1.0))
+            print(f"  WARNING: fig 18 complex-panel whiskers failed ({_exc})")
+    _finish_top_legend(
+        figA, legA_h, legA_l, len(methods),
+        f"Top-ranked {title_word} accuracy vs distance threshold  ·  {n_note}\n"
+        f"(rank-1 solid · best-of-top-N dashed{valid_tag})")
     figA.savefig(out.with_stem(out.stem + "_complex"), dpi=160, bbox_inches="tight")
     plt.close(figA)
 
+    # Companion report for the complex panel (items 4 + 5): full caption + statistics.
+    notes_A = [
+        "Denominator = each tool's complexes (n pairs).",
+        "best-of-top-N = the closest of the tool's first N ranked poses per complex.",
+        valid_note,
+        rank_note,
+    ]
+    try:
+        _write_topn_within_report(
+            out.parent / (out.stem + "_complex_report.txt"),
+            figure_name=out.with_stem(out.stem + "_complex").name,
+            csv_name=csv_name or "(see topn_within_thresholds*.csv)",
+            title=f"Fig 18 — top-ranked {title_word} accuracy within distance thresholds"
+                  f" (complex level){valid_tag}",
+            panel_desc="complex level — % of complexes with rank-1 (solid) and "
+                       "best-of-top-N (dashed) pose within t",
+            notes_lines=notes_A, stats=stats, within_df=within_df, top_n=top_n,
+            success_line=success_line)
+    except Exception as _exc:
+        print(f"  WARNING: fig 18 complex report write failed ({_exc})")
+
     # ── Graph 2 (pose level): % of the pooled top-N poses within t ──
-    figB, axB = plt.subplots(figsize=(8.2, 6.0))
+    figB, axB = plt.subplots(figsize=(8.6, 7.0))
+    pose_counts = {m: int(within_df[within_df["method"] == m]["n_poses_topN"].iloc[0])
+                   for m in methods}
+    b_h, b_l = [], []
     for method in methods:
         sub = within_df[within_df["method"] == method].sort_values("rmsd_threshold_A")
         if sub.empty:
             continue
         color, label = TOOL_COLORS.get(method, "grey"), _label(method)
-        n_poses = int(sub["n_poses_topN"].iloc[0])
-        axB.plot(sub["rmsd_threshold_A"], sub["pose_within_%"], marker="o", lw=2,
-                 color=color, label=f"{label} (≤{n_poses} poses)")
+        (ln,) = axB.plot(sub["rmsd_threshold_A"], sub["pose_within_%"], marker="o", lw=2,
+                         color=color)
+        b_h.append(ln); b_l.append(label)
     _fmt(axB)
-    axB.set_ylabel(f"% of the top-N ranked poses within the threshold"
+    axB.set_ylabel("% of the top-N ranked poses within the threshold"
                    + (" & PB-valid" if pb_valid_only else ""))
-    axB.set_title(f"How many of the top-{top_n} ranked poses are within t Å"
-                  + (" AND PB-valid" if pb_valid_only else ""),
-                  fontweight="bold")
-    axB.legend(fontsize=8)
-    figB.suptitle(_vt(f"Top-{top_n} pooled-pose accuracy across {span}{valid_tag} "
-                      f"(AutoDock Vina, DiffDock, EquiBind)"),
-                  fontsize=12, fontweight="bold")
-    figB.text(0.5, 0.005, "Denominator = each tool's pooled rank ≤ N poses."
-              + valid_note + " " + rank_note,
-              ha="center", va="bottom", fontsize=7.5, color="0.30", wrap=True)
-    figB.tight_layout(rect=(0, 0.05, 1, 0.96))
+    pose_note = "; ".join(f"{TOOL_LABEL.get(m, m)} ≤{pose_counts[m]}" for m in methods)
+    _finish_top_legend(
+        figB, b_h, b_l, len(methods),
+        f"How many of the top-{top_n} ranked poses are within t Å"
+        + (" AND PB-valid" if pb_valid_only else "")
+        + f"\n(pooled poses per tool: {pose_note})")
     figB.savefig(out.with_stem(out.stem + "_pose"), dpi=160, bbox_inches="tight")
     plt.close(figB)
+
+    notes_B = [
+        "Denominator = each tool's pooled rank ≤ N poses.",
+        valid_note,
+        rank_note,
+    ]
+    try:
+        _write_topn_within_report(
+            out.parent / (out.stem + "_pose_report.txt"),
+            figure_name=out.with_stem(out.stem + "_pose").name,
+            csv_name=csv_name or "(see topn_within_thresholds*.csv)",
+            title=f"Fig 18 — pooled top-{top_n} pose accuracy within distance thresholds"
+                  f" (pose level){valid_tag}",
+            panel_desc="pose level — % of ALL pooled rank ≤ N poses within t",
+            notes_lines=notes_B, stats=None, within_df=within_df, top_n=top_n,
+            success_line=success_line)
+    except Exception as _exc:
+        print(f"  WARNING: fig 18 pose report write failed ({_exc})")
+
+
+# Item 6 of the fig-18 rework: how the raw→gnina-refined benefit evolves as the top-N
+# pool deepens. Each tool's raw variant is paired with its gnina-optimised variant on
+# the SAME metric fig 18 uses (best-of-top-N pose within the success-line threshold,
+# PB-valid-gated), swept over pool depth N = 1, 2, 3 … top_n. At the deepest N the pool
+# is the whole set, so the gap there isolates the geometry/validity gain of refinement;
+# at shallow N it also folds in the ranking gnina hands EquiBind (which has no native rank).
+_REFINE_GAIN_PAIRS = [
+    # (display, raw method key, refined method key, raw rank kind, refined rank kind)
+    # AutoDock has NO ML-refinement step (raw key == refined key): it appears as a single
+    # "native" best-of-top-N curve, and because rank depth is its only lever, the rise of
+    # that curve with N is the pure rank-depth gain — the reference the refined tools are
+    # read against.
+    ("AutoDock Vina", "autodock",             "autodock",                "native",     "native"),
+    ("DiffDock",      "diffdock",             "diffdock_gnina",          "native",     "native"),
+    ("EquiBind",      "equibind_unguided_raw", "equibind_unguided_gnina", "generation", "gnina"),
+]
+
+
+def _rank_series_for(sub: pd.DataFrame, kind: str):
+    """(possibly reordered frame, per-complex 1-based rank) under a ranking basis:
+    ``native`` = DiffDock confidence rank (duplicate top pose de-duped);
+    ``generation`` = EquiBind generation-order position;
+    ``gnina`` = gnina-affinity rank (most-negative = 1)."""
+    sub = sub.copy()
+    if kind == "native":
+        sub["rank"] = pd.to_numeric(sub["rank"], errors="coerce")
+        sub = _dedup_ranked_poses(sub)
+        return sub, sub["rank"]
+    if kind == "generation":
+        sub["_gi"] = sub["pose_name"].map(_equibind_pose_index)
+        sub = sub.sort_values(["protein", "ligand", "_gi"], kind="mergesort")
+        sub["_sr"] = sub.groupby(["protein", "ligand"]).cumcount() + 1
+        return sub, sub["_sr"]
+    return sub, _gnina_affinity_rank(sub)      # gnina
+
+
+def aggregate_refinement_gain_vs_depth(
+        df_full: pd.DataFrame, thr: float, depths,
+        rmsd_col: str = "rmsd", pb_valid_only: bool = True) -> pd.DataFrame:
+    """Per (tool, pool depth N): best-of-top-N success for the raw vs the gnina-refined
+    variant and their difference (pp).
+
+    A complex is a HIT at depth N if the MINIMUM ``rmsd_col`` among its first N ranked
+    poses — PB-valid-gated when ``pb_valid_only`` — is ≤ ``thr``. The denominator is the
+    complexes both variants share (paired), matching fig 18's "all of the tool's
+    complexes" (a complex with zero qualifying poses counts as a miss). AutoDock Vina has
+    no refinement step (raw key == refined key), so its raw and refined curves coincide
+    (``gain_pp`` = 0, ``has_refinement`` = False) and it serves as the native rank-depth
+    reference. Needs the FULL frame. Returns empty if no pair is available."""
+    present = set(df_full["method"].astype(str))
+    rows = []
+    for disp, raw_key, ref_key, raw_kind, ref_kind in _REFINE_GAIN_PAIRS:
+        if raw_key not in present or ref_key not in present:
+            continue
+        raw_sub, raw_rank = _rank_series_for(
+            df_full[df_full["method"].astype(str) == raw_key], raw_kind)
+        ref_sub, ref_rank = _rank_series_for(
+            df_full[df_full["method"].astype(str) == ref_key], ref_kind)
+
+        def _prep(sub, rank_series):
+            sub = sub.copy()
+            sub["_rk"] = pd.to_numeric(rank_series, errors="coerce")
+            if pb_valid_only:
+                sub = sub[_to_bool(sub["pb_valid"])]
+            return sub.dropna(subset=[rmsd_col, "_rk"])
+
+        raw_g, ref_g = _prep(raw_sub, raw_rank), _prep(ref_sub, ref_rank)
+        # paired denominator = complexes each variant has ANY pose for (pre-gate).
+        raw_ids = set(map(tuple, df_full[df_full["method"].astype(str) == raw_key]
+                          [["protein", "ligand"]].drop_duplicates().to_numpy()))
+        ref_ids = set(map(tuple, df_full[df_full["method"].astype(str) == ref_key]
+                          [["protein", "ligand"]].drop_duplicates().to_numpy()))
+        ids = raw_ids & ref_ids
+        n_pairs = len(ids)
+        if not n_pairs:
+            continue
+
+        def _hits(g, N):
+            gg = g[g["_rk"] <= N]
+            if gg.empty:
+                return 0
+            best = gg.groupby(["protein", "ligand"])[rmsd_col].min()
+            best = best[[idx in ids for idx in best.index]]
+            return int((best <= thr).sum())
+
+        for N in depths:
+            rh, fh = _hits(raw_g, N), _hits(ref_g, N)
+            rows.append({
+                "tool": disp, "depth": int(N), "n_pairs": n_pairs,
+                "has_refinement": bool(raw_key != ref_key),
+                "raw_success_%": round(100.0 * rh / n_pairs, 3),
+                "refined_success_%": round(100.0 * fh / n_pairs, 3),
+                "gain_pp": round(100.0 * (fh - rh) / n_pairs, 3),
+                "raw_hit": rh, "refined_hit": fh,
+            })
+    return pd.DataFrame(rows)
+
+
+def plot_refinement_gain_vs_depth(rec: pd.DataFrame, out: Path, top_n: int, thr: float,
+                                  metric_label: str, pb_valid_only: bool = True,
+                                  report_path: "Path | None" = None) -> None:
+    """Companion to fig 18: the raw→gnina-refined benefit as the top-N pool deepens.
+
+    Top panel — each tool's best-of-top-N success (% complexes within ``thr`` Å, on the
+    parent figure's metric) for the raw (dashed) and gnina-refined (solid) variant, the
+    band between them shaded. AutoDock Vina has no refinement step, so it is drawn as a
+    single native curve (no dashed/band): its rise with N is the pure rank-depth gain,
+    the reference the refined tools are read against. Bottom panel — the refinement
+    difference (gnina-refined − raw, pp) for the refined tools (AutoDock has none). Legend
+    between title and plot; the caption + per-depth table go to ``report_path``.
+    """
+    if rec is None or rec.empty:
+        return
+    tools = [t for t in ("AutoDock Vina", "DiffDock", "EquiBind") if t in set(rec["tool"])]
+    if not tools:
+        return
+    colors = {"AutoDock Vina": TOOL_COLORS.get("autodock", "tab:blue"),
+              "DiffDock": TOOL_COLORS.get("diffdock", "tab:orange"),
+              "EquiBind": TOOL_COLORS.get("equibind", "tab:green")}
+    depths = sorted(int(d) for d in rec["depth"].unique())
+    fig, (axA, axB) = plt.subplots(2, 1, figsize=(8.8, 8.6), sharex=True)
+    handles, labels = [], []
+    for tool in tools:
+        s = rec[rec["tool"] == tool].sort_values("depth")
+        c = colors.get(tool, "grey")
+        has_ref = bool(s["has_refinement"].iloc[0]) if "has_refinement" in s.columns else True
+        # Refined line (== the native line when the tool has no refinement step).
+        (lref,) = axA.plot(s["depth"], s["refined_success_%"], marker="o", lw=2, color=c)
+        if has_ref:
+            (lraw,) = axA.plot(s["depth"], s["raw_success_%"], marker="s", ls="--", lw=2,
+                               color=c, alpha=0.7)
+            axA.fill_between(s["depth"], s["raw_success_%"], s["refined_success_%"],
+                             color=c, alpha=0.12, zorder=0)
+            axB.plot(s["depth"], s["gain_pp"], marker="o", lw=2, color=c)   # refinement Δ
+            handles += [lref, lraw]
+            labels += [f"{tool} — gnina-refined", f"{tool} — raw"]
+        else:
+            # AutoDock: no refinement — a single native curve whose rise with N is the
+            # pure rank-depth gain (the reference the refined tools are read against).
+            handles += [lref]
+            labels += [f"{tool} — native (no refinement)"]
+    axA.set_ylabel("% complexes with a best-of-top-N pose\n"
+                   f"within {thr:g} Å ({metric_label})"
+                   + (" & PB-valid" if pb_valid_only else ""))
+    axA.set_ylim(0, max(5.0, float(rec[["raw_success_%", "refined_success_%"]]
+                                   .to_numpy().max()) * 1.12))
+    axA.grid(alpha=0.3)
+    axB.axhline(0, color="0.6", lw=1.0)
+    axB.set_ylabel("Refinement benefit\n(gnina-refined − raw, pp)")
+    axB.set_xlabel("Top-N pool depth  (number of ranked poses considered, N = 1 … "
+                   f"{top_n})")
+    axB.grid(alpha=0.3)
+    axB.set_xticks(depths)
+    axB.set_xlim(depths[0] - 0.4, depths[-1] + 0.4)
+    n_note = (f"n = {int(rec['n_pairs'].iloc[0])} complexes"
+              if rec["n_pairs"].nunique() == 1
+              else "n per tool: " + ", ".join(
+                  f"{t} {int(rec[rec['tool'] == t]['n_pairs'].iloc[0])}" for t in tools))
+    fig.subplots_adjust(top=0.85, bottom=0.09, left=0.12, right=0.965, hspace=0.13)
+    fig.legend(handles, labels, loc="upper center", bbox_to_anchor=(0.5, 0.935),
+               ncol=len(handles), fontsize=8, framealpha=0.9, columnspacing=1.2,
+               handlelength=2.0, borderaxespad=0.2)
+    fig.suptitle(_vt("Best-of-top-N success vs pool depth: refinement gain + rank-depth "
+                     f"gain  ·  {n_note}\n(gnina-refined solid · raw dashed · AutoDock "
+                     f"Vina native reference; success = within {thr:g} Å"
+                     + (" & PB-valid" if pb_valid_only else "") + ")"),
+                 fontsize=11.5, fontweight="bold", y=0.997)
+    fig.savefig(out, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+
+    if report_path is not None:
+        try:
+            _write_refinement_gain_report(report_path, rec, out.name, thr, metric_label,
+                                          pb_valid_only, top_n)
+        except Exception as _exc:
+            print(f"  WARNING: refinement-gain report write failed ({_exc})")
+
+
+def _write_refinement_gain_report(out_path: Path, rec: pd.DataFrame, figure_name: str,
+                                  thr: float, metric_label: str, pb_valid_only: bool,
+                                  top_n: int) -> None:
+    """Companion text for the raw→refined gain-vs-depth figure: caption + per-depth table."""
+    W = 84
+    L = ["=" * W,
+         "Fig 18 companion — pose-refinement benefit as the top-N pool deepens",
+         "=" * W, "",
+         f"Figure : {figure_name}",
+         f"Metric : best-of-top-N pose within {thr:g} Å ({metric_label})"
+         + (" AND PoseBusters-valid" if pb_valid_only else ""),
+         f"Depth  : N = 1 … {top_n} ranked poses (continuous sweep)",
+         "",
+         "-" * W, "FIGURE NOTES", "-" * W,
+         "Each tool's raw variant is paired with its gnina-refined variant on the SAME",
+         "complexes. A complex is a HIT at depth N when the closest of its first N ranked",
+         "poses is within the threshold (PB-valid-gated when stated). Ranking basis:",
+         "  DiffDock — native confidence rank for BOTH raw and gnina (refinement keeps it);",
+         "  EquiBind — raw uses generation order; gnina uses gnina-affinity rank (EquiBind",
+         "             has no native rank, so gnina supplies one — hence at shallow N the",
+         "             benefit folds in ranking, while at the deepest N — the whole pool —",
+         "             the gap is the pure geometry/validity gain of refinement.",
+         "  AutoDock Vina — NO refinement step (raw == native): shown as a single native",
+         "             curve. It has no refinement benefit; its rise in success as N grows",
+         "             is the pure RANK-DEPTH gain (best-of-top-N − rank-1), the reference",
+         "             the refined tools are read against.",
+         "gain_pp = refined_success_% − raw_success_% (percentage points; 0 for AutoDock).",
+         ""]
+    for tool in [t for t in ("AutoDock Vina", "DiffDock", "EquiBind")
+                 if t in set(rec["tool"])]:
+        s = rec[rec["tool"] == tool].sort_values("depth")
+        n = int(s["n_pairs"].iloc[0])
+        has_ref = bool(s["has_refinement"].iloc[0]) if "has_refinement" in s.columns else True
+        L.append("-" * W)
+        if has_ref:
+            L.append(f"{tool}   (n = {n} complexes)")
+            L.append("-" * W)
+            L.append(f"  {'depth N':>7s} {'raw %':>8s} {'refined %':>10s} {'gain (pp)':>10s}")
+            for _, r in s.iterrows():
+                L.append(f"  {int(r['depth']):>7d} {r['raw_success_%']:>8.1f} "
+                         f"{r['refined_success_%']:>10.1f} {r['gain_pp']:>+10.1f}")
+        else:
+            top1 = float(s.iloc[0]["refined_success_%"])
+            L.append(f"{tool}   (n = {n} complexes; native, no refinement)")
+            L.append("-" * W)
+            L.append(f"  {'depth N':>7s} {'success %':>10s} {'rank-depth gain vs N=1 (pp)':>28s}")
+            for _, r in s.iterrows():
+                succ = float(r["refined_success_%"])
+                L.append(f"  {int(r['depth']):>7d} {succ:>10.1f} {succ - top1:>+28.1f}")
+        L.append("")
+    L.append("=" * W)
+    out_path.write_text("\n".join(L) + "\n", encoding="utf-8")
+
+
+# Multi-depth version of fig 18's complex panel: instead of rank-1 + best-of-top-N, show
+# the best-of-top-N curve at SEVERAL pool depths (top-1 = rank-1, top-15, top-30) so the
+# accuracy gained purely by deepening the ranked pool reads directly. Colour = tool,
+# line style = pool depth. Per request the value-number callouts are omitted (the numbers
+# live in the companion CSV + report text instead).
+_MULTIDEPTH_POOL = (1, 15, 30)
+_MULTIDEPTH_STYLE = {1: ("-", "o"), 15: ("--", "s"), 30: (":", "^")}   # depth → (ls, marker)
+
+
+def aggregate_within_thresholds_by_depth(
+        df: pd.DataFrame, depths, thresholds, eq_df: "pd.DataFrame | None" = None,
+        pb_valid_only: bool = False, rmsd_col: str = "rmsd") -> pd.DataFrame:
+    """Best-of-top-N within-threshold success at SEVERAL pool depths at once.
+
+    For each depth d in ``depths`` this reuses :func:`aggregate_topn_within_thresholds`
+    (top_n = d) and keeps its ``best_topN_within_%`` — the % of the tool's complexes whose
+    CLOSEST of its first d ranked poses (PB-valid-gated when set) is within t. Depth 1 is
+    the rank-1 curve. Returns long-form (method, depth, rmsd_threshold_A, within_%, n_pairs)."""
+    frames = []
+    for d in depths:
+        a = aggregate_topn_within_thresholds(
+            df, int(d), thresholds, eq_df=eq_df,
+            pb_valid_only=pb_valid_only, rmsd_col=rmsd_col)
+        if a.empty:
+            continue
+        a = a[["method", "rmsd_threshold_A", "n_pairs", "best_topN_within_%"]].copy()
+        a = a.rename(columns={"best_topN_within_%": "within_%"})
+        a["depth"] = int(d)
+        frames.append(a)
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def plot_within_thresholds_by_depth(
+        within_df: pd.DataFrame, depths, thresholds, out: Path,
+        pb_valid_only: bool = False,
+        x_label: str = "RMSD threshold vs crystal ligand (Å)",
+        metric_note: str = "RMSD = symmetry-corrected heavy-atom, no superposition.",
+        success_line: float = 2.0, csv_name: "str | None" = None,
+        report_path: "Path | None" = None, stats: "dict | None" = None,
+        data_table: "dict | None" = None) -> None:
+    """Fig 18 multi-depth complex view: best-of-top-N accuracy vs distance threshold at
+    pool depths top-1 / top-15 / top-30. Colour = tool, line style = depth. The value at
+    the emphasised threshold (``success_line``: 2 Å RMSD / 1 Å Kabsch) is called out on
+    each curve; the rest of the sweep's numbers go to the companion CSV + report text.
+    Legend between title and plot: a tool colour key + a pool-depth line-style key.
+
+    When *data_table* is given (``{"depths": [...], "metrics": [{"label", "by_tool"}]}``)
+    a compact table of the at-threshold values for BOTH metrics (RMSD ≤ 2 Å and Kabsch
+    < 1 Å) is drawn beneath the plot, so either figure carries both graphs' numbers."""
+    if within_df is None or within_df.empty:
+        return
+    from matplotlib.lines import Line2D
+    present = set(within_df["method"].unique())
+    methods = [m for m in ("autodock", "diffdock", "equibind") if m in present]
+    if not methods:
+        return
+    thr = [float(t) for t in thresholds]
+    depths = [int(d) for d in depths]
+    _has_tab = bool(data_table and data_table.get("metrics"))
+
+    def _style(d):
+        return _MULTIDEPTH_STYLE.get(int(d), ("-", "o"))
+
+    fig, ax = plt.subplots(figsize=(8.8, 9.7 if _has_tab else 7.0))
+    for method in methods:
+        c = TOOL_COLORS.get(method, "grey")
+        for d in depths:
+            s = within_df[(within_df["method"] == method)
+                          & (within_df["depth"] == d)].sort_values("rmsd_threshold_A")
+            if s.empty:
+                continue
+            ls, mk = _style(d)
+            ax.plot(s["rmsd_threshold_A"], s["within_%"], ls=ls, marker=mk, ms=4,
+                    lw=2, color=c, alpha=0.9)
+    ax.axvline(success_line, color="grey", ls=":", alpha=0.7, lw=1.2)
+
+    # Value callouts AT the emphasised threshold (per request): mark where each curve
+    # crosses the success line and print its % there, colour = tool. Up to 9 labels are
+    # de-collided vertically so they stay legible; a thin leader ties a nudged label
+    # back to its true point.
+    _pts = []
+    for method in methods:
+        c = TOOL_COLORS.get(method, "grey")
+        for d in depths:
+            s = within_df[(within_df["method"] == method) & (within_df["depth"] == d)
+                          & (np.isclose(within_df["rmsd_threshold_A"], success_line,
+                                        atol=1e-6))]
+            if s.empty:
+                continue
+            y = float(s["within_%"].iloc[0])
+            ax.plot([success_line], [y], marker=_style(d)[1], ms=8, color=c,
+                    markeredgecolor="black", markeredgewidth=0.6, zorder=6)
+            _pts.append((y, c, y))
+    _pts.sort(key=lambda p: p[0])
+    _last, _placed = -1e9, []
+    for _y, _c, _val in _pts:                       # push overlapping labels apart
+        _yy = max(_y, _last + 3.6)
+        _placed.append((_yy, _c, _val))
+        _last = _yy
+    _xt = success_line + max(thr) * 0.012
+    for _yy, _c, _val in _placed:
+        ax.annotate(f"{_val:.1f}", xy=(success_line, _val), xytext=(_xt, _yy),
+                    fontsize=7.5, fontweight="bold", color=_c, va="center", ha="left",
+                    arrowprops=(dict(arrowstyle="-", color=_c, lw=0.5, alpha=0.6)
+                                if abs(_yy - _val) > 1.0 else None), zorder=7)
+
+    ax.set_xlim(0, thr[-1] + (thr[-1] - thr[0]) * 0.04)
+    ax.set_xticks([0] + thr)
+    ax.set_xticklabels(["0"] + [f"{t:g}" for t in thr], rotation=45, ha="right")
+    ax.set_ylim(0, 100); ax.grid(alpha=0.3)
+    ax.set_xlabel(x_label)
+    pose_word = "PB-valid pose" if pb_valid_only else "pose"
+    ax.set_ylabel(f"% of complexes with a {pose_word} within the threshold")
+
+    n_by_m = {m: int(within_df[within_df["method"] == m]["n_pairs"].iloc[0])
+              for m in methods}
+    uniq = sorted(set(n_by_m.values()))
+    n_note = (f"n = {uniq[0]} complexes" if len(uniq) == 1
+              else "n: " + ", ".join(f"{TOOL_LABEL.get(m, m)} {n_by_m[m]}" for m in methods))
+
+    def _tool_label(m):
+        # One uniform rule for BOTH graphs: the two ML tools are each shown as a single
+        # representative variant (DiffDock = the selected/collapsed variant; EquiBind =
+        # the gnina-ranked unguided one) and carry a trailing '*'; AutoDock has no
+        # variant, so none. Guarded with endswith so an already-starred label (e.g.
+        # 'DiffDock*' from the collapse override) is never double-marked. This keeps the
+        # RMSD and Kabsch depth figures' legends identical in every run mode.
+        lab = TOOL_LABEL.get(m, m)
+        if m in ("diffdock", "equibind") and not lab.endswith("*"):
+            lab += "*"
+        return lab
+
+    tool_h = [Line2D([0], [0], color=TOOL_COLORS.get(m, "grey"), lw=2.6, marker="o", ms=4)
+              for m in methods]
+    depth_h = [Line2D([0], [0], color="0.35", lw=2.0, ls=_style(d)[0], marker=_style(d)[1],
+                      ms=4) for d in depths]
+    depth_l = [f"best of top-{d}" + (" (rank-1)" if d == 1 else "") for d in depths]
+    # Two horizontal keys stacked between the title and the plot: tools (colour) above,
+    # pool depths (line style) below. Reserve extra room at the bottom for the data table.
+    fig.subplots_adjust(top=0.80, bottom=(0.335 if _has_tab else 0.14),
+                        left=0.11, right=0.965)
+    fig.legend(tool_h, [_tool_label(m) for m in methods], loc="upper center",
+               bbox_to_anchor=(0.5, 0.915), ncol=len(methods), fontsize=8,
+               framealpha=0.9, columnspacing=1.3, handlelength=2.0, borderaxespad=0.2)
+    fig.legend(depth_h, depth_l, loc="upper center", bbox_to_anchor=(0.5, 0.865),
+               ncol=len(depths), fontsize=8, framealpha=0.9, columnspacing=1.3,
+               handlelength=2.6, borderaxespad=0.2)
+    fig.suptitle(_vt("Best-of-top-N pose accuracy vs distance threshold  ·  "
+                     f"{n_note}"),
+                 fontsize=12, fontweight="bold", y=0.99)
+
+    # ── Data table beneath the plot: at-threshold values for BOTH metrics ──
+    # Same table on the RMSD and Kabsch figures, so either is self-contained. Rows are
+    # grouped by tool (variant label colour-coded), one row per metric; columns = depths.
+    if _has_tab:
+        tdepths = [int(d) for d in data_table["depths"]]
+        col_labels = ["Docking variant", "Metric"] + [f"top-{d}" for d in tdepths]
+        cell_text, row_tools = [], []
+        for tool in methods:                       # same tool order as the legend
+            for met in data_table["metrics"]:
+                vals = met.get("by_tool", {}).get(tool)
+                if vals is None:
+                    continue
+                cell_text.append([_tool_label(tool), met["label"]]
+                                 + [("—" if v != v else f"{v:.1f}") for v in vals])
+                row_tools.append(tool)
+        if cell_text:
+            tab_ax = fig.add_axes([0.08, 0.045, 0.90, 0.215])
+            tab_ax.axis("off")
+            tbl = tab_ax.table(cellText=cell_text, colLabels=col_labels,
+                               loc="center", cellLoc="center")
+            tbl.auto_set_font_size(False)
+            tbl.set_fontsize(8.5)
+            tbl.scale(1, 1.45)
+            ncol = len(col_labels)
+            for (r_i, c_i), cell in tbl.get_celld().items():
+                cell.set_edgecolor("0.8")
+                if r_i == 0:                        # header row
+                    cell.set_text_props(fontweight="bold")
+                    cell.set_facecolor("#eef0f2")
+                else:
+                    tool = row_tools[r_i - 1]
+                    if c_i == 0:                    # variant column: tool colour + bold
+                        cell.get_text().set_color(TOOL_COLORS.get(tool, "black"))
+                        cell.set_text_props(fontweight="bold")
+                    if c_i <= 1:
+                        cell.get_text().set_ha("left")
+                        cell.PAD = 0.04
+                    # zebra-shade each tool's block
+                    if methods.index(tool) % 2 == 1:
+                        cell.set_facecolor("#f7f8f9")
+            fig.text(0.5, 0.028,
+                     "% of complexes with a PoseBusters-valid pose within the threshold "
+                     "(RMSD ≤ 2 Å = placement · Kabsch < 1 Å = internal form)",
+                     ha="center", va="center", fontsize=7.5, color="0.35")
+
+    fig.savefig(out, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+
+    if csv_name is not None:
+        within_df.to_csv(out.parent / csv_name, index=False)
+    if report_path is not None:
+        try:
+            _write_within_by_depth_report(report_path, within_df, out.name, depths,
+                                          methods, success_line, metric_note,
+                                          pb_valid_only, stats=stats)
+        except Exception as _exc:
+            print(f"  WARNING: fig 18 multi-depth report write failed ({_exc})")
+
+
+def _write_within_by_depth_report(out_path: Path, within_df: pd.DataFrame, figure_name: str,
+                                  depths, methods, success_line: float, metric_note: str,
+                                  pb_valid_only: bool, stats: "dict | None" = None) -> None:
+    """Companion text for the multi-depth fig: the per-depth per-tool accuracy TABLE the
+    plot omits at the whole-Ångström marks, plus (when *stats* is supplied) the paired
+    significance tests at the emphasised threshold."""
+    W = 90
+    ts = sorted(float(t) for t in within_df["rmsd_threshold_A"].unique())
+    mark_ts = [t for t in ts if float(t).is_integer() and t >= 1.0] or ts[-4:]
+    L = ["=" * W,
+         "Fig 18 multi-depth — best-of-top-N accuracy vs distance threshold",
+         "=" * W, "",
+         f"Figure : {figure_name}",
+         f"Metric : best-of-top-N pose within t Å"
+         + (" AND PoseBusters-valid" if pb_valid_only else ""),
+         f"Pool depths : {', '.join(f'top-{int(d)}' for d in depths)}"
+         f"   (emphasised success line = {success_line:g} Å)",
+         "",
+         "-" * W, "FIGURE NOTES", "-" * W,
+         "Each curve = % of a tool's complexes whose CLOSEST of its first d ranked poses is",
+         "within t Å (PB-valid-gated when stated). top-1 = the rank-1 pose. The on-plot value",
+         "labels are omitted by request; the numbers at the whole-Ångström marks are below.",
+         "Rank: AutoDock/DiffDock native; EquiBind ranked by gnina affinity. " + metric_note,
+         ""]
+    for d in depths:
+        L.append("-" * W)
+        L.append(f"best of top-{int(d)}  (% of each tool's complexes within t Å)")
+        L.append("-" * W)
+        hdr = f"  {'threshold_A':>11s} " + " ".join(
+            f"{TOOL_LABEL.get(m, m)[:15]:>16s}" for m in methods)
+        L.append(hdr)
+        for t in mark_ts:
+            def _cell(m):
+                r = within_df[(within_df["method"] == m) & (within_df["depth"] == int(d))
+                              & (within_df["rmsd_threshold_A"] == t)]
+                return f"{float(r['within_%'].iloc[0]):.1f}" if not r.empty else "n/a"
+            L.append(f"  {t:>11.3g} " + " ".join(f"{_cell(m):>16s}" for m in methods))
+        L.append("")
+
+    if stats:
+        def _p(p) -> str:
+            if p is None or p != p:
+                return "n/a"
+            return "<1e-300" if p <= 0 else (f"{p:.3e}" if p < 1e-3 else f"{p:.4f}")
+        L.append("=" * W)
+        L.append(f"STATISTICS  (at the emphasised threshold t = {stats['threshold_A']:g} Å"
+                 + (", PoseBusters-valid poses only)" if pb_valid_only else ")"))
+        L.append("=" * W)
+        L.append("Unit = one (protein, ligand) complex; binary = the tool has a"
+                 + (" PB-valid" if pb_valid_only else "") + " pose within t Å")
+        L.append("among its best-of-top-d ranked poses. Paired across tools (same complexes);")
+        L.append("NESTED across depths (top-1 ⊂ top-15 ⊂ top-30).")
+        L.append("")
+        L.append("(A) Between tools, at each pool depth — Cochran's Q omnibus (>=3 related")
+        L.append("    binary conditions) + pairwise exact McNemar, Holm-corrected:")
+        for b in stats.get("between_tools_by_depth", []):
+            if "omnibus" not in b:
+                L.append(f"    top-{b['depth']}: n={b.get('n', 0)} — {b.get('status', '')}")
+                continue
+            om = b["omnibus"]
+            rates = b.get("rates", {})
+            rt = ", ".join(f"{TOOL_LABEL.get(m, m)} {100 * rates[m][0]:.1f}%" for m in rates)
+            L.append(f"    top-{b['depth']} (n={b['n']}): Q={om['Q']:.2f}, df={om['df']}, "
+                     f"p={_p(om['p'])}   [{rt}]")
+            for pr in b.get("pairwise", []):
+                L.append(f"        {TOOL_LABEL.get(pr['a'], pr['a'])} > "
+                         f"{TOOL_LABEL.get(pr['b'], pr['b'])}: "
+                         f"discordant +{pr['a_wins']}/−{pr['b_wins']}, "
+                         f"p_holm={_p(pr['p_holm'])} {pr['star']}")
+        L.append("")
+        L.append("(B) Ranking headroom within a tool — extra complexes a DEEPER pool recovers")
+        L.append("    (nested → reported as recovered share with Wilson 95% CI), plus Cochran's")
+        L.append("    Q across the three depths as the omnibus that depth matters at all:")
+        for h in stats.get("depth_headroom", []):
+            if "omnibus_across_depths" not in h:
+                L.append(f"    {TOOL_LABEL.get(h['method'], h['method'])}: "
+                         f"n={h.get('n', 0)} — {h.get('status', '')}")
+                continue
+            om = h["omnibus_across_depths"]
+            rbd = h["rate_by_depth"]
+            rt = " → ".join(f"top-{d} {100 * rbd[d]:.1f}%" for d in sorted(rbd))
+            L.append(f"    {TOOL_LABEL.get(h['method'], h['method'])} (n={h['n']}): {rt};  "
+                     f"Q={om['Q']:.2f}, df={om['df']}, p={_p(om['p'])}")
+            for s in h["steps"]:
+                lo, hi = s["recovered_ci"]
+                L.append(f"        top-{s['from_depth']}→top-{s['to_depth']}: "
+                         f"+{s['recovered_k']} complexes "
+                         f"({100 * s['recovered_share']:.1f}%, 95% CI "
+                         f"{100 * lo:.1f}–{100 * hi:.1f}%)")
+        L.append("")
+        L.append("*** p<.001   ** p<.01   * p<.05   ns = not significant.")
+        L.append("Nested depth steps are one-directional (a deeper pool can only ADD hits), so")
+        L.append("they carry an effect size (recovered share + CI), not a McNemar p-value.")
+        L.append("")
+
+    L.append("=" * W)
+    out_path.write_text("\n".join(L) + "\n", encoding="utf-8")
+
+
+def _stats_within_by_depth(df: pd.DataFrame, depths, threshold: float,
+                           eq_df: "pd.DataFrame | None" = None,
+                           pb_valid_only: bool = False, rmsd_col: str = "rmsd",
+                           figure_name: str = "", metric_label: str = "RMSD") -> "dict | None":
+    """Paired significance tests for the multi-depth fig 18 view, AT the emphasised
+    threshold (2 Å for as-placed RMSD, 1 Å for Kabsch RMSD).
+
+    The datum is one binary per (protein, ligand) complex: does the tool have a
+    (PB-valid) pose whose best-of-top-d RMSD is <= *threshold*. Two questions the graph
+    poses, each with the test its data structure warrants:
+
+      * between_tools_by_depth — at each pool depth, do the three tools differ? The same
+        complexes are scored by every tool, so the data are PAIRED binary across >=3
+        conditions → Cochran's Q omnibus + pairwise exact McNemar (Holm-corrected),
+        via :func:`stats_utils.paired_proportions`.
+      * depth_headroom — within a tool, does deepening the ranked pool (top-1 → top-15 →
+        top-30) add recovery? The hit sets are NESTED (rank-1 ⊂ top-15 ⊂ top-30), so the
+        discordance is one-directional and a McNemar p is degenerate; the gain is the
+        recovered share of complexes (Wilson 95 % CI), with Cochran's Q across the three
+        depths as the omnibus that depth matters at all.
+
+    Returns the sidecar dict, or None when < 2 tools carry per-complex frames.
+    """
+    depths = sorted(int(d) for d in depths)
+    tools = ("autodock", "diffdock", "equibind")
+    hits: dict = {}
+    present: set = set()
+    for d in depths:
+        frames = _topn_within_frames(df, d, eq_df=eq_df,
+                                     pb_valid_only=pb_valid_only, rmsd_col=rmsd_col)
+        hd = {}
+        for m in tools:
+            if m in frames:
+                rec = pd.to_numeric(frames[m]["best_rmsd"], errors="coerce") <= threshold
+                hd[m] = {f"{p}||{l}": bool(v)
+                         for (p, l), v in zip(frames[m].index, rec)}
+                present.add(m)
+        hits[d] = hd
+    methods = [m for m in tools if m in present]
+    if len(methods) < 2:
+        return None
+
+    between = []
+    for d in depths:
+        hd = hits.get(d, {})
+        mset = [m for m in methods if m in hd]
+        if len(mset) < 2:
+            continue
+        common = sorted(set.intersection(*[set(hd[m]) for m in mset]))
+        if len(common) < _MIN_UNITS_STATS:
+            between.append({"depth": d, "n": len(common),
+                            "status": "n too small — exploratory"})
+            continue
+        data = {m: [hd[m][c] for c in common] for m in mset}
+        between.append({"depth": d, "n": len(common), **su.paired_proportions(data)})
+
+    headroom = []
+    for m in methods:
+        dd = [d for d in depths if m in hits.get(d, {})]
+        if len(dd) < 2:
+            continue
+        cids = sorted(set.intersection(*[set(hits[d][m]) for d in dd]))
+        N = len(cids)
+        if N < _MIN_UNITS_STATS:
+            headroom.append({"method": m, "n": N, "status": "n too small — exploratory"})
+            continue
+        H = {d: np.fromiter((hits[d][m][c] for c in cids), bool, N) for d in dd}
+        Q, pQ, dQ = su.cochran_q(np.array([H[d].astype(float) for d in dd]).T)
+        pairs = list(zip(dd[:-1], dd[1:]))
+        if len(dd) > 2:
+            pairs.append((dd[0], dd[-1]))          # end-to-end headroom too
+        steps = []
+        for lo, hi in pairs:
+            rec = int((H[hi] & ~H[lo]).sum())      # nested: only 0→1 transitions exist
+            lo_ci, hi_ci = su.wilson_ci(rec, N)
+            steps.append({"from_depth": lo, "to_depth": hi, "recovered_k": rec,
+                          "recovered_share": rec / N,
+                          "recovered_ci": [lo_ci, hi_ci], "nested": True})
+        headroom.append({
+            "method": m, "n": N,
+            "k_by_depth": {int(d): int(H[d].sum()) for d in dd},
+            "rate_by_depth": {int(d): float(H[d].mean()) for d in dd},
+            "omnibus_across_depths": {"Q": Q, "p": pQ, "df": dQ},
+            "steps": steps,
+        })
+
+    return {
+        "figure": figure_name,
+        "threshold_A": float(threshold),
+        "metric": metric_label,
+        "pb_valid_only": bool(pb_valid_only),
+        "unit": "(protein, ligand) complex; paired across tools, nested across depths",
+        "depths": depths,
+        "between_tools_by_depth": between,
+        "depth_headroom": headroom,
+    }
 
 
 def plot_top1_vs_oracle_scatter(df: pd.DataFrame, out: Path) -> None:
@@ -5804,10 +7825,13 @@ def plot_form_fidelity_gate_vs_rank(df: pd.DataFrame, out: Path,
 
 
 def _draw_form_placement_axes(ax, sub: pd.DataFrame, form_ok: float,
-                              rmsd_thr: float, lim: float) -> None:
+                              rmsd_thr: float, lim: float,
+                              axis_fontsize: float | None = None,
+                              tick_fontsize: float | None = None) -> None:
     """Scatter of in-place RMSD (x) vs form/best-fit RMSD (y) for ``sub``, points
     coloured by mechanism region, with the y = x bound and the r = 1/3, 2/3
-    mechanism rays (form = √r · in-place)."""
+    mechanism rays (form = √r · in-place). ``axis_fontsize``/``tick_fontsize``
+    (default None → matplotlib default) enlarge the axis titles and tick labels."""
     reg = _mechanism_region(sub)
     for label in _MECH_LABELS:
         s = sub[reg == label]
@@ -5820,8 +7844,10 @@ def _draw_form_placement_axes(ax, sub: pd.DataFrame, form_ok: float,
     ax.axhline(form_ok, ls="--", color="crimson", lw=0.9)
     ax.axvline(rmsd_thr, ls=":", color="black", lw=0.6)
     ax.set_xlim(0, lim); ax.set_ylim(0, lim)
-    ax.set_xlabel("In-place RMSD to crystal (Å)")
-    ax.set_ylabel("Form error — best-fit (Kabsch) RMSD (Å)")
+    ax.set_xlabel("In-place RMSD to crystal (Å)", fontsize=axis_fontsize)
+    ax.set_ylabel("Form error — best-fit (Kabsch) RMSD (Å)", fontsize=axis_fontsize)
+    if tick_fontsize is not None:
+        ax.tick_params(axis="both", labelsize=tick_fontsize)
     ax.grid(alpha=0.3)
 
 
@@ -5879,7 +7905,18 @@ def plot_form_vs_placement_depth_filmstrip(
         rmsd_gate: float | None = NEAR_NATIVE_RMSD_A,
         depths=(1, 3, 5),
         centroid_max: float | None = None,
-        axis_max: float | None = None) -> None:
+        axis_max: float | None = None,
+        caption_out: Path | None = None,
+        legend_loc: str = "panel",
+        compact_titles: bool = False,
+        title_mechanism_line: bool = True,
+        title_fontsize: float = 9.0,
+        axis_fontsize: float | None = None,
+        tick_fontsize: float | None = None,
+        legend_fontsize: float = 11.0,
+        legend_title_fontsize: float = 12.0,
+        suptitle_fontsize: float = 13.0,
+        shared_axis_labels: bool = False) -> None:
     """Fig 20d read across ranking depth: rows = tool family, columns = the
     cumulative top-``d`` cohorts (top-1 ⊆ top-3 ⊆ top-5). Every cell is the same
     mechanism-coloured form-vs-placement scatter on SHARED axes, so the clouds are
@@ -5907,6 +7944,32 @@ def plot_form_vs_placement_depth_filmstrip(
     ``axis_max`` clips both axes to a fixed square (e.g. 8 Å) after the frame is
     otherwise computed, so the dense near-native core stays legible; poses that
     fall outside the frame are counted in the footnote, not silently dropped.
+
+    ``caption_out`` (default None) — when a path is given, the descriptive notes are
+    written to that text file (with the figure title as a heading) INSTEAD of being
+    drawn as an on-figure footnote, and the freed bottom band is reclaimed by the
+    panels. None keeps the footnote on the figure (unchanged default behaviour).
+
+    ``legend_loc`` — "panel" (default) draws the mechanism legend inside the top-left
+    panel; "top" draws a single figure-level horizontal legend below the title.
+    ``compact_titles`` — False (default) keeps the full per-panel stat titles
+    (n / rec. / place-mix-form %); True reduces each panel title to just
+    "Family · top-d" and leaves the numbers to the sidecar tables.
+    ``title_mechanism_line`` — True (default) keeps the second panel-title line
+    ("place/mix/form = …%"); False drops it (keeping line 1: family · top-d ·
+    n · rec.), for callers that move the mechanism breakdown into a sidecar table.
+    Ignored when ``compact_titles`` is set.
+    ``title_fontsize`` / ``axis_fontsize`` / ``tick_fontsize`` size the panel headings,
+    axis titles and tick labels (None → matplotlib default for the latter two).
+    ``legend_fontsize`` / ``legend_title_fontsize`` size the figure-level mechanism
+    legend and its title (only used with ``legend_loc="top"``; the in-panel legend
+    keeps its own compact size). ``suptitle_fontsize`` sizes the overall figure title.
+    Defaults reproduce the historic hardcoded sizes so existing callers are unchanged.
+    ``shared_axis_labels`` — False (default) keeps a per-panel x/y axis label on the
+    outer panels; True clears them all and draws ONE figure-level x and y label
+    (``fig.supxlabel`` / ``supylabel``) at ``axis_fontsize``. Recommended when
+    ``axis_fontsize`` is large enough that the long per-panel y-label would exceed a
+    single panel's height and overflow into the neighbouring row.
     """
     depths = sorted({int(d) for d in depths})
     if not depths:
@@ -5955,7 +8018,9 @@ def plot_form_vs_placement_depth_filmstrip(
             sub = cohorts[d][cohorts[d]["method"].map(_fam_key) == fam]
             if sub.empty:
                 ax.set_visible(False); continue
-            _draw_form_placement_axes(ax, sub, form_ok, vlim, lim)
+            _draw_form_placement_axes(ax, sub, form_ok, vlim, lim,
+                                      axis_fontsize=axis_fontsize,
+                                      tick_fontsize=tick_fontsize)
             if ci > 0:
                 ax.set_ylabel("")
             if ri < nrows - 1:
@@ -5968,20 +8033,41 @@ def plot_form_vs_placement_depth_filmstrip(
                                                 lw=2.0, alpha=0.95))
                 ax.scatter(*cc, marker="X", s=90, color="black", zorder=6,
                            edgecolors="white", linewidths=1.0)
-            n_rec = int(sub["protein"].nunique())  # distinct receptors (unique complexes)
-            dn = len(sub) - n1
-            extra = f"  (+{dn} poses vs top-{d1})" if d != d1 and dn else ""
-            # Mechanism composition of this cohort (share of poses that are
-            # placement-limited / mixed / form-limited) — reading across a row shows
-            # the share shift as the ranking net widens.
-            _mc = _mechanism_region(sub).value_counts(normalize=True).reindex(
-                list(_MECH_LABELS)).fillna(0.0) * 100
-            ax.set_title(f"{flabel} · top-{d}   n={len(sub)} · {n_rec} rec.{extra}\n"
-                         f"place/mix/form = {_mc['placement-limited']:.0f}/"
-                         f"{_mc['mixed']:.0f}/{_mc['form-limited']:.0f}%",
-                         fontsize=9.0)
-            if ri == 0 and ci == 0:
+            if compact_titles:
+                # Numbers (n / rec. / place-mix-form %) move to the sidecar tables;
+                # the panel heading keeps only the tool family and ranking depth.
+                ax.set_title(f"{flabel} · top-{d}", fontsize=title_fontsize,
+                             fontweight="bold")
+            else:
+                n_rec = int(sub["protein"].nunique())  # distinct receptors (unique complexes)
+                dn = len(sub) - n1
+                extra = f"  (+{dn} poses vs top-{d1})" if d != d1 and dn else ""
+                line1 = f"{flabel} · top-{d}   n={len(sub)} · {n_rec} rec.{extra}"
+                if title_mechanism_line:
+                    # Mechanism composition of this cohort (share of poses that are
+                    # placement-limited / mixed / form-limited) — reading across a row
+                    # shows the share shift as the ranking net widens. Callers that move
+                    # this to a sidecar table pass title_mechanism_line=False.
+                    _mc = _mechanism_region(sub).value_counts(normalize=True).reindex(
+                        list(_MECH_LABELS)).fillna(0.0) * 100
+                    ax.set_title(line1 + "\nplace/mix/form = "
+                                 f"{_mc['placement-limited']:.0f}/"
+                                 f"{_mc['mixed']:.0f}/{_mc['form-limited']:.0f}%",
+                                 fontsize=title_fontsize)
+                else:
+                    ax.set_title(line1, fontsize=title_fontsize)
+            if legend_loc == "panel" and ri == 0 and ci == 0:
                 ax.legend(fontsize=7.5, frameon=False, loc="upper left", title="mechanism")
+    if shared_axis_labels:
+        # A single figure-level x/y label instead of one per outer panel: the long
+        # y-label is taller than one panel at large fonts, so per-panel labels would
+        # overflow into the neighbouring row. One shared label spans the whole grid.
+        _lab_fs = axis_fontsize if axis_fontsize is not None else 12.0
+        for ax in axes.ravel():
+            if ax.get_visible():
+                ax.set_xlabel(""); ax.set_ylabel("")
+        fig.supxlabel("In-place RMSD to crystal (Å)", fontsize=_lab_fs)
+        fig.supylabel("Form error — best-fit (Kabsch) RMSD (Å)", fontsize=_lab_fs)
     if rmsd_gate is not None:
         sel_line = ("cumulative PB-valid poses within each method's top-d "
                     f"(≤ {vlim:g} Å, near-native)")
@@ -5990,10 +8076,23 @@ def plot_form_vs_placement_depth_filmstrip(
 
     # Short title; the descriptive detail that used to be stacked in it now sits in a
     # footnote so the heading rides just above the panels instead of floating off.
-    fig.suptitle(_vt(
-        "Form vs placement across ranking depth — top-1 net widened to "
-        f"top-{'/'.join(f'{d}' for d in depths[1:])}"),
-        fontsize=13, fontweight="bold", y=0.995)
+    title = _vt("Form vs placement across ranking depth — top-1 net widened to "
+                f"top-{'/'.join(f'{d}' for d in depths[1:])}")
+    fig.suptitle(title, fontsize=suptitle_fontsize, fontweight="bold", y=0.995)
+    # ``legend_loc="top"`` lifts the mechanism key out of the top-left panel into a
+    # single horizontal legend below the title; ``top`` then reserves that band so the
+    # panels drop clear of it.
+    top = 0.97
+    if legend_loc == "top":
+        from matplotlib.lines import Line2D
+        handles = [Line2D([0], [0], marker="o", linestyle="none", markersize=9,
+                          markerfacecolor=_MECH_COLORS[l], markeredgecolor="none",
+                          label=l) for l in _MECH_LABELS]
+        fig.legend(handles=handles, title="mechanism", loc="upper center",
+                   bbox_to_anchor=(0.5, 0.965), ncol=len(handles), frameon=False,
+                   fontsize=legend_fontsize, title_fontsize=legend_title_fontsize,
+                   handletextpad=0.4, columnspacing=1.6)
+        top = 0.93
     notes = [f"Rows = tool family · columns = {sel_line}."]
     if rmsd_gate is None and centroid_max is not None:
         notes.append(f"Off-receptor poses removed — docked centroid > {centroid_max:g} Å from "
@@ -6005,9 +8104,17 @@ def plot_form_vs_placement_depth_filmstrip(
                  "(unique protein–ligand complexes) those poses span.")
     notes.append("Coloured by mechanism (r = form² / in-place²); black ✕ = cohort centroid "
                  "(median in-place, median form); orange arrow = drift from top-1.")
-    fig.text(0.5, 0.008, "\n".join(notes), ha="center", va="bottom",
-             fontsize=8, color="0.30", linespacing=1.35)
-    fig.tight_layout(rect=(0, 0.06, 1, 0.97))
+    if caption_out is not None:
+        # Move the descriptive notes off the figure into a sidecar text file and let
+        # the panels reclaim the band the footnote used to occupy.
+        Path(caption_out).write_text(title + "\n\n" + "\n".join(notes) + "\n",
+                                     encoding="utf-8")
+        rect = (0, 0.0, 1, top)
+    else:
+        fig.text(0.5, 0.008, "\n".join(notes), ha="center", va="bottom",
+                 fontsize=8, color="0.30", linespacing=1.35)
+        rect = (0, 0.06, 1, top)
+    fig.tight_layout(rect=rect)
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
 
 
@@ -6323,7 +8430,7 @@ def plot_filmstrip_statistics(stats: dict, out: Path,
     axB.set_xlim(0, lim); axB.set_ylim(0, lim)
     axB.set_xlabel("In-place RMSD to crystal — median (Å)")
     axB.set_ylabel("Form error — best-fit (Kabsch) RMSD, median (Å)")
-    axB.set_title("(B) Depth drift of each tool's centroid (top-1 → top-5)\n"
+    axB.set_title(f"(B) Depth drift of each tool's centroid (top-{d0} → top-{dmax})\n"
                   "rightward = placement degrades · upward = form degrades", fontsize=10.5)
     axB.legend(fontsize=8, frameon=False, loc="upper left",
                title=f"● = top-{d0}  ✕ = top-{dmax}")
@@ -6370,8 +8477,8 @@ def plot_filmstrip_statistics(stats: dict, out: Path,
         axD.text(b.get_x() + b.get_width() / 2, b.get_height(), f" SD {s:.2f}",
                  ha="center", va="bottom", fontsize=8)
     axD.set_xticks(x); axD.set_xticklabels(present)
-    axD.set_ylabel("Within-complex spread of in-place RMSD\nacross top-5 valid poses — median (Å)")
-    axD.set_title("(D) Pose diversity within a complex (top-5)\n"
+    axD.set_ylabel(f"Within-complex spread of in-place RMSD\nacross top-{dmax} valid poses — median (Å)")
+    axD.set_title(f"(D) Pose diversity within a complex (top-{dmax})\n"
                   "small spread = near-duplicate poses (flat ≠ better ranking)", fontsize=10.5)
     axD.grid(axis="y", alpha=0.3)
 
@@ -7502,6 +9609,601 @@ def plot_topk_recovery_validity(rec: pd.DataFrame, out: Path, thr: float = 2.0,
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 21/22 — Ranking quality: how faithfully does each tool's OWN pose ranking
+# reproduce the oracle ordering of the poses it produced? AutoDock and DiffDock
+# are ranked by their native confidence order; EquiBind has no native score, so
+# its poses are ranked by gnina affinity (most-negative = rank 1), matching the
+# convention of figs 09d/15b. Four quality criteria define the "oracle" order a
+# pose SHOULD have (lower = better pose):
+#   crystal  — as-placed heavy-atom RMSD to the crystal ligand
+#   kabsch   — best-fit RMSD after optimal superposition (internal form only)
+#   pbvalid  — PoseBusters validity (valid ranked above invalid)
+#   combined — the deployment pick: PB-valid, near the crystal (as-placed RMSD)
+#              AND well-formed (Kabsch RMSD). Valid poses first, then ranked by
+#              placement+form (as-placed RMSD + Kabsch RMSD)
+# Fig 21 shows position-by-position concordance (best pose → rank 1, 2nd-best →
+# rank 2, …); fig 22 is the per-complex Kendall tau-b distribution as a whisker
+# plot. Both need the FULL (un-collapsed) frame so the gnina EquiBind variant is
+# present.
+_RANK_QUALITY_SPECS = [
+    # (colour key, display label, method key, ranking kind, ranking-axis label)
+    ("autodock", "AutoDock Vina",           "autodock",                "native", "confidence rank"),
+    ("autodock_smina", "AutoDock (smina-opt)", "autodock_smina",        "native", "optimized rank"),
+    ("autodock_gnina", "AutoDock (gnina-opt)", "autodock_gnina",        "native", "optimized rank"),
+    ("diffdock", "DiffDock",                "diffdock",                "native", "confidence rank"),
+    ("equibind", "EquiBind (gnina-ranked)", "equibind_unguided_gnina", "gnina",  "gnina-affinity rank"),
+]
+# (key, display label) for the four ranking-quality criteria, in plot order.
+_RANK_QUALITY_CRITERIA = [
+    ("crystal",  "Crystal RMSD"),
+    ("kabsch",   "Kabsch RMSD"),
+    ("pbvalid",  "PB-validity"),
+    ("combined", "Combined (valid + close + form)"),
+]
+
+
+def _rank_quality_badness(sub: pd.DataFrame, criterion: str) -> pd.Series:
+    """Per-pose 'badness' (LOWER = better pose) under a ranking-quality criterion.
+
+    A tool ranks well when its confidence order (rank 1 = highest confidence)
+    tracks ascending badness. NaN badness marks a pose the criterion can't score
+    (dropped downstream). ``combined`` is the deployment pick: PB-valid, near the
+    crystal (as-placed RMSD) AND well-formed (Kabsch/best-fit RMSD). Its geometric
+    badness sums the as-placed and form RMSDs, and a global penalty ≥ the frame's
+    max sum pushes every PB-invalid pose below all valid poses within EVERY
+    complex (valid first, then close-and-well-formed)."""
+    rmsd = pd.to_numeric(sub["rmsd"], errors="coerce")
+    if criterion == "crystal":
+        return rmsd
+    if criterion == "kabsch":
+        return pd.to_numeric(sub["bestfit_rmsd"], errors="coerce")
+    valid = _to_bool(sub["pb_valid"])
+    if criterion == "pbvalid":
+        return pd.Series(np.where(valid.to_numpy(), 0.0, 1.0), index=sub.index)
+    if criterion == "combined":
+        # geometric quality = placement (as-placed RMSD) + form (Kabsch RMSD)
+        geo = rmsd + pd.to_numeric(sub["bestfit_rmsd"], errors="coerce")
+        arr = geo.to_numpy()
+        pen = (float(np.nanmax(arr)) + 1.0) if np.isfinite(arr).any() else 1.0
+        return geo + np.where(valid.to_numpy(), 0.0, pen)
+    raise ValueError(f"unknown ranking-quality criterion: {criterion}")
+
+
+def aggregate_rank_quality_tau(df_full: pd.DataFrame,
+                               specs=_RANK_QUALITY_SPECS) -> pd.DataFrame:
+    """Per (tool, criterion, complex): Kendall tau-b between the tool's ranking
+    (rank 1 = highest confidence) and the criterion badness (low = better pose).
+
+    tau = +1 → the tool ranks its poses in perfect quality order; 0 → no better
+    than random; −1 → reversed. A complex needs ≥ 3 poses and non-constant rank
+    AND badness, so PB-validity tau is defined only where the pose set contains
+    BOTH valid and invalid poses (a near-uniformly-valid tool contributes few
+    complexes — reflected in the per-box n). Long form; one row per contributing
+    complex. Needs the full frame for the gnina EquiBind variant."""
+    present = set(df_full["method"].astype(str))
+    rows = []
+    for ckey, clabel, mkey, kind, _axis in specs:
+        if mkey not in present:
+            continue
+        frame, rank = _rank_series_for(
+            df_full[df_full["method"].astype(str) == mkey], kind)
+        frame = frame.assign(_rk=pd.to_numeric(rank, errors="coerce"))
+        for crit, _crit_label in _RANK_QUALITY_CRITERIA:
+            work = frame.assign(
+                _bad=pd.to_numeric(_rank_quality_badness(frame, crit), errors="coerce"))
+            for (prot, lig), g in work.groupby(["protein", "ligand"]):
+                gg = g.dropna(subset=["_rk", "_bad"])
+                if len(gg) < 3 or gg["_rk"].nunique() < 2 or gg["_bad"].nunique() < 2:
+                    continue
+                tau, _p, _n = su.kendall(gg["_rk"].to_numpy(float),
+                                         gg["_bad"].to_numpy(float))
+                if not np.isfinite(tau):
+                    continue
+                rows.append({"tool_key": ckey, "tool": clabel, "criterion": crit,
+                             "protein": prot, "ligand": lig,
+                             "tau": round(float(tau), 4), "n_poses": int(len(gg))})
+    return pd.DataFrame(rows)
+
+
+def _summarize_rank_quality_tau(tau_df: pd.DataFrame) -> pd.DataFrame:
+    """Compact per (tool, criterion) summary of the tau distribution: n complexes
+    with a defined tau, median, IQR, and the % that are positive (ranking beats
+    chance for that complex)."""
+    rows = []
+    for ckey, clabel, _mk, _kind, _ax in _RANK_QUALITY_SPECS:
+        for crit, crit_label in _RANK_QUALITY_CRITERIA:
+            s = tau_df[(tau_df["tool"] == clabel) & (tau_df["criterion"] == crit)]["tau"]
+            s = s.dropna()
+            if s.empty:
+                continue
+            rows.append({
+                "tool": clabel, "criterion": crit, "criterion_label": crit_label,
+                "n_complexes": int(len(s)),
+                "median_tau": round(float(s.median()), 4),
+                "q25_tau": round(float(s.quantile(0.25)), 4),
+                "q75_tau": round(float(s.quantile(0.75)), 4),
+                "pct_positive": round(100.0 * float((s > 0).mean()), 1),
+            })
+    return pd.DataFrame(rows)
+
+
+def _stats_rank_quality(tau_df: pd.DataFrame) -> dict:
+    """Per criterion: paired cross-tool test on the per-complex tau (the tools
+    that scored the same complex are the paired units) — Friedman + Kendall's W
+    omnibus and Wilcoxon signed-rank (Holm) pairwise, via the shared helper.
+    Returns {criterion: paired_continuous(...)-dict (+ n_complete)} and skips a
+    criterion with < 3 jointly-scored complexes or < 2 tools."""
+    out = {}
+    tools = [s[1] for s in _RANK_QUALITY_SPECS]
+    for crit, _clabel in _RANK_QUALITY_CRITERIA:
+        sub = tau_df[tau_df["criterion"] == crit]
+        if sub.empty:
+            continue
+        wide = sub.pivot_table(index=["protein", "ligand"], columns="tool",
+                               values="tau", aggfunc="first")
+        cols = [t for t in tools if t in wide.columns]
+        wide = wide[cols].dropna()
+        if len(wide) < 3 or len(cols) < 2:
+            out[crit] = {"insufficient": True, "n_complete": int(len(wide))}
+            continue
+        res = su.paired_continuous({t: wide[t].to_numpy(float) for t in cols}, labels=cols)
+        res["n_complete"] = int(len(wide))
+        out[crit] = res
+    return out
+
+
+def aggregate_rank_position_concordance(df_full: pd.DataFrame, specs, top_n: int):
+    """Two frames feeding fig 21.
+
+    diag  — for the two continuous criteria (crystal, kabsch) and each rank
+      position k (1..top_n): the % of complexes whose pose at the tool's rank k
+      is ALSO the k-th best pose by that metric (best → rank 1, 2nd-best →
+      rank 2, …). Denominator = complexes with ≥ k metric-defined poses.
+    valid — for PB-validity: the % of complexes whose tool-rank-k pose is
+      PB-valid, plus the oracle ceiling (% of complexes with ≥ k valid poses =
+      the best any ranking could do by front-loading valid poses). Identity
+      matching is undefined for a binary label, so validity uses this rate view.
+    """
+    present = set(df_full["method"].astype(str))
+    diag_rows, val_rows = [], []
+    for ckey, clabel, mkey, kind, _axis in specs:
+        if mkey not in present:
+            continue
+        frame, rank = _rank_series_for(
+            df_full[df_full["method"].astype(str) == mkey], kind)
+        frame = frame.assign(_rk=pd.to_numeric(rank, errors="coerce"))
+        # continuous-metric diagonal (identity) agreement
+        for crit, col in (("crystal", "rmsd"), ("kabsch", "bestfit_rmsd")):
+            per_cx = list(frame.dropna(subset=["_rk", col]).groupby(["protein", "ligand"]))
+            for k in range(1, top_n + 1):
+                match = tot = 0
+                for _, gg in per_cx:
+                    if len(gg) < k:
+                        continue
+                    at_k = gg[gg["_rk"] == k]
+                    if at_k.empty:
+                        continue
+                    order = gg.sort_values(col, kind="mergesort")
+                    tot += 1
+                    if order.iloc[k - 1]["pose_name"] == at_k.iloc[0]["pose_name"]:
+                        match += 1
+                if tot:
+                    diag_rows.append({
+                        "tool_key": ckey, "tool": clabel, "criterion": crit,
+                        "rank": k, "pct_match": round(100.0 * match / tot, 2),
+                        "n_pairs": tot})
+        # PB-validity: achieved validity-by-rank vs the tool's OVERALL valid rate
+        # (the random-ordering reference — a tool that ranks validity well sits
+        # above it at rank 1 and declines below it at deep ranks). A front-loading
+        # "ceiling" is NOT a valid per-position upper bound: front-loading exhausts
+        # the valid poses early, so its deep-rank validity is a floor, not a ceiling.
+        vframe = frame.assign(_v=_to_bool(frame["pb_valid"]))
+        overall_valid = 100.0 * float(vframe["_v"].mean()) if len(vframe) else float("nan")
+        for k in range(1, top_n + 1):
+            at_k = vframe[vframe["_rk"] == k]
+            npair = at_k.groupby(["protein", "ligand"]).ngroups
+            if not npair:
+                continue
+            val_rows.append({
+                "tool_key": ckey, "tool": clabel, "rank": k,
+                "pct_valid": round(100.0 * float(at_k["_v"].mean()), 2),
+                "pct_random": round(overall_valid, 2),
+                "n_pairs": npair})
+    return pd.DataFrame(diag_rows), pd.DataFrame(val_rows)
+
+
+def plot_rank_position_concordance(diag_df: pd.DataFrame, valid_df: pd.DataFrame,
+                                   top_n: int, out: Path) -> None:
+    """Fig 21 — position-by-position ranking concordance, three panels.
+
+    A/B (Crystal RMSD, Kabsch RMSD): grouped bars per tool of the % of complexes
+    where the tool's rank-k pose is the k-th best pose by that metric (the
+    literal "best → rank 1, 2nd-best → rank 2 …" question). C (PB-validity):
+    achieved % PB-valid at each rank (solid) vs the front-loading ceiling
+    (dashed) per tool."""
+    if diag_df.empty and valid_df.empty:
+        return
+    ranks = list(range(1, top_n + 1))
+    tools = [(ckey, clabel) for ckey, clabel, *_ in _RANK_QUALITY_SPECS]
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5.2))
+
+    def _bars(ax, crit, title):
+        present = [(ck, cl) for ck, cl in tools
+                   if not diag_df[(diag_df["tool"] == cl)
+                                  & (diag_df["criterion"] == crit)].empty]
+        w = 0.8 / max(1, len(present))
+        for mi, (ck, cl) in enumerate(present):
+            g = diag_df[(diag_df["tool"] == cl) & (diag_df["criterion"] == crit)]
+            g = g.set_index("rank").reindex(ranks)
+            offset = (mi - (len(present) - 1) / 2) * w
+            ax.bar([r + offset for r in ranks], g["pct_match"], w,
+                   label=cl, color=TOOL_COLORS.get(ck), edgecolor="black", alpha=0.85)
+        ax.set_xticks(ranks)
+        ax.set_xlabel("Rank position k (tool's own ranking)")
+        ax.set_ylabel("% of complexes where rank-k pose\nis the k-th best pose")
+        ax.set_title(title)
+        ax.grid(axis="y", alpha=0.3)
+        ax.legend(fontsize=8, title="ranked by native / gnina")
+
+    _bars(axes[0], "crystal", "Crystal RMSD (as-placed)")
+    _bars(axes[1], "kabsch", "Kabsch RMSD (best-fit, form only)")
+
+    axC = axes[2]
+    for ck, cl in tools:
+        g = valid_df[valid_df["tool"] == cl].set_index("rank").reindex(ranks)
+        if g["pct_valid"].isna().all():
+            continue
+        col = TOOL_COLORS.get(ck)
+        axC.plot(ranks, g["pct_valid"], marker="o", lw=2, color=col, label=cl)
+        axC.plot(ranks, g["pct_random"], ls=":", lw=1.2, color=col, alpha=0.7)
+    axC.set_xticks(ranks)
+    axC.set_ylim(0, 105)
+    axC.set_xlabel("Rank position k (tool's own ranking)")
+    axC.set_ylabel("% of rank-k poses that are PoseBusters-valid")
+    axC.set_title("PoseBusters validity by rank")
+    axC.grid(axis="y", alpha=0.3)
+    axC.legend(fontsize=8)
+    axC.text(0.98, 0.02, "dotted = random baseline (tool's overall valid rate)",
+             transform=axC.transAxes, ha="right", va="bottom", fontsize=7.5,
+             style="italic", color="0.35")
+
+    _label_panels(axes)
+    fig.suptitle(_vt("How faithfully does each tool rank its poses? "
+                     "(best pose → rank 1, 2nd-best → rank 2, …)"),
+                 fontsize=13, fontweight="bold")
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(out, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_rank_quality_whiskers(tau_df: pd.DataFrame, out: Path) -> None:
+    """Fig 22 — per-complex Kendall tau-b (tool ranking vs oracle order) as a
+    grouped whisker plot: one group per criterion (Crystal RMSD, Kabsch RMSD,
+    PB-validity, Combined), one box per tool. Higher = the tool ranks its poses
+    closer to true quality order; the dashed line at 0 is chance. The cross-tool
+    paired tests live in rank_quality_report.txt, not on the figure."""
+    if tau_df.empty:
+        return
+    tools = [(ck, cl) for ck, cl, *_ in _RANK_QUALITY_SPECS]
+    crits = _RANK_QUALITY_CRITERIA
+    fig, ax = plt.subplots(figsize=(13, 5.6))
+    group_w, box_w = 1.0, 0.8 / max(1, len(tools))
+    positions, box_data, box_colors, n_labels = [], [], [], []
+    centers = []
+    for gi, (crit, clabel) in enumerate(crits):
+        base = gi * group_w
+        centers.append(base)
+        for ti, (ck, cl) in enumerate(tools):
+            s = tau_df[(tau_df["tool"] == cl) & (tau_df["criterion"] == crit)]["tau"].dropna()
+            pos = base + (ti - (len(tools) - 1) / 2) * box_w
+            positions.append(pos)
+            box_data.append(s.to_numpy(float) if len(s) else np.array([np.nan]))
+            box_colors.append(TOOL_COLORS.get(ck))
+            n_labels.append((pos, len(s)))
+    bp = ax.boxplot(box_data, positions=positions, widths=box_w * 0.9,
+                    patch_artist=True, showfliers=False, showmeans=True,
+                    meanprops=dict(marker="D", markerfacecolor="white",
+                                   markeredgecolor="black", markersize=4),
+                    medianprops=dict(color="black", lw=1.4))
+    for patch, col in zip(bp["boxes"], box_colors):
+        patch.set_facecolor(col)
+        patch.set_alpha(0.75)
+        patch.set_edgecolor("black")
+    ax.axhline(0.0, ls="--", lw=1, color="0.4", zorder=0)
+    for pos, n in n_labels:
+        ax.text(pos, -1.06, f"n={n}", ha="center", va="top", fontsize=6.5, color="0.35")
+    ax.set_xticks(centers)
+    ax.set_xticklabels([cl for _c, cl in crits])
+    ax.set_ylim(-1.12, 1.12)
+    ax.set_ylabel("Kendall τ-b: tool ranking vs oracle order\n(+1 = perfect, 0 = chance, −1 = reversed)")
+    ax.set_xlabel("Ranking-quality criterion (oracle ordering of the tool's own poses)")
+    ax.grid(axis="y", alpha=0.3)
+    # tool legend
+    handles = [plt.Rectangle((0, 0), 1, 1, facecolor=TOOL_COLORS.get(ck),
+                             edgecolor="black", alpha=0.75) for ck, _cl in tools]
+    ax.legend(handles, [cl for _ck, cl in tools], fontsize=8,
+              title="ranked by native confidence / gnina affinity", loc="upper right")
+
+    fig.suptitle(_vt("Ranking quality per tool — does each tool order its poses "
+                     "by true quality?"), fontsize=13, fontweight="bold")
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(out, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+
+
+# ── 21a-d: rank-vs-oracle individual line charts + full text report ──────────────
+# A more informative companion to the fig-21 identity-match bars: for each rank
+# position k, the ORACLE rank (1 = best pose by the criterion) of the pose the tool
+# actually placed at rank k. A perfect ranking sits on the diagonal (oracle rank = k);
+# a useless one collapses onto the flat random baseline (≈ N/2). One standalone figure
+# per criterion; the statistics go to rank_quality_report.txt (not onto the graphs).
+_RVO_CRITERIA = [
+    ("crystal",  "rmsd",         "Crystal RMSD"),
+    ("kabsch",   "bestfit_rmsd", "Kabsch RMSD"),
+    ("combined", None,           "Combined (valid + close + form)"),
+]
+# Depth for the rank-vs-oracle figures (21a/b/d): the tools produce ~30 poses per
+# complex, so the axes span the full 1..30 rather than the report's --top-n cap.
+_RVO_MAX_RANK = 30
+# Depth for rank_quality_report.txt's per-rank tables (section 3 RANK vs ORACLE,
+# 4 IDENTITY MATCH, 5 PB-VALIDITY BY RANK). Decoupled from --top-n (which caps the
+# 21/21c figures) so the text report spans the full pose set. Kept equal to
+# _RVO_MAX_RANK so section 3 (rvo) and sections 4/5 (identity/validity) share a depth.
+_RANK_REPORT_DEPTH = _RVO_MAX_RANK
+
+
+def aggregate_rank_vs_oracle(df_full: pd.DataFrame, specs, top_n: int) -> pd.DataFrame:
+    """Per (tool, criterion, tool-rank k): the oracle rank (1 = best pose by that
+    criterion) of the pose the tool placed at rank k, summarised over complexes
+    (median + IQR + mean) with the random-ranking baseline (median (N+1)/2).
+    Continuous criteria only (crystal, kabsch, combined) — PB-validity has no oracle
+    ordering. Needs the full frame for the gnina EquiBind variant."""
+    present = set(df_full["method"].astype(str))
+    rows = []
+    for ckey, clabel, mkey, kind, _axis in specs:
+        if mkey not in present:
+            continue
+        frame, rank = _rank_series_for(
+            df_full[df_full["method"].astype(str) == mkey], kind)
+        frame = frame.assign(_rk=pd.to_numeric(rank, errors="coerce"))
+        for crit, _col, crit_label in _RVO_CRITERIA:
+            work = frame.assign(
+                _bad=pd.to_numeric(_rank_quality_badness(frame, crit), errors="coerce"))
+            work = work.dropna(subset=["_rk", "_bad"])
+            by_k = {k: [] for k in range(1, top_n + 1)}
+            half_n = []
+            for _, g in work.groupby(["protein", "ligand"]):
+                g = g.sort_values("_bad", kind="mergesort")
+                g = g.assign(_o=np.arange(1, len(g) + 1))
+                half_n.append((len(g) + 1) / 2.0)
+                for k in range(1, top_n + 1):
+                    r = g[g["_rk"] == k]
+                    if not r.empty:
+                        by_k[k].append(int(r["_o"].iloc[0]))
+            base = float(np.median(half_n)) if half_n else float("nan")
+            for k in range(1, top_n + 1):
+                vals = by_k[k]
+                if not vals:
+                    continue
+                a = np.asarray(vals, float)
+                rows.append({
+                    "tool_key": ckey, "tool": clabel, "criterion": crit,
+                    "criterion_label": crit_label, "rank": k,
+                    "median_oracle_rank": round(float(np.median(a)), 2),
+                    "q25": round(float(np.percentile(a, 25)), 2),
+                    "q75": round(float(np.percentile(a, 75)), 2),
+                    "mean_oracle_rank": round(float(a.mean()), 2),
+                    "n_pairs": len(vals),
+                    "random_baseline": round(base, 2)})
+    return pd.DataFrame(rows)
+
+
+def plot_rank_vs_oracle_criterion(rvo: pd.DataFrame, crit: str, out: Path) -> None:
+    """One standalone square rank-vs-rank figure: median oracle rank of the tool's
+    rank-k pose vs rank k, per tool. Both axes are ranks — identical integer ticks
+    starting at 1 — so the perfect-ranking diagonal (oracle rank = k) reads at 45°
+    and the random level sits near the top edge (oracle rank ≈ N/2 ≥ top-N). A curve
+    hugging the diagonal ranks well; one riding the ceiling is no better than random.
+    Per-complex IQR is in rank_quality_report.txt. Points whose median oracle rank
+    exceeds top-N clip at the ceiling (they are effectively random)."""
+    sub = rvo[rvo["criterion"] == crit]
+    if sub.empty:
+        return
+    label = sub["criterion_label"].iloc[0]
+    ranks = sorted(int(r) for r in sub["rank"].unique())
+    kmax = max(ranks)
+    fig, ax = plt.subplots(figsize=(6.6, 6.4))
+    ax.plot([1, kmax], [1, kmax], ls="--", lw=1.4, color="0.45", zorder=1,
+            label="perfect ranking (oracle rank = k)")
+    for ckey, clabel, *_rest in _RANK_QUALITY_SPECS:
+        g = sub[sub["tool"] == clabel].set_index("rank").reindex(ranks)
+        if g["median_oracle_rank"].isna().all():
+            continue
+        ax.plot(ranks, g["median_oracle_rank"], marker="o", lw=2,
+                color=TOOL_COLORS.get(ckey), label=clabel, zorder=3)
+    ax.set_xlim(1, kmax)
+    ax.set_ylim(1, kmax)
+    # both axes share the same rank ticks; stride out when the depth is large
+    if kmax <= 16:
+        ticks = list(range(1, kmax + 1))
+    else:
+        ticks = [1] + list(range(5, kmax + 1, 5))
+        if kmax not in ticks:
+            ticks.append(kmax)
+    ax.set_xticks(ticks)
+    ax.set_yticks(ticks)
+    ax.set_aspect("equal", adjustable="box")
+    ax.set_xlabel("Rank position k (tool's own ranking)")
+    ax.set_ylabel("Oracle rank of the tool's rank-k pose\n(1 = best pose by this metric)")
+    ax.grid(alpha=0.3)
+    # legend ABOVE the plot (title sits above it)
+    ax.legend(fontsize=8, loc="lower center", bbox_to_anchor=(0.5, 1.0),
+              ncol=2, borderaxespad=0.3, columnspacing=1.2,
+              title="ranked by native confidence / gnina affinity")
+    ax.set_title(_vt(f"Rank vs oracle — {label}"), pad=60)
+    fig.tight_layout()
+    fig.savefig(out, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_validity_by_rank_individual(valid_df: pd.DataFrame, top_n: int,
+                                     out: Path) -> None:
+    """Standalone PB-validity-by-rank line chart (achieved solid, ceiling dashed)."""
+    if valid_df.empty:
+        return
+    ranks = list(range(1, top_n + 1))
+    fig, ax = plt.subplots(figsize=(7.8, 5.4))
+    for ckey, clabel, *_rest in _RANK_QUALITY_SPECS:
+        g = valid_df[valid_df["tool"] == clabel].set_index("rank").reindex(ranks)
+        if g["pct_valid"].isna().all():
+            continue
+        col = TOOL_COLORS.get(ckey)
+        ax.plot(ranks, g["pct_valid"], marker="o", lw=2, color=col, label=clabel)
+        ax.plot(ranks, g["pct_random"], ls=":", lw=1.2, color=col, alpha=0.7)
+    ax.set_xticks(ranks)
+    ax.set_xlim(1, top_n)
+    ax.set_ylim(0, 105)
+    ax.set_xlabel("Rank position k (tool's own ranking)")
+    ax.set_ylabel("% of rank-k poses that are PoseBusters-valid")
+    ax.set_title(_vt("Rank vs oracle — PoseBusters validity by rank"))
+    ax.grid(alpha=0.3)
+    ax.legend(fontsize=8, loc="upper right",
+              title="ranked by native confidence / gnina affinity")
+    ax.text(0.98, 0.02, "dotted = random baseline (tool's overall valid rate);\n"
+            "good ranking starts above it and declines toward it",
+            transform=ax.transAxes, ha="right", va="bottom", fontsize=7.5,
+            style="italic", color="0.35")
+    fig.tight_layout()
+    fig.savefig(out, dpi=160, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _validity_mix(df_full: pd.DataFrame, specs) -> pd.DataFrame:
+    """Per tool: how many complexes are all-valid / all-invalid / mixed — explains
+    why the PB-validity tau (fig 22) is defined only on the mixed complexes."""
+    present = set(df_full["method"].astype(str))
+    rows = []
+    for _ck, clabel, mkey, _kind, _ax in specs:
+        if mkey not in present:
+            continue
+        m = df_full[df_full["method"].astype(str) == mkey].copy()
+        m["_v"] = _to_bool(m["pb_valid"])
+        g = m.groupby(["protein", "ligand"])["_v"]
+        nv, nt = g.sum(), g.size()
+        rows.append({"tool": clabel, "pairs": int(g.ngroups),
+                     "all_valid": int((nv == nt).sum()),
+                     "all_invalid": int((nv == 0).sum()),
+                     "mixed": int(((nv > 0) & (nv < nt)).sum())})
+    return pd.DataFrame(rows)
+
+
+def _write_rank_quality_report(path: Path, *, tau_df, summary_df, stats, rvo_df,
+                               diag_df, valid_df, mix_df, top_n) -> None:
+    """Full plain-text ranking-quality report — everything that used to be crammed
+    onto the figures (and more), so the graphs stay clean."""
+    L = []
+    bar = "=" * 78
+    L += [bar, "RANKING-QUALITY REPORT", bar,
+          "How faithfully does each tool's OWN pose ranking reproduce the oracle",
+          "ordering of the poses it produced? (benchmark set)", ""]
+    L += ["Tools & ranking basis:"]
+    for _ck, clabel, mkey, kind, axl in _RANK_QUALITY_SPECS:
+        L.append(f"  - {clabel:24s}: {axl}  [{mkey}, kind={kind}]")
+    L += ["",
+          "Criteria (oracle order of a tool's poses; lower badness = better pose):",
+          "  - Crystal RMSD : as-placed heavy-atom RMSD to the crystal ligand",
+          "  - Kabsch RMSD  : best-fit RMSD after optimal superposition (form only)",
+          "  - PB-validity  : PoseBusters-valid ranked above invalid (binary)",
+          "  - Combined     : deployment pick — valid first, then by placement+form",
+          "                   (as-placed crystal RMSD + Kabsch/best-fit RMSD)",
+          ""]
+
+    L += [bar, "1. KENDALL tau-b SUMMARY  (per-complex tau; +1 perfect, 0 chance, -1 reversed)", bar]
+    L.append(f"{'tool':24s} {'criterion':10s} {'n':>4s} {'median':>7s} "
+             f"{'q25':>7s} {'q75':>7s} {'%>0':>5s}")
+    for _r, row in summary_df.iterrows():
+        L.append(f"{row['tool']:24s} {row['criterion']:10s} {int(row['n_complexes']):4d} "
+                 f"{row['median_tau']:7.3f} {row['q25_tau']:7.3f} {row['q75_tau']:7.3f} "
+                 f"{row['pct_positive']:5.0f}")
+    L.append("")
+
+    L += [bar, "2. CROSS-TOOL PAIRED TESTS  (per criterion; units = shared complexes)", bar]
+    for crit, clabel in _RANK_QUALITY_CRITERIA:
+        st = (stats or {}).get(crit) or {}
+        L.append(f"[{clabel}]")
+        if not st or st.get("insufficient"):
+            L.append(f"  insufficient jointly-scored complexes (n={st.get('n_complete', 0)})")
+            L.append("")
+            continue
+        om = st["omnibus"]
+        L.append(f"  Friedman chi2={om['chi2']:.2f}, p={su.fmt_p(om['p'])}"
+                 f"{su.p_stars(om['p'])}, Kendall's W={om['kendall_w']:.3f}, n={om['n']}")
+        L.append(f"  medians: " + ", ".join(f"{k}={v:.3f}" for k, v in st["medians"].items()))
+        for pr in st["pairwise"]:
+            L.append(f"    {pr['a']:24s} vs {pr['b']:24s}  "
+                     f"rank-biserial={pr['rank_biserial']:+.3f}  "
+                     f"p_holm={su.fmt_p(pr['p_holm'])}{pr['star']}  (n={pr['n']})")
+        L.append("")
+
+    L += [bar, "3. RANK vs ORACLE  (oracle rank of the tool's rank-k pose; median [IQR];",
+          f"   perfect = k, random ~ N/2; shown to rank {top_n}, figures 21a/b/d + "
+          "rank_vs_oracle.csv go to rank 30)", bar]
+    for crit, _col, crit_label in _RVO_CRITERIA:
+        sub = rvo_df[rvo_df["criterion"] == crit]
+        if sub.empty:
+            continue
+        base = float(sub["random_baseline"].median())
+        L.append(f"[{crit_label}]   (random baseline ~ {base:.0f})")
+        L.append("  " + "tool".ljust(24) + "".join(f"k{k:<9d}" for k in range(1, top_n + 1)))
+        for _ck, clabel, *_ in _RANK_QUALITY_SPECS:
+            g = sub[sub["tool"] == clabel].set_index("rank")
+            cells = []
+            for k in range(1, top_n + 1):
+                if k in g.index:
+                    cells.append(f"{int(g.loc[k, 'median_oracle_rank'])}"
+                                 f"[{int(g.loc[k, 'q25'])}-{int(g.loc[k, 'q75'])}]".ljust(10))
+                else:
+                    cells.append("-".ljust(10))
+            L.append("  " + clabel.ljust(24) + "".join(cells))
+        L.append("")
+
+    L += [bar, "4. IDENTITY MATCH  (% of complexes where rank-k pose IS the k-th best pose)", bar]
+    for crit in ("crystal", "kabsch"):
+        sub = diag_df[diag_df["criterion"] == crit]
+        if sub.empty:
+            continue
+        L.append(f"[{crit}]")
+        L.append("  " + "tool".ljust(24) + "".join(f"k{k:<6d}" for k in range(1, top_n + 1)))
+        for _ck, clabel, *_ in _RANK_QUALITY_SPECS:
+            g = sub[sub["tool"] == clabel].set_index("rank")
+            cells = [(f"{g.loc[k, 'pct_match']:.0f}%".ljust(7) if k in g.index else "-".ljust(7))
+                     for k in range(1, top_n + 1)]
+            L.append("  " + clabel.ljust(24) + "".join(cells))
+        L.append("")
+
+    L += [bar, "5. PB-VALIDITY BY RANK  (% valid at rank k / tool overall valid rate =",
+          "   random-order reference; good ranking is above it early, below it deep)", bar]
+    L.append("  " + "tool".ljust(24) + "".join(f"k{k:<11d}" for k in range(1, top_n + 1)))
+    for _ck, clabel, *_ in _RANK_QUALITY_SPECS:
+        g = valid_df[valid_df["tool"] == clabel].set_index("rank")
+        cells = [(f"{g.loc[k, 'pct_valid']:.0f}/{g.loc[k, 'pct_random']:.0f}".ljust(12)
+                  if k in g.index else "-".ljust(12)) for k in range(1, top_n + 1)]
+        L.append("  " + clabel.ljust(24) + "".join(cells))
+    L.append("")
+
+    L += [bar, "6. PB-VALIDITY COMPLEX MIX  (why the fig-22 PB-validity box n is small)", bar,
+          "   tau needs BOTH valid and invalid poses in a complex; all-valid/all-invalid",
+          "   complexes are constant -> tau undefined -> dropped (n = 'mixed').", ""]
+    L.append(f"  {'tool':24s} {'pairs':>6s} {'all-valid':>10s} {'all-invalid':>12s} {'mixed(=n)':>10s}")
+    for _r, row in mix_df.iterrows():
+        L.append(f"  {row['tool']:24s} {int(row['pairs']):6d} {int(row['all_valid']):10d} "
+                 f"{int(row['all_invalid']):12d} {int(row['mixed']):10d}")
+    L.append("")
+
+    Path(path).write_text("\n".join(L))
+
+
 # ── Optimization benefit by rank — does refinement help early ranks more? ────────
 # For DiffDock, smina/gnina keep the confidence rank on refined geometry, so rank r is
 # the SAME underlying pose across raw/smina/gnina and the raw→optimized gap at each rank
@@ -8063,6 +10765,9 @@ def _load_pb_test_table(pb_csv: Path, split_equibind: bool = True,
     raw["docking_method"] = raw["docking_method"].astype(str).str.lower()
     if split_equibind:
         raw = _apply_equibind_split(raw)
+    # Match _build_pose_index's AutoDock variant labels exactly; otherwise raw
+    # and gnina rows share a method during waterfall joins/summaries.
+    raw = _apply_autodock_split(raw)
     # Split + select the DiffDock variant identically to _build_pose_index, so
     # this table's method keys match per_pose_metrics (otherwise the selected
     # variant's rows fail to join in the waterfall).
@@ -8312,9 +11017,9 @@ def _panel_label(method: str, labels: dict | None = None) -> str:
     if labels and method in labels:
         return labels[method]
     if method == "equibind_gnina":
-        return "EquiBind (gnina-ranked)"
+        return "EquiBind*"
     if method == "equibind_raw":
-        return "EquiBind (raw · gnina-ranked)"
+        return "EquiBind* (raw)"
     if method == "diffdock_raw":
         return "DiffDock (raw)"
     return TOOL_LABEL.get(method, method)
@@ -8682,7 +11387,7 @@ def plot_pb_top30_recovery_by_test(cascades_top1: dict, cascades_topn: dict,
     suptitle = fig.suptitle(_vt(
         f"Extra complexes recovered by best-of-top-{top_n} vs rank-1,\n"
         "at each PoseBusters cascade step\n"
-        "(bar = extra survivors where the top-30 pick makes a difference;\n"
+        f"(bar = extra survivors where the top-{top_n} pick makes a difference;\n"
         "blue = RMSD ≤ 2 Å placement, amber = other physical-validity tests, "
         "green = passing all tests)"),
         fontsize=13, fontweight="bold", y=title_y, va="top")
@@ -8697,6 +11402,263 @@ def plot_pb_top30_recovery_by_test(cascades_top1: dict, cascades_topn: dict,
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
     if csv_out is not None and csv_rows:
         pd.DataFrame(csv_rows).to_csv(csv_out, index=False)
+
+
+def _write_pb_recovery_report(out_path: Path, *, figure_names, csv_names, methods,
+                              labels: dict | None, cascades_top1: dict,
+                              depth_blocks) -> None:
+    """ONE combined companion text report for the raw-vs-refined PoseBusters recovery
+    figures across MULTIPLE pool depths — showing top-1 (rank-1 baseline),
+    best-of-top-15 and best-of-top-30 together.
+
+    ``cascades_top1`` is the rank-1 (top-1) cascade dict (depth-independent, so shown
+    once). ``depth_blocks`` is an ordered list of ``{"depth": int,
+    "cascades_topn": dict, "stats": dict | None}`` — one per best-of-top-N figure.
+
+    Writes two blocks:
+      1. STATISTICAL TESTS — a sub-section per figure/depth (each = exactly that
+         figure's own Holm family, matching its on-panel annotations): exact two-sided
+         McNemar (rank-1 → top-N pass-all gain, and raw → refined at rank-1 and top-N
+         on the refined panels), each with both passing-all rates, Wilson 95 % CIs,
+         the discordant-pair counts (b, c), the raw and Holm-adjusted p-values, and
+         the significance star.
+      2. PER-STAGE ATTRITION TABLE (';'-separated) — one row per
+         method × selection × cascade stage, with one selection block per depth
+         (top-1 shown once, then each best-of-top-N): the representative poses
+         (complexes) removed AT that stage and the percentages (of the panel start N
+         and of the poses entering the stage), plus the running survivor count.
+    """
+    def pm(m: str) -> str:
+        if labels and m in labels:
+            return labels[m]
+        return _panel_label(m)
+
+    def _mcnemar_lines(a_name: str, b_name: str, rec: dict, indent: str) -> list[str]:
+        lo_a, hi_a = rec["a_ci"]; lo_b, hi_b = rec["b_ci"]
+        pp = 100 * (rec["b_rate"] - rec["a_rate"])
+        ls = [
+            f"{indent}{a_name}: {rec['a_k']}/{rec['n']} = {100 * rec['a_rate']:.1f}% "
+            f"[95% CI {100 * lo_a:.1f}–{100 * hi_a:.1f}]   →   "
+            f"{b_name}: {rec['b_k']}/{rec['n']} = {100 * rec['b_rate']:.1f}% "
+            f"[95% CI {100 * lo_b:.1f}–{100 * hi_b:.1f}]   (Δ {pp:+.1f} pp)",
+            f"{indent}  discordant pairs: b={rec['a_wins']} ({a_name} only), "
+            f"c={rec['b_wins']} ({b_name} only)  ·  "
+            f"exact McNemar p={su.fmt_p(rec['mcnemar_p'])}"
+            + (f", Holm-adjusted p={su.fmt_p(rec['p_holm'])}"
+               if "p_holm" in rec else "")
+            + (f"  {rec['star']}" if rec.get("star") else ""),
+        ]
+        return ls
+
+    depths = [b["depth"] for b in depth_blocks]
+    # Selections shown, in order: top-1 (once) then each best-of-top-N depth.
+    selections = [("top-1", cascades_top1)] + [
+        (f"best-of-top-{b['depth']}", b["cascades_topn"]) for b in depth_blocks]
+
+    L: list[str] = []
+    W = L.append
+    bar = "=" * 78
+    W(bar)
+    for i, fn in enumerate(figure_names):
+        W(f"{'Figures' if i == 0 else '       '} : {fn}")
+    W("Data    : combined statistics + per-stage attrition for the raw-vs-refined")
+    W("          PoseBusters recovery figures, at THREE pool depths —")
+    W("          top-1 (rank-1 baseline) · "
+      + " · ".join(f"best-of-top-{d}" for d in depths))
+    for i, cn in enumerate(csv_names):
+        W(f"{'Per-step CSVs' if i == 0 else '            '} : {cn}")
+    W(bar)
+    W("")
+    W("WHAT THESE FIGURES SHOW")
+    W("  For each method, ONE representative pose per complex is pushed through the")
+    W("  sequential PoseBusters filter cascade: first drop poses with RMSD > 2 Å from")
+    W("  the crystal ligand, then apply each canonical PoseBusters physical-validity")
+    W("  test in order, removing at every step the poses that fail it having passed")
+    W("  all previous ones. Three pose selections are compared per method:")
+    W("    top-1 (rank-1)    = the tool's top-ranked pose")
+    W("                        (EquiBind has no native rank → ranked by gnina affinity).")
+    for d in depths:
+        W(f"    best-of-top-{d:<6}= the lowest-RMSD pose among the tool's first {d} ranked")
+        W("                        poses (one pose per complex → same denominator as top-1).")
+    W("  'Failed at a stage' = the representative pose was removed by that stage's test.")
+    W("  All counts are COMPLEXES (one representative pose each) — no pose-level")
+    W("  pseudoreplication.")
+    W("")
+    W("PANELS  (n = complexes with a representative pose)")
+    for m in methods:
+        c = cascades_top1.get(m)
+        if not c:
+            for _, casc in selections:
+                if m in casc:
+                    c = casc[m]
+                    break
+        n = c["N"] if c else "?"
+        W(f"    {pm(m):<26}  n = {n}")
+    W("")
+    W(bar)
+    W("1) STATISTICAL TESTS")
+    W(bar)
+    W("  Outcome     : passing ALL canonical PoseBusters tests (binary, per complex).")
+    W("  Design      : paired — the SAME complexes are compared across the two")
+    W("                conditions; one representative pose per complex.")
+    W("  rank gain   : rank-1  vs  best-of-top-N  passing-all rate. Tests whether")
+    W("                deepening the ranked pool recovers more fully-valid poses.")
+    W("  refine gain : raw variant  vs  refined variant passing-all rate, at BOTH the")
+    W("                rank-1 and the best-of-top-N depth (refined panels only). Tests")
+    W("                whether smina/gnina refinement raises pass-all.")
+    W("  Test        : exact (binomial) two-sided McNemar on the discordant pairs")
+    W("                (b, c); rates carry Wilson score 95% confidence intervals.")
+    W("  Multiplicity: each best-of-top-N depth is a SEPARATE figure; every McNemar")
+    W("                p-value WITHIN a figure forms one Holm–Bonferroni family (p_holm),")
+    W("                matching that figure's on-panel stars. The two depths are NOT")
+    W("                pooled into a single family. Stars: *** p<.001, ** p<.01,")
+    W("                * p<.05, ns = not significant (on the Holm p).")
+    W("")
+    for blk in depth_blocks:
+        d, stats = blk["depth"], blk["stats"]
+        W(f"  ── rank-1 vs best-of-top-{d}  (own Holm family) "
+          + "─" * max(0, 30 - len(str(d))))
+        if not stats:
+            W("    (no statistics available — the paired maps were empty)")
+            W("")
+            continue
+        for m in methods:
+            st = stats.get(str(m))
+            if not st:
+                continue
+            W(f"    [{pm(m)}]")
+            rg = st.get("rank_gain")
+            if rg:
+                W(f"      rank gain — top-1 vs best-of-top-{d}:")
+                L.extend(_mcnemar_lines("top-1", f"top-{d}", rg, "        "))
+            ref = st.get("refine_gain") or {}
+            for dkey, dlab in (("rank1", "top-1"),
+                               ("topn", f"best-of-top-{d}")):
+                rec = ref.get(dkey)
+                if rec:
+                    W(f"      refine gain — raw vs refined @ {dlab}:")
+                    L.extend(_mcnemar_lines("raw", "refined", rec, "        "))
+            W("")
+    W(bar)
+    W("2) PER-STAGE ATTRITION TABLE  (';'-separated)")
+    W(bar)
+    W("  One row per method × selection × cascade stage; selections are top-1 (shown")
+    W("  once) then each best-of-top-N. 'failed' = representative poses (complexes)")
+    W("  removed at that stage; 'entering' = poses reaching it.")
+    W("  pct_failed_of_start   = failed / N          (N = panel start count)")
+    W("  pct_failed_of_entering= failed / entering   (stage-conditional failure rate)")
+    W("  pct_remaining_of_start= remaining / N       (running survival)")
+    W("  Stage kinds: start (all predictions) · drop (a filter) · milestone (RMSD ≤ 2 Å")
+    W("  running total) · end (passing all tests).")
+    W("")
+    header = ["method", "selection", "stage_order", "stage", "kind",
+              "entering", "failed", "remaining",
+              "pct_failed_of_start", "pct_failed_of_entering",
+              "pct_remaining_of_start"]
+    W(";".join(header))
+    for sel_name, casc in selections:
+        for m in methods:
+            c = casc.get(m)
+            if not c:
+                continue
+            N = c["N"] or 1
+            for order, s in enumerate(c["steps"]):
+                entering = int(s["before"])
+                failed = int(s["removed"])
+                remaining = int(s["remaining"])
+                pfs = 100 * failed / N
+                pfe = (100 * failed / entering) if entering else float("nan")
+                prs = 100 * remaining / N
+                row = [
+                    pm(m).replace(";", ","), sel_name, str(order),
+                    str(s["label"]).replace(";", ","), s["kind"],
+                    str(entering), str(failed), str(remaining),
+                    f"{pfs:.2f}", (f"{pfe:.2f}" if entering else "NA"),
+                    f"{prs:.2f}"]
+                W(";".join(row))
+    W("")
+    out_path.write_text("\n".join(L) + "\n", encoding="utf-8")
+
+
+def _dd_refine_label(variant: "str | None") -> str:
+    """The 'DiffDock*' refined-panel label for figure 17h, reflecting which
+    optimizer variant the report actually collapsed DiffDock to — the ``best_dd``
+    returned by ``_select_best_diffdock`` (set by --collapse-diffdock-variant, or
+    the oracle-best pick). The collapse relabels that winner to the ``diffdock``
+    method key, so the panel data follow it; this keeps the label honest instead
+    of hard-coding one refinement. Falls back to a generic 'refined' when the
+    variant can't be resolved."""
+    v = str(variant or "")
+    if v.endswith("_smina"):
+        return "DiffDock* (smina-refined)"
+    if v.endswith("_gnina"):
+        return "DiffDock* (gnina-refined)"
+    if v == "diffdock":
+        return "DiffDock* (raw)"
+    return "DiffDock* (refined)"
+
+
+def _emit_pb_recovery_raw_vs_refined(depth: int, *, df: pd.DataFrame,
+                                     df_full: pd.DataFrame,
+                                     test_table: pd.DataFrame, test_cols: list[str],
+                                     cascades: dict, out_dir: Path,
+                                     stats_sidecar: dict,
+                                     dd_variant: "str | None" = None
+                                     ) -> "dict | None":
+    """Build + write the combined raw-vs-refined PoseBusters recovery figure (17h)
+    at rank-1 vs best-of-top-``depth``, plus its per-step CSV, and fold the
+    McNemar/Wilson payload into ``stats_sidecar`` under
+    ``top{depth}_recovery_raw_vs_refined``.
+
+    The companion text report is NOT written here — instead this returns the built
+    cascades/stats so the caller can emit ONE combined report across all depths
+    (top-1 · best-of-top-15 · best-of-top-30). Returns ``None`` if the figure could
+    not be built (missing variants), else a dict with keys ``depth``, ``c1_all``,
+    ``cn_all``, ``methods``, ``labels``, ``stats``, ``png``, ``csv``.
+
+    ``cascades`` is the rank-1 (top-1) refined cascade dict (depth-independent, so
+    reused across depths); the best-of-top-``depth`` refined cascades and both raw
+    cascades are (re)built here so the figure is self-contained per depth.
+    """
+    cn_ref = aggregate_pb_waterfall(df, test_table, test_cols, depth,
+                                    rank_selection="topn")
+    if not cn_ref:
+        return None
+    c1 = dict(cascades)
+    cn = dict(cn_ref)
+    _inject_equibind_gnina_headroom(c1, cn, df_full, test_table, test_cols, depth)
+    c1_raw, cn_raw = _build_raw_variant_cascades(df_full, test_table, test_cols, depth)
+    c1_all = {**c1_raw, **c1}
+    cn_all = {**cn_raw, **cn}
+    combined_methods = tuple(
+        m for m in ("autodock", "diffdock_raw", "diffdock",
+                    "equibind_raw", "equibind_gnina")
+        if m in c1_all and m in cn_all)
+    if len(combined_methods) < 2:
+        return None
+    combined_labels = {
+        "diffdock": _dd_refine_label(dd_variant),
+        "diffdock_raw": "DiffDock (raw)",
+        "equibind_gnina": "EquiBind* (gnina-refined)",
+        "equibind_raw": "EquiBind* (raw)",
+    }
+    try:
+        stats = _stats_top30_recovery(c1_all, cn_all, combined_methods)
+    except Exception as exc:
+        stats = None
+        print(f"  WARNING: 17h top-{depth} recovery stats failed ({exc})")
+    if stats:
+        stats_sidecar[f"top{depth}_recovery_raw_vs_refined"] = stats
+    png = out_dir / f"17h_pb_top{depth}_recovery_raw_vs_refined.png"
+    csv = out_dir / f"pb_top{depth}_recovery_raw_vs_refined.csv"
+    plot_pb_top30_recovery_by_test(
+        c1_all, cn_all, depth, png, csv_out=csv,
+        methods=combined_methods, labels=combined_labels, stats=stats)
+    print(f"  wrote combined raw+refined top-{depth} recovery → {png.name} "
+          f"(+ {csv.name})")
+    return {"depth": depth, "c1_all": c1_all, "cn_all": cn_all,
+            "methods": combined_methods, "labels": combined_labels,
+            "stats": stats, "png": png.name, "csv": csv.name}
 
 
 # ───────────────────────────────────────────────────────────────────
@@ -8905,21 +11867,49 @@ def _build_raw_variant_cascades(df: pd.DataFrame, test_table: pd.DataFrame,
     return c1, cn
 
 
+def _resolve_dd_best_variant(df: pd.DataFrame, forced: str | None) -> str:
+    """The DiffDock optimiser variant to use as the 'best refined' DiffDock panel in
+    the raw-vs-best waterfalls (17d/17e) and the rank-depth added-pose figures (17i),
+    so they FOLLOW ``--collapse-diffdock-variant`` like the rest of the report instead
+    of hard-coding one refiner.
+
+    A 'best refined' panel needs a *refined* variant, so only the smina/gnina
+    optimisers are eligible (raw ``diffdock`` is the counterpart it's compared
+    against). Honours an explicit smina/gnina ``forced`` choice; otherwise (flag
+    absent, or forced to raw) defaults to ``diffdock_gnina`` — the historical 17d
+    pick and the report's usual oracle-best. Falls back to whatever refiner is
+    present if the preferred one is missing."""
+    present = set(df["method"].astype(str))
+    refined = [v for v in ("diffdock_smina", "diffdock_gnina") if v in present]
+    if not refined:
+        return "diffdock_gnina"
+    if forced in refined:
+        return forced
+    return "diffdock_gnina" if "diffdock_gnina" in refined else refined[0]
+
+
+def _dd_refiner_word(dd_best: str) -> str:
+    """Short label ('smina'/'gnina') for a DiffDock optimiser method key."""
+    return "smina" if "smina" in str(dd_best) else "gnina"
+
+
 def aggregate_pb_waterfall_raw_vs_best(df: pd.DataFrame, test_table: pd.DataFrame,
                                        test_cols: list[str],
-                                       gate_rmsd: bool = True) -> dict:
+                                       gate_rmsd: bool = True,
+                                       dd_best: str = "diffdock_gnina") -> dict:
     """PoseBusters cascade, top-1 pose, for the RAW pose vs its best refined
     variant — as an ordered dict of panels ``{key: {..cascade.., title, role, pair,
-    vs}}``. DiffDock is refined/ranked with smina; EquiBind with gnina.
+    vs, opt}}``. ``dd_best`` selects the DiffDock refiner (follows
+    ``--collapse-diffdock-variant``); EquiBind is always gnina-refined.
 
     ``df`` must retain every optimiser/refinement variant under its own method key
     (the full per-pose frame, before any best-variant collapse). Selection:
 
     * AutoDock — rank-1 pose. Physics docking has no smina/gnina re-optimisation,
       so it appears once as a reference (``role="reference"``).
-    * DiffDock — rank-1 raw pose (``diffdock``) vs rank-1 smina pose
-      (``diffdock_smina``); the optimiser inherits the DiffDock rank, so the two
-      panels are the same pose before/after refinement.
+    * DiffDock — rank-1 raw pose (``diffdock``) vs the rank-1 ``dd_best`` pose; the
+      optimiser inherits the DiffDock rank, so the two panels are the same pose
+      before/after refinement.
     * EquiBind — has no native ranking, so the representative is the prediction
       ranked #1 by its gnina refinement score, shown in its raw and its
       gnina-refined geometry (``_equibind_gnina_ranked_top1``).
@@ -8927,10 +11917,12 @@ def aggregate_pb_waterfall_raw_vs_best(df: pd.DataFrame, test_table: pd.DataFram
     ``gate_rmsd`` (default True) drops RMSD > 2 Å before the PoseBusters tests;
     with ``gate_rmsd=False`` every ranked-1 pose faces the tests regardless of
     placement accuracy, so the cascade shows where poses fail on physical-validity
-    grounds alone. Best panels carry ``vs`` = the key of their raw counterpart so
-    the plotter can annotate the net change in poses passing every test.
+    grounds alone. Best panels carry ``vs`` = the key of their raw counterpart (so
+    the plotter can annotate the net change in poses passing every test) and ``opt``
+    = the refiner word for the panel label.
     """
     out: dict = {}
+    dd_word = _dd_refiner_word(dd_best)
 
     ref = _pb_cascade_from_rep(_rank1_rep(df, "autodock"), test_table, test_cols,
                                "top-1 pose", gate_rmsd=gate_rmsd)
@@ -8941,14 +11933,15 @@ def aggregate_pb_waterfall_raw_vs_best(df: pd.DataFrame, test_table: pd.DataFram
 
     dd_raw = _pb_cascade_from_rep(_rank1_rep(df, "diffdock"), test_table,
                                   test_cols, "raw pose", gate_rmsd=gate_rmsd)
-    dd_best = _pb_cascade_from_rep(_rank1_rep(df, "diffdock_gnina"), test_table,
-                                   test_cols, "gnina-refined pose", gate_rmsd=gate_rmsd)
+    dd_best_c = _pb_cascade_from_rep(_rank1_rep(df, dd_best), test_table,
+                                     test_cols, f"{dd_word}-refined pose",
+                                     gate_rmsd=gate_rmsd)
     if dd_raw is not None:
         out["diffdock_raw"] = {**dd_raw, "role": "raw", "pair": "diffdock",
                                "title": "DiffDock — raw top-1 pose"}
-    if dd_best is not None:
-        e = {**dd_best, "role": "best", "pair": "diffdock",
-             "title": "DiffDock + gnina — best variant, top-1 pose"}
+    if dd_best_c is not None:
+        e = {**dd_best_c, "role": "best", "pair": "diffdock", "opt": dd_word,
+             "title": f"DiffDock + {dd_word} — best variant, top-1 pose"}
         if dd_raw is not None:
             e["vs"] = "diffdock_raw"
         out["diffdock_best"] = e
@@ -8965,7 +11958,7 @@ def aggregate_pb_waterfall_raw_vs_best(df: pd.DataFrame, test_table: pd.DataFram
                 **eq_raw, "role": "raw", "pair": "equibind",
                 "title": f"EquiBind ({pocket}) — raw pose · ranked #1 by gnina score"}
         if eq_best is not None:
-            e = {**eq_best, "role": "best", "pair": "equibind",
+            e = {**eq_best, "role": "best", "pair": "equibind", "opt": "gnina",
                  "title": f"EquiBind ({pocket}) + gnina — refined pose · "
                           "ranked #1 by gnina score"}
             if eq_raw is not None:
@@ -9056,8 +12049,9 @@ def plot_pb_waterfall_raw_vs_best(panels: dict, out: Path,
             raw_pct = _final_pct(panels[vs])
             d = final_pct - raw_pct
             accent = green if d >= 0 else red
-            # EquiBind is refined/ranked with gnina, DiffDock with smina.
-            opt_word = "gnina" if c.get("pair") == "equibind" else "smina"
+            # Refiner word for the panel (follows --collapse-diffdock-variant for
+            # DiffDock; EquiBind is always gnina). Falls back for older callers.
+            opt_word = c.get("opt", "gnina" if c.get("pair") == "equibind" else "smina")
             ax.text(0.995, 0.975,
                     f"{opt_word} vs raw:  {'+' if d >= 0 else '−'}{abs(d):.1f} pp "
                     f"{delta_label}",
@@ -9075,20 +12069,385 @@ def plot_pb_waterfall_raw_vs_best(panels: dict, out: Path,
                              rotation_mode="anchor", fontsize=8)
     if nrows > 1:
         _label_panels(axes)
+    dd_word = panels.get("diffdock_best", {}).get("opt", "smina")
     if gate_rmsd:
         suptitle = ("PoseBusters test-failure waterfall — raw pose vs best "
-                    "refined variant, top-1 per method (DiffDock: smina; EquiBind: "
+                    f"refined variant, top-1 per method (DiffDock: {dd_word}; EquiBind: "
                     "gnina)\n(sequential filter: each red bar = poses removed by "
                     "that test; green = poses passing every test; left edge: grey = "
                     "raw, green = optimised)")
     else:
         suptitle = ("PoseBusters physical-validity waterfall — raw pose vs best "
-                    "refined variant, top-1 per method (DiffDock: smina; EquiBind: "
+                    f"refined variant, top-1 per method (DiffDock: {dd_word}; EquiBind: "
                     "gnina)\n(RMSD ≤ 2 Å NOT applied — every ranked-1 pose is tested; "
                     "each red bar = poses removed by that test; green = poses passing "
                     "every PoseBusters test, at any RMSD)")
     fig.suptitle(_vt(suptitle), fontsize=13, fontweight="bold")
     fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
+    if csv_out is not None and csv_rows:
+        pd.DataFrame(csv_rows).to_csv(csv_out, index=False)
+
+
+# ───────────────────────────────────────────────────────────────────
+# Rank-depth 1→N ADDED-pose PoseBusters analysis (17i) — NO RMSD gate
+# ───────────────────────────────────────────────────────────────────
+# "How much does deepening the rank cut buy you, and at what physical-validity
+# cost?" Instead of one representative pose per complex (17d/17e), this pools the
+# poses a user NEWLY considers when the rank cut widens from 1 to N — ranking
+# positions 2..N — and asks, WITHOUT the RMSD ≤ 2 Å placement gate: how many poses
+# and complexes does the deeper cut add, and which PoseBusters tests do those added
+# poses fail. Native rankers use their rank order; EquiBind (no native rank) is
+# ordered by its gnina refinement score.
+
+
+def _positions_native(df: pd.DataFrame, method: str, top_n: int
+                      ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """``(rank1_rep, added_pool)`` for a natively-ranked method key, by rank ORDER:
+    position 1 = the best-ranked pose per complex; the ADDED pool = positions
+    2..``top_n`` — every pose gained by deepening the rank cut from 1 to ``top_n``.
+    Rows carry method/protein/ligand/pose_name/rmsd/pb_valid.
+
+    Raw DiffDock exports its top pose twice (a bare ``rankN.sdf`` copy beside the
+    confidence-named file), so for the raw ``diffdock`` key the bare duplicate is
+    dropped first — otherwise it would masquerade as a spurious extra added pose and
+    the optimiser variants (confidence-named only) wouldn't align 1:1 by position."""
+    cols = ["method", "protein", "ligand", "pose_name", "rmsd", "pb_valid"]
+    s = df[df["method"].astype(str) == method].copy()
+    if method == "diffdock":
+        bare = s["pose_name"].astype(str).str.contains(
+            r"rank\d+\.sdf$", regex=True, case=False, na=False)
+        s = s[~bare]
+    s["_r"] = pd.to_numeric(s["rank"], errors="coerce")
+    s = s.dropna(subset=["_r"])
+    if s.empty:
+        e = s.reindex(columns=cols)
+        return e, e
+    s["_pos"] = s.groupby(["protein", "ligand"])["_r"].rank(method="first")
+    r1 = s[s["_pos"] == 1][cols].reset_index(drop=True)
+    add = s[(s["_pos"] >= 2) & (s["_pos"] <= top_n)][cols].reset_index(drop=True)
+    return r1, add
+
+
+def _positions_equibind(df: pd.DataFrame, pocket: str, top_n: int, geometry: str
+                        ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """``(rank1_rep, added_pool)`` for EquiBind, ranked by gnina affinity (lowest =
+    best) — EquiBind has no native rank. ``geometry="gnina"`` returns the refined
+    poses; ``geometry="raw"`` returns the SAME predictions' raw geometry (matched on
+    pose stem, kept in the gnina rank order). ADDED pool = gnina positions 2..``top_n``.
+    Same columns as ``_positions_native``; empty frames when the variant is absent."""
+    cols = ["method", "protein", "ligand", "pose_name", "rmsd", "pb_valid"]
+    gnina = df[df["method"].astype(str) == f"equibind_{pocket}_gnina"].copy()
+    gnina = gnina.dropna(subset=["gnina_affinity"])
+    if gnina.empty:
+        e = gnina.reindex(columns=cols)
+        return e, e
+    gnina["_pos"] = gnina.groupby(["protein", "ligand"])["gnina_affinity"].rank(
+        method="first", ascending=True)
+    if geometry == "gnina":
+        s = gnina
+    else:                                   # raw geometry at the gnina-ranked slots
+        gnina["_stem"] = gnina["pose_name"].map(_pose_stem_no_refine)
+        raw = df[df["method"].astype(str) == f"equibind_{pocket}_raw"].copy()
+        if raw.empty:
+            e = raw.reindex(columns=cols)
+            return e, e
+        raw["_stem"] = raw["pose_name"].map(_pose_stem_no_refine)
+        order = gnina[["protein", "ligand", "_stem", "_pos"]].drop_duplicates(
+            ["protein", "ligand", "_stem"])
+        s = raw.merge(order, on=["protein", "ligand", "_stem"], how="inner")
+    r1 = s[s["_pos"] == 1][cols].reset_index(drop=True)
+    add = s[(s["_pos"] >= 2) & (s["_pos"] <= top_n)][cols].reset_index(drop=True)
+    return r1, add
+
+
+def _added_pool_stats(rank1_rep: pd.DataFrame, added_pool: pd.DataFrame,
+                      test_table: pd.DataFrame, test_cols: list[str]) -> dict:
+    """Complex- and pose-level counts for one panel's rank-1 pose vs its
+    positions-2..N added pool (NO RMSD gate; passing-all == PB-valid):
+
+      * ``n_complex_rank1`` / ``n_complex_with_added`` — complexes with a rank-1
+        pose / with ≥1 added pose;
+      * ``rank1_pbvalid`` — complexes whose rank-1 pose is already PB-valid;
+      * ``complexes_recovered`` — complexes whose rank-1 pose is NOT PB-valid but
+        that gain a PB-valid pose somewhere in positions 2..N (the deepening payoff);
+      * ``added_poses`` / ``added_pbvalid`` / ``added_fail_any`` — added-pose totals;
+      * ``fail_by_test`` — the INDEPENDENT per-test failure count over the added pool
+        (a pose is counted for EVERY test it fails, so — unlike the sequential
+        cascade — later tests aren't masked by earlier ones)."""
+    def _ck(d: pd.DataFrame) -> pd.Series:
+        return d["protein"].astype(str) + "\x1f" + d["ligand"].astype(str)
+
+    r1 = rank1_rep.drop_duplicates(["protein", "ligand"]).copy()
+    r1["_c"] = _ck(r1)
+    r1valid = dict(zip(r1["_c"], r1["pb_valid"].astype(bool)))
+    add = added_pool.copy()
+    n_added = len(add)
+    stats = {
+        "n_complex_rank1": int(len(r1)),
+        "rank1_pbvalid": int(r1["pb_valid"].astype(bool).sum()) if len(r1) else 0,
+        "added_poses": int(n_added),
+        "added_pbvalid": 0, "added_fail_any": 0,
+        "n_complex_with_added": 0, "complexes_recovered": 0,
+        "fail_by_test": {},
+    }
+    if not n_added:
+        return stats
+    add["_c"] = _ck(add)
+    addvalid_any = add.groupby("_c")["pb_valid"].any()
+    stats["n_complex_with_added"] = int(add["_c"].nunique())
+    stats["added_pbvalid"] = int(add["pb_valid"].astype(bool).sum())
+    stats["added_fail_any"] = int(n_added - stats["added_pbvalid"])
+    stats["complexes_recovered"] = int(sum(
+        1 for c, av in addvalid_any.items() if av and not r1valid.get(c, False)))
+    # Independent per-test failure tally: join the per-test PASS/FAIL columns on
+    # pose identity (protein, ligand, pose_name) — NOT method — exactly as the
+    # cascade does, then count explicit failures per test (missing join = pass).
+    tt = test_table.drop(columns=["method"], errors="ignore")
+    m = add.merge(tt, how="left", on=["protein", "ligand", "pose_name"])
+    m = m.drop_duplicates(subset=["protein", "ligand", "pose_name"])
+    for col in test_cols:
+        failed = ((~m[col].fillna(True).astype(bool)).sum() if col in m else 0)
+        stats["fail_by_test"][col] = int(failed)
+    return stats
+
+
+def aggregate_pb_rank_depth_added_pool(df: pd.DataFrame, test_table: pd.DataFrame,
+                                       test_cols: list[str], top_n: int,
+                                       dd_best: str = "diffdock_gnina") -> dict:
+    """Ranking-depth 1→``top_n`` analysis WITHOUT the RMSD gate. Per method (raw +
+    best refined variant), pools the NEWLY ADDED poses — ranking positions
+    2..``top_n``, i.e. every pose gained by deepening the rank cut from 1 to
+    ``top_n`` — and runs the sequential PoseBusters validity cascade over that pool
+    (green = added poses PB-valid at any RMSD). Returns an ordered panels dict shaped
+    like ``aggregate_pb_waterfall_raw_vs_best`` (each panel carries the cascade +
+    role/pair/vs/title/short); each also carries a ``depth`` block with the
+    added-pose / complexes-recovered counts and the independent per-test fail tally.
+
+    The DiffDock refiner follows ``dd_best`` (set by ``--collapse-diffdock-variant``);
+    EquiBind (no native rank) is ranked and refined by its gnina score. ``df`` must
+    retain every optimiser/refinement variant under its own method key."""
+    out: dict = {}
+    dd_word = _dd_refiner_word(dd_best)
+    plan = [
+        ("autodock", ("native", "autodock"), "reference", "autodock",
+         "AutoDock Vina",
+         "AutoDock Vina — added poses, ranks 2–{n} (physics docking · no re-optimisation)"),
+        ("diffdock_raw", ("native", "diffdock"), "raw", "diffdock",
+         "DiffDock (raw)", "DiffDock — raw added poses, ranks 2–{n}"),
+        ("diffdock_best", ("native", dd_best), "best", "diffdock",
+         f"DiffDock + {dd_word}",
+         f"DiffDock + {dd_word} — refined added poses, ranks 2–{{n}}"),
+    ]
+    pocket = _best_equibind_gnina_pocket(df)
+    if pocket:
+        plan += [
+            ("equibind_raw", ("equibind", (pocket, "raw")), "raw", "equibind",
+             f"EquiBind ({pocket}, raw)",
+             f"EquiBind ({pocket}) — raw added poses · gnina ranks 2–{{n}}"),
+            ("equibind_best", ("equibind", (pocket, "gnina")), "best", "equibind",
+             f"EquiBind ({pocket}) + gnina",
+             f"EquiBind ({pocket}) + gnina — refined added poses · gnina ranks 2–{{n}}"),
+        ]
+    for key, sel, role, pair, short, title in plan:
+        kind, spec = sel
+        if kind == "native":
+            r1, add = _positions_native(df, spec, top_n)
+        else:
+            pk, geom = spec
+            r1, add = _positions_equibind(df, pk, top_n, geom)
+        if add.empty:
+            continue
+        cascade = _pb_cascade_from_rep(add, test_table, test_cols,
+                                       f"added poses (ranks 2–{top_n})",
+                                       gate_rmsd=False)
+        if cascade is None:
+            continue
+        entry = {**cascade, "role": role, "pair": pair, "short": short,
+                 "title": title.format(n=top_n),
+                 "depth": _added_pool_stats(r1, add, test_table, test_cols)}
+        if role == "best":
+            entry["opt"] = "gnina" if pair == "equibind" else dd_word
+            if f"{pair}_raw" in out:
+                entry["vs"] = f"{pair}_raw"
+        out[key] = entry
+    return out
+
+
+def plot_pb_rank_depth_added_waterfall(panels: dict, top_n: int, out: Path,
+                                       csv_out: Path | None = None,
+                                       summary_csv: Path | None = None) -> None:
+    """Small-multiples PoseBusters waterfall over the poses ADDED by deepening the
+    rank cut from 1 to ``top_n`` (positions 2..``top_n``), one panel per method
+    (raw + best refined variant). No RMSD gate — every added pose faces the physical-
+    validity tests. Each red bar = added poses that test removes; green = added poses
+    passing every test (PB-valid). A per-panel headline states the deepening payoff:
+    how many poses/complexes the deeper cut adds and how many complexes it recovers
+    (rank-1 not PB-valid → an added pose PB-valid). Best panels also annotate the
+    raw→refined change in added-pool PB-valid yield (refiner per --collapse-diffdock-variant)."""
+    keys = list(panels.keys())
+    if not keys:
+        return
+    labels = [s["label"] for s in panels[keys[0]]["steps"]]
+    nx = len(labels)
+    nrows = len(keys)
+    fig, axes = plt.subplots(nrows, 1, sharex=True, squeeze=False,
+                             figsize=(max(11, 0.62 * nx), 2.9 * nrows + 2.2))
+    axes = list(axes[:, 0])
+    teal, red, green = "#3a9d8f", "#d1495b", "#2a9d3f"
+    edge_col = {"reference": "#9aa0a6", "raw": "#c77b86", "best": green}
+    summ_rows = []
+
+    def _final_pct(c: dict) -> float:
+        return 100 * c["steps"][-1]["remaining"] / c["N"] if c["N"] else float("nan")
+
+    for ax, key in zip(axes, keys):
+        c = panels[key]; N = c["N"]; steps = c["steps"]; role = c.get("role", "raw")
+        dep = c.get("depth", {})
+        x = np.arange(nx)
+        for xi, s in zip(x, steps):
+            b = 100 * s["before"] / N if N else 0.0
+            a = 100 * s["after"] / N if N else 0.0
+            if s["kind"] == "start":
+                ax.bar(xi, 100, color=teal, alpha=0.30, edgecolor=teal,
+                       hatch="..", zorder=2)
+                ax.text(xi, 101, f"{N}", ha="center", va="bottom",
+                        fontsize=8, fontweight="bold")
+            elif s["kind"] == "end":
+                ax.bar(xi, a, color=green, alpha=0.85, edgecolor="black", zorder=3)
+                ax.text(xi, a + 1, f"{s['remaining']}\n({a:.1f}%)", ha="center",
+                        va="bottom", fontsize=8, fontweight="bold")
+            else:  # drop
+                if s["removed"] > 0:
+                    ax.bar(xi, b - a, bottom=a, color=red, alpha=0.9,
+                           edgecolor="black", zorder=3)
+                    ax.text(xi, b + 0.5, f"−{s['removed']}", ha="center",
+                            va="bottom", fontsize=7, color=red, fontweight="bold")
+                else:
+                    ax.text(xi, a + 0.5, "0", ha="center", va="bottom",
+                            fontsize=7, color="0.5")
+        run = [100 * s["after"] / N if N else 0.0 for s in steps]
+        ax.step(x, run, where="mid", color="0.4", lw=0.8, ls="--",
+                alpha=0.7, zorder=1)
+        ax.set_ylim(0, 122)
+        ax.set_ylabel("% of added\nposes remaining", fontsize=9)
+        final_pct = _final_pct(c)
+        ax.set_title(f"{c.get('title', key)}   (added poses n={N}; "
+                     f"PB-valid = {final_pct:.1f}%)",
+                     fontsize=10, fontweight="bold")
+        ax.spines["left"].set_color(edge_col.get(role, "0.3"))
+        ax.spines["left"].set_linewidth(3.2)
+        ax.grid(axis="y", alpha=0.25)
+        # The deepening payoff — the headline the figure is really about.
+        head = (f"depth 1→{top_n}:  +{dep.get('added_poses', 0)} added poses across "
+                f"{dep.get('n_complex_with_added', 0)} complexes   ·   "
+                f"+{dep.get('complexes_recovered', 0)} complexes recovered "
+                f"(rank-1 not PB-valid → an added pose PB-valid)")
+        ax.text(0.5, 0.99, head, transform=ax.transAxes, ha="center", va="top",
+                fontsize=8, color="0.12",
+                bbox=dict(boxstyle="round,pad=0.3", fc="#eef3fa", ec="0.6",
+                          alpha=0.95), zorder=6)
+        vs = c.get("vs")
+        if vs in panels:
+            d = final_pct - _final_pct(panels[vs])
+            accent = green if d >= 0 else red
+            opt_word = c.get("opt", "gnina")
+            ax.text(0.995, 0.03,
+                    f"{opt_word} vs raw:  {'+' if d >= 0 else '−'}{abs(d):.1f} pp PB-valid",
+                    transform=ax.transAxes, ha="right", va="bottom",
+                    fontsize=9, fontweight="bold", color=accent,
+                    bbox=dict(boxstyle="round,pad=0.3", fc="white", ec=accent,
+                              alpha=0.92))
+        row = {"panel": key, "role": role, "pair": c.get("pair"),
+               "added_poses": dep.get("added_poses", 0),
+               "complexes_with_added": dep.get("n_complex_with_added", 0),
+               "complexes_recovered": dep.get("complexes_recovered", 0),
+               "rank1_pbvalid_complexes": dep.get("rank1_pbvalid", 0),
+               "added_pbvalid": dep.get("added_pbvalid", 0),
+               "added_fail_any": dep.get("added_fail_any", 0),
+               "added_pbvalid_pct": round(final_pct, 2)}
+        for col, cnt in dep.get("fail_by_test", {}).items():
+            row[f"failind_{col}"] = cnt
+        summ_rows.append(row)
+
+    axes[-1].set_xticks(np.arange(nx))
+    axes[-1].set_xticklabels(labels, rotation=45, ha="right",
+                             rotation_mode="anchor", fontsize=8)
+    if nrows > 1:
+        _label_panels(axes)
+    fig.suptitle(_vt(
+        f"PoseBusters validity of the poses ADDED by deepening the rank cut 1 → {top_n}"
+        f"\n(added poses = ranking positions 2–{top_n}; RMSD ≤ 2 Å NOT applied — pure "
+        "physical validity; each red bar = added poses removed by that test; "
+        "green = added poses passing every PoseBusters test)"),
+        fontsize=13, fontweight="bold")
+    fig.tight_layout(rect=(0, 0, 1, 0.95))
+    fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
+    if csv_out is not None:
+        _waterfall_to_csv(panels, csv_out)
+    if summary_csv is not None and summ_rows:
+        pd.DataFrame(summ_rows).to_csv(summary_csv, index=False)
+
+
+def plot_pb_rank_depth_fail_by_test(panels: dict, top_n: int, out: Path,
+                                    csv_out: Path | None = None) -> None:
+    """Companion to the added-pose waterfall: of the poses ADDED by deepening the
+    rank cut 1→``top_n``, how many fail EACH PoseBusters test — the INDEPENDENT tally
+    (a pose is counted for every test it fails), so later tests aren't masked by
+    earlier ones as they are in the sequential cascade. One panel per method (shared
+    test rows), horizontal bars annotated with the count and its % of that panel's
+    added poses; tests that never fail anywhere are dropped."""
+    keys = list(panels.keys())
+    if not keys:
+        return
+    totals: dict = {}
+    for c in panels.values():
+        for t, n in c.get("depth", {}).get("fail_by_test", {}).items():
+            totals[t] = totals.get(t, 0) + n
+    tests = [t for t in sorted(totals, key=lambda k: -totals[k]) if totals[t] > 0]
+    if not tests:
+        return
+    labels_y = [PB_TEST_LABELS.get(t, t) for t in tests]
+    y = np.arange(len(tests))[::-1]         # most-failed test at the top
+    nrows = len(keys)
+    bar_col = {"reference": "#6b7280", "raw": "#c77b86", "best": "#2a9d3f"}
+    fig, axes = plt.subplots(1, nrows, sharey=True, squeeze=False,
+                             figsize=(3.5 * nrows + 1.2, 0.46 * len(tests) + 2.6))
+    axes = list(axes[0, :])
+    csv_rows = []
+    xmax = max((c.get("depth", {}).get("fail_by_test", {}).get(t, 0)
+                for c in panels.values() for t in tests), default=1) or 1
+    for ax, key in zip(axes, keys):
+        c = panels[key]; dep = c.get("depth", {})
+        fbt = dep.get("fail_by_test", {})
+        n_added = dep.get("added_poses", 0)
+        denom = n_added or 1
+        vals = [fbt.get(t, 0) for t in tests]
+        ax.barh(y, vals, color=bar_col.get(c.get("role"), "#888"),
+                alpha=0.85, edgecolor="white", height=0.72)
+        for yi, v in zip(y, vals):
+            if v > 0:
+                ax.text(v + xmax * 0.01, yi, f"{v} ({100 * v / denom:.0f}%)",
+                        va="center", ha="left", fontsize=7)
+        ax.set_xlim(0, xmax * 1.28)
+        ax.set_title(f"{c.get('short', key)}\n(added n={n_added})",
+                     fontsize=9.5, fontweight="bold")
+        ax.set_xlabel("added poses failing test", fontsize=8)
+        ax.tick_params(axis="x", labelsize=7)
+        ax.grid(axis="x", alpha=0.25)
+        for t in tests:
+            csv_rows.append({"panel": key, "role": c.get("role"),
+                             "test": t, "test_label": PB_TEST_LABELS.get(t, t),
+                             "added_poses_failing": fbt.get(t, 0),
+                             "added_poses": n_added})
+    axes[0].set_yticks(y)
+    axes[0].set_yticklabels(labels_y, fontsize=8)
+    fig.suptitle(_vt(
+        f"Which PoseBusters tests the rank-1→{top_n} ADDED poses fail\n"
+        f"(added poses = ranking positions 2–{top_n}; independent per-test tally — a "
+        "pose is counted for every test it fails; RMSD not applied)"),
+        fontsize=12.5, fontweight="bold")
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
     if csv_out is not None and csv_rows:
         pd.DataFrame(csv_rows).to_csv(csv_out, index=False)
@@ -9170,6 +12529,64 @@ def _apply_equibind_split(df: pd.DataFrame) -> pd.DataFrame:
             lab += f"_{clamp}"
         labels.append(lab)
     df.loc[eq_idx, "docking_method"] = labels
+    return df
+
+
+def _classify_autodock(row) -> str:
+    """Return original | smina | gnina for one AutoDock pose.
+
+    Explicit PoseBusters provenance is authoritative. Method/path fallbacks are
+    only for older result CSVs and deliberately recognize optimized directories
+    so legacy optimized poses cannot be pooled with raw Vina.
+    """
+    opt = (_col_value(row, "optimizer") or "").lower()
+    if opt in ("smina", "gnina"):
+        return opt
+    if opt in ("original", "raw", "native", "none"):
+        return "original"
+    method = str(row.get("docking_method", "")).strip().lower()
+    if method.endswith("_smina"):
+        return "smina"
+    if method.endswith("_gnina"):
+        return "gnina"
+    name = " ".join(str(row.get(k, "")) for k in ("pose_name", "pose_file")).lower()
+    if "optimized_smina" in name:
+        return "smina"
+    if "optimized_gnina" in name:
+        return "gnina"
+    return "original"
+
+
+def _autodock_scoring_base(method: str) -> str:
+    """The AutoDock scoring base of a method key — 'autodock' (Vina) or
+    'autodock_vinardo' — with any existing optimizer suffix stripped, so the
+    split stays idempotent and never merges Vinardo into Vina."""
+    mm = str(method).strip().lower()
+    for suf in ("_smina", "_gnina"):
+        if mm.endswith(suf):
+            mm = mm[: -len(suf)]
+            break
+    return "autodock_vinardo" if mm.startswith("autodock_vinardo") else "autodock"
+
+
+def _apply_autodock_split(df: pd.DataFrame) -> pd.DataFrame:
+    """Separate native and optimized AutoDock poses into stable method keys,
+    preserving the scoring base (Vina vs Vinardo)."""
+    is_ad = df["docking_method"].str.startswith("autodock")
+    if not is_ad.any():
+        return df
+    ad_idx = df.index[is_ad]
+    opts = [_classify_autodock(df.loc[i]) for i in ad_idx]
+    bases = [_autodock_scoring_base(df.loc[i, "docking_method"]) for i in ad_idx]
+    df.loc[ad_idx, "docking_method"] = [
+        base if opt == "original" else f"{base}_{opt}"
+        for base, opt in zip(bases, opts)
+    ]
+    # A stable explicit axis also survives into the pose index/cache even when
+    # the input was a legacy CSV without an optimizer column.
+    if "optimizer" not in df.columns:
+        df["optimizer"] = pd.NA
+    df.loc[ad_idx, "optimizer"] = opts
     return df
 
 
@@ -9258,6 +12675,9 @@ def _build_pose_index(pb_csv: Path, split_equibind: bool = True,
     df["docking_method"] = df["docking_method"].astype(str).str.lower()
     if split_equibind:
         df = _apply_equibind_split(df)
+    # Split AutoDock before any per-pair grouping: raw uses its original Vina
+    # rank, optimized variants use their own optimized_rank downstream.
+    df = _apply_autodock_split(df)
     # Split DiffDock optimizer variants, then (unless we keep all three for
     # --best-diffdock-only) keep only the selected one (raw 'diffdock' by default)
     # as the canonical DiffDock entry.
@@ -9266,8 +12686,22 @@ def _build_pose_index(pb_csv: Path, split_equibind: bool = True,
         df = _select_diffdock_variant(df, diffdock_variant)
     keep = ["docking_method", "protein", "ligand", "pose_file", "pose_name", "pb_valid"]
     keep += [c for c in EQ_PROVENANCE_COLS if c in df.columns]
-    if "optimizer" in df.columns:          # DiffDock optimizer provenance, for drill-down
-        keep.append("optimizer")
+    # Preserve both AutoDock rank axes and their scoring provenance in the heavy
+    # per-pose cache. This is what makes gnina/smina top-N use optimized_rank while
+    # retaining the source Vina rank for paired before/after analysis.
+    auto_cols = (
+        "optimizer", "autodock_rank", "optimized_rank", "rank_metric",
+        "autodock_affinity", "minimized_affinity", "cnn_score", "cnn_affinity",
+    )
+    for col in auto_cols:
+        if col not in df.columns:
+            df[col] = pd.NA
+        if col not in keep:
+            keep.append(col)
+    for col in ("unidock_rank", "unidock_affinity", "unidock2_rank",
+                "unidock2_affinity", "variant", "scoring"):
+        if col in df.columns and col not in keep:
+            keep.append(col)
     return df[keep]
 
 
@@ -9277,8 +12711,11 @@ def _build_pose_index(pb_csv: Path, split_equibind: bool = True,
 
 # Columns a cached per_pose_metrics.csv must contain to be reusable by the current
 # code (guards against reusing a CSV written by an older, narrower schema).
-_CACHE_REQUIRED_COLS = {"method", "protein", "ligand", "pose_name", "rank",
-                        "rmsd", "centroid_dist", "pb_valid"}
+_CACHE_REQUIRED_COLS = {
+    "method", "protein", "ligand", "pose_name", "rank", "rmsd",
+    "centroid_dist", "pb_valid", "optimizer", "autodock_rank",
+    "optimized_rank",
+}
 
 
 def _file_fingerprint(path: Path) -> dict:
@@ -9312,7 +12749,7 @@ def _per_pose_signature(args) -> dict:
     signature is reusable across different --top-n values.
     """
     return {
-        "schema": 4,  # bumped: per-pose rows now carry gnina_affinity (EquiBind ranking)
+        "schema": 5,  # AutoDock variants + original/optimized ranking provenance
         "pb_csv": _file_fingerprint(Path(args.pb_csv)),
         "ids_file": str(args.ids_file) if args.ids_file else None,
         "split_equibind": bool(args.split_equibind),
@@ -9664,6 +13101,28 @@ def main() -> None:
     # variant under its own method key.
     df_full = df.copy()
 
+    # ── Pose-level validity & accuracy cascade (every variant) ───────
+    # Pools each variant's whole produced-pose set and walks produced → PB-valid →
+    # RMSD ≤ 2 Å → Kabsch RMSD < 1 Å → (≤ 2 Å & PB-valid & Kabsch < 1 Å), reporting
+    # BOTH a pose count and the number of complexes reached at each stage. Independent
+    # of the best-variant/collapse flags (runs on df_full), so it always shows all
+    # 13(+) variants. The Kabsch (best-fit) threshold follows --form-ok-kabsch.
+    try:
+        _cascade = aggregate_pose_validity_cascade(
+            df_full, kabsch_thr=args.form_ok_kabsch)
+        if not _cascade.empty:
+            _cascade.round(2).to_csv(
+                args.out_dir / "pose_validity_cascade.csv", index=False)
+            _cascade_tbl = _write_pose_validity_cascade_report(
+                _cascade, args.out_dir / "pose_validity_cascade_report.txt",
+                kabsch_thr=args.form_ok_kabsch)
+            print("\nPose-level validity & accuracy cascade (all variants):")
+            if _cascade_tbl:
+                print(_cascade_tbl)
+            print("  wrote pose_validity_cascade.csv + pose_validity_cascade_report.txt")
+    except Exception as exc:
+        print(f"  WARNING: pose validity cascade failed ({exc})")
+
     # ── Optional: restrict the report to the single best EquiBind variant ──
     # Done after the full per-pose dump (which keeps every variant) so only the
     # summaries and plots below are filtered.
@@ -9679,6 +13138,7 @@ def main() -> None:
     # ── Optional: restrict the report to the single best DiffDock variant ──
     # Scores all three optimizer variants (kept because select_diffdock was off),
     # collapses to the best, relabelled 'DiffDock*'.
+    best_dd = None
     if args.best_diffdock_only:
         df, best_dd = _select_best_diffdock(df, forced=args.collapse_diffdock_variant)
         if best_dd:
@@ -9802,6 +13262,74 @@ def main() -> None:
                 and (rvb["method_key"] == "diffdock").any():
             print("  WARNING: 09c is missing DiffDock's gnina-opt bar — df lacks "
                   "diffdock_gnina (re-run with --diffdock-variant all).")
+
+    # 09f — box/whisker of the produced-pose PB-valid YIELD per variant (raw beside
+    # its smina/gnina optimized variants): how much post-hoc optimization raises the
+    # share of a variant's poses that pass PoseBusters. Per complex the % of produced
+    # poses that are PB-valid; the box is the distribution across complexes. Uses
+    # df_full so every raw/smina/gnina variant is present under its own method key.
+    # Paired per-complex Wilcoxon (raw→opt, Holm across all contrasts) + Friedman
+    # omnibus annotate the figure and feed the JSON sidecar.
+    _yield_per = pbvalid_yield_per_complex(df_full)
+    if not _yield_per.empty:
+        _yield_per.to_csv(args.out_dir / "pbvalid_yield_per_complex.csv", index=False)
+        _yield_sum = aggregate_pbvalid_yield_by_variant(df_full)
+        _yield_sum.to_csv(args.out_dir / "pbvalid_yield_by_variant.csv", index=False)
+        try:
+            _yield_stats = _stats_pbvalid_yield(_yield_per)
+            if _yield_stats:
+                _stats_sidecar["pbvalid_yield_by_variant"] = _yield_stats
+        except Exception as _exc:
+            _yield_stats = None
+            print(f"  WARNING: fig 09f PB-valid yield stats failed ({_exc})")
+        plot_pbvalid_yield_boxplot(
+            _yield_per, args.out_dir / "09f_pbvalid_yield_boxplot.png",
+            summary=_yield_sum, stats=_yield_stats)
+        # Full statistics + the (moved-off-figure) caption/notes → companion text file.
+        # Guarded so a formatting hiccup can never abort the remaining figures/outputs.
+        try:
+            _write_pbvalid_yield_report(
+                _yield_sum, _yield_stats,
+                args.out_dir / "09f_pbvalid_yield_report.txt")
+        except Exception as _exc:
+            print(f"  WARNING: fig 09f report text write failed ({_exc})")
+        print("  wrote produced-pose PB-valid yield (raw vs optimized) → "
+              "pbvalid_yield_by_variant.csv (+ per-complex + 09f box/whisker + "
+              "09f_pbvalid_yield_report.txt full stats/notes)")
+        _opt_present = [s[3] for s in _PBVALID_YIELD_SPECS if s[2]]
+        if not any((_yield_sum["method_key"] == k).any() for k in _opt_present):
+            print("  WARNING: 09f has no optimized variants — df_full lacks the "
+                  "smina/gnina variants (re-run with --diffdock-variant all "
+                  "--split-equibind, or a --best-*-only / --collapse-plots-only flag).")
+
+        # 09f (all variants) — the same produced-pose PB-valid yield box/whisker, but
+        # showing EVERY variant present in df_full (all EquiBind pocket × refine [× clamp]
+        # variants + all DiffDock variants + AutoDock), independent of the best-variant /
+        # collapse flags. Coloured per variant, no raw→opt brackets (multiple raws per
+        # tool). Companion table pbvalid_yield_by_variant_all.csv.
+        _all_specs = _all_variant_yield_specs(df_full)
+        _yield_per_all = pbvalid_yield_per_complex(df_full, _all_specs)
+        if not _yield_per_all.empty:
+            _yield_sum_all = aggregate_pbvalid_yield_by_variant(df_full, _all_specs)
+            _yield_sum_all.to_csv(
+                args.out_dir / "pbvalid_yield_by_variant_all.csv", index=False)
+            _n_variants = _yield_sum_all["method_key"].nunique()
+            plot_pbvalid_yield_boxplot(
+                _yield_per_all,
+                args.out_dir / "09f_pbvalid_yield_boxplot_all_variants.png",
+                summary=_yield_sum_all, stats=None, specs=_all_specs,
+                draw_brackets=False, color_by_variant=True,
+                figsize=(max(13.0, 1.15 * _n_variants + 3.0), 7.2),
+                group_labels={"autodock": "AutoDock Vina", "diffdock": "DiffDock",
+                              "equibind": "EquiBind (all pocket × refine variants)"},
+                # AutoDock's 100 % median label sits under a top-left legend here (tight
+                # y-axis), so move the legend to the empty top-right corner (in-axes,
+                # single column — the anchor y < 1.0 keeps it off the title band).
+                legend_loc="upper right", legend_anchor=(0.992, 0.995),
+                legend_ncol=1)
+            print(f"  wrote 09f ALL-variants overview ({_n_variants} variants) → "
+                  "09f_pbvalid_yield_boxplot_all_variants.png + "
+                  "pbvalid_yield_by_variant_all.csv")
 
     # 09d — best-of-top-d at several depths (top-1, top-N, top-30), raw vs refined
     # (ranking headroom + optimization). Uses df_full so BOTH the raw and the
@@ -10051,6 +13579,74 @@ def main() -> None:
                     args.out_dir / "topk_recovery_stats.csv", index=False)
                 print("  wrote top-k paired McNemar tests → topk_recovery_stats.csv")
 
+        # 21/22 — Ranking quality: how faithfully does each tool's OWN ranking
+        # reproduce the oracle ordering of its poses? AutoDock/DiffDock use native
+        # confidence; EquiBind (no native score) is ranked by gnina affinity. Fig 21
+        # = per-position concordance (best → rank 1, 2nd-best → rank 2 …) under
+        # crystal RMSD, Kabsch RMSD and PB-validity; fig 22 = per-complex Kendall
+        # tau-b whisker plot over the four criteria (incl. combined valid+close).
+        # Uses df_full so the gnina-ranked EquiBind variant is present.
+        rq_tau = aggregate_rank_quality_tau(df_full)
+        if not rq_tau.empty:
+            rq_tau.to_csv(args.out_dir / "rank_quality_tau.csv", index=False)
+            _summarize_rank_quality_tau(rq_tau).to_csv(
+                args.out_dir / "rank_quality_tau_summary.csv", index=False)
+            try:
+                rq_stats = _stats_rank_quality(rq_tau)
+            except Exception as _exc:
+                rq_stats = None
+                print(f"  WARNING: rank-quality cross-tool stats failed ({_exc})")
+            if rq_stats:
+                _rq_rows = [{"criterion": crit, **pr}
+                            for crit, _cl in _RANK_QUALITY_CRITERIA
+                            for pr in (rq_stats.get(crit) or {}).get("pairwise", [])]
+                if _rq_rows:
+                    pd.DataFrame(_rq_rows).to_csv(
+                        args.out_dir / "rank_quality_stats.csv", index=False)
+            plot_rank_quality_whiskers(
+                rq_tau, args.out_dir / "22_rank_quality_whiskers.png")
+            diag_df, valid_df = aggregate_rank_position_concordance(
+                df_full, _RANK_QUALITY_SPECS, args.top_n)
+            diag_df.to_csv(args.out_dir / "rank_position_concordance.csv", index=False)
+            valid_df.to_csv(args.out_dir / "rank_validity_by_rank.csv", index=False)
+            plot_rank_position_concordance(
+                diag_df, valid_df, args.top_n,
+                args.out_dir / "21_rank_concordance.png")
+            # 21a-d — individual rank-vs-oracle line charts (oracle rank of each
+            # rank-k pose vs k; more informative than the identity-match bars) + a
+            # full text report. The graphs carry NO embedded stats box — the paired
+            # tests and every table live in rank_quality_report.txt.
+            rvo_df = aggregate_rank_vs_oracle(df_full, _RANK_QUALITY_SPECS, _RVO_MAX_RANK)
+            rvo_df.to_csv(args.out_dir / "rank_vs_oracle.csv", index=False)
+            plot_rank_vs_oracle_criterion(
+                rvo_df, "crystal", args.out_dir / "21a_rank_vs_oracle_crystal.png")
+            plot_rank_vs_oracle_criterion(
+                rvo_df, "kabsch", args.out_dir / "21b_rank_vs_oracle_kabsch.png")
+            plot_validity_by_rank_individual(
+                valid_df, args.top_n, args.out_dir / "21c_validity_by_rank.png")
+            plot_rank_vs_oracle_criterion(
+                rvo_df, "combined", args.out_dir / "21d_rank_vs_oracle_combined.png")
+            # The text report's per-rank tables (sections 3-5) span the full pose depth
+            # (_RANK_REPORT_DEPTH), independent of --top-n which governs the 21/21c
+            # figures + their backing CSVs. rvo already runs to _RVO_MAX_RANK; recompute
+            # identity-match + validity-by-rank at the deeper depth for the report only.
+            report_depth = max(int(args.top_n), _RANK_REPORT_DEPTH)
+            if report_depth > args.top_n:
+                diag_rep, valid_rep = aggregate_rank_position_concordance(
+                    df_full, _RANK_QUALITY_SPECS, report_depth)
+            else:
+                diag_rep, valid_rep = diag_df, valid_df
+            _write_rank_quality_report(
+                args.out_dir / "rank_quality_report.txt",
+                tau_df=rq_tau, summary_df=_summarize_rank_quality_tau(rq_tau),
+                stats=rq_stats, rvo_df=rvo_df, diag_df=diag_rep, valid_df=valid_rep,
+                mix_df=_validity_mix(df_full, _RANK_QUALITY_SPECS), top_n=report_depth)
+            print("  wrote ranking-quality figures → 21_rank_concordance.png, "
+                  "21a/21b/21c/21d_*.png, 22_rank_quality_whiskers.png "
+                  "(+ rank_quality_tau*.csv, rank_vs_oracle.csv, "
+                  "rank_position_concordance.csv, rank_validity_by_rank.csv, "
+                  "rank_quality_report.txt)")
+
         # 15c/15d — per-rank benefit of pose optimization (smina/gnina) over the raw
         # pose, for DiffDock (confidence rank) and EquiBind (generation order): does
         # refinement help the early ranks more? 15c = per-rank curves, 15d = the +pp
@@ -10077,9 +13673,10 @@ def main() -> None:
         # EquiBind (gnina-ranked) is added from df_full since the collapsed df keeps
         # only the best EquiBind variant (which may not be the gnina one).
         eq_gnina = df_full[df_full["method"].astype(str) == "equibind_unguided_gnina"]
+        _eq = eq_gnina if not eq_gnina.empty else None
+        _depths = tuple(range(1, args.top_n + 1))    # item-6 pool sweep N = 1 … top_n
         within_df = aggregate_topn_within_thresholds(
-            df, args.top_n, args.fine_rmsd_thresholds,
-            eq_df=eq_gnina if not eq_gnina.empty else None)
+            df, args.top_n, args.fine_rmsd_thresholds, eq_df=_eq)
         if not within_df.empty:
             within_df.to_csv(args.out_dir / "topn_within_thresholds.csv", index=False)
             # Paired complex-level tests (Cochran's Q + pairwise McNemar, Holm; Wilson
@@ -10087,8 +13684,7 @@ def main() -> None:
             # panel A's annotations and the JSON sidecar. Same (df, eq_df) as the curves.
             try:
                 _topn18_stats = _stats_topn_within(
-                    df, args.top_n,
-                    eq_df=eq_gnina if not eq_gnina.empty else None, pb_valid_only=False)
+                    df, args.top_n, eq_df=_eq, pb_valid_only=False)
                 if _topn18_stats:
                     _stats_sidecar["topn_within_thresholds"] = _topn18_stats
             except Exception as _exc:
@@ -10097,7 +13693,8 @@ def main() -> None:
             plot_topn_within_thresholds(within_df, args.top_n,
                                         args.fine_rmsd_thresholds,
                                         args.out_dir / "18_topn_within_thresholds.png",
-                                        stats=_topn18_stats)
+                                        stats=_topn18_stats,
+                                        csv_name="topn_within_thresholds.csv")
             thr_str = ", ".join(f"{t:g}" for t in args.fine_rmsd_thresholds)
             print(f"\nTop-ranked poses within RMSD thresholds ({thr_str} Å):")
             print(within_df.pivot_table(index="method", columns="rmsd_threshold_A",
@@ -10107,15 +13704,13 @@ def main() -> None:
         # 18 PB-valid variant — same sweep but a pose only counts as a hit if it
         # is BOTH within t Å AND PoseBusters-valid (combined near-native + valid).
         within_pbv = aggregate_topn_within_thresholds(
-            df, args.top_n, args.fine_rmsd_thresholds,
-            eq_df=eq_gnina if not eq_gnina.empty else None, pb_valid_only=True)
+            df, args.top_n, args.fine_rmsd_thresholds, eq_df=_eq, pb_valid_only=True)
         if not within_pbv.empty:
             within_pbv.to_csv(args.out_dir / "topn_within_thresholds_pbvalid.csv",
                               index=False)
             try:
                 _topn18v_stats = _stats_topn_within(
-                    df, args.top_n,
-                    eq_df=eq_gnina if not eq_gnina.empty else None, pb_valid_only=True)
+                    df, args.top_n, eq_df=_eq, pb_valid_only=True)
                 if _topn18v_stats:
                     _stats_sidecar["topn_within_thresholds_pbvalid"] = _topn18v_stats
             except Exception as _exc:
@@ -10124,14 +13719,153 @@ def main() -> None:
             plot_topn_within_thresholds(
                 within_pbv, args.top_n, args.fine_rmsd_thresholds,
                 args.out_dir / "18_topn_within_thresholds_pbvalid.png",
-                pb_valid_only=True, stats=_topn18v_stats)
+                pb_valid_only=True, stats=_topn18v_stats,
+                csv_name="topn_within_thresholds_pbvalid.csv")
             print("  wrote PB-valid within-threshold sweep → "
                   "topn_within_thresholds_pbvalid.csv")
+            # Item 6 companion — raw→gnina-refined benefit as the top-N pool deepens,
+            # on the as-placed RMSD at the 2 Å success line (same metric as this figure).
+            try:
+                _rg_rmsd = aggregate_refinement_gain_vs_depth(
+                    df_full, thr=2.0, depths=_depths, rmsd_col="rmsd", pb_valid_only=True)
+                if not _rg_rmsd.empty:
+                    _rg_rmsd.to_csv(args.out_dir / "refinement_gain_vs_depth_pbvalid.csv",
+                                    index=False)
+                    plot_refinement_gain_vs_depth(
+                        _rg_rmsd, args.out_dir / "18_refinement_gain_vs_depth_pbvalid.png",
+                        args.top_n, thr=2.0, metric_label="RMSD", pb_valid_only=True,
+                        report_path=args.out_dir
+                        / "18_refinement_gain_vs_depth_pbvalid_report.txt")
+                    print("  wrote raw-vs-refined gain-vs-depth (RMSD) → "
+                          "18_refinement_gain_vs_depth_pbvalid.png")
+            except Exception as _exc:
+                print(f"  WARNING: fig 18 RMSD refinement-gain companion failed ({_exc})")
+
+        # 18 Kabsch variant — the SAME sweep, but distance is the best-fit (Kabsch)
+        # RMSD (``bestfit_rmsd`` = PoseBusters' pb_kabsch_rmsd, else our own Kabsch fit)
+        # instead of the as-placed RMSD. Kabsch superposes each pose onto the crystal
+        # first, so the threshold measures conformer/shape fidelity ONLY (ignores where
+        # the pose was docked). Plain + PB-valid, each → _complex and _pose panels.
+        # Both Kabsch variants use the HALVED grid — half of every --fine-rmsd-thresholds
+        # value (0 → 2.5 Å when the standard grid is 0 → 5 Å) — since superposition
+        # collapses the distances toward zero, making form fidelity a sub-Ångström
+        # question. The PB-valid variant additionally uses a 1 Å emphasised success line
+        # (and 0.5/1 Å paired tests); the plain variant keeps the 2 Å line.
+        _KABSCH_XLABEL = "Best-fit (Kabsch) RMSD threshold vs crystal ligand (Å)"
+        _KABSCH_NOTE = ("Kabsch RMSD = heavy-atom RMSD after optimal superposition onto "
+                        "the crystal ligand (conformer/shape error only; ignores placement).")
+        _KABSCH_METRIC_WORD = "within t Å (best-fit/Kabsch RMSD)"
+        _kab_half = tuple(round(t / 2.0, 4) for t in args.fine_rmsd_thresholds)
+        for (_pbv, _csv_name, _png_name, _sidecar_key,
+             _kab_thr, _kab_line, _kab_test) in (
+                (False, "topn_within_thresholds_kabsch.csv",
+                 "18_topn_within_thresholds_kabsch.png",
+                 "topn_within_thresholds_kabsch",
+                 _kab_half, 2.0, (1.0, 2.0)),
+                (True, "topn_within_thresholds_kabsch_pbvalid.csv",
+                 "18_topn_within_thresholds_kabsch_pbvalid.png",
+                 "topn_within_thresholds_kabsch_pbvalid",
+                 _kab_half, 1.0, (0.5, 1.0))):
+            within_kab = aggregate_topn_within_thresholds(
+                df, args.top_n, _kab_thr, eq_df=_eq,
+                pb_valid_only=_pbv, rmsd_col="bestfit_rmsd")
+            if within_kab.empty:
+                continue
+            within_kab.to_csv(args.out_dir / _csv_name, index=False)
+            try:
+                _kab_stats = _stats_topn_within(
+                    df, args.top_n, eq_df=_eq, pb_valid_only=_pbv,
+                    test_thresholds=_kab_test, rmsd_col="bestfit_rmsd",
+                    figure_base="18_topn_within_thresholds_kabsch",
+                    metric_word=_KABSCH_METRIC_WORD)
+                if _kab_stats:
+                    _stats_sidecar[_sidecar_key] = _kab_stats
+            except Exception as _exc:
+                _kab_stats = None
+                print(f"  WARNING: fig 18 Kabsch within-threshold stats failed ({_exc})")
+            plot_topn_within_thresholds(
+                within_kab, args.top_n, _kab_thr,
+                args.out_dir / _png_name, pb_valid_only=_pbv, stats=_kab_stats,
+                x_label=_KABSCH_XLABEL, metric_note=_KABSCH_NOTE,
+                success_line=_kab_line, csv_name=_csv_name)
+            print(f"  wrote Kabsch within-threshold sweep → {_csv_name}")
+            # Item 6 companion for the Kabsch PB-valid figure — raw→refined benefit vs
+            # pool depth on the best-fit (Kabsch) RMSD at the 1 Å form-fidelity line.
+            if _pbv:
+                try:
+                    _rg_kab = aggregate_refinement_gain_vs_depth(
+                        df_full, thr=1.0, depths=_depths, rmsd_col="bestfit_rmsd",
+                        pb_valid_only=True)
+                    if not _rg_kab.empty:
+                        _rg_kab.to_csv(
+                            args.out_dir / "refinement_gain_vs_depth_kabsch_pbvalid.csv",
+                            index=False)
+                        plot_refinement_gain_vs_depth(
+                            _rg_kab,
+                            args.out_dir / "18_refinement_gain_vs_depth_kabsch_pbvalid.png",
+                            args.top_n, thr=1.0, metric_label="Kabsch RMSD",
+                            pb_valid_only=True,
+                            report_path=args.out_dir
+                            / "18_refinement_gain_vs_depth_kabsch_pbvalid_report.txt")
+                        print("  wrote raw-vs-refined gain-vs-depth (Kabsch) → "
+                              "18_refinement_gain_vs_depth_kabsch_pbvalid.png")
+                except Exception as _exc:
+                    print(f"  WARNING: fig 18 Kabsch refinement-gain companion failed "
+                          f"({_exc})")
+
+        # Multi-depth version (per request): best-of-top-1 / top-15 / top-30 curves, with
+        # the value at the emphasised threshold called out on each curve. Colour = tool,
+        # line style = pool depth. The full sweep + paired stats go to the companion CSV +
+        # report text (NO on-figure data table, per request).
+        _md_specs = (
+            ("RMSD ≤ 2 Å", args.fine_rmsd_thresholds, "rmsd", 2.0,
+             "RMSD threshold vs crystal ligand (Å)",
+             "RMSD = symmetry-corrected heavy-atom, no superposition.",
+             "18_topn_within_thresholds_pbvalid_depths.png",
+             "topn_within_thresholds_pbvalid_depths.csv"),
+            ("Kabsch < 1 Å", _kab_half, "bestfit_rmsd", 1.0, _KABSCH_XLABEL, _KABSCH_NOTE,
+             "18_topn_within_thresholds_kabsch_pbvalid_depths.png",
+             "topn_within_thresholds_kabsch_pbvalid_depths.csv"),
+        )
+        for (_mlab, _md_thr, _md_col, _md_line, _md_xlab, _md_note,
+             _md_png, _md_csv) in _md_specs:
+            try:
+                _md = aggregate_within_thresholds_by_depth(
+                    df, _MULTIDEPTH_POOL, _md_thr, eq_df=_eq,
+                    pb_valid_only=True, rmsd_col=_md_col)
+            except Exception as _exc:
+                print(f"  WARNING: fig 18 multi-depth ({_md_png}) aggregate failed ({_exc})")
+                continue
+            if _md.empty:
+                continue
+            _md_stats = None
+            try:
+                _md_stats = _stats_within_by_depth(
+                    df, _MULTIDEPTH_POOL, _md_line, eq_df=_eq,
+                    pb_valid_only=True, rmsd_col=_md_col, figure_name=_md_png,
+                    metric_label=("Kabsch RMSD" if _md_col == "bestfit_rmsd" else "RMSD"))
+                if _md_stats:
+                    _skey = ("within_by_depth_"
+                             + ("kabsch_" if _md_col == "bestfit_rmsd" else "") + "pbvalid")
+                    _stats_sidecar[_skey] = _md_stats
+            except Exception as _e2:
+                print(f"  WARNING: fig 18 multi-depth stats ({_md_png}) failed ({_e2})")
+            try:
+                _md_out = args.out_dir / _md_png
+                plot_within_thresholds_by_depth(
+                    _md, _MULTIDEPTH_POOL, _md_thr, _md_out, pb_valid_only=True,
+                    x_label=_md_xlab, metric_note=_md_note, success_line=_md_line,
+                    csv_name=_md_csv, stats=_md_stats,
+                    report_path=_md_out.parent / (_md_out.stem + "_report.txt"))
+                print("  wrote multi-depth (top-1/15/30) within-threshold → " + _md_png)
+            except Exception as _exc:
+                print(f"  WARNING: fig 18 multi-depth ({_md_png}) failed ({_exc})")
 
         # Re-persist the sidecar: the headline dump ran before fig 18's within-threshold
         # tests existed, and the top-30 re-persist below is gated on a deeper block that
         # need not run — fold the fig-18 payloads in now (idempotent superset write).
-        if any(k.startswith("topn_within_thresholds") for k in _stats_sidecar):
+        if any(k.startswith(("topn_within_thresholds", "within_by_depth"))
+               for k in _stats_sidecar):
             try:
                 with open(args.out_dir / "posebusters_pose_comparison_stats.json",
                           "w") as _fh:
@@ -10284,38 +14018,48 @@ def main() -> None:
 
                         # 17h — raw AND refined in ONE figure: AutoDock (physics,
                         # once) then each tool's raw panel directly above its
-                        # refined panel (DiffDock: gnina; EquiBind: gnina), so the
-                        # refinement benefit reads off panel-to-panel. Reuses the
-                        # (already verified) cascades.
-                        c1_all = {**c1_raw, **c1_30}
-                        cn_all = {**cn_raw, **cn_30}
-                        combined_methods = tuple(
-                            m for m in ("autodock", "diffdock_raw", "diffdock",
-                                        "equibind_raw", "equibind_gnina")
-                            if m in c1_all and m in cn_all)
-                        combined_labels = {
-                            "diffdock": "DiffDock* (gnina-refined)",
-                            "diffdock_raw": "DiffDock (raw)",
-                            "equibind_gnina": "EquiBind (gnina-refined)",
-                            "equibind_raw": "EquiBind (raw)",
-                        }
-                        if len(combined_methods) >= 2:
+                        # refined panel (DiffDock: the collapsed best_dd variant —
+                        # smina/gnina per --collapse-diffdock-variant; EquiBind:
+                        # gnina), so the
+                        # refinement benefit reads off panel-to-panel. Rendered at TWO
+                        # pool depths — best-of-top-{args.top_n} and best-of-top-30 vs
+                        # rank-1 — each as its own PNG + per-step CSV. The rank-1 (top-1)
+                        # cascade is depth-independent, so ALL THREE depths (top-1 ·
+                        # top-{args.top_n} · top-30) are then written to ONE combined
+                        # companion text report (full paired McNemar/Wilson stats — a
+                        # separate Holm family per figure — plus a ';'-separated per-stage
+                        # attrition table with one selection block per depth).
+                        _recovery_blocks = []
+                        for _depth in sorted({args.top_n, TOP30}):
+                            _res = _emit_pb_recovery_raw_vs_refined(
+                                _depth, df=df, df_full=df_full,
+                                test_table=test_table, test_cols=test_cols,
+                                cascades=cascades, out_dir=args.out_dir,
+                                stats_sidecar=_stats_sidecar, dd_variant=best_dd)
+                            if _res:
+                                _recovery_blocks.append(_res)
+                        if _recovery_blocks:
+                            # top-1 cascades are identical across depths; take the first.
+                            _rep = args.out_dir / \
+                                "17h_pb_recovery_raw_vs_refined_report.txt"
                             try:
-                                stats17h = _stats_top30_recovery(
-                                    c1_all, cn_all, combined_methods)
+                                _write_pb_recovery_report(
+                                    _rep,
+                                    figure_names=[b["png"] for b in _recovery_blocks],
+                                    csv_names=[b["csv"] for b in _recovery_blocks],
+                                    methods=_recovery_blocks[0]["methods"],
+                                    labels=_recovery_blocks[0]["labels"],
+                                    cascades_top1=_recovery_blocks[0]["c1_all"],
+                                    depth_blocks=[
+                                        {"depth": b["depth"],
+                                         "cascades_topn": b["cn_all"],
+                                         "stats": b["stats"]}
+                                        for b in _recovery_blocks])
+                                print("  wrote combined top-1/top-"
+                                      f"{args.top_n}/top-{TOP30} recovery report → "
+                                      f"{_rep.name}")
                             except Exception as exc:
-                                stats17h = None
-                                print(f"  WARNING: 17h recovery stats failed ({exc})")
-                            if stats17h:
-                                _stats_sidecar["top30_recovery_raw_vs_refined"] = stats17h
-                            plot_pb_top30_recovery_by_test(
-                                c1_all, cn_all, TOP30,
-                                args.out_dir / "17h_pb_top30_recovery_raw_vs_refined.png",
-                                csv_out=args.out_dir / "pb_top30_recovery_raw_vs_refined.csv",
-                                methods=combined_methods, labels=combined_labels,
-                                stats=stats17h)
-                            print("  wrote combined raw+refined top-30 recovery → "
-                                  "17h_pb_top30_recovery_raw_vs_refined.png")
+                                print(f"  WARNING: combined 17h report failed ({exc})")
 
             # Re-persist the sidecar: the headline dump above ran before the
             # top-30 recovery tests existed, so fold their McNemar/Wilson payloads
@@ -10332,9 +14076,13 @@ def main() -> None:
             # Raw pose vs best refined variant, top-1 per method — 17d. Uses
             # df_full (every optimiser/refinement variant under its own method key,
             # before the best-variant collapse) so raw and refined poses can be
-            # cascaded side by side. DiffDock is refined/ranked with smina; EquiBind,
-            # having no native rank, is ranked by its gnina refinement score.
-            rvb = aggregate_pb_waterfall_raw_vs_best(df_full, test_table, test_cols)
+            # cascaded side by side. The DiffDock refiner follows
+            # --collapse-diffdock-variant (so 17d/17e/17i agree with the collapsed
+            # report); EquiBind, having no native rank, is ranked by its gnina score.
+            _dd_best_key = _resolve_dd_best_variant(
+                df_full, args.collapse_diffdock_variant)
+            rvb = aggregate_pb_waterfall_raw_vs_best(
+                df_full, test_table, test_cols, dd_best=_dd_best_key)
             if rvb:
                 _waterfall_to_csv(rvb, args.out_dir / "pb_test_waterfall_raw_vs_best.csv")
                 plot_pb_waterfall_raw_vs_best(
@@ -10349,7 +14097,8 @@ def main() -> None:
                 # cascade shows where poses fail on physical-validity grounds
                 # alone (the RMSD filter otherwise removes most poses first) — 17e.
                 rvb_pb = aggregate_pb_waterfall_raw_vs_best(
-                    df_full, test_table, test_cols, gate_rmsd=False)
+                    df_full, test_table, test_cols, gate_rmsd=False,
+                    dd_best=_dd_best_key)
                 if rvb_pb:
                     _waterfall_to_csv(
                         rvb_pb,
@@ -10361,6 +14110,31 @@ def main() -> None:
                         gate_rmsd=False)
                     print("  wrote raw-vs-best PB-validity waterfall (no RMSD gate) "
                           "→ 17e_pb_test_waterfall_raw_vs_best_validity.png")
+
+                # Rank-depth 1→top_n ADDED-pose validity — 17i. The poses newly
+                # considered when the rank cut widens from 1 to top_n (ranking
+                # positions 2..top_n), WITHOUT the RMSD ≤ 2 Å gate: how many poses /
+                # complexes the deeper cut adds, and which PoseBusters tests those
+                # added poses fail (waterfall + independent per-test tally).
+                added = aggregate_pb_rank_depth_added_pool(
+                    df_full, test_table, test_cols, args.top_n,
+                    dd_best=_dd_best_key)
+                if added:
+                    plot_pb_rank_depth_added_waterfall(
+                        added, args.top_n,
+                        args.out_dir / "17i_pb_rank_depth_added_pose_waterfall.png",
+                        csv_out=args.out_dir / "pb_rank_depth_added_pose_waterfall.csv",
+                        summary_csv=args.out_dir
+                        / "pb_rank_depth_added_pose_summary.csv")
+                    plot_pb_rank_depth_fail_by_test(
+                        added, args.top_n,
+                        args.out_dir / "17i2_pb_rank_depth_added_pose_failbytest.png",
+                        csv_out=args.out_dir
+                        / "pb_rank_depth_added_pose_failbytest.csv")
+                    print(f"  wrote rank-depth 1→{args.top_n} added-pose validity → "
+                          "17i_pb_rank_depth_added_pose_waterfall.png (+ 17i2 "
+                          "fail-by-test; pb_rank_depth_added_pose_"
+                          "{waterfall,summary,failbytest}.csv)")
             else:
                 print("  Skipping raw-vs-best waterfall (need diffdock raw + smina "
                       "and equibind raw + gnina variants; run with "
