@@ -161,7 +161,7 @@ def _eq_tokens(method: str):
     for t in method.split("_")[1:]:
         if t in ("unguided", "fpocket", "p2rank", "guided"):
             pocket = t
-        elif t in ("raw", "smina"):
+        elif t in ("raw", "smina", "gnina"):
             refine = t
         elif t in ("clampON", "clampOFF"):
             clamp = t
@@ -173,6 +173,20 @@ def pretty_method(m: str) -> str:
         return _LABEL_OVERRIDES[m]
     if m == "autodock":
         return "AutoDock Vina"
+    if m == "autodock_smina":
+        return "AutoDock Vina (smina-opt)"
+    if m == "autodock_gnina":
+        return "AutoDock Vina (gnina-opt)"
+    if m == "autodock_vinardo":
+        return "AutoDock Vinardo"
+    if m == "autodock_vinardo_smina":
+        return "AutoDock Vinardo (smina-opt)"
+    if m == "autodock_vinardo_gnina":
+        return "AutoDock Vinardo (gnina-opt)"
+    if m == "unidock":
+        return "Uni-Dock"
+    if m == "unidock2":
+        return "Uni-Dock2"
     if m == "diffdock":
         return "DiffDock"
     if m == "diffdock_smina":
@@ -185,7 +199,9 @@ def pretty_method(m: str) -> str:
         return m
     pocket, refine, clamp = _eq_tokens(m)
     parts = [p for p in (pocket,
-                         "smina-opt" if refine == "smina" else "raw" if refine else None,
+                         "smina-opt" if refine == "smina" else
+                         "gnina-opt" if refine == "gnina" else
+                         "raw" if refine else None,
                          "clamp on" if clamp == "clampON" else "clamp off" if clamp else None)
              if p]
     return f"EquiBind ({', '.join(parts)})" if parts else "EquiBind"
@@ -194,8 +210,17 @@ def pretty_method(m: str) -> str:
 def method_sort_key(m: str):
     if m == "crystal":
         return (-1, 0, 0)
-    if m == "autodock":
-        return (0, 0, 0)
+    # Bucket 0 = Vina-family engines: AutoDock Vina (+opt), Vinardo (+opt),
+    # Uni-Dock, Uni-Dock2 — raw first, then smina/gnina optimizer variants.
+    if m.startswith("autodock_vinardo"):
+        return (0, 10 + {"autodock_vinardo": 0, "autodock_vinardo_smina": 1,
+                         "autodock_vinardo_gnina": 2}.get(m, 3), 0)
+    if m.startswith("autodock"):
+        return (0, {"autodock": 0, "autodock_smina": 1, "autodock_gnina": 2}.get(m, 3), 0)
+    if m == "unidock":
+        return (0, 20, 0)
+    if m == "unidock2":
+        return (0, 21, 0)
     if m.startswith("diffdock"):
         return (1, {"diffdock": 0, "diffdock_smina": 1, "diffdock_gnina": 2}.get(m, 3), 0)
     if m.startswith("equibind"):
@@ -214,8 +239,20 @@ def ordered_methods(methods) -> list[str]:
 # optimiser variants a darker/lighter orange), and every EquiBind variant a shade
 # of green. Mirrors posebusters_pose_comparison.TOOL_COLORS; kept local (like
 # pretty_method / _eq_tokens above) so this report needs no import of that module.
-_BASE_COLORS = {"autodock": "#1f77b4", "diffdock": "#ff7f0e"}
+_BASE_COLORS = {
+    "autodock": "#1f77b4",           # AutoDock Vina (blue)
+    "autodock_vinardo": "#17becf",   # AutoDock Vinardo (cyan)
+    "unidock": "#9467bd",            # Uni-Dock tiled (purple)
+    "unidock2": "#8c564b",           # Uni-Dock2 (brown)
+    "diffdock": "#ff7f0e",           # DiffDock (orange)
+}
 _DD_VARIANT_COLORS = {"diffdock_smina": "#d95f02", "diffdock_gnina": "#fdae6b"}
+# Blue/cyan family for AutoDock Vina + Vinardo gnina/smina optimizer variants
+# (raw uses the base blue/cyan in _BASE_COLORS).
+_AD_VARIANT_COLORS = {
+    "autodock_smina": "#6baed6", "autodock_gnina": "#08519c",
+    "autodock_vinardo_smina": "#9edae5", "autodock_vinardo_gnina": "#0e7c86",
+}
 # Green family for EquiBind variants (cycled if more than this many appear).
 _EQ_PALETTE = ["#2ca02c", "#74c476", "#1b7837", "#a6dba0",
                "#006d2c", "#5aae61", "#00441b", "#c7e9c0"]
@@ -241,6 +278,8 @@ class _MethodColorMap:
         key = str(key)
         if key in _BASE_COLORS:
             return _BASE_COLORS[key]
+        if key in _AD_VARIANT_COLORS:
+            return _AD_VARIANT_COLORS[key]
         if key in _DD_VARIANT_COLORS:
             return _DD_VARIANT_COLORS[key]
         if key == "crystal":
@@ -2456,7 +2495,7 @@ def main() -> None:
     ap.add_argument("--equibind-variant", default=None, metavar="SPEC",
                     help="Pin EquiBind to the variant matching SPEC (tokens split on '_' or "
                          "'/', e.g. 'gnina' or 'unguided_gnina') instead of oracle-ranking it; "
-                         "kept in all charts/CSVs, relabelled 'EquiBind*'. Takes precedence "
+                         "kept in all charts/CSVs under its explicit variant label. Takes precedence "
                          "over --best-equibind-only. Overrides config 'equibind_variant'.")
     ap.add_argument("--best-diffdock-only", action="store_true", default=None,
                     help="Keep only the single best-performing DiffDock optimizer "
@@ -2467,7 +2506,7 @@ def main() -> None:
                          "Overrides config 'best_diffdock_only'.")
     ap.add_argument("--diffdock-variant", choices=("raw", "smina", "gnina"), default=None,
                     help="Pin DiffDock to this optimizer variant (e.g. 'gnina') instead of "
-                         "oracle-ranking it; kept in all charts/CSVs, relabelled 'DiffDock*'. "
+                         "oracle-ranking it; kept in all charts/CSVs under its explicit variant label. "
                          "Takes precedence over --best-diffdock-only. Overrides config "
                          "'diffdock_variant'.")
     ap.add_argument("--oracle-summary", type=Path, default=None,
@@ -2479,6 +2518,10 @@ def main() -> None:
                     help="Restrict the report to the '<PDBID>_<LIG>' complex ids "
                          "listed in this file (one per line; '#' comments ok). "
                          "Overrides config 'ids_file'.")
+    ap.add_argument("--exclude-methods", default=None, metavar="M1,M2",
+                    help="Comma-separated method keys to drop from every chart and CSV "
+                         "(e.g. 'unidock2'). The fingerprints stay on disk — this only "
+                         "controls what the report presents.")
     ap.add_argument("--per-pose-metrics", type=Path, default=None,
                     help="per_pose_metrics.csv from posebusters_pose_comparison.py "
                          "(per-pose RMSD-to-crystal) for the geometry-vs-recovery figure. "
@@ -2523,6 +2566,23 @@ def main() -> None:
     crystal_path = in_dir / "crystal_interactions.csv"
     crystal = pd.read_csv(crystal_path, low_memory=False) if crystal_path.exists() else pd.DataFrame()
 
+    # Drop whole methods from every chart/CSV. The fingerprints stay on disk; this only
+    # controls what is presented, so a tool can be generated once and then left out of a
+    # particular report (e.g. an engine a supervisor asked to keep out of the write-up)
+    # without discarding its data or re-running PandaMap.
+    if args.exclude_methods:
+        drop = {m.strip() for m in args.exclude_methods.split(",") if m.strip()}
+        def _drop(d):
+            return (d[~d["method"].astype(str).isin(drop)].copy()
+                    if not d.empty and "method" in d.columns else d)
+        before = sorted(summary["method"].astype(str).unique()) if not summary.empty else []
+        summary, inter, crystal = _drop(summary), _drop(inter), _drop(crystal)
+        after = sorted(summary["method"].astype(str).unique()) if not summary.empty else []
+        missing = drop - set(before)
+        if missing:
+            print(f"  [exclude-methods] not present, nothing dropped: {sorted(missing)}")
+        print(f"exclude-methods: {before} → {after}")
+
     # Restrict to the official benchmark-set ids (complex id == 'protein' column,
     # which equals '<PDBID>_<LIG>' for the benchmark staging).
     if ids_file:
@@ -2542,9 +2602,8 @@ def main() -> None:
     if equibind_variant:
         summary, inter, best_eq = select_equibind_variant(summary, inter, equibind_variant)
         if best_eq:
-            _LABEL_OVERRIDES[best_eq] = "EquiBind*"
             print(f"equibind-variant={equibind_variant}: keeping only '{best_eq}' "
-                  "(shown as 'EquiBind*').")
+                  f"(shown as '{pretty_method(best_eq)}').")
     elif best_equibind_only:
         summary, inter, best_eq = select_best_equibind(summary, inter, oracle_summary)
         if best_eq:
@@ -2558,9 +2617,8 @@ def main() -> None:
         summary, inter, best_dd = select_best_diffdock(summary, inter, oracle_summary,
                                                        pin=diffdock_variant)
         if best_dd:
-            _LABEL_OVERRIDES[best_dd] = "DiffDock*"
             print(f"diffdock-variant={diffdock_variant}: keeping only '{best_dd}' "
-                  "(shown as 'DiffDock*').")
+                  f"(shown as '{pretty_method(best_dd)}').")
     elif best_diffdock_only:
         summary, inter, best_dd = select_best_diffdock(summary, inter, oracle_summary)
         if best_dd:

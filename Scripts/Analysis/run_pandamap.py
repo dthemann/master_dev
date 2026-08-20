@@ -109,12 +109,19 @@ class PandaMapConfig:
     # pin EquiBind to a variant by SPEC tokens (e.g. 'gnina', 'unguided_gnina') instead
     # of oracle-ranking it; takes precedence over best_equibind_only when set.
     equibind_variant: str | None = None
+    # pin AutoDock to one variant (e.g. 'gnina', 'autodock_gnina', 'raw'); drops every
+    # other autodock* method, Vinardo family included. None → map them all.
+    autodock_variant: str | None = None
     oracle_summary: Path | None = None
     # per-pose metrics table (posebusters) — source of gnina_affinity used to rank
     # EquiBind's gnina-optimised poses (the pb_csv carries no gnina column).
     per_pose_metrics: Path | None = None
     # restrict to an explicit '<PDBID>_<LIG>' id allow-list (one per line)
     ids_file: Path | None = None
+    # profile EVERY pose AND the crystal reference of a complex against ONE receptor,
+    # '<canonical_receptor_dir>/<complex_id>_protein.pdb', instead of the per-pose
+    # receptor recorded in protein_file_used. See _canonical_receptor.
+    canonical_receptor_dir: Path | None = None
 
 
 def load_config(path: str | Path) -> PandaMapConfig:
@@ -154,9 +161,12 @@ def load_config(path: str | Path) -> PandaMapConfig:
         best_diffdock_only=bool(raw.get("best_diffdock_only", False)),
         diffdock_variant=(raw.get("diffdock_variant") or None),
         equibind_variant=(raw.get("equibind_variant") or None),
+        autodock_variant=(raw.get("autodock_variant") or None),
         oracle_summary=_resolve(raw["oracle_summary"]) if raw.get("oracle_summary") else None,
         per_pose_metrics=_resolve(raw["per_pose_metrics"]) if raw.get("per_pose_metrics") else None,
         ids_file=_resolve(raw["ids_file"]) if raw.get("ids_file") else None,
+        canonical_receptor_dir=(_resolve(raw["canonical_receptor_dir"])
+                                if raw.get("canonical_receptor_dir") else None),
     )
 
 
@@ -230,6 +240,85 @@ def diffdock_label(row) -> str:
     return f"diffdock_{o}" if o else "diffdock"
 
 
+# Suffixes that mark an AutoDock method key as a post-dock optimizer variant
+# (matches posebusters_pose_comparison._AUTODOCK_OPTIMIZER_SUFFIXES).
+_AUTODOCK_OPTIMIZER_SUFFIXES = ("_gnina_refinement", "_smina", "_gnina")
+
+
+def classify_autodock(row) -> str | None:
+    """Optimizer backend for an AutoDock pose: 'smina' | 'gnina' |
+    'smina_refinement' | 'gnina_refinement' | None (raw Vina).
+
+    Prefers the ``optimizer`` provenance column (written by run_posebusters from
+    each pose's ``optimized_<tool>/`` subfolder); falls back to the path in
+    ``pose_name``. Mirrors :func:`classify_diffdock`.
+
+    Rescoring and refinement must stay distinct: rescoring only re-ranks the Vina
+    geometry while refinement minimises it, so they are different poses carrying
+    independent ``optimized_rank`` sequences. Both the column values and the
+    ``optimized_<tool>_refinement/`` folder names are prefixed by the plain
+    rescoring token, so the refinement variants are tested first — matching on the
+    prefix instead would pool the two under one key and collide their ranks.
+    """
+    opt = _col(row, "optimizer")
+    if opt in ("smina_refinement", "gnina_refinement", "smina", "gnina"):
+        return opt
+    if opt in ("original", "raw", "native", "none"):
+        return None
+    name = str(row.get("pose_name", "")).lower()
+    for tok in ("optimized_smina_refinement", "optimized_gnina_refinement",
+                "optimized_smina", "optimized_gnina"):
+        if tok in name:
+            return tok[len("optimized_"):]
+    return None
+
+
+def autodock_label(row) -> str:
+    """Stable AutoDock method key, preserving the scoring base (Vina vs Vinardo)
+    and appending the optimizer: ``autodock`` | ``autodock_gnina`` |
+    ``autodock_vinardo`` | ``autodock_vinardo_gnina`` | …
+
+    Raw and optimized poses MUST be separate methods — they are different
+    geometries with different ranking axes, so pooling them under one 'autodock'
+    key would let raw rank-1 and optimized rank-1 collide in select_top_n.
+    """
+    base = str(row.get("docking_method") or row.get("method") or "autodock").strip().lower()
+    for suf in _AUTODOCK_OPTIMIZER_SUFFIXES:
+        if base.endswith(suf):
+            base = base[: -len(suf)]
+            break
+    base = "autodock_vinardo" if base.startswith("autodock_vinardo") else "autodock"
+    o = classify_autodock(row)
+    return f"{base}_{o}" if o else base
+
+
+def _positive_int(v) -> int | None:
+    """Positive int from a CSV/dict value, else None (NaN / '' / <=0 → None)."""
+    try:
+        n = int(float(v))
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def _pose_rank(row, method: str, pose_name: str) -> int:
+    """Pose rank for select_top_n (1 = best).
+
+    Optimized AutoDock (``autodock*_gnina`` / ``*_smina``) is ranked by
+    ``optimized_rank`` — the gnina/smina re-ranking, which genuinely reorders the
+    poses — NOT the original Vina rank encoded in the ``_rank<N>_`` filename token.
+    Raw AutoDock uses its native ``autodock_rank`` column when present. Everything
+    else (and any missing column) falls back to the filename via parse_rank.
+    ``row`` may be a pandas Series (CSV mode) or a pose dict (dir mode).
+    """
+    if method.startswith("autodock"):
+        col = "optimized_rank" if method.endswith(_AUTODOCK_OPTIMIZER_SUFFIXES) else "autodock_rank"
+        r = _positive_int(row.get(col) if hasattr(row, "get") else None)
+        if r is not None:
+            return r
+    return parse_rank(method, pose_name)
+
+
 def parse_rank(method: str, pose_name: str) -> int:
     """Pose rank from the filename (1 = top). Unranked tools → 999."""
     name = Path(pose_name).name
@@ -258,6 +347,30 @@ def _load_allowed_ids(path: Path) -> set[str]:
     """Load '<PDBID>_<LIG>' complex ids (one per line; '#' comments ignored)."""
     return {ln.strip() for ln in Path(path).read_text().splitlines()
             if ln.strip() and not ln.lstrip().startswith("#")}
+
+
+def _canonical_receptor(cfg: PandaMapConfig, protein: str) -> str | None:
+    """Receptor every pose of complex *protein* should be profiled against, or None.
+
+    A typed interaction fingerprint is keyed on (resname, resnum, chain), so poses are
+    only comparable across methods — and against the crystal reference — when they are
+    profiled against receptor files that share one residue-numbering scheme. They do
+    not by default: each toolchain records its own prepared receptor in
+    ``protein_file_used``, and some of those are renumbered copies. The MGLTools
+    receptor used by the whole-protein AutoDock/Uni-Dock runs renumbers residues
+    sequentially from 1 and the Uni-Dock2 receptor drops chain IDs entirely, so their
+    fingerprint keys cannot match a crystal reference that carries author numbering,
+    which silently collapses their measured native-interaction recovery towards zero.
+
+    Pointing this at a directory of cleaned, author-numbered receptors
+    (``<dir>/<complex_id>_protein.pdb``) puts every method and the crystal on one
+    structure. Only correct when those files are coordinate-compatible with what each
+    tool actually docked into — verify before enabling.
+    """
+    if not cfg.canonical_receptor_dir:
+        return None
+    p = cfg.canonical_receptor_dir / f"{protein}_protein.pdb"
+    return str(p) if p.exists() else None
 
 
 def load_poses_from_csv(cfg: PandaMapConfig) -> list[dict]:
@@ -293,6 +406,10 @@ def load_poses_from_csv(cfg: PandaMapConfig) -> list[dict]:
             method = equibind_label(r)
         elif cfg.split_diffdock and method.startswith("diffdock"):
             method = diffdock_label(r)
+        elif method.startswith("autodock"):
+            # Always separate raw Vina/Vinardo from their gnina/smina-optimized
+            # variants — they are distinct geometries with distinct ranking axes.
+            method = autodock_label(r)
         pose_file = str(r["pose_file"])
         pose_name = str(r.get("pose_name", Path(pose_file).stem))
         rec = {
@@ -301,8 +418,10 @@ def load_poses_from_csv(cfg: PandaMapConfig) -> list[dict]:
             "ligand": str(r["ligand"]),
             "pose_file": pose_file,
             "pose_name": pose_name,
-            "pose_rank": parse_rank(r["docking_method"], pose_name),
-            "protein_file": str(r["protein_file_used"]) if _col(r, "protein_file_used") else None,
+            "pose_rank": _pose_rank(r, method, pose_name),
+            "protein_file": (_canonical_receptor(cfg, str(r["protein"]))
+                             or (str(r["protein_file_used"])
+                                 if _col(r, "protein_file_used") else None)),
             "pb_valid": (bool(r["_pb_valid"]) if pd.notna(r["_pb_valid"]) else None),
         }
         for c in _PROVENANCE:
@@ -342,10 +461,12 @@ def load_poses_from_dirs(cfg: PandaMapConfig) -> list[dict]:
                     method = equibind_label(p)
                 elif cfg.split_diffdock and method.startswith("diffdock"):
                     method = diffdock_label(p)
+                elif method.startswith("autodock"):
+                    method = autodock_label(p)
                 poses.append({
                     "method": method, "protein": p["protein"], "ligand": p["ligand"],
                     "pose_file": p["pose_file"], "pose_name": p["pose_name"],
-                    "pose_rank": parse_rank(p["method"], p["pose_name"]),
+                    "pose_rank": _pose_rank(p, method, p["pose_name"]),
                     "protein_file": find_protein_file(p["protein"], file_map, norm_map),
                     "pocket_source": p.get("pocket_source"),
                     "clamp_variant": p.get("clamp_variant"),
@@ -482,6 +603,42 @@ def filter_equibind_variant(poses: list[dict],
     kept = [p for p in poses
             if not str(p["method"]).startswith("equibind") or str(p["method"]) in matched]
     return kept, (matched[0] if len(matched) == 1 else None)
+
+
+def filter_autodock_variant(poses: list[dict],
+                            spec: str) -> tuple[list[dict], str | None]:
+    """Keep non-AutoDock poses + only the single AutoDock variant named by *spec*.
+
+    Explicit, oracle-free counterpart to filter_best_diffdock's ``pin`` mode. The
+    AutoDock family spans two scoring functions (``autodock`` / ``autodock_vinardo``)
+    crossed with the optimizer suffixes produced by :func:`autodock_label`, so a run
+    that does not pin one maps every variant and multiplies the PandaMap cost.
+
+    *spec* is matched against the full method key first (e.g. ``autodock_gnina``), then
+    as an optimizer suffix on the Vina family (``gnina`` → ``autodock_gnina``), with
+    ``raw``/``original`` resolving to the unoptimised ``autodock``. Every other
+    ``autodock*`` method — including the whole Vinardo family — is dropped, so pinning
+    is also how a run is restricted to one scoring function. DiffDock/EquiBind poses are
+    always kept. Returns (kept_poses, kept_label); ``None`` when nothing matches.
+    """
+    spec = str(spec).strip().lower()
+    ad_present = sorted({str(p["method"]) for p in poses
+                         if str(p["method"]).startswith("autodock")})
+    if not spec or not ad_present:
+        return poses, None
+    if spec in ad_present:
+        target = spec
+    elif spec in ("raw", "original") and "autodock" in ad_present:
+        target = "autodock"
+    elif f"autodock_{spec}" in ad_present:
+        target = f"autodock_{spec}"
+    else:
+        print(f"  [autodock-variant] no AutoDock variant matches '{spec}' "
+              f"(present: {ad_present}) — keeping all AutoDock variants.")
+        return poses, None
+    kept = [p for p in poses
+            if not str(p["method"]).startswith("autodock") or str(p["method"]) == target]
+    return kept, target
 
 
 def filter_best_diffdock(poses: list[dict],
@@ -779,7 +936,7 @@ def build_crystal_tasks(selected: list[dict], cfg: PandaMapConfig) -> list[dict]
             continue
         seen.add((protein, ligand))
         crystal = cfg.benchmark_dir / protein / f"{protein}_ligand.sdf"
-        pfile = prot_for_pair.get((protein, ligand))
+        pfile = _canonical_receptor(cfg, protein) or prot_for_pair.get((protein, ligand))
         if not pfile:
             pfile = str(cfg.benchmark_dir / protein / f"{protein}_protein.pdb")
         if crystal.exists() and Path(pfile).exists():
@@ -849,6 +1006,11 @@ def main() -> None:
                     help="Pin DiffDock to this optimizer variant (e.g. 'gnina') instead of "
                          "oracle-ranking it. Takes precedence over --best-diffdock-only. "
                          "Overrides config 'diffdock_variant'.")
+    ap.add_argument("--autodock-variant", default=None, metavar="SPEC",
+                    help="Pin AutoDock to one variant and drop every other autodock* method, "
+                         "Vinardo included (e.g. 'gnina' → autodock_gnina, 'raw' → autodock, "
+                         "or a full key such as 'autodock_vinardo_gnina'). Overrides config "
+                         "'autodock_variant'.")
     ap.add_argument("--oracle-summary", type=Path, default=None,
                     help="oracle_summary.csv (from posebusters_pose_comparison.py) "
                          "used to rank EquiBind variants for --best-equibind-only. "
@@ -886,6 +1048,8 @@ def main() -> None:
         cfg.best_diffdock_only = args.best_diffdock_only
     if args.diffdock_variant is not None:
         cfg.diffdock_variant = args.diffdock_variant
+    if args.autodock_variant is not None:
+        cfg.autodock_variant = args.autodock_variant
     if args.oracle_summary is not None:
         cfg.oracle_summary = args.oracle_summary.resolve()
     if args.ids_file is not None:
@@ -927,6 +1091,13 @@ def main() -> None:
             print(f"best-equibind-only: keeping '{best_eq}' (top EquiBind by "
                   f"PB-Valid AND RMSD ≤ 2 Å); {before} → {len(poses)} poses. "
                   "Run the report with --best-equibind-only to label it 'EquiBind*'.")
+
+    if cfg.autodock_variant:
+        before = len(poses)
+        poses, best_ad = filter_autodock_variant(poses, cfg.autodock_variant)
+        if best_ad:
+            print(f"autodock-variant={cfg.autodock_variant}: keeping '{best_ad}'; "
+                  f"{before} → {len(poses)} poses.")
 
     if cfg.diffdock_variant:
         before = len(poses)

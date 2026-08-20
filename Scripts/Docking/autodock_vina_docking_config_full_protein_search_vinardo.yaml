@@ -48,20 +48,27 @@ cpus_per_worker: 20               # leaves CPU headroom for concurrent gnina + U
 # ── Overwrite / rerun control ────────────────────────────────────────────────
 overwrite_existing: false          # re-dock and overwrite existing poses instead of skipping (OR'd with overwrite_poses)
 overwrite_poses: false             # companion of overwrite_existing; either being true forces re-docking
+overwrite_optimization: false      # independently recompute optimizer poses; false reuses only checksum/provenance-valid caches
 overwrite_error_log: false         # preserve failure history; failed_job_policy below controls rerun behavior
 failed_job_policy: retry            # retry prior failures; transient timeout/error entries never become permanent skips
 retain_hetatm_residues: false      # HETATMs kept in the prepped receptor: null/false = off | true = default cofactor+metal list | list[str] = those resnames
 
 # ── Post-dock optimisation + gnina/smina re-ranking ──────────────────────────
-# Every Vina pose is rebuilt to SDF (Meeko mk_export via REMARK SMILES; obabel is
-# allowed only for legacy non-Meeko poses), locally minimised and re-scored. The original
-# Vina rank is preserved (autodock_rank) alongside the optimiser rank
-# (optimized_rank); both + scores land in
-# <output_dir>/<pdb_id>/<converter>/optimization_log.csv, optimised SDFs in
-# .../docking/optimized_<tool>/. The notebook cell runs this even for
-# already-docked complexes, so re-running only fills in the missing optimisations.
+# Every raw Vinardo pose is rebuilt to SDF (Meeko mk_export via REMARK SMILES;
+# obabel is allowed only for legacy non-Meeko poses). Variant A performs empirical
+# minimization followed by CNN rescore in the backward-compatible `gnina` namespace.
+# The notebook constructs Variant B in memory with `optimization: gnina_refinement`
+# and `gnina_cnn_scoring: refinement`, so CNN gradients participate in geometry
+# refinement without changing this auditable docking/rescore configuration.
+# Both variants preserve the original Vinardo order (`autodock_rank`) alongside
+# their independently computed `optimized_rank`. Rows share
+# <output_dir>/<pdb_id>/<converter>/optimization_log.csv but have distinct `tool`
+# identities; SDFs use .../docking/optimized_gnina/ and
+# .../docking/optimized_gnina_refinement/, so neither variant overwrites the other.
+# Re-running fills only missing, provenance-valid optimizer artifacts unless
+# overwrite_optimization is explicitly enabled.
 # Per-key rationale: autodock_vina_docking_config.yaml.
-optimization: gnina               # none | smina | gnina | all  (the requested AutoDock+gnina variant = gnina)
+optimization: gnina               # Variant A alias: empirical minimization + CNN rescore (legacy optimized_gnina namespace)
 optimize_search: minimize         # minimize → --minimize (pure energy min) | local_only → local MC
 optimize_rank_by: cnn_affinity     # gnina's distinguishing learned affinity; minimized_affinity is still retained in the log
 optimize_scoring: default          # explicitly pin the empirical geometry-minimization objective
@@ -70,10 +77,11 @@ optimize_top_n: 0                 # 0 = all poses (whole-protein docking returns
 optimize_cpu: 8                   # CPU threads per gnina subprocess
 optimize_seed: 42
 optimize_timeout: 300             # per-pose timeout, seconds; on expiry the original Vina pose + rank are kept
+gnina_refinement_timeout: 1800    # Variant B CNN refinement is much slower; notebook maps this to optimize_timeout
 gnina_use_gpu: true               # use GPU for gnina; shared lock below serializes it with Uni-Dock2; false appends --no_gpu
 gpu_lock_file: /tmp/master_docking_gpu0.lock  # shared flock with Uni-Dock2; GPU subprocesses serialize safely
 gnina_gpu_preflight: true         # fail before the long docking launch if no CUDA GPU is visible
-gnina_cnn_scoring: rescore        # CNN ranks the final pose; empirical default remains the geometry optimizer
+gnina_cnn_scoring: rescore        # required for Variant A; CNN scores but does not drive geometry
 gnina_cnn_model: crossdock_default2018_ensemble  # explicit gnina 1.3.2 built-in ensemble
 gnina_cnn_model_file: ''
 smina_executable: ''              # '' → PATH lookup

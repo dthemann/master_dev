@@ -204,11 +204,21 @@ def _tool_key(method: str) -> str:
 
 def _pose_variant(method, optimizer, refine_variant, pose_name) -> str:
     """The optimizer/refinement variant of a pose: 'gnina' | 'smina' | 'raw' (and
-    'none' for AutoDock, which has no post-processing). DiffDock optimisation is
-    post-hoc (`optimizer` col / optimized_<tool>/ path); EquiBind refinement is
-    inline (`refine_variant` col)."""
+    'none' for an unoptimised AutoDock pose). DiffDock optimisation is post-hoc
+    (`optimizer` col / optimized_<tool>/ path); EquiBind refinement is inline
+    (`refine_variant` col); AutoDock optimisation is post-hoc like DiffDock's and
+    is carried by the same `optimizer` column, so a run that holds both raw and
+    gnina-optimised AutoDock poses keeps them apart instead of merging them into
+    one doubled pose cloud."""
     base = _tool_key(method)
     if base == "autodock":
+        v = str(optimizer).strip().lower()
+        if v in ("gnina", "smina", "gnina_refinement"):
+            return v
+        n = str(pose_name)
+        for tok in ("gnina_refinement", "gnina", "smina"):
+            if f"optimized_{tok}" in n or n.endswith(f"_{tok}.sdf"):
+                return tok
         return "none"
     if base == "diffdock":
         v = str(optimizer).strip().lower()
@@ -239,13 +249,23 @@ def _toolchain_label(base: str, variant: str) -> str:
     return f"{name} ({variant})"
 
 
+# Reported AutoDock optimizer variant, set once in main() from --autodock-variant.
+# Module-level for the same reason _TOPN_ALLOW is in the sister script: it is a
+# cross-cutting reporting filter read by several figure builders, and threading it
+# through five signatures would add churn without adding clarity. "all" keeps every
+# AutoDock variant, which is the historical behaviour for runs that have only one.
+_AD_VARIANT: str = "all"
+
+
 def _variant_matches(variant: str, selector: str) -> bool:
     """Does a pose variant satisfy a --<tool>-variant selector ('all' = any)."""
     sel = str(selector).lower()
     if sel == "all":
         return True
-    if sel in ("raw", "original"):
-        return variant == "raw"
+    if sel in ("raw", "original", "none"):
+        # DiffDock/EquiBind label an unrefined pose "raw"; an unoptimised AutoDock
+        # pose is labelled "none". Both mean "the tool's own untouched output".
+        return variant in ("raw", "none")
     return variant == sel
 
 # Reuse the pipeline's single source of truth for the PoseBusters validity verdict
@@ -273,10 +293,14 @@ R91_RESNUM, R91_RESNAME = 91, "ARG"
 E106_RESNUM, E106_RESNAME = 106, "GLU"
 RING_ATOM = "CA"
 
-# metadata columns carried into the output CSVs when present
+# metadata columns carried into the output CSVs when present.
+# ``optimized_rank`` is load-bearing, not decorative: _pose_rank() prefers it for the
+# optimised AutoDock arm, and it reads that column off `out` (the carried frame), so
+# dropping it here silently demotes every gnina pose back to its pre-optimisation Vina
+# order — the exact failure _pose_rank's docstring warns about.
 _CARRY = [
     "docking_method", "protein", "ligand", "pose_name", "pose_file",
-    "autodock_rank", "autodock_affinity", "diffdock_confidence",
+    "autodock_rank", "optimized_rank", "autodock_affinity", "diffdock_confidence",
     "smina_affinity", "gnina_affinity",
     "refine_variant", "optimizer", "pocket_source", "protein_file_used",
     "protein-ligand_maximum_distance",
@@ -681,13 +705,24 @@ python end
 # ---------------------------------------------------------------------------
 # Pose rank + figures
 # ---------------------------------------------------------------------------
-def _pose_rank(method, pose_name, pose_file, autodock_rank=None) -> Optional[int]:
+def _pose_rank(method, pose_name, pose_file, autodock_rank=None,
+               optimized_rank=None) -> Optional[int]:
     """Native rank of a pose (1 = top-scored). AutoDock = Vina mode / affinity rank,
-    DiffDock = confidence rank, EquiBind = unguided sample index. None if unknown."""
+    DiffDock = confidence rank, EquiBind = unguided sample index. None if unknown.
+
+    For an optimised AutoDock pose the RE-RANKED order (``optimized_rank``) is the
+    tool's actual output order, so it wins over the pre-optimisation Vina rank.
+    Using ``autodock_rank`` there would rank gnina poses by the order gnina was
+    brought in to replace."""
     m = _tool_key(method)
     pf = str(pose_file)
     name = Path(pf).name if pf and pf != "nan" else str(pose_name)
     if m == "autodock":
+        if optimized_rank is not None and pd.notna(optimized_rank):
+            try:
+                return int(float(optimized_rank))
+            except (TypeError, ValueError):
+                pass
         if autodock_rank is not None and pd.notna(autodock_rank):
             try:
                 return int(float(autodock_rank))
@@ -758,9 +793,10 @@ def _prep_fate(out: pd.DataFrame, dd_variant: str, eb_variant: str):
             df.get("pose_name", ""))]
     if "toolchain" not in df.columns:
         df["toolchain"] = [_toolchain_label(b, v) for b, v in zip(df["_base"], df["variant"])]
-    # restrict the REPORTING to the selected optimizer variant per tool (default gnina);
-    # per-pose CSVs still hold every variant. AutoDock has no variant.
-    keep = ((df["_base"] == "autodock")
+    # restrict the REPORTING to the selected optimizer variant per tool (default gnina
+    # for the learned tools, --autodock-variant for AutoDock); per-pose CSVs still
+    # hold every variant.
+    keep = ((df["_base"] == "autodock") & df["variant"].map(lambda v: _variant_matches(v, _AD_VARIANT))
             | ((df["_base"] == "diffdock") & df["variant"].map(lambda v: _variant_matches(v, dd_variant)))
             | ((df["_base"] == "equibind") & df["variant"].map(lambda v: _variant_matches(v, eb_variant))))
     df = df[keep].copy()
@@ -1883,6 +1919,10 @@ def run_dataset(name: str, csv_path: Path, out_dir: Path, pad: float, workers: i
     _rv = out["refine_variant"] if "refine_variant" in out.columns else pd.Series([None] * len(out))
     _pn = out["pose_name"] if "pose_name" in out.columns else pd.Series([None] * len(out))
     _ar = out["autodock_rank"] if "autodock_rank" in out.columns else pd.Series([None] * len(out))
+    # from `df`, not `out`: row-aligned (geom is built positionally over df) and
+    # immune to _CARRY dropping the column again.
+    _or = (df["optimized_rank"].reset_index(drop=True) if "optimized_rank" in df.columns
+           else pd.Series([None] * len(out)))
     out["variant"] = [_pose_variant(m, o, r, pn) for m, o, r, pn in
                       zip(out["docking_method"], _op, _rv, _pn)]
     out["toolchain"] = [_toolchain_label(_tool_key(m), v) for m, v in
@@ -1890,8 +1930,9 @@ def run_dataset(name: str, csv_path: Path, out_dir: Path, pad: float, workers: i
 
     # native pose rank (AutoDock Vina affinity rank, DiffDock confidence rank);
     # EquiBind has none, so it is (re)ranked by gnina energy just below.
-    out["pose_rank"] = [_pose_rank(m, pn, pf, ar) for m, pn, pf, ar in
-                        zip(out["docking_method"], _pn, out["pose_file"], _ar)]
+    out["pose_rank"] = [_pose_rank(m, pn, pf, ar, orank)
+                        for m, pn, pf, ar, orank in
+                        zip(out["docking_method"], _pn, out["pose_file"], _ar, _or)]
     n_gr = _apply_equibind_gnina_rank(out)
     if n_gr:
         print(f"  ranked {n_gr} EquiBind poses by gnina energy (most-negative = rank 1)")
@@ -1940,7 +1981,7 @@ def run_dataset(name: str, csv_path: Path, out_dir: Path, pad: float, workers: i
         return res
     # reporting subset: the selected optimizer variant per tool (default gnina)
     _base = placed["docking_method"].map(_tool_key)
-    sel = ((_base == "autodock")
+    sel = ((_base == "autodock") & placed["variant"].map(lambda v: _variant_matches(v, _AD_VARIANT))
            | ((_base == "diffdock") & placed["variant"].map(lambda v: _variant_matches(v, dd_variant)))
            | ((_base == "equibind") & placed["variant"].map(lambda v: _variant_matches(v, eb_variant))))
     reported = placed[sel]
@@ -1990,6 +2031,12 @@ def main(argv=None):
     ap.add_argument("--ligands", nargs="+", default=None, metavar="NAME",
                     help="restrict the analysis to ligands whose name contains any of "
                          "these (case-insensitive substrings); default = all ligands.")
+    ap.add_argument("--autodock-variant", default="all",
+                    choices=["all", "none", "original", "raw", "gnina", "smina", "gnina_refinement"],
+                    help="AutoDock optimizer variant used in the figures/table/summary "
+                         "(default all). Set it whenever the run holds more than one "
+                         "AutoDock variant, otherwise raw and optimised poses are pooled "
+                         "and every AutoDock count is doubled. CSVs keep all variants.")
     ap.add_argument("--diffdock-variant", default="gnina",
                     choices=["gnina", "smina", "raw", "original", "all"],
                     help="DiffDock optimizer variant used in the figures/table/summary "
@@ -2006,6 +2053,9 @@ def main(argv=None):
     ap.add_argument("--no-combined", action="store_true",
                     help="skip the combined Exp.-vs-Benchmark figures")
     args = ap.parse_args(argv)
+
+    global _AD_VARIANT
+    _AD_VARIANT = args.autodock_variant
 
     names = list(DATASETS) if args.dataset == "all" else [args.dataset]
     summaries = []
@@ -2048,11 +2098,30 @@ def main(argv=None):
             print(f"\n=== PB-valid / TM-survival share comparison → {share_out} ===")
             try:
                 from orai_pbvalid_tm_share_compare import main as _share_main
-                _share_main(["--results-root", args.out_root,
-                             "--out-dir", str(share_out),
-                             "--diffdock-variant", args.diffdock_variant,
-                             "--equibind-variant", args.equibind_variant])
-            except Exception as e:                    # never let it kill the run
+                # Pass this run's AutoDock variant through. Both arms now carry a gnina
+                # AutoDock variant (the Orai x Benchmark gnina rescoring run landed
+                # 2026-08-15), so pinning no longer empties the Benchmark side; the share
+                # script still falls back per-dataset if a variant is absent.
+                # --top-n-poses 10 is REQUIRED, not cosmetic: Experimental AutoDock and
+                # EquiBind emit 30 poses per frame-ligand unit against the Benchmark's 10,
+                # so an uncapped run silently triples the Experimental denominators and the
+                # two panels stop being comparable.
+                _share_argv = ["--results-root", args.out_root,
+                               "--out-dir", str(share_out),
+                               "--diffdock-variant", args.diffdock_variant,
+                               "--equibind-variant", args.equibind_variant,
+                               "--top-n-poses", "10"]
+                # Only forward a CONCRETE AutoDock variant. This script's default is
+                # 'all', which the share script cannot resolve against a dataset holding
+                # both 'none' and 'gnina' — it refuses to pool them and raises. Leaving
+                # the flag off lets the share script apply its own default instead.
+                if args.autodock_variant not in ("all", None):
+                    _share_argv += ["--autodock-variant", args.autodock_variant]
+                _share_main(_share_argv)
+            # SystemExit too: argparse raises it on an unknown flag, and it is not an
+            # Exception subclass, so it would otherwise escape this guard and kill the
+            # whole run after every figure had already been written.
+            except (Exception, SystemExit) as e:      # never let it kill the run
                 print(f"  [warn] PB-valid/TM share comparison failed: {e}")
         else:
             missing = [ds for ds, p in class_paths.items() if not p.exists()]

@@ -22,7 +22,7 @@ Two figures are written (originals are never overwritten):
            tool-pair, Exp vs Benchmark (lower = tools land closer = agree); plus
        (B) the recommended "how often" view — agreement RATE (percent of pairs with
            the two tools ≤ thr apart) with Wilson 95% CIs. A rate + CI is the honest
-           frequency answer: the strict all-tools-agree flag is 0 % in BOTH datasets
+           frequency answer: the strict all-tools-agree flag is near zero in both sets
            (tools scatter along the elongated Orai pore), so a box plot of that
            binary would be a flat line — the distance distribution and the rate are
            what actually carry signal.
@@ -133,6 +133,35 @@ def load_dataset(label: str, key: str, csv: Path,
             "n_frames": int(d["frame"].nunique()) if "frame" in d else 0}
 
 
+_PAIR_DIST_COLS = ("au_di_dist", "au_eq_dist", "di_eq_dist")
+
+
+def strict_all3(ds: dict) -> tuple:
+    """Measure the strict all-three-tools-agree rate on the units that actually have
+    all three tools. Returns (k, n, pct). Units with a missing pairwise distance are
+    two-tool units and are excluded from n rather than counted as disagreements."""
+    d = ds["df"]
+    if not all(c in d.columns for c in _PAIR_DIST_COLS):
+        return (0, 0, float("nan"))
+    thr = ds.get("thr") or 5.0
+    dist = d[list(_PAIR_DIST_COLS)].apply(pd.to_numeric, errors="coerce")
+    three = dist.notna().all(axis=1)
+    n = int(three.sum())
+    if not n:
+        return (0, 0, float("nan"))
+    k = int((three & (dist <= thr).all(axis=1)).sum())
+    return (k, n, 100.0 * k / n)
+
+
+def strict_all3_phrase(datasets: list) -> str:
+    """One-line human summary of the strict flag across the loaded datasets."""
+    bits = []
+    for ds in datasets:
+        k, n, pct = strict_all3(ds)
+        bits.append(f"{ds['label']} {k}/{n}" + ("" if not n else f" = {pct:.1f}%"))
+    return "; ".join(bits)
+
+
 def keep_ligands(ds: dict, keep: str) -> dict:
     """Restrict a loaded dataset's per_pair rows to ligands whose name contains any
     of the comma-separated (case-insensitive) substrings in `keep`; no-op if empty.
@@ -174,6 +203,13 @@ def fig_distribution(datasets: List[dict], thr: float, out_dir: Path, suffix: st
     fig, axes = plt.subplots(len(datasets), 1, figsize=(7.8, 5.2 * len(datasets)),
                              sharex=True, sharey=True)
     axes = np.atleast_1d(axes)
+    # Panel letters FIRST: _label_panels goes through ax.set_title(loc="left"), and
+    # set_title rebuilds the shared title-offset transform from rcParams whenever it
+    # is called without an explicit pad. Labelling after the titles were set would
+    # therefore silently reset their pad to the 6 pt default and drop each headline
+    # onto the subordinate line below it. Setting the centre title last wins, and the
+    # pad it carries lifts the letter clear of that subordinate line too.
+    _label_panels(axes)
     for ax, ds in zip(axes, datasets):
         for col, lab, colr in TOOL_PAIRS:
             v = _num(ds["df"], col)
@@ -185,12 +221,39 @@ def fig_distribution(datasets: List[dict], thr: float, out_dir: Path, suffix: st
             ax.hist(v, bins=bins, weights=w, histtype="step", lw=2.2, color=colr)
             ax.axvline(med, color=colr, ls=":", lw=1.3, alpha=0.75)
         ax.axvline(thr, color="k", ls="--", lw=1.0)
-        ax.set_title(f"{ds['label']}\n(n={ds['n_pairs']} pairs, {ds['n_ligands']} ligands)",
-                     fontsize=11)
-        ax.set_ylabel("Fraction of receptor-ligand pairs (per tool-pair)")
+        # Each curve is normalised by its OWN denominator: a (MD frame × ligand) unit
+        # feeds a curve only when BOTH tools of that pair produced a consensus site
+        # there. So the per-tool-pair n IS the headline, carried on the title line;
+        # the panel's unit accounting drops to a smaller, greyed subordinate line.
+        # Earlier titles headlined the panel row count, which no curve is normalised
+        # by, and quoted that count without reconciling it against ligands × frames.
+        per_curve = " · ".join(
+            f"{short} {int(np.count_nonzero(~np.isnan(_num(ds['df'], col)))):,}"
+            for col, short in zip([c for c, *_ in TOOL_PAIRS],
+                                  ("AD↔DD", "AD↔EB", "DD↔EB")))
+        # Reconcile the row count against the ligand × frame grid. Quoting the row
+        # count on its own left a silent arithmetic gap (308 × 4 = 1,232 possible
+        # units against 1,215 rows): the missing units are the frame–ligand
+        # combinations for which no tool produced a docked pose to cluster, verified
+        # against per_pose.csv, which spans exactly the same 1,215 combinations.
+        possible = ds["n_ligands"] * ds["n_frames"]
+        empty = possible - ds["n_pairs"]
+        acct = (f"{'' if empty else 'all '}{ds['n_pairs']:,} of the {ds['n_ligands']:,} "
+                f"ligands × {ds['n_frames']} frames = {possible:,} possible units have "
+                f"docked poses" + (f", {empty:,} have none" if empty else ""))
+        # The subordinate line is offset in POINTS from the axes top (not in axes
+        # fractions) so its clearance from both the frame and the headline is the
+        # same whatever the panel height; the title pad is set to clear it.
+        ax.set_title(f"{ds['label']} — n per curve  {per_curve}",
+                     fontsize=10, pad=25)
+        ax.annotate(acct, xy=(0.5, 1.0), xycoords="axes fraction",
+                    xytext=(0, 4), textcoords="offset points",
+                    ha="center", va="bottom", fontsize=8.5, color="0.35")
+        # The y-axis label carries the "defined" qualifier, which keeps it off the
+        # title block and leaves the subordinate line free for the unit accounting.
+        ax.set_ylabel("Fraction of units where both tools have a consensus site")
         ax.grid(alpha=0.25); ax.set_axisbelow(True)
     axes[-1].set_xlabel("Inter-tool consensus-site distance (Å)")
-    _label_panels(axes)
     # One shared tool-pair legend centred in the band between the suptitle and the
     # panels — per-panel n/median differ, so the shared legend stays generic (each
     # tool-pair's median is still marked by its dotted vertical line in each panel).
@@ -315,8 +378,15 @@ def fig_agreement(datasets: List[dict], thr: float, out_dir: Path, suffix: str =
     axB.set_xticks(xb)
     axB.set_xticklabels([g[1] for g in rate_groups], fontsize=9)
     axB.set_ylabel(f"Pairs with the two tools ≤ {thr:g} Å apart (percent)")
+    _bits = []
+    for _ds in datasets:
+        _k, _n, _pct = strict_all3(_ds)
+        _short = str(_ds["label"]).split()[0].rstrip(".")
+        _bits.append(f"{_short} {_k}/{_n}" + ("" if not _n else f" ({_pct:.1f}%)"))
+    _s3 = ", ".join(_bits)
     axB.set_title("How often tools agree — rate with Wilson 95% CI\n"
-                  "(strict all-3-tools-agree flag is 0 % in both sets)", fontsize=11)
+                  f"strict all-3-tools-agree on 3-tool units: {_s3}",
+                  fontsize=10)
     axB.set_ylim(0, ymax * 1.18 + 2)
     axB.grid(alpha=0.25, axis="y"); axB.set_axisbelow(True)
 
@@ -358,9 +428,10 @@ def write_stats(datasets: List[dict], thr: float, out_dir: Path, suffix: str = "
         L.append(f"  {ds['label']:<28} n={ds['n_pairs']:>5} pairs, "
                  f"{ds['n_ligands']} ligands, {ds['n_frames']} MD frames  ({ds['csv']})")
     L.append("")
-    L.append("NOTE: the strict all-tools-agree flag (all pairwise distances ≤ thr) is 0 % in")
-    L.append("BOTH datasets — tools scatter along the elongated Orai pore, so agreement is")
-    L.append("read from the CONTINUOUS distance and the per-tool-pair rate, not the binary.")
+    L.append("NOTE: the strict all-tools-agree flag (all pairwise distances ≤ thr), measured")
+    L.append("over the units that carry all three tools, is " + strict_all3_phrase(datasets) + ".")
+    L.append("It is near zero because tools scatter along the elongated Orai pore, so agreement")
+    L.append("is read from the CONTINUOUS distance and the per-tool-pair rate, not the binary.")
     L.append("NOTE: both pipelines use the SMINA-refined DiffDock variant, so DiffDock's")
     L.append("positions are comparable across datasets. The Experimental n is tiny")
     L.append("(exploratory).")

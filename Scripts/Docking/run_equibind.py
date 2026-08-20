@@ -2,12 +2,24 @@
 """EquiBind 3-phase pose-generation pipeline — entry point.
 
 NOTE: This script is configured by ``EQ_*`` environment variables only (see
-``equibind_pipeline/config.py``); it does NOT read
-``equibind_docking_config.yaml`` directly. That YAML is consumed by
-``Master_Docking.ipynb``, which maps each key to an ``EQ_*`` var before
-launching this script. Editing the YAML therefore has no effect on a bare
+``equibind_pipeline/config.py``); it does NOT read any YAML directly. The YAMLs
+are consumed by ``Master_Docking.ipynb``, which maps each key to an ``EQ_*`` var
+before launching this script. Editing a YAML therefore has no effect on a bare
 ``python run_equibind.py`` run — set the ``EQ_*`` vars (or launch via the
 notebook) instead.
+
+There is one YAML per arm, each validated key-by-key against that arm's own
+``pipeline_summary.json`` records:
+
+  ``equibind_benchmark_config.yaml``      calibration benchmark, guided + unguided,
+                                          UFF off  -> ``Dockings/Benchmark_Equibind``
+  ``equibind_orai_jku_config.yaml``       Orai1 experimental modulators, unguided
+                                          only, UFF on -> ``Dockings/equibind_results``
+  ``equibind_orai_benchmark_config.yaml`` Orai1 control panel, unguided only,
+                                          UFF off -> ``Dockings/Orai_Benchmark_Equibind``
+
+``equibind_docking_config.yaml`` is DEPRECATED. It previously served the first two
+arms at once and reproduces neither; see the banner at the top of that file.
 
 All settings can be supplied as ``EQ_*`` environment variables (see
 ``equibind_pipeline/config.py``); the CLI flags below override them for the two

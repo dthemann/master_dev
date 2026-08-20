@@ -36,12 +36,12 @@ EquiBind variant split (toggle with --no-split-equibind)
 
 Best-variant filters (--best-equibind-only / --best-diffdock-only / --best-variants-only)
     Collapse the many EquiBind variants (and/or the three DiffDock optimizer
-    variants) down to the single best-performing one each (highest PB-Valid AND
-    RMSD ≤ 2 Å = oracle_pb_valid_and_rmsd2_%) so every summary/plot compares just AutoDock, one
-    DiffDock curve and one EquiBind curve. The retained variants are relabelled
-    "EquiBind*" / "DiffDock*" in every legend/axis. --best-variants-only is a
-    convenience umbrella that turns on both. All off by default; AutoDock is never
-    touched and per_pose_metrics.csv always carries every variant for drill-down.
+    variants) to the single best-performing one each (highest PB-Valid AND RMSD ≤
+    2 Å = oracle_pb_valid_and_rmsd2_%). The individual family filters leave other
+    methods untouched. The --best-variants-only umbrella restricts ordinary
+    summaries and headline cross-tool plots to raw AutoDock plus the DiffDock* and
+    EquiBind* winners. Explicit variant/optimization diagnostics retain the full
+    frame, and per_pose_metrics.csv always carries every variant for drill-down.
 
 Metrics computed per pose:
     * Symmetry-corrected heavy-atom RMSD vs. crystal ligand (no superposition)
@@ -659,6 +659,64 @@ FINE_KABSCH_THRESHOLDS = tuple(round(t / 2.0, 4) for t in FINE_RMSD_THRESHOLDS) 
 # Canonical docking-success line (Å): the in-place RMSD-to-crystal below which a
 # pose is "near-native". Matches the 2 Å the paper and the rest of this report use.
 NEAR_NATIVE_RMSD_A = 2.0
+
+# ── CSV numeric precision ────────────────────────────────────────────────────
+# Percentage / percentage-point columns are written to the machine-readable CSVs
+# with this many decimal places. 1–2 dp collapses near-ties that matter when
+# ranking variants — e.g. AutoDock raw vs +gnina both print "1.7 % all" yet are
+# 1.669800 % vs 1.680858 %. The fixed-width and markdown console tables format
+# their own (usually 1 dp) precision independently, so this only widens the CSVs.
+PCT_DECIMALS = 6
+
+
+def _is_pct_name(name) -> bool:
+    """True for a percentage / percentage-point column, recognised by the naming
+    convention used throughout this script: the name ends in ``%`` or ``_pp`` (or
+    ``_pp_...``), or contains ``pct`` / ``percent``."""
+    n = str(name).lower()
+    return (n.endswith("%") or n.endswith("_pp") or "_pp_" in n
+            or "pct" in n or "percent" in n)
+
+
+def _round_csv(df, pct=PCT_DECIMALS, other=2):
+    """Return a copy of ``df`` rounded for CSV output: percentage / percentage-point
+    columns (see :func:`_is_pct_name`) to ``pct`` decimals so near-ties stay
+    distinguishable, and every other floating-point column to ``other`` (pass
+    ``other=None`` to leave non-percentage columns at full precision). Integer and
+    non-numeric columns pass through untouched."""
+    if df is None or not hasattr(df, "columns"):
+        return df
+    out = df.copy()
+    for c in out.columns:
+        if (not pd.api.types.is_numeric_dtype(out[c])
+                or pd.api.types.is_integer_dtype(out[c])
+                or pd.api.types.is_bool_dtype(out[c])):
+            continue
+        dp = pct if _is_pct_name(c) else other
+        if dp is not None:
+            out[c] = out[c].round(dp)
+    return out
+
+
+def _write_csv(df, path, pct=PCT_DECIMALS, **kwargs):
+    """``df.to_csv`` drop-in that writes percentage / percentage-point columns (see
+    :func:`_is_pct_name`) with a FIXED ``pct`` decimal places, so the text always
+    carries at least that many digits — plain float rounding drops trailing zeros
+    (1.669800 → "1.6698"), which can dip below the promised precision on "round"
+    values. Only percentage columns are reformatted (as strings, NaN → empty); every
+    other column — counts, RMSDs, p-values — is written exactly as it stands, so tiny
+    p-values keep their full precision. The frame is copied only when it actually has
+    a percentage column, so large non-percentage tables are written without overhead."""
+    cols = getattr(df, "columns", [])
+    pct_cols = [c for c in cols
+                if _is_pct_name(c) and pd.api.types.is_numeric_dtype(df[c])
+                and not pd.api.types.is_bool_dtype(df[c])]
+    if pct_cols:
+        df = df.copy()
+        fmt = "%." + str(int(pct)) + "f"
+        for c in pct_cols:
+            df[c] = df[c].map(lambda v: "" if pd.isna(v) else fmt % v)
+    df.to_csv(path, **kwargs)
 # A near-native, PB-valid pose has the "correct form" when its best-fit (Kabsch)
 # RMSD to the crystal ligand — heavy-atom RMSD AFTER optimal superposition, so
 # translation and rotation are removed and only the internal conformation is
@@ -672,15 +730,23 @@ CENTROID_THRESHOLD = 4.0
 # farther is treated as a different (decoy) pocket. Overridable via --pocket-cutoff.
 POCKET_CENTROID_CUTOFF = 6.0
 
+# AutoDock-specific optimizer identities.  DiffDock and EquiBind deliberately
+# retain their existing raw/smina/gnina semantics; the CNN-refinement alias is an
+# AutoDock-only protocol and must remain separate from legacy ``gnina``.
+_AUTODOCK_OPTIMIZERS = frozenset({"smina", "gnina", "gnina_refinement"})
+_AUTODOCK_OPTIMIZER_SUFFIXES = ("_gnina_refinement", "_smina", "_gnina")
+
 # Methods that produce an explicit pose ranking ordered by energy/confidence.
 # AutoDock optimizer variants use their own ``optimized_rank``; the raw method
-# uses Vina's ``autodock_rank``. Keeping all three here makes every aggregation
+# uses Vina's ``autodock_rank``. Keeping every protocol here makes each aggregation
 # group and rank the variants independently. Other tools (e.g. EquiBind) remain
 # oracle-only unless a dedicated ranking adapter handles them.
 RANKING_TOOLS = frozenset({
     "autodock", "autodock_smina", "autodock_gnina",
+    "autodock_gnina_refinement",
     # Vinardo-scored AutoDock is the same Vina engine, different scoring function.
     "autodock_vinardo", "autodock_vinardo_smina", "autodock_vinardo_gnina",
+    "autodock_vinardo_gnina_refinement",
     # Uni-Dock (tiled) and Uni-Dock2 emit affinity-ordered poses (rank = pose order).
     "unidock", "unidock2",
     "diffdock",
@@ -761,7 +827,9 @@ _BASE_COLORS = {
 }
 _AD_VARIANT_COLORS = {
     "autodock_smina": "#6baed6", "autodock_gnina": "#08519c",
+    "autodock_gnina_refinement": "#08306b",
     "autodock_vinardo_smina": "#9edae5", "autodock_vinardo_gnina": "#0e7c86",
+    "autodock_vinardo_gnina_refinement": "#005f69",
 }
 # Green family for EquiBind variants (cycled if more than this many appear).
 _EQ_PALETTE = ["#2ca02c", "#74c476", "#1b7837", "#a6dba0",
@@ -831,12 +899,16 @@ def _pretty_method(m: str) -> str:
         return "AutoDock Vina (smina-opt)"
     if m == "autodock_gnina":
         return "AutoDock Vina (gnina-opt)"
+    if m == "autodock_gnina_refinement":
+        return "AutoDock Vina (GNINA CNN-refinement)"
     if m == "autodock_vinardo":
         return "AutoDock Vinardo"
     if m == "autodock_vinardo_smina":
         return "AutoDock Vinardo (smina-opt)"
     if m == "autodock_vinardo_gnina":
         return "AutoDock Vinardo (gnina-opt)"
+    if m == "autodock_vinardo_gnina_refinement":
+        return "AutoDock Vinardo (GNINA CNN-refinement)"
     if m == "unidock":
         return "Uni-Dock"
     if m == "unidock2":
@@ -977,9 +1049,11 @@ def _pose_rank(row, method: str, pose_file: str) -> int:
     rank would silently undo gnina/smina re-ranking. Legacy raw rows may still
     use the converted ``_modelN.sdf`` filename fallback.
     """
-    if method.startswith("autodock") and not method.endswith(("_smina", "_gnina")):
+    optimized_autodock = method.startswith("autodock") and method.endswith(
+        _AUTODOCK_OPTIMIZER_SUFFIXES)
+    if method.startswith("autodock") and not optimized_autodock:
         return _positive_rank(row.get("autodock_rank")) or parse_rank(method, pose_file)
-    if method.startswith("autodock") and method.endswith(("_smina", "_gnina")):
+    if optimized_autodock:
         return _positive_rank(row.get("optimized_rank")) or 999
     if method == "unidock":
         return _positive_rank(row.get("unidock_rank")) or parse_rank(method, pose_file)
@@ -1586,7 +1660,7 @@ def aggregate_oracle(df: pd.DataFrame) -> pd.DataFrame:
                 100 * float((pb_oracle["pb_rmsd"].dropna() <= thr).mean())
                 if len(pb_oracle) else float("nan"))
         rows.append(row)
-    return pd.DataFrame(rows).set_index("method").round(2)
+    return _round_csv(pd.DataFrame(rows).set_index("method"))
 
 
 def aggregate_top1(df: pd.DataFrame) -> pd.DataFrame:
@@ -1615,7 +1689,7 @@ def aggregate_top1(df: pd.DataFrame) -> pd.DataFrame:
                 100 * float((top1["pb_rmsd"].dropna() <= thr).mean())
                 if len(top1) else float("nan"))
         rows.append(row)
-    return pd.DataFrame(rows).set_index("method").round(2)
+    return _round_csv(pd.DataFrame(rows).set_index("method"))
 
 
 def aggregate_by_rank(df: pd.DataFrame, top_n: int) -> pd.DataFrame:
@@ -1659,7 +1733,7 @@ def aggregate_by_rank(df: pd.DataFrame, top_n: int) -> pd.DataFrame:
                     100 * float((oracle_k["rmsd"].dropna() <= thr).sum()) / n_all_pairs
                     if n_all_pairs > 0 else float("nan"))
             rows.append(row)
-    return pd.DataFrame(rows).round(2)
+    return _round_csv(pd.DataFrame(rows))
 
 
 def aggregate_ifp_by_rank(df: pd.DataFrame, top_n: int) -> pd.DataFrame:
@@ -1811,7 +1885,7 @@ def aggregate_topn_within_thresholds(
     if eq_df is not None and not eq_df.empty:
         _emit("equibind", eq_df, _gnina_affinity_rank(eq_df))
 
-    return pd.DataFrame(rows).round(2)
+    return _round_csv(pd.DataFrame(rows))
 
 
 # Pre-specified RMSD thresholds at which fig 18's complex-level panel gets paired
@@ -2096,6 +2170,71 @@ def _select_best_diffdock(df: pd.DataFrame, forced: str | None = None) -> tuple[
     return out, best_variant
 
 
+def _select_autodock_arm(df: pd.DataFrame,
+                         forced: str | None = None) -> tuple[pd.DataFrame, str | None]:
+    """Keep non-AutoDock methods plus a single pinned AutoDock Vina variant.
+
+    Counterpart to :func:`_select_best_diffdock` for the AutoDock family, added
+    because the presentation keep-set below hard-codes the raw ``autodock`` slot.
+    Without this, every collapsed headline figure is drawn on raw Vina even when the
+    chapter reports the gnina-rescored arm, and there was no way to say otherwise on
+    the command line.
+
+    ``forced`` names one of the Vina-scored variants (``autodock``,
+    ``autodock_gnina``, ``autodock_gnina_refinement``). The winner is relabelled to
+    the canonical ``autodock`` key so it keeps its ranking-tool behaviour and passes
+    the keep-set; the original key is returned for the label and the provenance line.
+    Vinardo variants are a separate scoring family and are left untouched, exactly as
+    the keep-set already treats them. Returns ``(df, None)`` unchanged when no
+    AutoDock variant is present.
+
+    NOTE the relabel is rank-safe: for ``autodock_gnina`` the cached ``rank`` column
+    is identical to ``optimized_rank``, i.e. it is already the gnina re-ranking, so
+    no rank re-derivation is needed here (unlike the DiffDock optimizer variants,
+    whose cached rank is a flat 999)."""
+    methods = df["method"].astype(str)
+    # Vina-scored AutoDock only. autodock_vinardo* is a different scoring function
+    # and the keep-set carries it as its own engine column.
+    ad_mask = methods.str.startswith("autodock") & ~methods.str.startswith("autodock_vinardo")
+    if not ad_mask.any():
+        return df, None
+
+    present = sorted(methods[ad_mask].unique())
+    if not forced:
+        return df, None
+    if forced not in present:
+        print(f"  [collapse-autodock-variant] {forced!r} not present among {present} "
+              "— leaving the AutoDock slot unchanged.")
+        return df, None
+
+    keep = (~ad_mask) | (methods == forced)
+    out = df[keep].reset_index(drop=True)
+    out.loc[out["method"] == forced, "method"] = "autodock"
+    return out, forced
+
+
+def _select_presentation_tools(
+        df: pd.DataFrame, equibind_variant: str | None) -> pd.DataFrame:
+    """Keep the canonical presentation frame used by collapsed presentation plots.
+
+    ``--collapse-plots-only`` writes its all-variant tables before calling the
+    family selectors. Those selectors intentionally retain methods outside their
+    own family, which used to be sufficient when raw AutoDock was the only
+    non-DiffDock/non-EquiBind method. Once AutoDock optimizer/scoring variants and
+    UniDock were added, those methods leaked into ``oracle_summary.csv`` and the
+    headline plots. The collapsed presentation keeps the full-engine comparison:
+    raw AutoDock (Vina) and raw AutoDock Vinardo (distinct scoring functions on the
+    same engine), the canonicalized DiffDock winner, the selected EquiBind winner,
+    and the single-variant engines Uni-Dock / Uni-Dock2. The post-hoc optimizer
+    variants (gnina, refinement, smina) stay collapsed away — they are compared in
+    their own per-family figures, not the cross-engine headline.
+    """
+    keep = {"autodock", "autodock_vinardo", "diffdock", "unidock", "unidock2"}
+    if equibind_variant:
+        keep.add(str(equibind_variant))
+    return df[df["method"].astype(str).isin(keep)].reset_index(drop=True)
+
+
 # ───────────────────────────────────────────────────────────────────
 # Plots — Part A: oracle comparison (all tools)
 # ───────────────────────────────────────────────────────────────────
@@ -2344,8 +2483,8 @@ def _stats_vs_paper(df: pd.DataFrame, oracle_sum: pd.DataFrame,
             lo, hi = su.wilson_ci(k, n)
             paper = ref.get(paperkey)
             md = {"k": k, "n": n,
-                  "our_rate_%": (round(100 * k / n, 2) if n else None),
-                  "wilson_lo_%": round(100 * lo, 2), "wilson_hi_%": round(100 * hi, 2),
+                  "our_rate_%": (round(100 * k / n, PCT_DECIMALS) if n else None),
+                  "wilson_lo_%": round(100 * lo, PCT_DECIMALS), "wilson_hi_%": round(100 * hi, PCT_DECIMALS),
                   "paper_%": paper}
             if paper is not None and n > 0 and 0.0 <= paper <= 100.0:
                 bt = binomtest(k, n, paper / 100.0)
@@ -2773,12 +2912,12 @@ def plot_vs_posebusters_paper(oracle_sum: pd.DataFrame,
                 recs.append({
                     "method": r["paper_method"], "our_method_key": r["method_key"],
                     "metric": metric, "our_selection": r["selection"],
-                    "this_study_%": round(ours, 2) if ok else None,
+                    "this_study_%": round(ours, PCT_DECIMALS) if ok else None,
                     "posebusters_paper_%": paper,
-                    "delta_%": (round(ours - paper, 2) if (ok and paper is not None) else None),
+                    "delta_%": (round(ours - paper, PCT_DECIMALS) if (ok and paper is not None) else None),
                     "paper_note": r["paper_note"],
                 })
-        pd.DataFrame(recs).to_csv(csv_out, index=False)
+        _write_csv(pd.DataFrame(recs), csv_out, index=False)
         print(f"  wrote paper-comparison table → {csv_out.name}")
 
 
@@ -2892,12 +3031,12 @@ def plot_pbvalid_filter_influence(oracle_sum: pd.DataFrame,
             ok = not pd.isna(vv)
             recs.append({
                 "method": TOOL_LABEL.get(m, m), "method_key": m,
-                "rmsd_le_2A_%": round(av, 2),
-                "rmsd_le_2A_and_pb_valid_%": round(vv, 2) if ok else None,
-                "drop_pp": round(av - vv, 2) if ok else None,
-                "valid_retention_%": round(vv / av * 100, 1) if (ok and av > 0) else None,
+                "rmsd_le_2A_%": round(av, PCT_DECIMALS),
+                "rmsd_le_2A_and_pb_valid_%": round(vv, PCT_DECIMALS) if ok else None,
+                "drop_pp": round(av - vv, PCT_DECIMALS) if ok else None,
+                "valid_retention_%": round(vv / av * 100, PCT_DECIMALS) if (ok and av > 0) else None,
             })
-        pd.DataFrame(recs).to_csv(csv_out, index=False)
+        _write_csv(pd.DataFrame(recs), csv_out, index=False)
         print(f"  wrote PB-valid influence table → {csv_out.name}")
 
 
@@ -2953,13 +3092,13 @@ def within2_validity_comparison(df: pd.DataFrame, thr: float = 2.0,
             "n_complexes": int(sub.groupby(["protein", "ligand"]).ngroups),
             "total_poses": int(len(sub)),
             "near_native_poses": a_n, "near_native_valid": a_v,
-            "near_native_pb_valid_%": round(100 * a_v / a_n, 2) if a_n else float("nan"),
+            "near_native_pb_valid_%": round(100 * a_v / a_n, PCT_DECIMALS) if a_n else float("nan"),
             "oracle_near_native": b_n, "oracle_near_native_valid": b_v,
-            "oracle_near_native_pb_valid_%": round(100 * b_v / b_n, 2) if b_n else float("nan"),
+            "oracle_near_native_pb_valid_%": round(100 * b_v / b_n, PCT_DECIMALS) if b_n else float("nan"),
         })
     out = pd.DataFrame(rows).set_index("method")
     out["delta_pp"] = (out["near_native_pb_valid_%"]
-                       - out["oracle_near_native_pb_valid_%"]).round(2)
+                       - out["oracle_near_native_pb_valid_%"]).round(PCT_DECIMALS)
     return out
 
 
@@ -3600,13 +3739,13 @@ def _equibind_pose_index(name) -> int:
 
 
 def aggregate_optimization_raw_vs_best(df: pd.DataFrame, thr: float = 2.0) -> pd.DataFrame:
-    """Per tool, contrast the RAW (un-optimised) representative pose against the
-    BEST post-hoc-optimised variant, on the same accuracy/validity axes as fig 09.
+    """Per tool, contrast the RAW representative against post-hoc optimizer arms.
 
     ONE representative pose is chosen per complex, then aggregated over complexes:
 
       * AutoDock raw   — rank-1 pose under Vina's original ranking.
-      * AutoDock best  — rank-1 pose under the optimizer's own re-ranking.
+      * AutoDock rescore/refinement — rank-1 pose under each optimizer arm's
+                                      own re-ranking.
       * DiffDock raw   — rank-1 pose of the un-optimised run (``diffdock``).
       * DiffDock best  — rank-1 pose of the smina-optimised run (``diffdock_smina``);
                          same DiffDock confidence ranking, refined geometry.
@@ -3645,7 +3784,8 @@ def aggregate_optimization_raw_vs_best(df: pd.DataFrame, thr: float = 2.0) -> pd
     # (tool, role_label, is_best, method_key, picker)
     specs = [
         ("autodock", "raw\n(Vina rank-1)",       False, "autodock",                _rank1),
-        ("autodock", "gnina-opt\n(opt rank-1)",  True,  "autodock_gnina",          _rank1),
+        ("autodock", "CNN rescore\n(opt rank-1)", True, "autodock_gnina",          _rank1),
+        ("autodock", "CNN refine\n(opt rank-1)",  True, "autodock_gnina_refinement", _rank1),
         ("diffdock", "raw\n(rank-1)",             False, "diffdock",                _rank1),
         ("diffdock", "gnina-opt\n(rank-1)",       True,  "diffdock_gnina",          _rank1),
         ("equibind", "raw\n(first pose)",         False, "equibind_unguided_raw",   _first_pose),
@@ -3678,12 +3818,12 @@ def aggregate_optimization_raw_vs_best(df: pd.DataFrame, thr: float = 2.0) -> pd
 def plot_optimization_raw_vs_best(agg: pd.DataFrame, out: Path,
                                   thr: float = 2.0) -> None:
     """Fig 09c — grouped accuracy-vs-validity bars contrasting each tool's RAW
-    representative pose with its BEST post-hoc-optimised variant.
+    representative pose with its available post-hoc optimizer variants.
 
     Same light(accuracy) + dark(PB-valid subset) encoding as fig 09a/09b; bars are
-    grouped by tool (colour = tool identity), raw on the left, optimised on the
-    right, with a Δ callout of the validity gain. AutoDock uses its explicit
-    optimized ranking for the post-optimization representative. See
+    grouped by tool (colour = tool identity), raw on the left, followed by the
+    optimizer arms, with a Δ callout of each validity gain. AutoDock uses each
+    arm's explicit optimized ranking for its representative. See
     ``aggregate_optimization_raw_vs_best`` for the exact per-tool pose selection.
     """
     if agg is None or agg.empty:
@@ -3729,17 +3869,21 @@ def plot_optimization_raw_vs_best(agg: pd.DataFrame, out: Path,
             ax.text(xi, val / 2, f"{val:.0f}%", ha="center", va="center",
                     fontsize=9, color="white", fontweight="bold", zorder=4)
 
-    # Raw → best validity-gain callout above each optimised bar.
+    # Raw → optimizer validity-gain callout above every optimized arm.
     for tool in spans:
         sub = agg[agg["tool"] == tool]
-        raw, best = sub[~sub["is_best"]], sub[sub["is_best"]]
-        if len(raw) and len(best):
-            dv = float(best[val_col].iloc[0]) - float(raw[val_col].iloc[0])
-            xb, yb = float(best["_x"].iloc[0]), float(best[acc_col].iloc[0])
-            ax.annotate(f"▲ +{dv:.0f} pp\nvalid vs raw", xy=(xb, yb),
-                        xytext=(0, 15), textcoords="offset points",
-                        ha="center", va="bottom", fontsize=8.5,
-                        color="#1f7a1f", fontweight="bold")
+        raw, optimized = sub[~sub["is_best"]], sub[sub["is_best"]]
+        if len(raw):
+            raw_valid = float(raw[val_col].iloc[0])
+            for _, best in optimized.iterrows():
+                dv = float(best[val_col]) - raw_valid
+                xb, yb = float(best["_x"]), float(best[acc_col])
+                sign = "+" if dv >= 0 else ""
+                ax.annotate(f"{sign}{dv:.0f} pp\nvalid vs raw", xy=(xb, yb),
+                            xytext=(0, 15), textcoords="offset points",
+                            ha="center", va="bottom", fontsize=8.5,
+                            color="#1f7a1f" if dv >= 0 else "#a11d1d",
+                            fontweight="bold")
 
     # Per-bar tick labels (role + n) and a second tier of centred tool names.
     ax.set_xticks(agg["_x"].tolist())
@@ -3759,10 +3903,11 @@ def plot_optimization_raw_vs_best(agg: pd.DataFrame, out: Path,
     ax.set_xlim(min(positions) - 0.7, max(positions) + 0.7)
     ax.grid(axis="y", alpha=0.3)
     _accuracy_validity_legend(fig)
-    fig.suptitle("Effect of post-hoc optimization — raw vs. best variant\n"
+    fig.suptitle("Effect of post-hoc optimization — raw vs. optimizer variants\n"
                  "PoseBusters Benchmark", fontsize=13, fontweight="bold", y=1.09)
     fig.text(0.5, -0.09,
-             "Representative pose per complex — Vina: rank-1 (no optimization step). "
+             "Representative pose per complex — Vina raw, GNINA CNN-rescore, and "
+             "GNINA CNN-refinement are shown independently using their rank-1 pose. "
              "DiffDock: rank-1 of the raw vs. smina-optimized run (same ranking). "
              "EquiBind (blind/unguided run, no native ranking): first generated pose "
              "vs. gnina-optimized, ranked by gnina affinity.",
@@ -3785,6 +3930,7 @@ _PBVALID_YIELD_SPECS = [
     ("autodock", "raw",       False, "autodock"),
     ("autodock", "smina-opt", True,  "autodock_smina"),
     ("autodock", "gnina-opt", True,  "autodock_gnina"),
+    ("autodock", "gnina CNN-refine", True, "autodock_gnina_refinement"),
     ("diffdock", "raw",       False, "diffdock"),
     ("diffdock", "smina-opt", True,  "diffdock_smina"),
     ("diffdock", "gnina-opt", True,  "diffdock_gnina"),
@@ -3911,14 +4057,14 @@ def aggregate_pbvalid_yield_by_variant(df_full: pd.DataFrame,
             # PB-valid pose. Distinct from n_complexes (complexes with ANY pose) — a
             # variant can be present for all 303 yet yield zero valid poses on some.
             "n_complexes_with_valid": n_cplx_valid,
-            "complexes_with_valid_%": round(100.0 * n_cplx_valid / max(1, n_cplx), 2),
+            "complexes_with_valid_%": round(100.0 * n_cplx_valid / max(1, n_cplx), PCT_DECIMALS),
             "n_poses": tot_poses, "n_valid": int(sub["n_valid"].sum()),
             "pooled_pb_valid_%": round(100.0 * sub["n_valid"].sum()
-                                       / max(1, tot_poses), 2),
-            "per_complex_mean_%": round(float(np.mean(pct)), 2),
-            "per_complex_median_%": round(float(np.median(pct)), 2),
-            "per_complex_q1_%": round(float(np.percentile(pct, 25)), 2),
-            "per_complex_q3_%": round(float(np.percentile(pct, 75)), 2),
+                                       / max(1, tot_poses), PCT_DECIMALS),
+            "per_complex_mean_%": round(float(np.mean(pct)), PCT_DECIMALS),
+            "per_complex_median_%": round(float(np.median(pct)), PCT_DECIMALS),
+            "per_complex_q1_%": round(float(np.percentile(pct, 25)), PCT_DECIMALS),
+            "per_complex_q3_%": round(float(np.percentile(pct, 75)), PCT_DECIMALS),
         })
     out = pd.DataFrame(rows)
     med = dict(zip(out["method_key"], out["per_complex_median_%"]))
@@ -3926,7 +4072,7 @@ def aggregate_pbvalid_yield_by_variant(df_full: pd.DataFrame,
         raw_key = _PBVALID_YIELD_RAW.get(r["tool"])
         if not r["is_opt"] or raw_key is None or raw_key not in med:
             return 0.0
-        return round(r["per_complex_median_%"] - med[raw_key], 2)
+        return round(r["per_complex_median_%"] - med[raw_key], PCT_DECIMALS)
     out["median_gain_over_raw_pp"] = out.apply(_gain, axis=1)
     out["_order"] = out["method_key"].map(order)
     return out.sort_values("_order").drop(columns="_order").reset_index(drop=True)
@@ -3978,10 +4124,10 @@ def _stats_pbvalid_yield(per: pd.DataFrame, specs=_PBVALID_YIELD_SPECS) -> dict 
             rb, p, npair = su.wilcoxon_rankbiserial(opt, raw)
             gain, lo, hi = su.median_diff_ci(opt, raw, paired=True)
             rec = {"tool": tool, "variant": role, "n": int(len(wide)),
-                   "median_raw_%": round(float(np.median(raw)), 2),
-                   "median_opt_%": round(float(np.median(opt)), 2),
-                   "median_gain_pp": round(float(gain), 2),
-                   "gain_ci": [round(float(lo), 2), round(float(hi), 2)],
+                   "median_raw_%": round(float(np.median(raw)), PCT_DECIMALS),
+                   "median_opt_%": round(float(np.median(opt)), PCT_DECIMALS),
+                   "median_gain_pp": round(float(gain), PCT_DECIMALS),
+                   "gain_ci": [round(float(lo), PCT_DECIMALS), round(float(hi), PCT_DECIMALS)],
                    "rank_biserial": round(float(rb), 3) if rb == rb else None,
                    "p_raw": float(p) if p == p else None}
             tool_recs.append(rec)
@@ -4179,13 +4325,25 @@ def _all_variant_yield_specs(df_full: pd.DataFrame):
     present = set(df_full["method"].astype(str).unique())
     specs = []
     for mkey, role in (("autodock", "raw"), ("autodock_smina", "smina-opt"),
-                       ("autodock_gnina", "gnina-opt")):
+                       ("autodock_gnina", "gnina-opt"),
+                       ("autodock_gnina_refinement", "gnina CNN-refine")):
         if mkey in present:
             specs.append(("autodock", role, mkey != "autodock", mkey))
+    for mkey, role in (("autodock_vinardo", "raw"),
+                       ("autodock_vinardo_smina", "smina-opt"),
+                       ("autodock_vinardo_gnina", "gnina-opt"),
+                       ("autodock_vinardo_gnina_refinement", "gnina CNN-refine")):
+        if mkey in present:
+            specs.append(("autodock_vinardo", role,
+                          mkey != "autodock_vinardo", mkey))
     for mkey, role in (("diffdock", "raw"), ("diffdock_smina", "smina-opt"),
                        ("diffdock_gnina", "gnina-opt")):
         if mkey in present:
             specs.append(("diffdock", role, mkey != "diffdock", mkey))
+    # Single-variant engines (no raw→smina→gnina family): one spec each.
+    for mkey in ("unidock", "unidock2"):
+        if mkey in present:
+            specs.append((mkey, "raw", False, mkey))
     eq = [m for m in present if m.startswith("equibind")]
     pocket_order = {"unguided": 0, "fpocket": 1, "p2rank": 2, "guided": 3}
     refine_order = {None: 0, "raw": 0, "smina": 1, "gnina": 2}
@@ -4211,12 +4369,26 @@ def _cascade_label(mkey: str) -> str:
         return "AutoDock Vina + smina"
     if mkey == "autodock_gnina":
         return "AutoDock Vina + gnina"
+    if mkey == "autodock_gnina_refinement":
+        return "AutoDock Vina + GNINA CNN-refinement"
+    if mkey == "autodock_vinardo":
+        return "AutoDock Vinardo (raw)"
+    if mkey == "autodock_vinardo_smina":
+        return "AutoDock Vinardo + smina"
+    if mkey == "autodock_vinardo_gnina":
+        return "AutoDock Vinardo + gnina"
+    if mkey == "autodock_vinardo_gnina_refinement":
+        return "AutoDock Vinardo + GNINA CNN-refinement"
     if mkey == "diffdock":
         return "DiffDock (raw)"
     if mkey == "diffdock_smina":
         return "DiffDock + smina"
     if mkey == "diffdock_gnina":
         return "DiffDock + gnina"
+    if mkey == "unidock":
+        return "Uni-Dock (tiled)"
+    if mkey == "unidock2":
+        return "Uni-Dock2"
     if mkey.startswith("equibind"):
         pocket, refine, clamp = _eq_tokens(mkey)
         pk = {"unguided": "unguided", "fpocket": "fpocket",
@@ -4520,9 +4692,11 @@ def plot_pbvalid_yield_boxplot(per: pd.DataFrame, out: Path,
         cover = {m: int((g["n_valid"] >= 1).sum()) for m, g in agg.items()}
         n_valid = {m: int(g["n_valid"].sum()) for m, g in agg.items()}
 
-    tool_color_key = {"autodock": "autodock", "diffdock": "diffdock",
-                      "equibind": "equibind_unguided"}
+    tool_color_key = {"autodock": "autodock", "autodock_vinardo": "autodock_vinardo",
+                      "diffdock": "diffdock", "unidock": "unidock",
+                      "unidock2": "unidock2", "equibind": "equibind_unguided"}
     group_name = group_labels or {"autodock": "AutoDock Vina", "diffdock": "DiffDock",
+                                  "unidock": "Uni-Dock", "unidock2": "Uni-Dock2",
                                   "equibind": "EquiBind (blind / unguided)"}
 
     # Assemble the boxes present, in spec order, laying out x with a wider gap between
@@ -4709,8 +4883,8 @@ def _av_from_reps(reps: pd.DataFrame, thr: float) -> dict:
     near = reps["rmsd"] <= thr
     valid = near & _to_bool(reps["pb_valid"])
     return {"n": n,
-            "n_near": int(near.sum()), "near_pct": round(100 * float(near.mean()), 2),
-            "n_valid": int(valid.sum()), "valid_pct": round(100 * float(valid.mean()), 2),
+            "n_near": int(near.sum()), "near_pct": round(100 * float(near.mean()), PCT_DECIMALS),
+            "n_valid": int(valid.sum()), "valid_pct": round(100 * float(valid.mean()), PCT_DECIMALS),
             "median": round(float(reps["rmsd"].median()), 3)}
 
 
@@ -4747,6 +4921,8 @@ _RANK1_TOPN_SPECS = [
     ("autodock", "AutoDock Vina",        "autodock",                "confidence rank",     "native"),
     ("autodock", "AutoDock (smina-opt)", "autodock_smina",          "optimized rank",      "native"),
     ("autodock", "AutoDock (gnina-opt)", "autodock_gnina",          "optimized rank",      "native"),
+    ("autodock", "AutoDock (GNINA CNN-refine)", "autodock_gnina_refinement",
+     "optimized rank", "native"),
     ("diffdock", "DiffDock (raw)",       "diffdock",                "confidence rank",     "native"),
     ("diffdock", "DiffDock (gnina-opt)", "diffdock_gnina",          "confidence rank",     "native"),
     ("equibind", "EquiBind (raw)",       "equibind_unguided_raw",   "generation order",    "generation"),
@@ -5698,9 +5874,9 @@ def aggregate_refinement_gain_vs_depth(
             rows.append({
                 "tool": disp, "depth": int(N), "n_pairs": n_pairs,
                 "has_refinement": bool(raw_key != ref_key),
-                "raw_success_%": round(100.0 * rh / n_pairs, 3),
-                "refined_success_%": round(100.0 * fh / n_pairs, 3),
-                "gain_pp": round(100.0 * (fh - rh) / n_pairs, 3),
+                "raw_success_%": round(100.0 * rh / n_pairs, PCT_DECIMALS),
+                "refined_success_%": round(100.0 * fh / n_pairs, PCT_DECIMALS),
+                "gain_pp": round(100.0 * (fh - rh) / n_pairs, PCT_DECIMALS),
                 "raw_hit": rh, "refined_hit": fh,
             })
     return pd.DataFrame(rows)
@@ -6040,7 +6216,7 @@ def plot_within_thresholds_by_depth(
     plt.close(fig)
 
     if csv_name is not None:
-        within_df.to_csv(out.parent / csv_name, index=False)
+        _write_csv(within_df, out.parent / csv_name, index=False)
     if report_path is not None:
         try:
             _write_within_by_depth_report(report_path, within_df, out.name, depths,
@@ -6721,7 +6897,7 @@ def aggregate_form_fidelity(df: pd.DataFrame,
         g = reps[reps["method"] == method]
         n = len(g)
         row = {"method": method, "n_pairs": n_pairs, "n_success": n,
-               "success_%": round(100 * n / n_pairs, 2) if n_pairs else float("nan")}
+               "success_%": round(100 * n / n_pairs, PCT_DECIMALS) if n_pairs else float("nan")}
         if n:
             form = g["form"].dropna()
             ms_in = float((g["inplace"] ** 2).mean(skipna=True))
@@ -6732,22 +6908,34 @@ def aggregate_form_fidelity(df: pd.DataFrame,
                 "form_bestfit_p90": round(float(form.quantile(0.9)), 3),
                 "tfd_median": round(float(g["tfd"].median(skipna=True)), 3),
                 "form_correct_n": int((form <= form_ok).sum()),
-                "form_correct_%": round(100 * float((form <= form_ok).mean()), 2),
+                "form_correct_%": round(100 * float((form <= form_ok).mean()), PCT_DECIMALS),
                 "rms_inplace": round(float(np.sqrt(ms_in)), 3),
                 "rms_form": round(float(np.sqrt(ms_form)), 3),
                 "rms_placement": round(float(np.sqrt((g["placement"] ** 2).mean(skipna=True))), 3),
-                "form_share_of_error_%": round(100 * ms_form / ms_in, 1) if ms_in else float("nan"),
+                "form_share_of_error_%": round(100 * ms_form / ms_in, PCT_DECIMALS) if ms_in else float("nan"),
             })
         rows.append(row)
     return pd.DataFrame(rows)
 
 
 def _fam_key(method: str) -> str:
-    """Collapse a method to its tool family for the per-pose scatter colouring."""
+    """Collapse a method to its tool family for the per-pose scatter colouring.
+
+    Uni-Dock is matched EXPLICITLY and before the EquiBind fallback. This function used
+    to end in an unconditional ``return "equibind"``, so every engine that was neither
+    autodock* nor diffdock* was silently classified as EquiBind. Because
+    :func:`_select_presentation_tools` deliberately keeps unidock and unidock2 in the
+    collapsed presentation frame, Uni-Dock2 poses were being pooled into the EquiBind
+    scatter of every family-pooled figure and CSV built from the whole-protein cache —
+    more than doubling its rank-1 cohort and letting one complex contribute several
+    "rank-1" points. Family-pooled plots iterate over the three tool families, so giving
+    Uni-Dock its own key removes it from them rather than mislabelling it."""
     if method.startswith("autodock"):
         return "autodock"
     if method.startswith("diffdock"):
         return "diffdock"
+    if method.startswith(("unidock", "uni_dock")):
+        return "unidock"
     return "equibind"
 
 
@@ -7061,11 +7249,11 @@ def aggregate_form_fidelity_by_depth(df: pd.DataFrame,
                     "form_bestfit_p90": round(float(form.quantile(0.9)), 3),
                     "tfd_median": round(float(g["tfd"].median(skipna=True)), 3),
                     "form_correct_n": int((form <= form_ok).sum()),
-                    "form_correct_%": round(100 * float((form <= form_ok).mean()), 2),
+                    "form_correct_%": round(100 * float((form <= form_ok).mean()), PCT_DECIMALS),
                     "inplace_median": round(float(g["inplace"].median(skipna=True)), 3),
-                    "pct_placement_limited": round(float(mech_pct["placement-limited"]), 1),
-                    "pct_mixed": round(float(mech_pct["mixed"]), 1),
-                    "pct_form_limited": round(float(mech_pct["form-limited"]), 1),
+                    "pct_placement_limited": round(float(mech_pct["placement-limited"]), PCT_DECIMALS),
+                    "pct_mixed": round(float(mech_pct["mixed"]), PCT_DECIMALS),
+                    "pct_form_limited": round(float(mech_pct["form-limited"]), PCT_DECIMALS),
                 })
             rows.append(row)
     return pd.DataFrame(rows)
@@ -7934,7 +8122,9 @@ def plot_form_vs_placement_depth_filmstrip(
     native 0–2 Å frame of the oracle 20d figures (the 'within2' reading). None =
     all PB-valid poses (RMSD gate removed), which by themselves sprawl to tens of Å.
 
-    ``centroid_max`` (used with ``rmsd_gate=None``) removes off-receptor outliers:
+    ``centroid_max`` (used with ``rmsd_gate=None``) removes poses that sit outside the
+    crystal-site neighbourhood (they are NOT off the receptor — nearly all stay in van
+    der Waals contact with the protein; they are simply away from the crystal site):
     poses whose docked centroid is > ``centroid_max`` Å from the crystal-ligand site
     (or has no centroid) are dropped, matching the code's out-of-pocket convention
     (``centroid_dist``). This trims the ejected blind-docking mode so the axes stay
@@ -7991,7 +8181,7 @@ def plot_form_vs_placement_depth_filmstrip(
     raw_lim = max((max(c["inplace"].max(), c["form"].max())
                    for c in cohorts.values() if not c.empty), default=vlim)
     # Gated: snug 0–2 Å frame. Gate removed: round up to an integer-Å square frame
-    # (the retained on-receptor poses still spread to ~15 Å in in-place RMSD).
+    # (the retained near-site poses still spread to ~15 Å in in-place RMSD).
     lim = (float(math.ceil(max(raw_lim, vlim))) if rmsd_gate is None
            else float(max(raw_lim, vlim)) * 1.05)
     # ``axis_max`` clips the frame to a fixed square so the dense near-native core is
@@ -8095,8 +8285,13 @@ def plot_form_vs_placement_depth_filmstrip(
         top = 0.93
     notes = [f"Rows = tool family · columns = {sel_line}."]
     if rmsd_gate is None and centroid_max is not None:
-        notes.append(f"Off-receptor poses removed — docked centroid > {centroid_max:g} Å from "
-                     f"the crystal-ligand site ({n_dropped} dropped at top-{depths[-1]}).")
+        # NOT "off-receptor": the excluded poses were verified to sit in van der Waals
+        # contact with the protein (autodock_gnina: 5,915 excluded PB-valid poses, median
+        # closest protein contact 2.84 Å, max 3.53 Å). They are away from the CRYSTAL SITE,
+        # which is a different claim — the caption must not imply they left the receptor.
+        notes.append(f"Poses outside the crystal-site neighbourhood removed — docked centroid "
+                     f"> {centroid_max:g} Å from the crystal-ligand site, not off the receptor "
+                     f"({n_dropped} dropped at top-{depths[-1]}).")
     if n_clipped:
         notes.append(f"Axes clipped at {lim:g} Å for legibility — {n_clipped} pose(s) beyond "
                      f"the frame at top-{depths[-1]} not shown.")
@@ -8122,7 +8317,7 @@ def plot_form_vs_placement_depth_filmstrip(
 # The filmstrip is a qualitative read of three confounds that its scatter cannot
 # quantify on its own, so this ships the numbers alongside it:
 #   1. COVERAGE — each per-tool cell is a DIFFERENT set of complexes (a tool only
-#      appears where it produced a valid on-receptor pose), so raw cross-tool
+#      appears where it produced a valid near-site pose), so raw cross-tool
 #      medians are not apples-to-apples. We report valid-complex coverage and run
 #      the cross-tool comparison PAIRED on the complexes all three tools cover.
 #   2. r-COUPLING — r = form²/in-place² is inflated by low placement error, so a
@@ -8133,7 +8328,8 @@ def plot_form_vs_placement_depth_filmstrip(
 #      near-duplicate poses (low sample diversity); the within-complex spread of a
 #      tool's top-d in-place RMSD tells the two apart.
 # Cohorts are reconstructed identically to the _pbvalid filmstrip (top-d PB-valid,
-# RMSD gate removed, off-receptor centroid-trimmed). Crystal-free sets → {} (no-op).
+# RMSD gate removed, centroid-trimmed to the crystal-site neighbourhood). Crystal-free
+# sets → {} (no-op).
 _FAM_STATS = [("autodock", "AutoDock", "#1f77b4"),
               ("diffdock", "DiffDock", "#ff7f0e"),
               ("equibind", "EquiBind", "#2ca02c")]
@@ -8202,7 +8398,7 @@ def _boot_centroid_drift(sub1: pd.DataFrame, sub5: pd.DataFrame,
 
 def _filmstrip_cohorts(df: pd.DataFrame, depths, centroid_max: float) -> dict:
     """The exact cohorts behind the _pbvalid filmstrip: PB-valid poses within each
-    method's top-d (RMSD gate removed), off-receptor (centroid > ``centroid_max``)
+    method's top-d (RMSD gate removed), outside-the-crystal-site (centroid > ``centroid_max``)
     trimmed, with ``fam``/``r`` columns added. ``eff_rank`` is carried for banding."""
     out = {}
     for d in sorted({int(x) for x in depths}):
@@ -8262,7 +8458,7 @@ def aggregate_filmstrip_statistics(df: pd.DataFrame, depths=(1, 3, 5),
             rows.append({
                 "tool": lab, "depth": d, "n_poses": int(len(sub)),
                 "n_valid_complexes": ncplx, "universe_complexes": universe,
-                "coverage_pct": round(100 * ncplx / universe, 1) if universe else float("nan"),
+                "coverage_pct": round(100 * ncplx / universe, PCT_DECIMALS) if universe else float("nan"),
                 "inplace_median": round(float(sub["inplace"].median()), 3),
                 "inplace_q1": round(float(sub["inplace"].quantile(0.25)), 3),
                 "inplace_q3": round(float(sub["inplace"].quantile(0.75)), 3),
@@ -8270,9 +8466,9 @@ def aggregate_filmstrip_statistics(df: pd.DataFrame, depths=(1, 3, 5),
                 "form_q1": round(float(sub["form"].quantile(0.25)), 3),
                 "form_q3": round(float(sub["form"].quantile(0.75)), 3),
                 "median_r": round(float(sub["r"].median()), 3),
-                "pct_placement_limited": round(100 * float((mech == "placement-limited").mean()), 1),
-                "pct_mixed": round(100 * float((mech == "mixed").mean()), 1),
-                "pct_form_limited": round(100 * float((mech == "form-limited").mean()), 1),
+                "pct_placement_limited": round(100 * float((mech == "placement-limited").mean()), PCT_DECIMALS),
+                "pct_mixed": round(100 * float((mech == "mixed").mean()), PCT_DECIMALS),
+                "pct_form_limited": round(100 * float((mech == "form-limited").mean()), PCT_DECIMALS),
             })
     per_tool_depth = pd.DataFrame(rows)
 
@@ -9069,7 +9265,7 @@ def _write_real_example_pdbs(geoms: dict, out_dir: Path) -> list:
         "form_kabsch_rmsd_A": round(g["form"], 3), "r_form_share": round(g["r"], 3),
     } for r, g in geoms.items()])
     man_path = out_dir / "mechanism_real_examples.csv"
-    manifest.to_csv(man_path, index=False)
+    _write_csv(manifest, man_path, index=False)
     written.append(man_path)
     return written
 
@@ -9267,8 +9463,8 @@ def aggregate_oracle_rank_distribution(df: pd.DataFrame, top_n: int) -> pd.DataF
                 "method": method,
                 "rank": (str(k) if k <= top_n else f">{top_n}"),
                 "n_pairs": n,
-                "pct_at_rank": round(pct, 2),
-                "cum_pct": round(cum, 2),
+                "pct_at_rank": round(pct, PCT_DECIMALS),
+                "cum_pct": round(cum, PCT_DECIMALS),
             })
     return pd.DataFrame(rows)
 
@@ -9413,8 +9609,8 @@ def aggregate_topk_recovery(df: pd.DataFrame, ks, thr: float = 2.0) -> pd.DataFr
             rows.append({
                 "variant": variant, "method_key": mkey, "k": k, "n_complexes": N,
                 "near_k": nk, "valid_k": vk,
-                "near_recovery_%": round(100 * nk / N, 2),
-                "valid_recovery_%": round(100 * vk / N, 2),
+                "near_recovery_%": round(100 * nk / N, PCT_DECIMALS),
+                "valid_recovery_%": round(100 * vk / N, PCT_DECIMALS),
             })
     return pd.DataFrame(rows)
 
@@ -9477,7 +9673,7 @@ def topk_recovery_stats(df: pd.DataFrame, thr: float = 2.0,
             gap.append({
                 "variant": variant, "k": k, "n": N, "near_k": nk, "valid_k": vk,
                 "near_rate": nk / N, "valid_rate": vk / N,
-                "gap_pp": round(100 * (nk - vk) / N, 2),
+                "gap_pp": round(100 * (nk - vk) / N, PCT_DECIMALS),
                 "accurate_invalid_k": b, "accurate_invalid_share": b / N,
                 "accurate_invalid_ci": [lo, hi], "nested": True,
             })
@@ -9631,6 +9827,8 @@ _RANK_QUALITY_SPECS = [
     ("autodock", "AutoDock Vina",           "autodock",                "native", "confidence rank"),
     ("autodock_smina", "AutoDock (smina-opt)", "autodock_smina",        "native", "optimized rank"),
     ("autodock_gnina", "AutoDock (gnina-opt)", "autodock_gnina",        "native", "optimized rank"),
+    ("autodock_gnina_refinement", "AutoDock (GNINA CNN-refine)",
+     "autodock_gnina_refinement", "native", "optimized rank"),
     ("diffdock", "DiffDock",                "diffdock",                "native", "confidence rank"),
     ("equibind", "EquiBind (gnina-ranked)", "equibind_unguided_gnina", "gnina",  "gnina-affinity rank"),
 ]
@@ -9723,7 +9921,7 @@ def _summarize_rank_quality_tau(tau_df: pd.DataFrame) -> pd.DataFrame:
                 "median_tau": round(float(s.median()), 4),
                 "q25_tau": round(float(s.quantile(0.25)), 4),
                 "q75_tau": round(float(s.quantile(0.75)), 4),
-                "pct_positive": round(100.0 * float((s > 0).mean()), 1),
+                "pct_positive": round(100.0 * float((s > 0).mean()), PCT_DECIMALS),
             })
     return pd.DataFrame(rows)
 
@@ -9791,7 +9989,7 @@ def aggregate_rank_position_concordance(df_full: pd.DataFrame, specs, top_n: int
                 if tot:
                     diag_rows.append({
                         "tool_key": ckey, "tool": clabel, "criterion": crit,
-                        "rank": k, "pct_match": round(100.0 * match / tot, 2),
+                        "rank": k, "pct_match": round(100.0 * match / tot, PCT_DECIMALS),
                         "n_pairs": tot})
         # PB-validity: achieved validity-by-rank vs the tool's OVERALL valid rate
         # (the random-ordering reference — a tool that ranks validity well sits
@@ -9807,8 +10005,8 @@ def aggregate_rank_position_concordance(df_full: pd.DataFrame, specs, top_n: int
                 continue
             val_rows.append({
                 "tool_key": ckey, "tool": clabel, "rank": k,
-                "pct_valid": round(100.0 * float(at_k["_v"].mean()), 2),
-                "pct_random": round(overall_valid, 2),
+                "pct_valid": round(100.0 * float(at_k["_v"].mean()), PCT_DECIMALS),
+                "pct_random": round(overall_valid, PCT_DECIMALS),
                 "n_pairs": npair})
     return pd.DataFrame(diag_rows), pd.DataFrame(val_rows)
 
@@ -10587,15 +10785,15 @@ def aggregate_pocket_localization(df: pd.DataFrame, top_n: int,
             "n_topN_poses": n_topN_poses,
             "top_n": top_n,
             "pocket_cutoff_A": pocket_cutoff,
-            "pct_topN_in_validated_pocket": round(pct_topN, 2),
+            "pct_topN_in_validated_pocket": round(pct_topN, PCT_DECIMALS),
             "pct_top1_in_validated_pocket":
-                round(100 * float(pc["top1_on"].mean()), 2) if nc else nan,
+                round(100 * float(pc["top1_on"].mean()), PCT_DECIMALS) if nc else nan,
             "pct_any_topN_in_validated_pocket":
-                round(100 * float(pc["any_on"].mean()), 2) if nc else nan,
+                round(100 * float(pc["any_on"].mean()), PCT_DECIMALS) if nc else nan,
             "pct_oracle_in_validated_pocket":
-                round(100 * float(pc["oracle_on"].mean()), 2) if nc else nan,
+                round(100 * float(pc["oracle_on"].mean()), PCT_DECIMALS) if nc else nan,
             "pct_oracle_diff_pocket_vs_topN":
-                round(100 * float(pc["oracle_diff"].mean()), 2) if nc else nan,
+                round(100 * float(pc["oracle_diff"].mean()), PCT_DECIMALS) if nc else nan,
         })
     return pd.DataFrame(rows).set_index("method") if rows else pd.DataFrame()
 
@@ -10632,9 +10830,9 @@ def aggregate_pocket_localization_by_rank(df: pd.DataFrame, top_n: int,
                 "method": method,
                 "rank": k,
                 "n_poses": n_k,
-                "pct_in_pocket": round(100 * float(at_k["on_pocket"].mean()), 2)
+                "pct_in_pocket": round(100 * float(at_k["on_pocket"].mean()), PCT_DECIMALS)
                                  if n_k else nan,
-                "pct_any_in_top_k": round(100 * float(any_by_complex.mean()), 2)
+                "pct_any_in_top_k": round(100 * float(any_by_complex.mean()), PCT_DECIMALS)
                                     if len(any_by_complex) else nan,
             })
     return pd.DataFrame(rows)
@@ -10916,9 +11114,9 @@ def _waterfall_to_csv(cascades: dict, path: Path) -> None:
                 "method": method, "selection": c["selection"], "order": order,
                 "step": s["label"], "kind": s["kind"],
                 "poses_removed": s["removed"], "poses_remaining": s["remaining"],
-                "remaining_pct": round(100 * s["remaining"] / N, 2) if N else float("nan"),
+                "remaining_pct": round(100 * s["remaining"] / N, PCT_DECIMALS) if N else float("nan"),
             })
-    pd.DataFrame(rows).to_csv(path, index=False)
+    _write_csv(pd.DataFrame(rows), path, index=False)
 
 
 def plot_pb_waterfall(cascades: dict, out: Path,
@@ -11090,9 +11288,9 @@ def plot_pb_waterfall_top1_vs_topn(cascades_top1: dict, cascades_topn: dict,
                         ha="left", va="center", fontsize=8,
                         color=green, fontweight="bold")
             csv_rows.append({"method": method, "step": name,
-                             "top1_remaining_%": round(s1[i], 2),
-                             f"top{top_n}_remaining_%": round(sn[i], 2),
-                             "gain_pp": round(d, 2)})
+                             "top1_remaining_%": round(s1[i], PCT_DECIMALS),
+                             f"top{top_n}_remaining_%": round(sn[i], PCT_DECIMALS),
+                             "gain_pp": round(d, PCT_DECIMALS)})
 
         ax.set_ylim(0, 110)
         ax.set_ylabel("% of complexes\nsurviving", fontsize=9)
@@ -11118,7 +11316,7 @@ def plot_pb_waterfall_top1_vs_topn(cascades_top1: dict, cascades_topn: dict,
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
     if csv_out is not None and csv_rows:
-        pd.DataFrame(csv_rows).to_csv(csv_out, index=False)
+        _write_csv(pd.DataFrame(csv_rows), csv_out, index=False)
 
 
 def _step_category(step: dict) -> tuple[str, str]:
@@ -11401,7 +11599,7 @@ def plot_pb_top30_recovery_by_test(cascades_top1: dict, cascades_topn: dict,
         fig.subplots_adjust(top=title_y - 4 * (0.253 / fig.get_figheight()) - 0.02)
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
     if csv_out is not None and csv_rows:
-        pd.DataFrame(csv_rows).to_csv(csv_out, index=False)
+        _write_csv(pd.DataFrame(csv_rows), csv_out, index=False)
 
 
 def _write_pb_recovery_report(out_path: Path, *, figure_names, csv_names, methods,
@@ -12060,9 +12258,9 @@ def plot_pb_waterfall_raw_vs_best(panels: dict, out: Path,
                     bbox=dict(boxstyle="round,pad=0.3", fc="white",
                               ec=accent, alpha=0.92))
             csv_rows.append({"pair": c.get("pair"),
-                             "raw_passing_all_%": round(raw_pct, 1),
-                             "best_passing_all_%": round(final_pct, 1),
-                             "gain_pp": round(d, 1)})
+                             "raw_passing_all_%": round(raw_pct, PCT_DECIMALS),
+                             "best_passing_all_%": round(final_pct, PCT_DECIMALS),
+                             "gain_pp": round(d, PCT_DECIMALS)})
 
     axes[-1].set_xticks(np.arange(nx))
     axes[-1].set_xticklabels(labels, rotation=45, ha="right",
@@ -12086,7 +12284,7 @@ def plot_pb_waterfall_raw_vs_best(panels: dict, out: Path,
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
     if csv_out is not None and csv_rows:
-        pd.DataFrame(csv_rows).to_csv(csv_out, index=False)
+        _write_csv(pd.DataFrame(csv_rows), csv_out, index=False)
 
 
 # ───────────────────────────────────────────────────────────────────
@@ -12365,7 +12563,7 @@ def plot_pb_rank_depth_added_waterfall(panels: dict, top_n: int, out: Path,
                "rank1_pbvalid_complexes": dep.get("rank1_pbvalid", 0),
                "added_pbvalid": dep.get("added_pbvalid", 0),
                "added_fail_any": dep.get("added_fail_any", 0),
-               "added_pbvalid_pct": round(final_pct, 2)}
+               "added_pbvalid_pct": round(final_pct, PCT_DECIMALS)}
         for col, cnt in dep.get("fail_by_test", {}).items():
             row[f"failind_{col}"] = cnt
         summ_rows.append(row)
@@ -12386,7 +12584,7 @@ def plot_pb_rank_depth_added_waterfall(panels: dict, top_n: int, out: Path,
     if csv_out is not None:
         _waterfall_to_csv(panels, csv_out)
     if summary_csv is not None and summ_rows:
-        pd.DataFrame(summ_rows).to_csv(summary_csv, index=False)
+        _write_csv(pd.DataFrame(summ_rows), summary_csv, index=False)
 
 
 def plot_pb_rank_depth_fail_by_test(panels: dict, top_n: int, out: Path,
@@ -12450,7 +12648,7 @@ def plot_pb_rank_depth_fail_by_test(panels: dict, top_n: int, out: Path,
     fig.tight_layout(rect=(0, 0, 1, 0.93))
     fig.savefig(out, dpi=160, bbox_inches="tight"); plt.close(fig)
     if csv_out is not None and csv_rows:
-        pd.DataFrame(csv_rows).to_csv(csv_out, index=False)
+        _write_csv(pd.DataFrame(csv_rows), csv_out, index=False)
 
 
 # ───────────────────────────────────────────────────────────────────
@@ -12533,23 +12731,27 @@ def _apply_equibind_split(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _classify_autodock(row) -> str:
-    """Return original | smina | gnina for one AutoDock pose.
+    """Return the independent optimizer identity for one AutoDock pose.
 
     Explicit PoseBusters provenance is authoritative. Method/path fallbacks are
     only for older result CSVs and deliberately recognize optimized directories
     so legacy optimized poses cannot be pooled with raw Vina.
     """
     opt = (_col_value(row, "optimizer") or "").lower()
-    if opt in ("smina", "gnina"):
+    if opt in _AUTODOCK_OPTIMIZERS:
         return opt
     if opt in ("original", "raw", "native", "none"):
         return "original"
     method = str(row.get("docking_method", "")).strip().lower()
+    if method.endswith("_gnina_refinement"):
+        return "gnina_refinement"
     if method.endswith("_smina"):
         return "smina"
     if method.endswith("_gnina"):
         return "gnina"
     name = " ".join(str(row.get(k, "")) for k in ("pose_name", "pose_file")).lower()
+    if "optimized_gnina_refinement" in name:
+        return "gnina_refinement"
     if "optimized_smina" in name:
         return "smina"
     if "optimized_gnina" in name:
@@ -12562,7 +12764,7 @@ def _autodock_scoring_base(method: str) -> str:
     'autodock_vinardo' — with any existing optimizer suffix stripped, so the
     split stays idempotent and never merges Vinardo into Vina."""
     mm = str(method).strip().lower()
-    for suf in ("_smina", "_gnina"):
+    for suf in _AUTODOCK_OPTIMIZER_SUFFIXES:
         if mm.endswith(suf):
             mm = mm[: -len(suf)]
             break
@@ -12813,7 +13015,7 @@ def _load_cached_per_pose(args, sig: dict):
 
 def _write_per_pose_cache(args, df: pd.DataFrame, sig: dict) -> Path:
     per_pose_csv = args.out_dir / "per_pose_metrics.csv"
-    df.to_csv(per_pose_csv, index=False)
+    _write_csv(df, per_pose_csv, index=False)
     (args.out_dir / "per_pose_metrics.manifest.json").write_text(
         json.dumps({"signature": sig, "top_n": int(args.top_n),
                     "n_rows": int(len(df))}, indent=2))
@@ -12861,7 +13063,7 @@ def _write_rmsd_vs_pbvalid_table(oracle_sum: pd.DataFrame, top1_sum: pd.DataFram
         tbl["top1_pbvalid_cost_pp"] = (tbl["top1_rmsd_le_2A_%"]
                                        - tbl["top1_rmsd2_and_pbvalid_%"])
     tbl.index.name = "method"
-    tbl.round(2).to_csv(out)
+    _write_csv(_round_csv(tbl), out)
     return tbl
 
 
@@ -12945,21 +13147,30 @@ def main() -> None:
                     help="When --best-diffdock-only / --collapse-plots-only collapse DiffDock "
                          "to a single 'DiffDock*' variant, FORCE it to be this one instead of "
                          "the oracle-ranked best (does not affect the per-pose cache).")
+    ap.add_argument("--collapse-autodock-variant",
+                    help="Pin the AutoDock slot of the collapsed presentation frame to "
+                         "one Vina-scored variant (autodock | autodock_gnina | "
+                         "autodock_gnina_refinement) instead of always raw Vina. "
+                         "Counterpart to --collapse-diffdock-variant. Takes effect under "
+                         "--collapse-plots-only or --best-variants-only. Unset keeps the "
+                         "previous raw-Vina behaviour, so existing runs are unchanged.")
     ap.add_argument("--best-variants-only", action="store_true",
                     help="Convenience umbrella: enable BOTH --best-equibind-only and "
-                         "--best-diffdock-only, so every summary and plot shows only the "
-                         "single best EquiBind and best DiffDock variant (i.e. AutoDock, "
-                         "DiffDock*, EquiBind*) instead of all 18 EquiBind + 3 DiffDock "
-                         "variants. per_pose_metrics.csv still keeps every variant for "
-                         "drill-down.")
+                         "--best-diffdock-only, so ordinary summaries and headline "
+                         "cross-tool plots show raw AutoDock, DiffDock*, and EquiBind*. "
+                         "Explicit variant diagnostics and per_pose_metrics.csv still "
+                         "keep every variant for drill-down.")
     ap.add_argument("--collapse-plots-only", action="store_true",
-                    help="Keep EVERY variant in the summary TABLES but show only the "
-                         "single best variant per tool in the GRAPHS. Writes the full "
+                    help="Keep EVERY variant in explicit all-variant tables and "
+                         "diagnostics, while ordinary summaries and headline cross-tool "
+                         "graphs use raw AutoDock plus one DiffDock and EquiBind winner. "
+                         "Writes the full "
                          "all-variants tables (oracle_summary_all_variants.csv, "
                          "top1_summary_all_variants.csv, and rmsd_vs_pbvalid_all_variants.csv "
-                         "— the RMSD vs RMSD+PB-validity comparison per variant) before "
-                         "collapsing to AutoDock, DiffDock*, EquiBind* for every plot and "
-                         "oracle_summary.csv. Like --best-variants-only but tables stay full.")
+                         "— the RMSD vs RMSD+PB-validity comparison per variant). "
+                         "oracle_summary.csv is collapsed; explicitly named all-variant, "
+                         "raw-vs-refined, and optimization figures remain diagnostic. "
+                         "Like --best-variants-only but the full tables are also written.")
     args = ap.parse_args()
 
     # --best-variants-only is a convenience umbrella for the two per-family "best"
@@ -12979,8 +13190,9 @@ def main() -> None:
     if args.collapse_plots_only:
         args.best_equibind_only = True
         args.best_diffdock_only = True
-        print("collapse-plots-only: all variants kept in the *_all_variants.csv tables; "
-              "plots + oracle_summary.csv collapse to AutoDock, DiffDock*, EquiBind*.")
+        print("collapse-plots-only: all variants kept in *_all_variants.csv and "
+              "variant diagnostics; ordinary summaries + headline plots collapse to "
+              "AutoDock, DiffDock*, EquiBind*.")
 
     args.out_dir.mkdir(parents=True, exist_ok=True)
     root = Path.cwd()
@@ -13067,7 +13279,7 @@ def main() -> None:
     _w2cmp = within2_validity_comparison(df)
     _w2_stats = None
     if not _w2cmp.empty:
-        _w2cmp.to_csv(args.out_dir / "within2_validity_comparison.csv")
+        _write_csv(_w2cmp, args.out_dir / "within2_validity_comparison.csv")
         # Paired within-method test of the circle↔diamond gap (oracle vs near-native
         # pool PB-validity); degrades to the test-free figure on any failure.
         try:
@@ -13088,13 +13300,14 @@ def main() -> None:
     if args.collapse_plots_only:
         _oracle_all = aggregate_oracle(df)
         _top1_all = aggregate_top1(df)
-        _oracle_all.to_csv(args.out_dir / "oracle_summary_all_variants.csv")
-        _top1_all.to_csv(args.out_dir / "top1_summary_all_variants.csv")
+        _write_csv(_oracle_all, args.out_dir / "oracle_summary_all_variants.csv")
+        _write_csv(_top1_all, args.out_dir / "top1_summary_all_variants.csv")
         _write_rmsd_vs_pbvalid_table(
             _oracle_all, _top1_all, args.out_dir / "rmsd_vs_pbvalid_all_variants.csv")
         print(f"collapse-plots-only: wrote all-variants tables for {len(_oracle_all)} "
               "variants (oracle_summary_all_variants.csv, top1_summary_all_variants.csv, "
-              "rmsd_vs_pbvalid_all_variants.csv) — plots below use the best per tool.")
+              "rmsd_vs_pbvalid_all_variants.csv) — headline plots use the canonical "
+              "three-tool presentation.")
 
     # Keep the FULL per-variant frame (before any best-variant collapse) so the
     # raw-vs-best optimization figure (09c) can still see every DiffDock/EquiBind
@@ -13111,7 +13324,7 @@ def main() -> None:
         _cascade = aggregate_pose_validity_cascade(
             df_full, kabsch_thr=args.form_ok_kabsch)
         if not _cascade.empty:
-            _cascade.round(2).to_csv(
+            _write_csv(_round_csv(_cascade),
                 args.out_dir / "pose_validity_cascade.csv", index=False)
             _cascade_tbl = _write_pose_validity_cascade_report(
                 _cascade, args.out_dir / "pose_validity_cascade_report.txt",
@@ -13126,11 +13339,12 @@ def main() -> None:
     # ── Optional: restrict the report to the single best EquiBind variant ──
     # Done after the full per-pose dump (which keeps every variant) so only the
     # summaries and plots below are filtered.
+    best_eq = None
     if args.best_equibind_only:
-        df, best_variant = _select_best_equibind(df)
-        if best_variant:
-            _LABEL_OVERRIDES[best_variant] = "EquiBind*"
-            print(f"best-equibind-only: '{best_variant}' is the top EquiBind variant "
+        df, best_eq = _select_best_equibind(df)
+        if best_eq:
+            _LABEL_OVERRIDES[best_eq] = "EquiBind*"
+            print(f"best-equibind-only: '{best_eq}' is the top EquiBind variant "
                   "by PB-Valid AND RMSD ≤ 2 Å — keeping only it (shown as 'EquiBind*').")
         else:
             print("best-equibind-only: no EquiBind variants present — nothing filtered.")
@@ -13143,33 +13357,66 @@ def main() -> None:
         df, best_dd = _select_best_diffdock(df, forced=args.collapse_diffdock_variant)
         if best_dd:
             _LABEL_OVERRIDES["diffdock"] = "DiffDock*"
-            print(f"best-diffdock-only: '{best_dd}' is the top DiffDock variant by "
-                  "PB-Valid AND RMSD ≤ 2 Å — keeping only it as 'diffdock' (shown as 'DiffDock*').")
+            if best_dd == args.collapse_diffdock_variant:
+                print(f"best-diffdock-only: '{best_dd}' was pinned by "
+                      "--collapse-diffdock-variant — keeping only it as 'diffdock' "
+                      "(shown as 'DiffDock*').")
+            else:
+                print(f"best-diffdock-only: '{best_dd}' is the top DiffDock variant by "
+                      "PB-Valid AND RMSD ≤ 2 Å — keeping only it as 'diffdock' "
+                      "(shown as 'DiffDock*').")
         else:
             print("best-diffdock-only: no DiffDock variants present — nothing filtered.")
 
     # ── Aggregation ──────────────────────────────────────────────
+    # The family selectors above preserve every unrelated method by design.
+    # Under the two three-tool umbrella modes, finish the presentation collapse
+    # explicitly so newly added AutoDock/Vinardo optimizer variants and UniDock do
+    # not leak into ordinary summaries or headline plots. df_full and, for
+    # --collapse-plots-only, the *_all_variants.csv tables remain complete.
+    if args.collapse_plots_only or args.best_variants_only:
+        # Pin the AutoDock slot BEFORE the keep-set runs, since the keep-set only
+        # recognises the canonical 'autodock' key and would otherwise drop the
+        # pinned optimizer variant outright.
+        df, best_ad = _select_autodock_arm(df, forced=args.collapse_autodock_variant)
+        if best_ad and best_ad != "autodock":
+            # Spell the pinned arm out rather than using a bare star, so the legend of
+            # every collapsed figure says which AutoDock arm it is drawn on.
+            _ad_label = {
+                "autodock_gnina": "AutoDock Vina + gnina",
+                "autodock_gnina_refinement": "AutoDock Vina + gnina refine",
+            }.get(best_ad, f"AutoDock ({best_ad})")
+            _LABEL_OVERRIDES["autodock"] = _ad_label
+            print(f"collapse-autodock-variant: '{best_ad}' was pinned — keeping only it "
+                  f"as 'autodock' (shown as '{_ad_label}').")
+        df = _select_presentation_tools(df, best_eq)
+        mode = ("collapse-plots-only" if args.collapse_plots_only
+                else "best-variants-only")
+        print(f"{mode}: presentation methods: "
+              f"{sorted(df['method'].astype(str).unique())}"
+              f"{f' (AutoDock slot = {best_ad})' if best_ad else ''}")
+
     oracle_sum = aggregate_oracle(df)
-    oracle_sum.to_csv(args.out_dir / "oracle_summary.csv")
+    _write_csv(oracle_sum, args.out_dir / "oracle_summary.csv")
     print("\nOracle summary (all tools):")
     print(oracle_sum.to_string())
 
     top1_sum = aggregate_top1(df)
-    top1_sum.to_csv(args.out_dir / "top1_summary.csv")
+    _write_csv(top1_sum, args.out_dir / "top1_summary.csv")
     if not top1_sum.empty:
         print("\nTop-1 summary (ranking tools):")
         print(top1_sum.to_string())
 
     rank_df = aggregate_by_rank(df, args.top_n)
-    rank_df.to_csv(args.out_dir / "per_rank_metrics.csv", index=False)
+    _write_csv(rank_df, args.out_dir / "per_rank_metrics.csv", index=False)
 
     ifp_rank_df = aggregate_ifp_by_rank(df, args.top_n)
-    ifp_rank_df.to_csv(args.out_dir / "per_rank_ifp_recovery.csv", index=False)
+    _write_csv(ifp_rank_df, args.out_dir / "per_rank_ifp_recovery.csv", index=False)
     print("  wrote per-rank interaction-fingerprint recovery → per_rank_ifp_recovery.csv")
 
     oracle_pivot = _oracle_per_pair(df).pivot_table(
         index=["protein", "ligand"], columns="method", values="rmsd")
-    oracle_pivot.to_csv(args.out_dir / "oracle_rmsd_per_pair.csv")
+    _write_csv(oracle_pivot, args.out_dir / "oracle_rmsd_per_pair.csv")
 
     # ── Part A: oracle comparison (all tools) ────────────────────
     # Statistical tests for the headline oracle / success / paper figures. Each
@@ -13249,7 +13496,7 @@ def main() -> None:
     if not rvb.empty:
         # role_label carries newlines for the two-line bar labels — keep the clean
         # single-line `role` column in the CSV.
-        rvb.drop(columns=["role_label"]).to_csv(
+        _write_csv(rvb.drop(columns=["role_label"]),
             args.out_dir / "optimization_raw_vs_best.csv", index=False)
         plot_optimization_raw_vs_best(
             rvb, args.out_dir / "09c_optimization_raw_vs_best.png")
@@ -13272,9 +13519,9 @@ def main() -> None:
     # omnibus annotate the figure and feed the JSON sidecar.
     _yield_per = pbvalid_yield_per_complex(df_full)
     if not _yield_per.empty:
-        _yield_per.to_csv(args.out_dir / "pbvalid_yield_per_complex.csv", index=False)
+        _write_csv(_yield_per, args.out_dir / "pbvalid_yield_per_complex.csv", index=False)
         _yield_sum = aggregate_pbvalid_yield_by_variant(df_full)
-        _yield_sum.to_csv(args.out_dir / "pbvalid_yield_by_variant.csv", index=False)
+        _write_csv(_yield_sum, args.out_dir / "pbvalid_yield_by_variant.csv", index=False)
         try:
             _yield_stats = _stats_pbvalid_yield(_yield_per)
             if _yield_stats:
@@ -13311,7 +13558,7 @@ def main() -> None:
         _yield_per_all = pbvalid_yield_per_complex(df_full, _all_specs)
         if not _yield_per_all.empty:
             _yield_sum_all = aggregate_pbvalid_yield_by_variant(df_full, _all_specs)
-            _yield_sum_all.to_csv(
+            _write_csv(_yield_sum_all,
                 args.out_dir / "pbvalid_yield_by_variant_all.csv", index=False)
             _n_variants = _yield_sum_all["method_key"].nunique()
             plot_pbvalid_yield_boxplot(
@@ -13320,7 +13567,11 @@ def main() -> None:
                 summary=_yield_sum_all, stats=None, specs=_all_specs,
                 draw_brackets=False, color_by_variant=True,
                 figsize=(max(13.0, 1.15 * _n_variants + 3.0), 7.2),
-                group_labels={"autodock": "AutoDock Vina", "diffdock": "DiffDock",
+                group_labels={"autodock": "AutoDock Vina",
+                              "autodock_vinardo": "AutoDock Vinardo",
+                              "diffdock": "DiffDock",
+                              "unidock": "Uni-Dock",
+                              "unidock2": "Uni-Dock2",
                               "equibind": "EquiBind (all pocket × refine variants)"},
                 # AutoDock's 100 % median label sits under a top-left legend here (tight
                 # y-axis), so move the legend to the empty top-right corner (in-axes,
@@ -13338,7 +13589,7 @@ def main() -> None:
     r1tn_depths = sorted({1, args.top_n, 30})
     r1tn = aggregate_rank1_vs_topn(df_full, r1tn_depths)
     if not r1tn.empty:
-        r1tn.to_csv(args.out_dir / "rank1_vs_topn.csv", index=False)
+        _write_csv(r1tn, args.out_dir / "rank1_vs_topn.csv", index=False)
         plot_rank1_vs_topn(r1tn, args.out_dir / "09d_rank1_vs_topn.png")
         # Non-bar alternative views of the same data (trajectory / slope / gap).
         plot_rank1_vs_topn_scatter(r1tn, args.out_dir / "09d_alt_scatter.png")
@@ -13350,7 +13601,8 @@ def main() -> None:
                    if s[2] not in set(r1tn["method_key"])]
         if missing:
             print(f"  WARNING: 09d is missing variant(s) {missing} — df lacks those "
-                  "method keys (re-run with --diffdock-variant all --split-equibind).")
+                  "method keys; the corresponding optimizer results are not present "
+                  "in this report input.")
 
     # 09e — 09b's per-variant data as a fig-10 dumbbell (● oracle vs ○ selected
     # rank-1) for the strict ≤2Å & PB-valid metric, EquiBind ranked by gnina affinity.
@@ -13382,7 +13634,7 @@ def main() -> None:
     # ── "Twisted & turned": how the docked ligand deviates from its crystal
     #    conformation (translation / rotation / internal twisting), for the
     #    top-1 and oracle pose of each tool ───────────────────────────────
-    aggregate_twist_turn(df, args.top_n).to_csv(
+    _write_csv(aggregate_twist_turn(df, args.top_n),
         args.out_dir / "twist_turn_summary.csv", index=False)
     plot_twist_turn(df, args.out_dir / "14_twist_turn.png", top_n=args.top_n)
     print("  wrote twist/turn summary → twist_turn_summary.csv")
@@ -13401,7 +13653,7 @@ def main() -> None:
         ("__valid_ceiling", _best_valid_near_native_reps, _SEL_NOTE_VALID),
     ]
     for suffix, selector, note in form_selections:
-        aggregate_form_fidelity(df, args.form_ok_kabsch, selector=selector).to_csv(
+        _write_csv(aggregate_form_fidelity(df, args.form_ok_kabsch, selector=selector),
             args.out_dir / f"form_fidelity_summary{suffix}.csv", index=False)
         plot_form_fidelity(df, args.out_dir / f"20_form_fidelity{suffix}.png",
                            args.form_ok_kabsch, selector=selector, sel_note=note)
@@ -13426,7 +13678,7 @@ def main() -> None:
     plot_form_vs_placement_depth_filmstrip(
         df, args.out_dir / "20d_form_vs_placement_by_family__depth_filmstrip.png",
         args.form_ok_kabsch, rmsd_gate=NEAR_NATIVE_RMSD_A, depths=(1, 3, 5))
-    # Same filmstrip with the ≤ 2 Å gate REMOVED (all PB-valid poses), off-receptor
+    # Same filmstrip with the ≤ 2 Å gate REMOVED (all PB-valid poses), away-from-site
     # outliers dropped (docked centroid > FAR_FROM_RECEPTOR_CENTROID_A from the native
     # site) so the axes stay readable while the near-to-moderate spread the gate hides
     # is exposed — the deeper ranks visibly add mis-positioned but still-valid poses.
@@ -13442,7 +13694,7 @@ def main() -> None:
         form_ok=args.form_ok_kabsch)
     if _fs_stats:
         for _key in ("per_tool_depth", "within_tool_trend", "crosstool_paired", "pose_diversity"):
-            _fs_stats[_key].to_csv(
+            _write_csv(_fs_stats[_key],
                 args.out_dir / f"filmstrip_stats__{_key}.csv", index=False)
         plot_filmstrip_statistics(
             _fs_stats,
@@ -13472,7 +13724,7 @@ def main() -> None:
          "selection: PB-valid AND RMSD ≤ 2 Å poses within top-d ranked"),
     ]
     for suffix, gate, sup in depth_modes:
-        aggregate_form_fidelity_by_depth(df, args.form_ok_kabsch, rmsd_gate=gate).to_csv(
+        _write_csv(aggregate_form_fidelity_by_depth(df, args.form_ok_kabsch, rmsd_gate=gate),
             args.out_dir / f"form_fidelity_summary__rank_depth{suffix}.csv", index=False)
         plot_form_fidelity_by_depth(
             df, args.out_dir / f"20_form_fidelity__rank_depth{suffix}.png",
@@ -13514,7 +13766,7 @@ def main() -> None:
             print(f"  WARNING: could not update stats sidecar ({_exc})")
     # Head-to-head of the two selections: table (how many complexes each rule
     # keeps + how many the nearest rule needlessly drops) and figure (20c).
-    aggregate_oracle_selection_comparison(df).to_csv(
+    _write_csv(aggregate_oracle_selection_comparison(df),
         args.out_dir / "oracle_selection_comparison.csv", index=False)
     plot_oracle_selection_comparison(
         df, args.out_dir / "20c_oracle_selection_comparison.png", args.form_ok_kabsch)
@@ -13530,7 +13782,8 @@ def main() -> None:
     print("  wrote form-fidelity summaries (nearest + valid_ceiling + rank_depth "
           "pbvalid/within2) + oracle_selection_comparison.csv (+ 20/20b/20c/20d/20e figures, "
           "both selections; + 20d __top1 realistic-rank-1 + __depth_filmstrip top-1/3/5 drift "
-          "(gated + __depth_filmstrip_pbvalid gate-removed, off-receptor centroid-trimmed); "
+          "(gated + __depth_filmstrip_pbvalid gate-removed, centroid-trimmed to the "
+          "crystal-site neighbourhood); "
           "+ 20_form_fidelity__rank_depth_{pbvalid,within2} standalone panels, "
           "top-1/5/15/30; + 20_form_fidelity__rank_depth_gate_impact joint ≤2Å-criterion view) "
           "+ 20f mechanism illustration & mechanism_examples.pdb")
@@ -13548,7 +13801,7 @@ def main() -> None:
                                    args.out_dir / "07_oracle_rank_histogram.png")
         # How often is the n-th ranked pose the closest (oracle) one?
         odist = aggregate_oracle_rank_distribution(df, args.top_n)
-        odist.to_csv(args.out_dir / "oracle_rank_distribution.csv", index=False)
+        _write_csv(odist, args.out_dir / "oracle_rank_distribution.csv", index=False)
         plot_oracle_rank_distribution(odist, args.top_n,
                                       args.out_dir / "15_oracle_rank_distribution.png")
         print("  wrote oracle-rank distribution → oracle_rank_distribution.csv")
@@ -13558,7 +13811,7 @@ def main() -> None:
         # DiffDock variants are present; fig 15 itself ignores PB-validity.
         topk_rec = aggregate_topk_recovery(df_full, range(1, 31))
         if not topk_rec.empty:
-            topk_rec.to_csv(args.out_dir / "topk_recovery_validity.csv", index=False)
+            _write_csv(topk_rec, args.out_dir / "topk_recovery_validity.csv", index=False)
             plot_topk_recovery_validity(
                 topk_rec, args.out_dir / "15b_topk_recovery_validity.png",
                 stats=_topk_stats)
@@ -13567,15 +13820,15 @@ def main() -> None:
             # Tidy CSV of the pre-specified paired McNemar tests (k ∈ {1,5,10,15}).
             if _topk_stats and _topk_stats.get("between_method"):
                 _bm = pd.DataFrame(_topk_stats["between_method"])
-                _bm["baseline_rate_%"] = (100 * _bm["a_rate"]).round(2)
-                _bm["comparison_rate_%"] = (100 * _bm["b_rate"]).round(2)
+                _bm["baseline_rate_%"] = (100 * _bm["a_rate"]).round(PCT_DECIMALS)
+                _bm["comparison_rate_%"] = (100 * _bm["b_rate"]).round(PCT_DECIMALS)
                 _bm = _bm.rename(columns={"a_wins": "baseline_only_wins",
                                           "b_wins": "comparison_only_wins",
                                           "n": "n_complexes"})
-                _bm[["baseline", "comparison", "k", "n_complexes",
+                _write_csv(_bm[["baseline", "comparison", "k", "n_complexes",
                      "baseline_rate_%", "comparison_rate_%",
                      "baseline_only_wins", "comparison_only_wins",
-                     "mcnemar_p", "p_holm", "star"]].to_csv(
+                     "mcnemar_p", "p_holm", "star"]],
                     args.out_dir / "topk_recovery_stats.csv", index=False)
                 print("  wrote top-k paired McNemar tests → topk_recovery_stats.csv")
 
@@ -13588,8 +13841,8 @@ def main() -> None:
         # Uses df_full so the gnina-ranked EquiBind variant is present.
         rq_tau = aggregate_rank_quality_tau(df_full)
         if not rq_tau.empty:
-            rq_tau.to_csv(args.out_dir / "rank_quality_tau.csv", index=False)
-            _summarize_rank_quality_tau(rq_tau).to_csv(
+            _write_csv(rq_tau, args.out_dir / "rank_quality_tau.csv", index=False)
+            _write_csv(_summarize_rank_quality_tau(rq_tau),
                 args.out_dir / "rank_quality_tau_summary.csv", index=False)
             try:
                 rq_stats = _stats_rank_quality(rq_tau)
@@ -13601,14 +13854,14 @@ def main() -> None:
                             for crit, _cl in _RANK_QUALITY_CRITERIA
                             for pr in (rq_stats.get(crit) or {}).get("pairwise", [])]
                 if _rq_rows:
-                    pd.DataFrame(_rq_rows).to_csv(
+                    _write_csv(pd.DataFrame(_rq_rows),
                         args.out_dir / "rank_quality_stats.csv", index=False)
             plot_rank_quality_whiskers(
                 rq_tau, args.out_dir / "22_rank_quality_whiskers.png")
             diag_df, valid_df = aggregate_rank_position_concordance(
                 df_full, _RANK_QUALITY_SPECS, args.top_n)
-            diag_df.to_csv(args.out_dir / "rank_position_concordance.csv", index=False)
-            valid_df.to_csv(args.out_dir / "rank_validity_by_rank.csv", index=False)
+            _write_csv(diag_df, args.out_dir / "rank_position_concordance.csv", index=False)
+            _write_csv(valid_df, args.out_dir / "rank_validity_by_rank.csv", index=False)
             plot_rank_position_concordance(
                 diag_df, valid_df, args.top_n,
                 args.out_dir / "21_rank_concordance.png")
@@ -13617,7 +13870,7 @@ def main() -> None:
             # full text report. The graphs carry NO embedded stats box — the paired
             # tests and every table live in rank_quality_report.txt.
             rvo_df = aggregate_rank_vs_oracle(df_full, _RANK_QUALITY_SPECS, _RVO_MAX_RANK)
-            rvo_df.to_csv(args.out_dir / "rank_vs_oracle.csv", index=False)
+            _write_csv(rvo_df, args.out_dir / "rank_vs_oracle.csv", index=False)
             plot_rank_vs_oracle_criterion(
                 rvo_df, "crystal", args.out_dir / "21a_rank_vs_oracle_crystal.png")
             plot_rank_vs_oracle_criterion(
@@ -13654,7 +13907,7 @@ def main() -> None:
         # smina + gnina variants of both tools are present.
         opt_benefit = aggregate_optimization_benefit(df_full, max_rank=30)
         if not opt_benefit.empty:
-            opt_benefit.to_csv(args.out_dir / "optimization_benefit_by_rank.csv",
+            _write_csv(opt_benefit, args.out_dir / "optimization_benefit_by_rank.csv",
                                index=False)
             # Re-annotate from the sidecar (optimization_benefit_stats.py) if present, so
             # a plain report run keeps the 15c/15d stats instead of overwriting them plain.
@@ -13678,7 +13931,7 @@ def main() -> None:
         within_df = aggregate_topn_within_thresholds(
             df, args.top_n, args.fine_rmsd_thresholds, eq_df=_eq)
         if not within_df.empty:
-            within_df.to_csv(args.out_dir / "topn_within_thresholds.csv", index=False)
+            _write_csv(within_df, args.out_dir / "topn_within_thresholds.csv", index=False)
             # Paired complex-level tests (Cochran's Q + pairwise McNemar, Holm; Wilson
             # CIs; ranking headroom) at the pre-specified 1 Å + 2 Å thresholds — drives
             # panel A's annotations and the JSON sidecar. Same (df, eq_df) as the curves.
@@ -13706,7 +13959,7 @@ def main() -> None:
         within_pbv = aggregate_topn_within_thresholds(
             df, args.top_n, args.fine_rmsd_thresholds, eq_df=_eq, pb_valid_only=True)
         if not within_pbv.empty:
-            within_pbv.to_csv(args.out_dir / "topn_within_thresholds_pbvalid.csv",
+            _write_csv(within_pbv, args.out_dir / "topn_within_thresholds_pbvalid.csv",
                               index=False)
             try:
                 _topn18v_stats = _stats_topn_within(
@@ -13729,7 +13982,7 @@ def main() -> None:
                 _rg_rmsd = aggregate_refinement_gain_vs_depth(
                     df_full, thr=2.0, depths=_depths, rmsd_col="rmsd", pb_valid_only=True)
                 if not _rg_rmsd.empty:
-                    _rg_rmsd.to_csv(args.out_dir / "refinement_gain_vs_depth_pbvalid.csv",
+                    _write_csv(_rg_rmsd, args.out_dir / "refinement_gain_vs_depth_pbvalid.csv",
                                     index=False)
                     plot_refinement_gain_vs_depth(
                         _rg_rmsd, args.out_dir / "18_refinement_gain_vs_depth_pbvalid.png",
@@ -13771,7 +14024,7 @@ def main() -> None:
                 pb_valid_only=_pbv, rmsd_col="bestfit_rmsd")
             if within_kab.empty:
                 continue
-            within_kab.to_csv(args.out_dir / _csv_name, index=False)
+            _write_csv(within_kab, args.out_dir / _csv_name, index=False)
             try:
                 _kab_stats = _stats_topn_within(
                     df, args.top_n, eq_df=_eq, pb_valid_only=_pbv,
@@ -13797,7 +14050,7 @@ def main() -> None:
                         df_full, thr=1.0, depths=_depths, rmsd_col="bestfit_rmsd",
                         pb_valid_only=True)
                     if not _rg_kab.empty:
-                        _rg_kab.to_csv(
+                        _write_csv(_rg_kab,
                             args.out_dir / "refinement_gain_vs_depth_kabsch_pbvalid.csv",
                             index=False)
                         plot_refinement_gain_vs_depth(
@@ -13886,9 +14139,9 @@ def main() -> None:
     pocket_by_rank = aggregate_pocket_localization_by_rank(
         df, args.top_n, args.pocket_cutoff)
     if not pocket_sum.empty:
-        pocket_sum.to_csv(args.out_dir / "pocket_localization.csv")
+        _write_csv(pocket_sum, args.out_dir / "pocket_localization.csv")
         if not pocket_by_rank.empty:
-            pocket_by_rank.to_csv(args.out_dir / "pocket_localization_by_rank.csv",
+            _write_csv(pocket_by_rank, args.out_dir / "pocket_localization_by_rank.csv",
                                   index=False)
         plot_pocket_targeting_by_rank(pocket_by_rank, args.top_n, args.pocket_cutoff,
                                       args.out_dir / "16a_pocket_targeting_by_rank.png")
@@ -14171,12 +14424,12 @@ def main() -> None:
             pv = gv.groupby(["protein", "ligand"]).ngroups if len(gv) else 0
             attr_rows.append({
                 "method": method, "pairs_total": pt, "pairs_with_valid_pose": pv,
-                "pairs_with_valid_pose_%": round(100 * pv / pt, 1) if pt else 0.0,
+                "pairs_with_valid_pose_%": round(100 * pv / pt, PCT_DECIMALS) if pt else 0.0,
                 "poses_total": len(g), "poses_valid": int(g["pb_valid"].sum()),
-                "poses_valid_%": round(100 * g["pb_valid"].mean(), 1) if len(g) else 0.0,
+                "poses_valid_%": round(100 * g["pb_valid"].mean(), PCT_DECIMALS) if len(g) else 0.0,
             })
         attr = pd.DataFrame(attr_rows).set_index("method")
-        attr.to_csv(valid_dir / "pb_valid_attrition.csv")
+        _write_csv(attr, valid_dir / "pb_valid_attrition.csv")
         print("\nPB-valid attrition by method "
               "(denominator of the pb_valid/ figures = pairs_with_valid_pose):")
         print(attr.to_string())
@@ -14187,16 +14440,16 @@ def main() -> None:
         _PLOT_TITLE_SUFFIX = ""
         try:
             oracle_sum_v = aggregate_oracle(df_valid)
-            oracle_sum_v.to_csv(valid_dir / "oracle_summary.csv")
+            _write_csv(oracle_sum_v, valid_dir / "oracle_summary.csv")
             has_ranking_valid = bool(df_valid["method"].isin(RANKING_TOOLS).any())
             top1_sum_v = aggregate_top1(df_valid) if has_ranking_valid else pd.DataFrame()
             if not top1_sum_v.empty:
-                top1_sum_v.to_csv(valid_dir / "top1_summary.csv")
+                _write_csv(top1_sum_v, valid_dir / "top1_summary.csv")
             rank_df_v = aggregate_by_rank(df_valid, args.top_n)
             ifp_rank_df_v = aggregate_ifp_by_rank(df_valid, args.top_n)
             if not rank_df_v.empty:
-                rank_df_v.to_csv(valid_dir / "per_rank_metrics.csv", index=False)
-                ifp_rank_df_v.to_csv(valid_dir / "per_rank_ifp_recovery.csv", index=False)
+                _write_csv(rank_df_v, valid_dir / "per_rank_metrics.csv", index=False)
+                _write_csv(ifp_rank_df_v, valid_dir / "per_rank_ifp_recovery.csv", index=False)
 
             print("\nGenerating PB-valid plot variants …")
             plot_oracle_rmsd_cdf(df_valid, valid_dir / "01_oracle_rmsd_cdf.png")
@@ -14224,7 +14477,7 @@ def main() -> None:
             # worth having beside the unfiltered top-level 14_twist_turn.png. Ranking
             # is unchanged; because df_valid drops invalid poses first, "top-1" here
             # is each tool's highest-ranked *valid* pose, not necessarily its rank-1.
-            aggregate_twist_turn(df_valid, args.top_n).to_csv(
+            _write_csv(aggregate_twist_turn(df_valid, args.top_n),
                 valid_dir / "twist_turn_summary.csv", index=False)
             plot_twist_turn(df_valid, valid_dir / "14_twist_turn.png", top_n=args.top_n,
                             pb_valid_only=True)

@@ -10,10 +10,10 @@ latexmk -pdf -interaction=nonstopmode -halt-on-error -file-line-error Thesis.tex
 ```
 
 The main document is `Thesis.tex`; the generated content is split into
-`body_main.tex` and `body_appendix.tex`. The 72 reviewed references are in
-`Literatur.bib`, and extracted figures are under `media/media/`.
+`body_main.tex` and `body_appendix.tex`. The 91 reviewed source records are in
+`Literatur.bib`. 89 are substantively used and printed in the thesis bibliography.
+Extracted figures are under `media/media/`.
 
-Seven non-printing `% REVIEW QUERY:` comments preserve unresolved source-data
-questions from the Word review. The eighth editorial query (mixed figure/table
-numbering) is resolved here through automatic LaTeX numbering and references.
+The earlier source-data review queries have been resolved in the current sources.
+Mixed figure/table numbering from the Word document is handled through automatic LaTeX numbering and references.
 The original Pandoc conversion is retained as `body_raw.tex` for auditability.

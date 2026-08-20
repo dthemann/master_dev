@@ -678,6 +678,7 @@ def _run_diffdock_batch_subprocess(
     timeout: int,
     diffdock_python: str,
     diffdock_dir: Path,
+    inference_seed: Optional[int] = None,
 ) -> subprocess.CompletedProcess:
     cmd = [
         diffdock_python, "-m", "inference",
@@ -691,6 +692,11 @@ def _run_diffdock_batch_subprocess(
     env = os.environ.copy()
     if device == "cpu":
         env["CUDA_VISIBLE_DEVICES"] = ""
+    # DiffDock ships no seed option, so its sampling differs on every run and a
+    # re-run silently re-samples the whole dataset. inference.py reads this and
+    # seeds python/numpy/torch when it is set.
+    if inference_seed is not None:
+        env["DIFFDOCK_SEED"] = str(int(inference_seed))
 
     effective_timeout = timeout if timeout > 0 else None
 
@@ -927,6 +933,7 @@ def _run_batch_csv_mode(
                 timeout=batch_timeout,
                 diffdock_python=diffdock_python,
                 diffdock_dir=diffdock_dir,
+                inference_seed=cfg.get("inference_seed"),
             )
 
             batch_elapsed = time.time() - batch_start
@@ -974,6 +981,7 @@ def _run_batch_csv_mode(
                                 timeout=sub_timeout,
                                 diffdock_python=diffdock_python,
                                 diffdock_dir=diffdock_dir,
+                                inference_seed=cfg.get("inference_seed"),
                             )
                             sub_stderr = proc.stderr or ""
                             if "OutOfMemoryError" in sub_stderr or "CUDA out of memory" in sub_stderr:
@@ -1004,6 +1012,7 @@ def _run_batch_csv_mode(
                                     timeout=sub_timeout,
                                     diffdock_python=diffdock_python,
                                     diffdock_dir=diffdock_dir,
+                                    inference_seed=cfg.get("inference_seed"),
                                 )
                             finally:
                                 if sub_csv_path.exists():

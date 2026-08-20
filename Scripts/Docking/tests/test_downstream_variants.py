@@ -27,6 +27,10 @@ from Scripts.Docking import run_unidock2 as ud2
 from Scripts.Docking.Posebusters import run_posebusters as pb
 
 
+def test_vinardo_ligand_suffix_normalizes_to_benchmark_id():
+    assert pb._normalize_ligand("7F51_BA7_ligand_start_conf_vinardo") == "7F51_BA7"
+
+
 def _atom_line(x=0.0, serial=1):
     return (
         f"ATOM  {serial:5d}  C   LIG A   1    "
@@ -103,6 +107,11 @@ def _unidock2_tool_identity(tmp_path):
 
 
 def _write_optimizer_sidecar(output, source, receptor, tool, model_digest):
+    settings = {"search": "minimize"}
+    if tool in {"gnina", "gnina_refinement"}:
+        settings["cnn_scoring"] = (
+            "refinement" if tool == "gnina_refinement" else "rescore"
+        )
     material = {
         "schema_version": 2,
         "pipeline": "run_autodock.optimize_autodock_results",
@@ -112,7 +121,7 @@ def _write_optimizer_sidecar(output, source, receptor, tool, model_digest):
         "receptor_sha256": _digest(receptor),
         "source_scoring": "vina",
         "rank_metric": "minimized_affinity",
-        "settings": {"search": "minimize"},
+        "settings": settings,
         "optimizer": {"path": "/fixture/gnina", "version": "fixture"},
         "converter": {"name": "mk_export", "path": "/fixture/mk_export",
                       "version": "fixture"},
@@ -148,13 +157,16 @@ def _autodock_fixture(tmp_path):
     receptor.write_text(_atom_line() + "\n")
 
     gnina = docking / "optimized_gnina"
+    gnina_refinement = docking / "optimized_gnina_refinement"
     smina = docking / "optimized_smina"
     gnina.mkdir()
+    gnina_refinement.mkdir()
     smina.mkdir()
     g1, g2, stale = (gnina / name for name in ("rank1.sdf", "rank2.sdf", "rank3.sdf"))
+    gr1, gr2 = (gnina_refinement / name for name in ("rank1.sdf", "rank2.sdf"))
     failed = smina / "rank1.sdf"
     junk = gnina / "junk.sdf"
-    for path in (g1, g2, stale, failed):
+    for path in (g1, g2, gr1, gr2, stale, failed):
         path.write_text(_sdf(path.stem))
     junk.write_text("partial junk")
 
@@ -172,6 +184,17 @@ def _autodock_fixture(tmp_path):
             "provenance_file": str(sidecar),
         }
 
+    refinement_provenance = {}
+    for rank, path in enumerate((gr1, gr2), start=1):
+        sidecar, fingerprint = _write_optimizer_sidecar(
+            path, raw, receptor, "gnina_refinement", model_digests[rank])
+        refinement_provenance[rank] = {
+            "source_pose_sha256": model_digests[rank],
+            "receptor_sha256": _digest(receptor),
+            "provenance_fingerprint": fingerprint,
+            "provenance_file": str(sidecar),
+        }
+
     rows = [
         dict(tool="gnina", autodock_rank=1, optimized_rank=2,
              vina_affinity=-9.0, minimized_affinity=-10.0, cnn_score=0.4,
@@ -183,6 +206,18 @@ def _autodock_fixture(tmp_path):
              cnn_affinity=-9.5, pose_file=raw.name, optimized_file=str(g2),
              status="success", rank_metric="minimized_affinity", elapsed_time_s=3.0,
              **provenance[2]),
+        # CNN-refinement is a separate committed ranking over the same source
+        # poses and must coexist with, not replace, the legacy GNINA rows.
+        dict(tool="gnina_refinement", autodock_rank=1, optimized_rank=1,
+             vina_affinity=-9.0, minimized_affinity=-9.7, cnn_score=0.9,
+             cnn_affinity=-9.8, pose_file=raw.name, optimized_file=str(gr1),
+             status="success", rank_metric="cnn_affinity", elapsed_time_s=7.0,
+             **refinement_provenance[1]),
+        dict(tool="gnina_refinement", autodock_rank=2, optimized_rank=2,
+             vina_affinity=-8.0, minimized_affinity=-9.1, cnn_score=0.7,
+             cnn_affinity=-9.0, pose_file=raw.name, optimized_file=str(gr2),
+             status="success", rank_metric="cnn_affinity", elapsed_time_s=11.0,
+             **refinement_provenance[2]),
         # Obsolete rank from a prior longer Vina output: must not be collected.
         dict(tool="gnina", autodock_rank=3, optimized_rank=3,
              pose_file=raw.name, optimized_file=str(stale), status="success",
@@ -198,7 +233,7 @@ def _autodock_fixture(tmp_path):
              status="success", rank_metric="minimized_affinity", elapsed_time_s=1.0),
     ]
     pd.DataFrame(rows).to_csv(prep / "optimization_log.csv", index=False)
-    return root, raw, g1, g2
+    return root, raw, g1, g2, gr1, gr2
 
 
 def _unidock2_fixture(tmp_path):
@@ -348,12 +383,13 @@ def _unidock_tiled_fixture(tmp_path, root_name="unidock"):
 
 
 def test_autodock_collector_joins_only_current_committed_optimizer_rows(tmp_path):
-    root, raw, g1, g2 = _autodock_fixture(tmp_path)
+    root, raw, g1, g2, gr1, gr2 = _autodock_fixture(tmp_path)
 
     rows = pb._collect_autodock_rows(root)
-    assert len(rows) == 3
+    assert len(rows) == 5
     raw_rows = [row for row in rows if row["optimizer"] == "original"]
     optimized = [row for row in rows if row["optimizer"] == "gnina"]
+    refined = [row for row in rows if row["optimizer"] == "gnina_refinement"]
     assert len(raw_rows) == 1
     assert raw_rows[0]["file_path"] == str(raw)
     assert raw_rows[0]["pose_count"] == 2
@@ -361,8 +397,13 @@ def test_autodock_collector_joins_only_current_committed_optimizer_rows(tmp_path
         (1, 2), (2, 1),
     }
     assert {Path(row["file_path"]) for row in optimized} == {g1, g2}
+    assert {(row["autodock_rank"], row["optimized_rank"]) for row in refined} == {
+        (1, 1), (2, 2),
+    }
+    assert {Path(row["file_path"]) for row in refined} == {gr1, gr2}
 
     assert len(pb._collect_autodock_rows(root, {"gnina"})) == 2
+    assert len(pb._collect_autodock_rows(root, {"gnina_refinement"})) == 2
     assert len(pb._collect_autodock_rows(root, {"raw"})) == 1
     assert pb._apply_variant_filter(
         [{"method": "autodock", "optimizer": "original"}], {"autodock": {"raw"}}
@@ -371,7 +412,11 @@ def test_autodock_collector_joins_only_current_committed_optimizer_rows(tmp_path
     sidecar = Path(f"{g1}.provenance.json")
     sidecar_text = sidecar.read_text()
     sidecar.unlink()
-    assert {Path(row["file_path"]) for row in pb._collect_autodock_rows(root, {"gnina"})} == {g2}
+    # One missing commit invalidates the whole complex/tool variant; exposing
+    # only rank 2 would bias the optimizer comparison.
+    assert pb._collect_autodock_rows(root, {"gnina"}) == []
+    assert {Path(row["file_path"]) for row in pb._collect_autodock_rows(
+        root, {"gnina_refinement"})} == {gr1, gr2}
     sidecar.write_text(sidecar_text)
 
     pose = pb._expand_autodock_poses(optimized[0], tmp_path / "converted", None)[0]
@@ -379,6 +424,84 @@ def test_autodock_collector_joins_only_current_committed_optimizer_rows(tmp_path
     assert pose["optimizer"] == "gnina"
     assert pose["autodock_rank"] == 1
     assert pose["optimized_rank"] == 2
+
+    refined_pose = pb._expand_autodock_poses(
+        refined[0], tmp_path / "converted", None)[0]
+    assert refined_pose["optimizer"] == "gnina_refinement"
+    assert "optimized_gnina_refinement" in refined_pose["pose_name"]
+
+
+def test_autodock_collector_avoids_pandas_native_csv_parser(
+    tmp_path, monkeypatch,
+):
+    root, _raw, _g1, _g2, _gr1, _gr2 = _autodock_fixture(tmp_path)
+
+    def fail_native_parser(*_args, **_kwargs):
+        raise AssertionError("optimizer logs must use the stdlib CSV reader")
+
+    monkeypatch.setattr(pb.pd, "read_csv", fail_native_parser)
+    rows = pb._collect_autodock_rows(root, {"gnina", "gnina_refinement"})
+    assert {row["optimizer"] for row in rows} == {"gnina", "gnina_refinement"}
+    assert len(rows) == 4
+
+
+def test_autodock_collector_rejects_partial_tool_without_hiding_other_variant(tmp_path):
+    root, raw, g1, g2, _gr1, _gr2 = _autodock_fixture(tmp_path)
+    log_path = next(root.rglob("optimization_log.csv"))
+    log = pd.read_csv(log_path)
+    failed_refinement_rank = (
+        log["tool"].eq("gnina_refinement")
+        & log["autodock_rank"].eq(2)
+        & log["pose_file"].eq(raw.name)
+    )
+    assert failed_refinement_rank.sum() == 1
+    log.loc[failed_refinement_rank, "status"] = "failed"
+    log.to_csv(log_path, index=False)
+
+    rows = pb._collect_autodock_rows(root)
+    assert {Path(row["file_path"]) for row in rows if row["optimizer"] == "gnina"} == {
+        g1, g2,
+    }
+    assert not [row for row in rows if row["optimizer"] == "gnina_refinement"]
+
+
+def test_autodock_collector_requires_complete_raw_rank_scope_by_default(tmp_path):
+    root, raw, _g1, _g2, gr1, gr2 = _autodock_fixture(tmp_path)
+    log_path = next(root.rglob("optimization_log.csv"))
+    log = pd.read_csv(log_path)
+    missing_last_rank = (
+        log["tool"].eq("gnina")
+        & log["autodock_rank"].eq(2)
+        & log["pose_file"].eq(raw.name)
+    )
+    assert missing_last_rank.sum() == 1
+    log = log.loc[~missing_last_rank]
+    log.to_csv(log_path, index=False)
+
+    # Legacy schema-v2 did not serialize optimize_top_n. The fail-closed default
+    # is therefore top_n=0 (all current raw Vina ranks), not an inferred shorter
+    # prefix. The independently complete refinement arm remains available.
+    assert pb._collect_autodock_rows(root, {"gnina"}) == []
+    assert {Path(row["file_path"]) for row in pb._collect_autodock_rows(
+        root, {"gnina_refinement"})} == {gr1, gr2}
+
+
+def test_autodock_collector_honors_explicit_positive_top_n_scope(tmp_path):
+    root, raw, g1, _g2, _gr1, _gr2 = _autodock_fixture(tmp_path)
+    log_path = next(root.rglob("optimization_log.csv"))
+    log = pd.read_csv(log_path)
+    current_gnina = log["tool"].eq("gnina") & log["pose_file"].eq(raw.name)
+    log = log.loc[~(current_gnina & log["autodock_rank"].eq(2))].copy()
+    selected = current_gnina.loc[log.index] & log["autodock_rank"].eq(1)
+    assert selected.sum() == 1
+    log.loc[selected, "optimized_rank"] = 1
+    log.loc[selected, "optimize_top_n"] = 1
+    log.to_csv(log_path, index=False)
+
+    rows = pb._collect_autodock_rows(root, {"gnina"})
+    assert len(rows) == 1
+    assert rows[0]["autodock_rank"] == rows[0]["optimized_rank"] == 1
+    assert Path(rows[0]["file_path"]) == g1
 
 
 def test_topn_keeps_raw_and_optimized_rank_axes_separate():
@@ -391,9 +514,15 @@ def test_topn_keeps_raw_and_optimized_rank_axes_separate():
              autodock_rank=1, optimized_rank=2, pose_file="opt1.sdf", pose_name="opt1"),
         dict(docking_method="autodock", protein="P", ligand="L", optimizer="gnina",
              autodock_rank=2, optimized_rank=1, pose_file="opt2.sdf", pose_name="opt2"),
+        dict(docking_method="autodock", protein="P", ligand="L",
+             optimizer="gnina_refinement", autodock_rank=1, optimized_rank=1,
+             pose_file="ref1.sdf", pose_name="ref1"),
+        dict(docking_method="autodock", protein="P", ligand="L",
+             optimizer="gnina_refinement", autodock_rank=2, optimized_rank=2,
+             pose_file="ref2.sdf", pose_name="ref2"),
     ])
     capped = pose_topn.cap_frame(frame, top_n=1)
-    assert set(capped["pose_file"]) == {"raw1.sdf", "opt2.sdf"}
+    assert set(capped["pose_file"]) == {"raw1.sdf", "opt2.sdf", "ref1.sdf"}
 
 
 def test_reports_split_and_rank_autodock_variants(tmp_path):
@@ -416,25 +545,115 @@ def test_reports_split_and_rank_autodock_variants(tmp_path):
              optimizer="gnina", autodock_rank=2, optimized_rank=1,
              pose_file="docking/optimized_gnina/opt_source2.sdf", pose_name="opt2",
              mol_pred_loaded=False),
+        dict(docking_method="autodock", protein="P", ligand="L",
+             optimizer="gnina_refinement", autodock_rank=1, optimized_rank=1,
+             pose_file="docking/optimized_gnina_refinement/ref_source1.sdf",
+             pose_name="ref1", mol_pred_loaded=True),
+        dict(docking_method="autodock", protein="P", ligand="L",
+             optimizer="gnina_refinement", autodock_rank=2, optimized_rank=2,
+             pose_file="docking/optimized_gnina_refinement/ref_source2.sdf",
+             pose_name="ref2", mol_pred_loaded=False),
     ]
+    # load_and_score now requires the COMPLETE dock schema (a partial CSV must never be
+    # scored PB-valid). Fill every canonical check True so validity is driven solely by
+    # the per-row mol_pred_loaded toggle set above (opt2/ref2 stay invalid).
+    for r in rows:
+        for c in pb.CANONICAL_TEST_COLUMNS:
+            r.setdefault(c, True)
     pd.DataFrame(rows).to_csv(csv_path, index=False)
 
     validity = validity_report.load_and_score(csv_path)
-    assert set(validity["docking_method"]) == {"autodock", "autodock_gnina"}
+    assert set(validity["docking_method"]) == {
+        "autodock", "autodock_gnina", "autodock_gnina_refinement",
+    }
     summary = validity_report.per_tool_summary(
         validity, validity_report._method_order(validity))
     assert summary.loc["autodock", "valid_poses"] == 2
     assert summary.loc["autodock_gnina", "valid_poses"] == 1
+    assert summary.loc["autodock_gnina_refinement", "valid_poses"] == 1
 
     index = pose_comparison._build_pose_index(csv_path)
-    assert set(index["docking_method"]) == {"autodock", "autodock_gnina"}
+    assert set(index["docking_method"]) == {
+        "autodock", "autodock_gnina", "autodock_gnina_refinement",
+    }
     ranks = {
         row.pose_name: pose_comparison._pose_rank(
             row._asdict(), row.docking_method, row.pose_file)
         for row in index.itertuples(index=False)
     }
-    assert ranks == {"raw1": 1, "raw2": 2, "opt1": 2, "opt2": 1}
+    assert ranks == {
+        "raw1": 1, "raw2": 2, "opt1": 2, "opt2": 1,
+        "ref1": 1, "ref2": 2,
+    }
     assert "autodock_gnina" in pose_comparison.RANKING_TOOLS
+    assert "autodock_gnina_refinement" in pose_comparison.RANKING_TOOLS
+    legacy_path_only = {
+        "pose_file": "docking/optimized_gnina_refinement/ref_source1.sdf",
+        "pose_name": "ref_source1.sdf",
+    }
+    assert validity_report._classify_autodock(legacy_path_only) == "gnina_refinement"
+    assert pose_comparison._classify_autodock(legacy_path_only) == "gnina_refinement"
+
+
+def test_collapse_presentation_keeps_canonical_three_and_preserves_full_frame():
+    def row(method, rmsd, pb_valid):
+        return dict(
+            method=method, protein="P", ligand="L", rmsd=rmsd,
+            pb_rmsd=rmsd, centroid_dist=rmsd, pb_valid=pb_valid,
+            pose_file=f"{method}/rank1_pose.sdf", rank=1,
+        )
+
+    frame = pd.DataFrame([
+        row("autodock", 8.0, False),
+        row("autodock_gnina", 0.2, True),
+        row("autodock_gnina_refinement", 0.3, True),
+        row("autodock_vinardo", 0.1, True),
+        row("unidock", 0.1, True),
+        row("unidock2", 0.1, True),
+        row("diffdock", 1.0, False),
+        row("diffdock_smina", 1.0, True),
+        row("diffdock_gnina", 3.0, True),
+        row("equibind_unguided_raw", 1.0, False),
+        row("equibind_unguided_gnina", 1.0, True),
+        row("equibind_fpocket_gnina", 3.0, True),
+    ])
+    full_methods = set(frame["method"])
+
+    selected, best_eq = pose_comparison._select_best_equibind(frame)
+    selected, best_dd = pose_comparison._select_best_diffdock(selected)
+    collapsed = pose_comparison._select_presentation_tools(selected, best_eq)
+
+    assert best_eq == "equibind_unguided_gnina"
+    assert best_dd == "diffdock_smina"
+    assert set(collapsed["method"]) == {
+        "autodock", "diffdock", "equibind_unguided_gnina",
+    }
+    assert collapsed.loc[
+        collapsed["method"] == "diffdock", "pose_file"
+    ].item().startswith("diffdock_smina/")
+    assert set(frame["method"]) == full_methods
+    assert set(pose_comparison.aggregate_oracle(frame).index) == full_methods
+
+    # _select_presentation_tools now reduces to ONE variant per ENGINE (symmetric; no
+    # engine dropped, none pinned to raw). Called directly here with no _LABEL_OVERRIDES
+    # stars set, so a multi-variant engine falls back to its raw base (autodock_gnina is
+    # dropped in favour of raw 'autodock'); every single-variant engine passes through,
+    # including Uni-Dock / Uni-Dock2 / Vinardo, which the old 3-tool rule discarded.
+    validity_frame = pd.DataFrame({"docking_method": [
+        "autodock",
+        "autodock_gnina",
+        "autodock_vinardo",
+        "diffdock_smina",
+        "equibind_unguided_gnina",
+        "unidock",
+        "unidock2",
+    ]})
+    validity_collapsed = validity_report._select_presentation_tools(validity_frame)
+    assert validity_collapsed["docking_method"].tolist() == [
+        "autodock", "autodock_vinardo", "diffdock_smina",
+        "equibind_unguided_gnina", "unidock", "unidock2",
+    ]
+    assert len(validity_frame) == 7
 
 
 def test_complex_resume_sums_raw_and_optimizer_rows(tmp_path):
@@ -561,6 +780,10 @@ def test_autodock_effort_adds_optimizer_wall_and_device_work(tmp_path):
         autodock_refine="gnina", diffdock_refine="raw",
         eq_mode="unguided", eq_refine="raw"))
     assert methods["autodock"] == "autodock_gnina"
+    refinement_methods = effort._per_pose_methods(SimpleNamespace(
+        autodock_refine="gnina_refinement", diffdock_refine="raw",
+        eq_mode="unguided", eq_refine="raw"))
+    assert refinement_methods["autodock"] == "autodock_gnina_refinement"
 
     prep = tmp_path / "CPLX" / "meeko"
     prep.mkdir(parents=True)
@@ -570,6 +793,8 @@ def test_autodock_effort_adds_optimizer_wall_and_device_work(tmp_path):
     pd.DataFrame([
         {"tool": "gnina", "elapsed_time_s": 2.0, "status": "success"},
         {"tool": "gnina", "elapsed_time_s": 3.0, "status": "success"},
+        {"tool": "gnina_refinement", "elapsed_time_s": 7.0, "status": "success"},
+        {"tool": "gnina_refinement", "elapsed_time_s": 11.0, "status": "success"},
     ]).to_csv(prep / "optimization_log.csv", index=False)
 
     cpu = effort._autodock_effort(
@@ -580,8 +805,18 @@ def test_autodock_effort_adds_optimizer_wall_and_device_work(tmp_path):
         "CPLX", tmp_path, "meeko", "gnina", docking_cpu=32,
         optimizer_cpu=4, gnina_gpu=True,
     )
+    refinement_cpu = effort._autodock_effort(
+        "CPLX", tmp_path, "meeko", "gnina_refinement", docking_cpu=32,
+        optimizer_cpu=4, gnina_gpu=False,
+    )
+    refinement_gpu = effort._autodock_effort(
+        "CPLX", tmp_path, "meeko", "gnina_refinement", docking_cpu=32,
+        optimizer_cpu=4, gnina_gpu=True,
+    )
     assert cpu == (15.0, 0.0, 340.0)
     assert gpu == (15.0, 5.0, 320.0)
+    assert refinement_cpu == (28.0, 0.0, 392.0)
+    assert refinement_gpu == (28.0, 18.0, 320.0)
 
     pd.DataFrame([
         {"tool": "gnina", "elapsed_time_s": 4.0, "status": "failed"},
@@ -596,12 +831,19 @@ def test_autodock_effort_adds_optimizer_wall_and_device_work(tmp_path):
     ]).to_csv(prep / "optimization_log.csv", index=False)
     assert effort._autodock_opt_time("CPLX", tmp_path, "meeko", "gnina") == 6.0
 
-    mixed = pd.DataFrame({
-        "pose_file": ["converted/raw_model1.sdf", "docking/optimized_gnina/rank1.sdf"],
-    })
-    selected = effort._filter_optimizer_variant(
+    mixed = pd.DataFrame({"pose_file": [
+        "converted/raw_model1.sdf",
+        "docking/optimized_gnina/rank1.sdf",
+        "docking/optimized_gnina_refinement/rank1.sdf",
+    ]})
+    selected_legacy = effort._filter_optimizer_variant(
         mixed, "autodock", {"autodock": "gnina"})
-    assert selected["pose_file"].tolist() == ["docking/optimized_gnina/rank1.sdf"]
+    selected_refinement = effort._filter_optimizer_variant(
+        mixed, "autodock", {"autodock": "gnina_refinement"})
+    assert selected_legacy["pose_file"].tolist() == ["docking/optimized_gnina/rank1.sdf"]
+    assert selected_refinement["pose_file"].tolist() == [
+        "docking/optimized_gnina_refinement/rank1.sdf"
+    ]
 
 
 def test_unidock_effort_requires_matching_commit_and_keeps_engines_separate(tmp_path):

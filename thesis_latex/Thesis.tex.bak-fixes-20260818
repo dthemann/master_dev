@@ -1,0 +1,113 @@
+\PassOptionsToPackage{hyperfootnotes=false}{hyperref}
+\documentclass[Master,english,IEEE]{twbook}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{longtable,booktabs,multirow,calc,etoolbox}
+\usepackage{pdflscape}
+\usepackage{footnotehyper}
+\usepackage{microtype}
+
+\newcommand{\angstrom}{\ensuremath{\text{\AA}}}
+\newcounter{tablebeforeaitools}
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+\degreecourse{Artificial Intelligence Engineering}
+\addbibresource{Literatur.bib}
+\ExecuteBibliographyOptions{sorting=none}
+\DeclareBibliographyDriver{misc}{%
+  \printfield{note}%
+  \newunit\newblock%
+  \printfield{url}%
+  \finentry}
+
+\title{Comparative Analysis of Physics-Based and AI-Based Molecular Docking Tools}
+\author{Dominik Mann, PhD BSc}
+\hypersetup{
+  pdftitle={Comparative Analysis of Physics-Based and AI-Based Molecular Docking Tools},
+  pdfauthor={Dominik Mann},
+  pdfsubject={Master's thesis in Artificial Intelligence Engineering},
+  pdfkeywords={molecular docking, AutoDock Vina, DiffDock, EquiBind, PoseBusters, Orai1}}
+\makeatletter
+\renewcommand{\@pnumwidth}{2em}
+\makeatother
+\studentnumber{2410585017}
+\supervisor{FH-Prof. Priv.-Doz. Dipl.-Ing.(FH) Dr.\\Bernhard Knapp\\DI Dr. Heinrich Krobath\\Assoz Univ-Prof. DI Dr. Isabella Derler}
+\place{Wien}
+
+% Abstract (\outline) and English keywords. The twbook class typesets \outline as an
+% "Abstract" chapter on a new page immediately after the Declaration, with the
+% \keywords list at the foot of that page. (A German \kurzfassung/\schlagworte pair
+% could be added here as well if the examination office requires a bilingual summary.)
+\outline{Molecular docking predicts how small-molecule ligands bind their protein
+targets, yet physics-based and machine-learning tools embody very different
+trade-offs between geometric accuracy and physical realism. This thesis presents a
+systematic, provenance-documented comparison of a physics-based method (AutoDock Vina)
+against two artificial-intelligence (AI)-based methods, namely the diffusion-based
+generative model DiffDock-L (hereafter DiffDock) and the
+E(3)-equivariant regression model EquiBind, across two complementary settings. A
+calibration benchmark of 303 co-crystallised complexes enables ground-truth
+assessment of both pose accuracy (heavy-atom root-mean-square deviation, RMSD) and physical validity through the
+PoseBusters test battery. A crystal-free application to the calcium-release-activated
+channel Orai1, using molecular-dynamics receptor snapshots together with experimental
+and benchmark ligand sets, probes how the tools behave on a realistic
+membrane-protein target without a reference structure.
+
+Across both settings, physical validity separates the tools most sharply in
+their raw output, whereas after local minimisation the validity gate costs the
+refined pipelines almost nothing and placement and pose selection become the
+limiting factors. Pooled over every produced pose, raw AutoDock Vina is physically valid
+almost everywhere (98.2\%), whereas the raw AI outputs are largely physically invalid
+(24.4\% for DiffDock and 2.9\% for unguided EquiBind), and AutoDock Vina followed
+by gnina rescoring reaches 99.5\% on that same pooled basis. On the separate basis of the median per-complex validity rate,
+post-hoc minimisation is the dominant driver of usability, raising DiffDock from
+13.3\% to about 93\% with smina and unguided EquiBind from 0\% to about 57\% with
+gnina, while it cannot recover an unsampled or grossly misplaced binding mode. Deepening the inspected ranking pool from rank-1 to the best of fifteen
+recovers valid, near-native poses for a further 21.1 percentage points of
+complexes with DiffDock and 20.5 with AutoDock Vina but only 5.0 with EquiBind,
+and extending it to thirty adds at most 0.7 points more, so the headroom is
+large, unequally distributed and almost exhausted by a top-15 pool. On Orai1 the three tools localise to markedly
+different sites, and there the combined screen for physical validity and
+admissible placement rather than validity alone decides which poses remain
+usable. Transmembrane-pore filtering, pose clustering and protein--ligand
+interaction-fingerprint analysis quantify their disagreement.
+Overall, the results argue for combined accuracy-and-validity criteria and routine
+geometry refinement whenever AI-based docking tools are deployed.}
+
+\keywords{Molecular docking; Physics-based versus AI-based methods; PoseBusters
+physical validity; Post-hoc pose refinement; Orai1 calcium channel}
+
+\begin{document}
+
+% Cite all substantively used sources in their reviewed numeric order before the
+% first body citation. ref034 and ref039 remain in the source library but are not
+% included in the thesis bibliography because the text does not rely on them.
+\nocite{ref001,ref002,ref003,ref004,ref005,ref006,ref007,ref008,ref009,ref010,ref011,ref012,ref013,ref014,ref015,ref016,ref017,ref018,ref019,ref020,ref021,ref022,ref023,ref024,ref025,ref026,ref027,ref028,ref029,ref030,ref031,ref032,ref033,ref035,ref036,ref037,ref038,ref040,ref041,ref042,ref043,ref044,ref045,ref046,ref047,ref048,ref049,ref050,ref051,ref052,ref053,ref054,ref055,ref056,ref057,ref058,ref059,ref060,ref061,ref062,ref063,ref064,ref065,ref066,ref067,ref068,ref069,ref070,ref071,ref072,ref073,ref074,ref075,ref076,ref077,ref078,ref079,ref080,ref081,ref082,ref083,ref084,ref085,ref086,ref087,ref088,ref089,ref090}
+\maketitle
+
+\input{body_main}
+
+% Transparent disclosure of the assistance used for this revision and conversion.
+\aitoolentry{OpenAI Codex}{Consistency review}{Prompt: ``Please conduct a very detailed review of the
+thesis. Compare the numbers reported in the tables and figures and make sure
+they are in line with the text.''}
+
+\aitoolentry{Claude Code}{Code review and code documentation of the analysis
+and docking scripts}{Representative prompts: ``Review the code for errors and
+bugs''; ``Please add a function description and comments.''}
+
+\clearpage
+\printbibliography
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
+\clearpage
+\setcounter{tablebeforeaitools}{\value{table}}
+\listaitools
+\setcounter{table}{\value{tablebeforeaitools}}
+
+\clearpage
+\input{body_appendix}
+
+\end{document}

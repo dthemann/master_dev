@@ -91,7 +91,13 @@ except Exception:                                   # pragma: no cover
     def _toolchain_label(base, variant):            # mirror of the exclusion helper
         name = {"autodock": "AutoDock Vina", "diffdock": "DiffDock",
                 "equibind": "EquiBind"}.get(base, str(base).title())
-        if base == "autodock" or variant in ("none", ""):
+        if base == "autodock":
+            # Raw and optimised AutoDock must NOT share a label: they are separate
+            # pose sets in the same table, and a shared label makes the toolchain
+            # filter select both and sum them into one doubled denominator.
+            v = str(variant).lower()
+            return name if v in ("none", "", "raw", "original") else f"{name} + {v}"
+        if variant in ("none", ""):
             return name
         if variant == "gnina":
             return f"{name}*"
@@ -151,13 +157,15 @@ TOOL_SHORT = {"AutoDock Vina": "AutoDock", "DiffDock (smina)": "DiffDock",
               "EquiBind*": "EquiBind"}
 
 
-def _resolve_toolchains(dd_variant: str, eb_variant: str):
+def _resolve_toolchains(dd_variant: str, eb_variant: str, ad_variant: str = "gnina"):
     """(selected-toolchain-labels, short-name map) for the given refine variants.
     'all'/'original' fall back to the reported pick (smina DiffDock, gnina EquiBind)
     since this comparison needs exactly one variant per tool."""
     dd = "smina" if str(dd_variant) in ("all", "original") else str(dd_variant)
     eb = "gnina" if str(eb_variant) in ("all", "original") else str(eb_variant)
-    ad_l = "AutoDock Vina"
+    ad_l = "AutoDock Vina"   # the label the classification table writes for every
+                             # AutoDock variant; the variant itself is selected in
+                             # load_dataset() on the `variant` column.
     dd_l = _toolchain_label("diffdock", dd)
     eb_l = _toolchain_label("equibind", eb)
     return [ad_l, dd_l, eb_l], {ad_l: "AutoDock", dd_l: "DiffDock", eb_l: "EquiBind"}
@@ -193,7 +201,8 @@ def _fate_of(status: pd.Series, pb: pd.Series) -> pd.Series:
     return pd.Series(out, index=status.index)
 
 
-def load_dataset(dataset: str, results_root: Path, top_n: int = 0) -> pd.DataFrame:
+def load_dataset(dataset: str, results_root: Path, top_n: int = 0,
+                 ad_variant: str = "gnina") -> pd.DataFrame:
     """Selected-toolchain per-pose rows tagged with pb_valid + fate for one dataset.
 
     ``top_n`` > 0 equalises the pose budget across tools by keeping only each tool's
@@ -207,6 +216,33 @@ def load_dataset(dataset: str, results_root: Path, top_n: int = 0) -> pd.DataFra
     if not path.exists():
         raise FileNotFoundError(f"missing classification table: {path}")
     df = pd.read_csv(path, low_memory=False)
+    # Per-dataset AutoDock fallback. The Orai x Benchmark arm carries only the raw
+    # Vina poses while Orai x JKU carries raw AND gnina, so a single global label
+    # would empty the benchmark side. Select the requested AutoDock toolchain when
+    # the dataset has it, otherwise fall back to the one AutoDock toolchain it does
+    # have and say so. Exactly one AutoDock toolchain is kept either way, which is
+    # what stops the two variants being summed into one doubled denominator.
+    # The upstream classification table labels BOTH AutoDock variants "AutoDock Vina",
+    # so the toolchain label alone cannot separate them and selecting on it sums the
+    # two into one doubled denominator. Select AutoDock on the `variant` column
+    # instead. A dataset that lacks the requested variant falls back to the single
+    # one it has, and the fallback is reported, so exactly one AutoDock pose set is
+    # ever kept.
+    ad_mask = df["toolchain"].astype(str).str.startswith("AutoDock")
+    if ad_mask.any() and "variant" in df.columns:
+        want = str(ad_variant).lower()
+        want = "none" if want in ("raw", "original", "") else want
+        have = sorted(set(df.loc[ad_mask, "variant"].astype(str)))
+        if want not in have:
+            if len(have) == 1:
+                print(f"  [variant] {dataset}: AutoDock '{want}' absent, using '{have[0]}'.")
+                want = have[0]
+            else:
+                raise ValueError(
+                    f"{dataset} carries AutoDock variants {have} and none is the requested "
+                    f"'{want}' — refusing to pool them.")
+        df = df[(~ad_mask) | (df["variant"].astype(str) == want)].copy()
+        ad_mask = df["toolchain"].astype(str).str.startswith("AutoDock")
     df = df[df["toolchain"].isin(SELECTED_TOOLCHAINS)].copy()
     if df.empty:
         raise ValueError(f"no selected toolchains present in {path}")
@@ -554,7 +590,11 @@ def fig_tm_loss_relative(pooled: pd.DataFrame, out: Path):
     axB.set_ylim(*ylim); axB.set_xlim(-1.6 * m - 4, 1.6 * m + 4)
     axB.set_xlabel("Δ transmembrane loss = Benchmark − Experimental (percentage points)\n"
                    "← Benchmark loses fewer          Benchmark loses more →", fontsize=9)
-    axB.set_title("Relative difference across datasets", fontsize=11)
+    # NOT a "relative" difference: the bars are an ABSOLUTE gap between two
+    # proportions, so the unit is percentage POINTS. The ratio reading (Benchmark /
+    # Experimental ×) is deliberately kept off the figure — with ≤12 experimental
+    # units it is unstable and lives, caveated, in the statistics sidecar.
+    axB.set_title("Absolute difference across datasets (percentage points)", fontsize=11)
     axB.grid(axis="x", alpha=0.3, zorder=0); axB.set_axisbelow(True)
 
     _label_panels([axA, axB])
@@ -771,6 +811,11 @@ def main(argv=None):
                     help="root holding <dataset>/transmembrane_filter/tm_pose_classification.csv")
     ap.add_argument("--out-dir", default=None, type=Path,
                     help="output directory (default: <results-root>/orai_pbvalid_tm_share_compare)")
+    ap.add_argument("--autodock-variant", default="gnina",
+                    help="AutoDock optimizer variant to select (default gnina -> "
+                         "'AutoDock Vina + gnina'). A dataset that does not carry that "
+                         "variant falls back to the single AutoDock variant it does have, "
+                         "and the fallback is reported, so the two arms are never summed.")
     ap.add_argument("--diffdock-variant", default="smina",
                     help="DiffDock refine variant to select (must match the parent "
                          "exclusion run; default smina → 'DiffDock (smina)').")
@@ -785,7 +830,8 @@ def main(argv=None):
 
     global SELECTED_TOOLCHAINS, TOOL_SHORT
     SELECTED_TOOLCHAINS, TOOL_SHORT = _resolve_toolchains(args.diffdock_variant,
-                                                          args.equibind_variant)
+                                                          args.equibind_variant,
+                                                          args.autodock_variant)
 
     root = args.results_root
     out_dir = args.out_dir or (root / "orai_pbvalid_tm_share_compare")
@@ -795,7 +841,8 @@ def main(argv=None):
     src_notes = []
     for ds in CATEGORY_ORDER:
         p = _classification_path(ds, root)
-        frames[ds] = load_dataset(ds, root, top_n=args.top_n_poses)
+        frames[ds] = load_dataset(ds, root, top_n=args.top_n_poses,
+                                  ad_variant=args.autodock_variant)
         mtime = datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
         src_notes.append(f"    {ds}: {p}  (source mtime {mtime})")
     if args.top_n_poses:

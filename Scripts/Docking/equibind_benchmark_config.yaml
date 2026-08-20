@@ -1,0 +1,150 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# EquiBind — CALIBRATION BENCHMARK arm (PoseBusters 308-complex set)
+#
+# Consumed by: Master_Docking.ipynb cell b1a9baa1 (and the same cell in
+#              Master_Docking_AD_Full_Protein.ipynb), which stages one receptor +
+#              one ligand per complex and invokes Scripts/Docking/run_equibind.py.
+# Produces:    Dockings/Benchmark_Equibind/<PDBID_CCD>/
+#
+# WHY THIS FILE EXISTS
+# Until 2026-08-17 this arm and the Orai x JKU arm shared
+# equibind_docking_config.yaml. They ran with DIFFERENT settings (uff_minimize,
+# n_top_pockets, poses_per_pocket, refine_mode, refine_tool), and the JKU config
+# cell rewrote the shared file in place, so neither arm was reproducible from it.
+# The two arms are now split. This file is the calibration-benchmark half.
+#
+# PROVENANCE
+# Every value below that the runner records was taken from the executed run, namely
+# the 308 files Dockings/Benchmark_Equibind/*/pipeline_summary.json (key "config").
+# All 308 agree. Values the runner does not record are marked NOT LOGGED and carry
+# the source they were taken from.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Inputs ───────────────────────────────────────────────────────────────────
+# The launcher cell stages each complex into Dockings/Benchmark_Equibind/_staging
+# and passes the staged paths as EQ_RECEPTORS_DIR / EQ_DRUGS_DIR, so these three
+# keys are inert for this arm. They are kept so the file validates against the
+# same schema as the other two EquiBind configs.
+receptors_dir: Data/PoseBuster Benchmark Set   # inert: launcher stages per complex
+ligand_dirs: []                                # inert: launcher stages per complex
+receptor_name_filter: ''                       # launcher passes "" explicitly
+ligand_extensions:
+- .sdf
+
+# ── Pocket guidance ──────────────────────────────────────────────────────────
+# This arm DOES run guided docking. It is the source of the fpocket and P2Rank
+# EquiBind variants reported in the thesis alongside the unguided variant.
+fpocket_results_dir: pocket_results/fpocket_results
+p2rank_results_dir: pocket_results/p2rank_results
+
+# ── EquiBind model / launcher ────────────────────────────────────────────────
+equibind_dir: /home/manndo/tools/EquiBind
+equibind_python: /home/manndo/anaconda3/envs/equibind/bin/python
+device: cuda
+
+# ── Outputs ──────────────────────────────────────────────────────────────────
+output_dir: Dockings/Benchmark_Equibind
+log_dir: Dockings/Logs/benchmark_equibind_logs
+
+# ── Pose counts ──────────────────────────────────────────────────────────────
+n_top_pockets: 3          # guided docking ON: top 3 pockets per detector (fpocket + p2rank)
+poses_per_pocket: 10      # RUN VALUE. The shared file said 3; every benchmark record says 10.
+n_unguided_poses: 30      # bounded by len(rdkit_seeds) x conformers_per_seed = 30
+
+# ── Pocket enforcement ───────────────────────────────────────────────────────
+pocket_match_threshold: 8.0
+force_pocket: true
+clamp_pose_to_pocket: true
+clamp_mode: "off"         # quoted: unquoted off is boolean false in YAML 1.1
+
+# ── Refinement ───────────────────────────────────────────────────────────────
+# NOTE: the launcher cell currently HARDCODES refine_mode = "both" and
+# refine_tool = "both" as local variables and does not read them from this file.
+# The values below are the ones the run actually used. If the cell is rewired to
+# read them (recommended), behaviour is unchanged.
+refine_mode: both         # keeps __refRAW beside each refined variant
+refine_tool: both         # emits __refSMINA and __refGNINA, giving raw/smina/gnina
+smina_search: local_only  # --local_only (bounded local search), NOT --minimize
+smina_autobox_add: 4.0
+smina_cpu: 1
+smina_seed: 0
+smina_timeout_s: 300
+smina_receptor_ext: .pdb
+smina_executable: ''      # autodetect
+gnina_executable: ''      # NOT LOGGED. '' here, but the launcher substitutes
+                          # /home/manndo/docking_tools/gnina when this is empty,
+                          # so that wrapper is what ran.
+gnina_use_gpu: true       # NOT LOGGED by the runner. Value taken from the shared
+                          # config as it stood; the launcher reads this key, so
+                          # true is what it passed. Scripts/Analysis/
+                          # docking_effort_comparison.py assumes the opposite for
+                          # its device attribution — see the note in that script.
+
+# ── Protein cropping ─────────────────────────────────────────────────────────
+use_protein_cropping: true
+pocket_crop_radius: 8.0
+pocket_crop_buffer: 3.0
+
+# ── Unguided conformer generation (RDKit ETKDG) ──────────────────────────────
+rdkit_seeds:
+- 42
+- 123
+- 456
+- 789
+- 1001
+- 2022
+- 3141
+- 5926
+- 8675
+- 9999
+- 7
+- 13
+- 17
+- 271
+- 314
+- 628
+- 1234
+- 1618
+- 2718
+- 4040
+- 4242
+- 5050
+- 6060
+- 7070
+- 8080
+- 9090
+- 11111
+- 22222
+- 31415
+- 65536
+conformers_per_seed: 1
+
+# ── UFF minimisation ─────────────────────────────────────────────────────────
+uff_minimize: false       # RUN VALUE, and deliberate.
+                          # uff.py fixes every protein atom (AddFixedPoint) and
+                          # builds the field with ignoreInterfragInteractions=False,
+                          # so on a buried pose the minimiser cannot slide the ligand
+                          # out of the clash and relieves it by deforming the ligand.
+                          # With UFF ON only 19.3% of benchmark EquiBind poses passed
+                          # the PoseBusters bond-angle check and 22.5% the bond-length
+                          # check (Dockings/_ufftrue_backup_1783675978/). With it OFF
+                          # both pass at 100.0%. smina/gnina cannot repair that damage
+                          # (they only translate, rotate and re-torsion) but do relieve
+                          # the clash themselves, so OFF roughly doubles PB-validity.
+                          # The Orai x JKU arm ran with this TRUE — see
+                          # equibind_orai_jku_config.yaml. That is a real difference
+                          # between the two arms, not an oversight, and the thesis now
+                          # records it.
+uff_max_iters: 200
+uff_energy_tol: 0.0001
+uff_force_tol: 0.001
+uff_proximity_radius: 6.0
+uff_add_hydrogens: true
+uff_strip_nonstandard: true
+uff_vdw_thresh: 10.0
+
+# ── Parallelism / rerun ──────────────────────────────────────────────────────
+gpu_batch_size: 8
+n_parallel_workers: 32    # RUN VALUE (the shared file's 0 maps to os.cpu_count())
+parallel_conformer_gen: true
+skip_existing: false

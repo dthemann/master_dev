@@ -142,7 +142,8 @@ def _derive_pb_valid(df: pd.DataFrame) -> pd.Series:
 
 
 def load_poses(csv: Path, ids: Optional[set],
-               dd_variant: Optional[str] = None) -> pd.DataFrame:
+               dd_variant: Optional[str] = None,
+               ad_variant: Optional[str] = None) -> pd.DataFrame:
     df = pd.read_csv(csv, low_memory=False)
     tool_col = "docking_method" if "docking_method" in df.columns else "method"
     df["tool"] = df[tool_col].astype(str).str.lower()
@@ -153,6 +154,14 @@ def load_poses(csv: Path, ids: Optional[set],
         _opt = df["optimizer"].astype(str).str.lower()
         _dd = df["tool"].str.startswith("diffdock")
         df = df[(~_dd) | (_opt == dd_variant)].copy()
+    # Same restriction for AutoDock. Its gnina/smina optimisation is post-hoc and
+    # is carried by the same `optimizer` column, and every AutoDock row shares one
+    # docking_method value, so a CSV holding raw AND optimised AutoDock poses would
+    # otherwise merge them into a doubled AutoDock pose cloud.
+    if ad_variant and ad_variant != "all" and "optimizer" in df.columns:
+        _opt = df["optimizer"].astype(str).str.lower()
+        _ad = df["tool"].str.startswith("autodock")
+        df = df[(~_ad) | (_opt == ad_variant)].copy()
     # collapse any equibind variant label (equibind_guided / equibind_unguided_*) to "equibind"
     df.loc[df["tool"].str.startswith("equibind"), "tool"] = "equibind"
     df["frame"] = df["protein"].astype(str)
@@ -1662,8 +1671,7 @@ def fig_cluster_quality_filtering(q: pd.DataFrame, out_dir: Path):
     axes[0].legend(handles=handles, fontsize=8, loc="best")
     _label_panels(np.asarray(axes))
     fig.suptitle("Does filtering to PB-valid poses outside the pore tighten each tool's clusters? "
-                 "Raw cloud vs filtered cloud (per tool; paired tests in "
-                 "orai_cluster_quality_stats.txt)", fontsize=12)
+                 "Raw cloud vs filtered cloud, per tool", fontsize=12)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     p = out_dir / "orai_cluster_quality_filtering.png"
     fig.savefig(p, dpi=130, bbox_inches="tight"); plt.close(fig)
@@ -1820,7 +1828,7 @@ def run_cluster_quality(args, ids, out_dir: Path, cluster_stats: dict) -> None:
     def _load(csv: Path) -> pd.DataFrame:
         if not csv.exists():
             return pd.DataFrame()
-        d = load_poses(csv, ids, args.diffdock_variant)
+        d = load_poses(csv, ids, args.diffdock_variant, args.autodock_variant)
         return add_centroids(d, args.workers) if not d.empty else d
 
     rows: List[dict] = []
@@ -1901,6 +1909,12 @@ def main(argv=None) -> int:
                     choices=("all", "original", "smina", "gnina"),
                     help="Restrict DiffDock to one optimizer variant (default 'all' "
                          "pools raw+smina+gnina). 'gnina' = keep only gnina-refined poses.")
+    ap.add_argument("--autodock-variant", default="all",
+                    choices=("all", "original", "smina", "gnina", "gnina_refinement"),
+                    help="Restrict AutoDock to one optimizer variant (default 'all'). "
+                         "'original' = raw Vina modes, 'gnina' = the gnina-minimised and "
+                         "CNN-re-ranked poses. Set this whenever the CSV holds more than "
+                         "one AutoDock variant, otherwise they are pooled into one cloud.")
     ap.add_argument("--valid-ligands-only", action="store_true",
                     help="Restrict the analysis to ligands that produced at least ONE "
                          "PoseBusters-valid pose anywhere (any Orai frame / any tool). "
@@ -1959,7 +1973,7 @@ def main(argv=None) -> int:
                if ln.strip() and not ln.lstrip().startswith("#")}
 
     print(f"Loading poses from {args.per_pose_csv} ...")
-    df = load_poses(Path(args.per_pose_csv), ids, args.diffdock_variant)
+    df = load_poses(Path(args.per_pose_csv), ids, args.diffdock_variant, args.autodock_variant)
     if df.empty:
         print("No poses found (check CSV path / ids).")
         return 1

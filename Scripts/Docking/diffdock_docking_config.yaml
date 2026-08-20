@@ -1,28 +1,72 @@
-receptors_dir: Data/Receptors
-ligand_dirs:
+# ═══════════════════════════════════════════════════════════════════════════════
+# DiffDock — docking configuration
+# Consumed by Scripts/Docking/run_diffdock.py (line refs are into that file).
+# Two stages: (1) DiffDock diffusion sampling, then (2) an optional post-hoc
+# re-scoring / minimisation of every DiffDock pose with smina or gnina.
+# Each key falls back to a code default if omitted — the default is noted per key.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Inputs ───────────────────────────────────────────────────────────────────
+receptors_dir: Data/Receptors        # dir scanned for receptor *.pdb files to dock against
+ligand_dirs:                         # list of ligand folders; each is iterated as one DiffDock run set
 - Data/Ligands/JKU/pdbqt
-diffdock_dir: /home/manndo/docking_tools/DiffDock
-diffdock_python: /home/manndo/anaconda3/envs/diffdock/bin/python
-diffdock_conda_env: diffdock
-num_samples: 30
-inference_steps: 20
-device: cuda:0
-timeout_per_complex: 600
-output_dir: Dockings/diffdock_results
-log_dir: Dockings/Logs/diffdock_logs
-batch_mode: true
-batch_size: 15
-group_by_receptor: true
-max_workers: 1
-overwrite_existing: true
-overwrite_error_log: true
-optimization: smina
-optimize_search: minimize
-optimize_autobox_add: 4.0
-optimize_cpu: 1
-optimize_seed: 0
-optimize_timeout: 300
-gnina_use_gpu: true
-smina_executable: /home/manndo/anaconda3/envs/diffdock/bin/smina
-gnina_executable: /home/manndo/docking_tools/gnina
-gnina_lib_dirs: []
+
+# ── DiffDock executable / environment ────────────────────────────────────────
+diffdock_dir: /home/manndo/docking_tools/DiffDock                    # DiffDock repo root: subprocess cwd + holds default_inference_args.yaml
+diffdock_python: /home/manndo/anaconda3/envs/diffdock/bin/python     # interpreter for `python -m inference`; its env root also seeds gnina's LD_LIBRARY_PATH
+diffdock_conda_env: diffdock         # informational only — NOT read by the runner (the env is entered via diffdock_python)
+
+# ── Diffusion sampling knobs (written into DiffDock's inference config) ───────
+num_samples: 30                      # DiffDock diffusion poses sampled per complex (default 10)
+inference_steps: 20                  # reverse-diffusion denoising steps per sample (default 20)
+
+# ── Compute ──────────────────────────────────────────────────────────────────
+device: cuda:0                       # torch device: "cuda:0" | "cuda:N" | "cpu"; a GPU OOM auto-falls back to cpu
+timeout_per_complex: 1800            # wall-clock cap for one DiffDock subprocess, seconds.
+                                     # RAISED from 600 on 2026-08-13: a full Orai complex (1338
+                                     # residues, 6 chains, 30 samples) needs ~10 min on its own and
+                                     # far longer when it shares a process, so the old cap silently
+                                     # truncated batches mid-complex.
+
+# ── Outputs ──────────────────────────────────────────────────────────────────
+output_dir: Dockings/diffdock_results    # root for poses, per-combo dirs, docking_log.csv, error log, optimization_log.csv
+log_dir: Dockings/Logs/diffdock_logs     # top-level log dir (batch stdout/stderr live under output_dir/_batch_logs)
+
+# ── Batching ─────────────────────────────────────────────────────────────────
+batch_mode: true                     # true = one DiffDock call per CSV batch (fast) | false = per-complex subprocess loop (default true)
+batch_size: 2                        # ligand-complexes per DiffDock batch (0 = all at once).
+                                     # REDUCED from 15 on 2026-08-13: GPU memory is not released
+                                     # between complexes inside one DiffDock process, so on this
+                                     # 8 GB card the 3rd and 4th complex of a batch died with
+                                     # "CUDA error: out of memory" (batch 0) or ran so slowly they
+                                     # hit the batch timeout (batches 1-3). Because ligands are
+                                     # ordered alphabetically, that was always the two GSK-7975A
+                                     # forms, which is why they silently had no poses since July.
+group_by_receptor: true              # true = form batches within each receptor group before size-chunking (default false)
+max_workers: 1                       # parallel single-complex subprocesses (ThreadPoolExecutor), non-batch path only (default 1)
+
+# ── Rerun control ────────────────────────────────────────────────────────────
+overwrite_existing: true             # false = skip complexes whose combo_dir exists; also forwarded as overwrite= to the optimizer (default false)
+overwrite_error_log: true            # true = clear the error log at start; false = skip combos already recorded as failed (default true)
+
+# ── Post-hoc optimisation: re-score/minimise each DiffDock pose ──────────────
+optimization: smina                  # re-scoring tool: none/off/'' (disabled) | smina | gnina | all (default none). CLI --optimize overrides
+optimize_search: minimize            # minimize → --minimize (pure energy min) | anything else → --local_only (local MC in the pocket)
+optimize_autobox_add: 4.0            # Å padding around the pose to build the smina/gnina autobox (--autobox_add)
+optimize_cpu: 1                      # CPU threads for the optimizer subprocess (--cpu)
+optimize_seed: 0                     # RNG seed forwarded to smina/gnina (--seed)
+optimize_timeout: 300                # per-pose optimizer timeout, seconds; on expiry the original pose is kept
+gnina_use_gpu: true                  # false → append --no_gpu to gnina (keeps its CNN off the GPU); smina ignores this
+
+# ── Optimizer executables ────────────────────────────────────────────────────
+smina_executable: /home/manndo/anaconda3/envs/diffdock/bin/smina   # smina binary; '' → PATH lookup (shutil.which)
+gnina_executable: /home/manndo/docking_tools/gnina                 # gnina binary; '' → PATH lookup
+gnina_lib_dirs: []                   # extra dirs prepended to LD_LIBRARY_PATH for the gnina subprocess (CUDA/cuDNN .so resolution)
+
+# ── Reproducibility ─────────────────────────────────────────────────────────
+# DiffDock upstream has NO seed option: every run re-samples, so re-running the
+# pipeline silently changes every pose. run_diffdock.py exports this value as
+# DIFFDOCK_SEED and the local DiffDock inference.py seeds python/numpy/torch
+# (and CUDA) from it, so a re-run reproduces the same poses. Set to null to
+# restore the upstream non-deterministic behaviour.
+inference_seed: 42

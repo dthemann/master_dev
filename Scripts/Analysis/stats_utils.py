@@ -33,6 +33,7 @@ __all__ = [
     # proportions
     "wilson_ci", "cochran_q", "mcnemar_exact", "paired_proportions",
     "paired_2x2_association", "two_proportion_test", "cochran_armitage",
+    "newcombe_paired_diff_ci", "mcnemar_power", "tost_paired_proportions",
     # continuous
     "wilcoxon_rankbiserial", "friedman_kendall_w", "paired_continuous",
     "kruskal_dunn", "dunn", "jonckheere", "mannwhitney_cliffs",
@@ -69,18 +70,26 @@ def p_stars(p) -> str:
 
 
 def holm(pvals):
-    """Holm-Bonferroni step-down adjusted p-values (input order preserved)."""
+    """Holm-Bonferroni step-down adjusted p-values (input order preserved).
+
+    NaN inputs pass through unchanged (mirrors bh_fdr): a non-finite raw p is not a
+    hypothesis to correct. A degenerate pairwise test — e.g. two identical conditions
+    whose paired differences are all zero, where wilcoxon_rankbiserial returns NaN —
+    must never inherit the running step-down maximum and surface as a finite (let alone
+    significant) adjusted value. The family size m counts only the finite p-values."""
     p = np.asarray(pvals, float)
-    m = len(p)
+    out = np.full(p.shape, np.nan)
+    idx_ok = np.flatnonzero(~np.isnan(p))
+    m = len(idx_ok)
     if m == 0:
-        return p
-    order = np.argsort(p)
-    adj = np.empty(m)
+        return out
+    vals = p[idx_ok]
+    order = np.argsort(vals)
     running = 0.0
-    for rank, idx in enumerate(order):
-        running = max(running, (m - rank) * p[idx])
-        adj[idx] = min(running, 1.0)
-    return adj
+    for rank, j in enumerate(order):
+        running = max(running, (m - rank) * vals[j])
+        out[idx_ok[j]] = min(running, 1.0)
+    return out
 
 
 def bh_fdr(pvals):
@@ -157,6 +166,119 @@ def mcnemar_exact(a, b):
         return n10, n01, 1.0
     p = binomtest(min(n10, n01), disc, 0.5).pvalue
     return n10, n01, float(min(p, 1.0))
+
+
+def _counts_2x2(a, b):
+    """Paired 2x2 cell counts for two binary vectors -> (n11, n10, n01, n00)."""
+    a = np.asarray(a).astype(bool)
+    b = np.asarray(b).astype(bool)
+    if a.shape != b.shape:
+        raise ValueError("paired vectors must have the same length")
+    return (int(np.sum(a & b)), int(np.sum(a & ~b)),
+            int(np.sum(~a & b)), int(np.sum(~a & ~b)))
+
+
+def newcombe_paired_diff_ci(a, b, z=1.96):
+    """Newcombe (1998) method 10 score interval for the difference of two
+    CORRELATED proportions, p_b - p_a, on paired binary data.
+
+    This is the interval to quote alongside McNemar. McNemar tests whether the
+    difference is zero using the discordant pairs only; this bounds how large the
+    difference could be, using the marginals and their correlation.
+
+    a, b : paired 0/1 vectors of equal length (a = reference arm, b = comparator).
+    Returns dict with the 2x2 cells, both marginal rates, the difference
+    (p_b - p_a) and its (lo, hi). Default z gives a 95% interval.
+
+    Reference: Newcombe RG, Stat Med 1998;17:2635-2650, method 10.
+    """
+    n11, n10, n01, n00 = _counts_2x2(a, b)
+    n = n11 + n10 + n01 + n00
+    if n == 0:
+        nan = float("nan")
+        return {"n": 0, "n11": 0, "n10": 0, "n01": 0, "n00": 0,
+                "p_a": nan, "p_b": nan, "diff": nan, "lo": nan, "hi": nan,
+                "n_discordant": 0, "phi": nan}
+    p_a = (n11 + n10) / n
+    p_b = (n11 + n01) / n
+    lo_a, hi_a = wilson_ci(n11 + n10, n, z)
+    lo_b, hi_b = wilson_ci(n11 + n01, n, z)
+
+    # phi: correlation between the two binary variables; 0 when a margin is degenerate
+    denom = (n11 + n10) * (n01 + n00) * (n11 + n01) * (n10 + n00)
+    phi = ((n11 * n00 - n10 * n01) / np.sqrt(denom)) if denom > 0 else 0.0
+
+    diff = p_b - p_a
+    lo = diff - np.sqrt(max(0.0, (p_b - lo_b) ** 2
+                            - 2 * phi * (p_b - lo_b) * (hi_a - p_a)
+                            + (hi_a - p_a) ** 2))
+    hi = diff + np.sqrt(max(0.0, (hi_b - p_b) ** 2
+                            - 2 * phi * (hi_b - p_b) * (p_a - lo_a)
+                            + (p_a - lo_a) ** 2))
+    return {"n": n, "n11": n11, "n10": n10, "n01": n01, "n00": n00,
+            "p_a": float(p_a), "p_b": float(p_b), "diff": float(diff),
+            "lo": float(max(-1.0, lo)), "hi": float(min(1.0, hi)),
+            "n_discordant": n10 + n01, "phi": float(phi)}
+
+
+def mcnemar_power(a, b, alpha=0.05, power=0.80):
+    """Observed power and minimum detectable effect for an exact McNemar contrast.
+
+    A paired binary test conditions on the DISCORDANT pairs, so its power is
+    governed by how often the two arms disagree, not by the sample size. This
+    returns both the power actually achieved against the observed effect and the
+    smallest difference the design could have detected at the requested power.
+
+    a, b : paired 0/1 vectors. Returns dict with n_discordant, the discordant
+    proportion, observed power, the minimum detectable difference in proportion
+    units, and the number of pairs that would be needed for the observed effect.
+    """
+    from scipy.stats import norm
+    n11, n10, n01, n00 = _counts_2x2(a, b)
+    n = n11 + n10 + n01 + n00
+    m = n10 + n01
+    nan = float("nan")
+    if n == 0 or m == 0:
+        return {"n": n, "n_discordant": m, "p_discordant": nan,
+                "observed_power": nan, "mde": nan, "n_needed": nan}
+    psi = m / n                      # discordance rate
+    diff = (n01 - n10) / n           # observed difference p_b - p_a
+    z_a = norm.ppf(1 - alpha / 2)
+    z_b = norm.ppf(power)
+
+    # normal approximation to the conditional binomial on m discordant pairs
+    if diff == 0:
+        obs_power = alpha
+    else:
+        lam = abs(diff) * n / np.sqrt(m)      # noncentrality in SD units
+        obs_power = float(norm.sf(z_a - lam) + norm.cdf(-z_a - lam))
+
+    mde = (z_a + z_b) * np.sqrt(psi / n)      # detectable |p_b - p_a| at `power`
+    n_needed = (((z_a + z_b) ** 2) * psi / diff ** 2) if diff != 0 else nan
+    return {"n": n, "n_discordant": m, "p_discordant": float(psi),
+            "diff": float(diff), "observed_power": float(min(1.0, obs_power)),
+            "mde": float(mde), "n_needed": float(n_needed)}
+
+
+def tost_paired_proportions(a, b, margin, alpha=0.05):
+    """Two one-sided tests for EQUIVALENCE of two correlated proportions.
+
+    Declares equivalence when the (1 - 2*alpha) Newcombe interval for p_b - p_a
+    lies entirely inside (-margin, +margin). Use this instead of reading a
+    non-significant McNemar as "no difference": a null result bounds nothing on
+    its own, whereas this states the largest difference the data still allow.
+
+    margin : equivalence bound in proportion units (e.g. 0.10 for 10 points).
+    Returns dict with the interval used, the margin and an `equivalent` flag.
+    """
+    from scipy.stats import norm
+    z = norm.ppf(1 - alpha)          # one-sided z -> (1-2*alpha) two-sided interval
+    res = newcombe_paired_diff_ci(a, b, z=z)
+    lo, hi = res["lo"], res["hi"]
+    res.update({"margin": float(margin), "alpha": float(alpha),
+                "conf_level": float(1 - 2 * alpha),
+                "equivalent": bool(lo > -margin and hi < margin)})
+    return res
 
 
 def paired_proportions(data, labels=None, z=1.96):

@@ -22,6 +22,10 @@ Inputs (all already on disk — nothing re-docked):
 
 Each of the three tool slots is filled by ONE docking-mode variant, chosen from
 the CSV:
+  * AutoDock  : pick the scoring function and the post-docking optimizer
+                (``--autodock-scoring {vina,vinardo}`` /
+                ``--autodock-optimize {none,gnina,gnina_refinement,smina}``), or
+                pass a full method string with ``--autodock-variant``.
   * EquiBind  : pick the pocket source, refiner, and clamp independently
                 (``--equibind-pocket``/``--equibind-refine``/``--equibind-clamp``),
                 or pass a full method string with ``--equibind-variant``.
@@ -43,6 +47,10 @@ do NOT rely on sklearn_extra, it is broken under NumPy 2.x):
     python Scripts/Analysis/pose_cluster_crystal_pocket_report.py \
         --equibind-pocket fpocket --equibind-refine gnina \
         --diffdock-refine gnina
+
+    # gnina-reranked AutoDock Vina (best AutoDock variant on the full-protein run)
+    python Scripts/Analysis/pose_cluster_crystal_pocket_report.py \
+        --autodock-variant autodock_gnina --diffdock-refine smina
 """
 from __future__ import annotations
 
@@ -80,11 +88,26 @@ import stats_utils as su                         # noqa: E402  (shared, unit-tes
 from rdkit import Chem                            # noqa: E402
 from rdkit.Chem import rdMolAlign                 # noqa: E402
 
+# Cross-tool binding-site CONSENSUS here is defined over the three finalized
+# tools (AutoDock, DiffDock, EquiBind): the ENSEMBLES enumeration, the
+# distinct-tool agreement counters (values 1/2/3) and the pairwise site tables
+# are all built for exactly these three. The new full-protein engines
+# (autodock_vinardo, unidock, unidock2) are validated + compared per-tool by the
+# PoseBusters validity, pose-comparison and PandaMap analyses; folding them into
+# this spatial CONSENSUS would redefine "agreement" (a deliberate N-tool redesign
+# of the counters/ensembles below), so they are intentionally not consensus tools
+# here. Their palette entries are provided for forward-compatibility.
 TOOLS = ("autodock", "diffdock", "equibind")
 # Per-tool palette shared across every figure — matches 09f_pbvalid_yield_boxplot
 # (posebusters_pose_comparison.py): AutoDock=blue, DiffDock=orange, EquiBind=green.
-TOOL_COLORS = {"autodock": "#1f77b4", "diffdock": "#ff7f0e", "equibind": "#2ca02c"}
-TOOL_MARKERS = {"autodock": "o", "diffdock": "^", "equibind": "s"}
+TOOL_COLORS = {
+    "autodock": "#1f77b4", "diffdock": "#ff7f0e", "equibind": "#2ca02c",
+    "autodock_vinardo": "#17becf", "unidock": "#9467bd", "unidock2": "#8c564b",
+}
+TOOL_MARKERS = {
+    "autodock": "o", "diffdock": "^", "equibind": "s",
+    "autodock_vinardo": "D", "unidock": "P", "unidock2": "X",
+}
 
 
 def _equibind_rank_note(eq_variant: Optional[str]) -> str:
@@ -612,6 +635,16 @@ def _ensemble_stats(C: np.ndarray, tools: List[str], crystal: Optional[np.ndarra
 _REFINERS = ("raw", "smina", "gnina")
 _DECOMP_COLS = ("pocket_source", "refine_variant", "clamp_variant")
 
+# AutoDock encodes its variant in the method NAME, as
+# ``autodock[_<scoring>][_<optimizer>]``: the scoring token is present only for
+# the non-default function (``vinardo``), and the optimizer token only when the
+# Vina poses were post-processed (gnina/smina minimisation + re-ranking, and the
+# CNN-gradient 'gnina_refinement' flavour). So the six full-protein methods are
+# autodock, autodock_gnina, autodock_gnina_refinement, autodock_vinardo,
+# autodock_vinardo_gnina, autodock_vinardo_gnina_refinement.
+_AD_SCORINGS = ("vina", "vinardo")
+_AD_OPTIMIZERS = ("none", "gnina", "gnina_refinement", "smina")
+
 
 def _variant_catalog(csv: Path) -> pd.DataFrame:
     """Light read of just the variant-defining columns (``method`` + the
@@ -696,8 +729,57 @@ def resolve_diffdock_variant(cat: pd.DataFrame, variant: Optional[str],
     return cand
 
 
-def _map_tool(method: str, eq_variant: str, dd_variant: str = "diffdock") -> Optional[str]:
-    if method == "autodock":
+def resolve_autodock_variant(cat: pd.DataFrame, variant: Optional[str],
+                             scoring: str, optimize: str) -> str:
+    """Resolve the exact AutoDock method string for the AutoDock tool slot.
+
+    ``--autodock-variant`` accepts either a full method string or a bare optimizer
+    keyword (``gnina`` -> ``autodock_gnina``, kept alongside the current
+    ``--autodock-scoring``); ``--autodock-scoring``/``--autodock-optimize`` are the
+    tidy way to say the same thing. Composition follows the naming rule above, so
+    a variant that is not in the CSV fails loudly with the available list instead
+    of silently emptying the AutoDock slot.
+    """
+    methods = sorted(m for m in cat["method"].astype(str).unique()
+                     if m == "autodock" or m.startswith("autodock_"))
+    if not methods:
+        raise SystemExit("No 'autodock' poses in the per-pose CSV.")
+    if variant:
+        if variant in methods:
+            return variant
+        if variant in _AD_OPTIMIZERS:        # shorthand: --autodock-variant gnina
+            optimize = variant
+        else:
+            raise SystemExit(
+                f"--autodock-variant '{variant}' not recognised (want a full method "
+                f"name or one of {_AD_OPTIMIZERS}). Available:\n    "
+                + "\n    ".join(methods))
+    cand = "autodock" + ("_vinardo" if scoring == "vinardo" else "") \
+                      + ("" if optimize == "none" else f"_{optimize}")
+    if cand not in methods:
+        raise SystemExit(
+            f"No AutoDock variant (scoring={scoring}, optimize={optimize} -> '{cand}') "
+            f"in the CSV. Available:\n    " + "\n    ".join(methods))
+    return cand
+
+
+def _autodock_display(ad_variant: str) -> str:
+    """Figure label for the AutoDock slot, e.g. ``autodock_gnina`` ->
+    'AutoDock Vina + gnina' — so a plot never claims plain Vina while showing
+    gnina-reranked poses."""
+    name = str(ad_variant)
+    base = "AutoDock Vinardo" if "vinardo" in name else "AutoDock Vina"
+    if name.endswith("_gnina_refinement"):
+        return f"{base} + gnina (refine)"
+    for opt in ("gnina", "smina"):
+        if name.endswith(f"_{opt}"):
+            return f"{base} + {opt}"
+    return base
+
+
+def _map_tool(method: str, eq_variant: str, dd_variant: str = "diffdock",
+              ad_variant: str = "autodock") -> Optional[str]:
+    if method == ad_variant:                 # autodock | autodock_gnina | autodock_vinardo | ...
         return "autodock"
     if method == dd_variant:                 # diffdock | diffdock_smina | diffdock_gnina
         return "diffdock"
@@ -707,9 +789,10 @@ def _map_tool(method: str, eq_variant: str, dd_variant: str = "diffdock") -> Opt
 
 
 def load_poses(csv: Path, eq_variant: str, ids: Optional[set],
-               pb_valid_only: bool, dd_variant: str = "diffdock") -> pd.DataFrame:
+               pb_valid_only: bool, dd_variant: str = "diffdock",
+               ad_variant: str = "autodock") -> pd.DataFrame:
     df = pd.read_csv(csv, low_memory=False)
-    df["tool"] = df["method"].map(lambda m: _map_tool(m, eq_variant, dd_variant))
+    df["tool"] = df["method"].map(lambda m: _map_tool(m, eq_variant, dd_variant, ad_variant))
     df = df[df["tool"].notna()].copy()
     # DiffDock writes its top pose twice — a bare ``rank1.sdf`` that duplicates
     # ``rank1_confidence-*.sdf`` (and their optimised copies rank1_<tool>.sdf).
@@ -732,7 +815,9 @@ def load_poses(csv: Path, eq_variant: str, ids: Optional[set],
 def _effective_ranks(sub: pd.DataFrame) -> Tuple[Dict[str, int], Dict[str, str]]:
     """Per-pose effective rank within each tool of a complex, + the source used.
 
-    A tool's native ``rank`` is used when it varies (AutoDock = Vina mode,
+    A tool's native ``rank`` is used when it varies (AutoDock = Vina mode, or the
+    optimizer's re-ranked order for the gnina/smina AutoDock variants, whose
+    ``rank`` column already carries ``optimized_rank``;
     DiffDock = confidence rank). EquiBind has a constant sentinel rank (999) — it
     does not score poses — so we fall back to a docking-score ordering (ascending,
     most-negative = rank 1), matching the EquiBind ranking convention in
@@ -948,7 +1033,13 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
               if len(set(labels)) > 1 and len(set(km_labels)) > 1 else np.nan)
 
     # ── rank of each tool's poses in the crystal-closest cluster ─────────
-    # The cluster whose center is nearest the crystal is the "correct" site.
+    # The cluster whose center is nearest the crystal is the "correct" site, but
+    # only when that center actually lands within `thr` of the crystal ligand. A
+    # nearest cluster further away than that is not a recovery of the site, so the
+    # complex carries NO correct cluster at all: `correct_label` stays None, every
+    # tool's `in_correct_cluster` is NaN rather than False, and the complex
+    # contributes neither reach nor cluster composition. `correct_cluster_is_hit`
+    # is what gates this, and it is the same threshold the oracle ceiling uses.
     # For each tool we report the best (lowest) rank it assigns to a pose that
     # landed in that cluster — i.e. does the tool prioritize its near-native pose?
     correct_dist = correct_is_hit = np.nan
@@ -960,12 +1051,13 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
     correct_members: List[Tuple[str, Optional[int]]] = []
     if crystal is not None and pockets:
         cp = min(pockets, key=lambda p: _dist(p["center"], crystal))
-        correct_label = int(cp["label"])
         correct_dist = round(_dist(cp["center"], crystal), 3)
         correct_is_hit = bool(correct_dist <= thr)
+        p1 = _precision_at_1(pockets, crystal, thr)
+    if correct_is_hit is True:
+        correct_label = int(cp["label"])
         pur_centroid, pur_rmsd, best_rmsd_in_correct = _cluster_purity(
             cp, C, crystal, files, rmsd_map, thr)
-        p1 = _precision_at_1(pockets, crystal, thr)
         for t in TOOLS:
             rk = [eff_rank.get(files[i]) for i in cp["members"]
                   if tools[i] == t and eff_rank.get(files[i]) is not None]
@@ -3258,8 +3350,10 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None,
         vals = [v for v in dataD[i] if v == v]
         if vals:
             med = float(np.median(vals))
-            axD.text(i + 1, med + 0.12, f"{med:.2f} Å", ha="center",
-                     va="bottom", fontsize=9)
+            # offset to the right of the box: the white mean diamond sits on the
+            # box centre and would otherwise print through the median label
+            axD.text(i + 1 + 0.34, med, f"{med:.2f} Å", ha="left",
+                     va="center", fontsize=9)
     axD.set_xticks(xs); axD.set_xticklabels(["1 tool", "2 tools", "all 3 tools"])
     axD.set_ylabel("Crystal-cluster radius (max pose->center, Å)")
     axD.set_xlabel("Number of tools contributing to the crystal cluster")
@@ -3433,7 +3527,7 @@ def _fig_cluster_quality(df, ablation, ranking_rho, out_dir, match_thr,
         a.text(0.5, 0.5, "no data", ha="center", va="center",
                transform=a.transAxes, color="0.5")
     a.set_title("Site compactness vs separation\ntight (low x) and far-apart (high y) = good")
-    a.set_xlabel("Within-site spread (Å, median distance-to-center; lower = tighter)")
+    a.set_xlabel("Within-site spread (Å, median distance to centre)")
     a.set_ylabel("Nearest inter-site distance (Å; higher = better)")
     a.grid(alpha=0.25); a.set_axisbelow(True)
 
@@ -3501,7 +3595,8 @@ def _fig_cluster_quality(df, ablation, ranking_rho, out_dir, match_thr,
 
 def _fig_descriptor_quality(df_complex, features_csv, out_dir,
                             per_pose_csv=None, dd_variant="diffdock",
-                            eq_variant="equibind_unguided_smina"):
+                            eq_variant="equibind_unguided_smina",
+                            ad_variant="autodock"):
     """Which ligand types dock well? Pose accuracy (oracle RMSD to crystal) vs the
     ligand's Lipinski Ro5 compliance, physicochemical descriptors, and PCA space.
 
@@ -3509,7 +3604,7 @@ def _fig_descriptor_quality(df_complex, features_csv, out_dir,
     RMSD <= 2 A, any validity) and ``PB-valid & <= 2 A`` (the near-native pose is
     also PoseBusters-valid) — the gap is the fraction of near-native poses lost to
     physical invalidity. Both oracles are recomputed from the raw per-pose CSV (over
-    autodock + the chosen DiffDock/EquiBind variants) so the comparison holds
+    the chosen AutoDock/DiffDock/EquiBind variants) so the comparison holds
     regardless of any --pb-valid-only clustering filter. One PNG per measure; returns
     the list of written paths.
     """
@@ -3530,7 +3625,7 @@ def _fig_descriptor_quality(df_complex, features_csv, out_dir,
     if d.empty:
         return None
     NEAR = 2.0
-    tool_method = {"autodock": "autodock", "diffdock": dd_variant, "equibind": eq_variant}
+    tool_method = {"autodock": ad_variant, "diffdock": dd_variant, "equibind": eq_variant}
 
     # ── per-complex oracle RMSD, near-native (any validity) vs PB-valid, recomputed
     #    from the raw per-pose CSV over the analysed methods (so it is independent of
@@ -3790,7 +3885,8 @@ def _file_fp(path) -> Optional[dict]:
     return {"size": p.stat().st_size, "sha256": h.hexdigest()}
 
 
-def _analysis_signature(args, eq_variant: str, dd_variant: str) -> dict:
+def _analysis_signature(args, eq_variant: str, dd_variant: str,
+                        ad_variant: str = "autodock") -> dict:
     """Fingerprint of everything the per-complex analysis (``ok``) depends on.
 
     Deliberately excludes figure-only inputs (``--features-csv``) and plotting code,
@@ -3802,7 +3898,7 @@ def _analysis_signature(args, eq_variant: str, dd_variant: str) -> dict:
         "schema": _CACHE_SCHEMA,
         "per_pose_csv": _file_fp(args.per_pose_csv),
         "ids_file": _file_fp(args.ids_file) if args.ids_file else None,
-        "eq_variant": eq_variant, "dd_variant": dd_variant,
+        "eq_variant": eq_variant, "dd_variant": dd_variant, "ad_variant": ad_variant,
         "pb_valid_only": bool(args.pb_valid_only),
         "limit": int(args.limit),
         "outlier_dist": float(args.outlier_dist),
@@ -3868,7 +3964,7 @@ def _save_analysis_cache(cache_path: Path, sig: dict, ok: list) -> None:
 # computed with a lite clustering pass (bootstrap + placement-mode analysis off).
 
 def _compute_ok_lite(csv, eq_variant, ids, pb_valid_only, dd_variant, args,
-                     cents_seed=None):
+                     cents_seed=None, ad_variant="autodock"):
     """Per-complex clustering pass for the rank-1 cross-tab with the expensive
     bootstrap-stability + placement-mode passes OFF (n_boot=0, do_placement=False):
     the cross-tab only needs each pose's rank, RMSD-to-crystal and crystal-cluster
@@ -3877,7 +3973,7 @@ def _compute_ok_lite(csv, eq_variant, ids, pb_valid_only, dd_variant, args,
     PB-valid subset pass needs no new centroid extraction. Same pose loading and
     per-complex outlier removal as the main analysis loop, so counts match a real
     run of the corresponding mode."""
-    df = load_poses(csv, eq_variant, ids, pb_valid_only, dd_variant)
+    df = load_poses(csv, eq_variant, ids, pb_valid_only, dd_variant, ad_variant)
     if df.empty:
         return []
     complexes = sorted(df["protein"].unique())
@@ -4004,7 +4100,8 @@ def _fig_rank1_quality_crosstab(df_ct, out_dir, eq_variant=None, dd_variant="dif
 
 
 def _rank1_quality_crosstabs(csv, eq_variant, ids, dd_variant, args, out_dir,
-                             ok_main, cents_seed=None, render_png=True):
+                             ok_main, cents_seed=None, render_png=True,
+                             ad_variant="autodock"):
     """Write the per-tool rank-1 quality cross-tab in BOTH pose-set flavours
     (all_poses + pb_valid): a CSV, a human-readable TXT and (unless render_png is
     False) a PNG. The flavour whose ``--pb-valid-only`` state matches the main run
@@ -4015,7 +4112,7 @@ def _rank1_quality_crosstabs(csv, eq_variant, ids, dd_variant, args, out_dir,
             ok_m = ok_main
         else:
             ok_m = _compute_ok_lite(csv, eq_variant, ids, pb_only, dd_variant, args,
-                                    cents_seed=cents_seed)
+                                    cents_seed=cents_seed, ad_variant=ad_variant)
         agg = _rank1_quality_counts(ok_m)
         head = (f"{'tool':22s} {'N':>4} | {'<2Å&inCl':>8} {'<2Åonly':>7} {'inClonly':>8} "
                 f"{'neither':>7} | {'not<2Å':>6} {'notInCl':>7} {'fail≥1':>6} {'failboth':>8}")
@@ -4049,9 +4146,11 @@ def _rank1_quality_crosstabs(csv, eq_variant, ids, dd_variant, args, out_dir,
 
     header = [
         "Rank-1 pose quality — near-native (RMSD < 2 Å) × crystal-closest cluster, per tool",
-        f"Benchmark; {_equibind_rank_note(eq_variant)}; DiffDock variant = {dd_variant}.",
+        f"Benchmark; {_equibind_rank_note(eq_variant)}; DiffDock variant = {dd_variant}; "
+        f"AutoDock variant = {ad_variant}.",
         "Both flavours are written on EVERY run, independent of --pb-valid-only:",
-        "  • all_poses — rank-1 = each tool's native top pick (Vina mode 1 / DiffDock",
+        "  • all_poses — rank-1 = each tool's native top pick (AutoDock mode 1, i.e. the",
+        "    optimizer's re-ranked mode 1 for the gnina/smina variants / DiffDock",
         "    confidence-1 / EquiBind best-affinity); clustering over ALL poses; includes",
         "    rank-1 poses that FAIL PoseBusters.",
         "  • pb_valid  — rank-1 = each tool's best PoseBusters-valid pose (valid poses",
@@ -4091,6 +4190,20 @@ def main(argv=None) -> int:
     ap.add_argument("--fpocket-dir", default="pocket_results/fpocket_results")
     ap.add_argument("--p2rank-dir", default="pocket_results/p2rank_results")
     ap.add_argument("--ids-file", default=None)
+    # ── AutoDock tool slot: choose the variant by component, or by full name ──
+    ap.add_argument("--autodock-variant", default=None,
+                    help="Full AutoDock method string ('autodock' | 'autodock_gnina' "
+                         "| 'autodock_gnina_refinement' | 'autodock_vinardo' | ...) or "
+                         "a bare optimizer keyword. Overrides --autodock-scoring/"
+                         "--autodock-optimize. Default: compose from the components.")
+    ap.add_argument("--autodock-scoring", choices=_AD_SCORINGS, default="vina",
+                    help="AutoDock scoring function: 'vina' -> autodock* | 'vinardo' "
+                         "-> autodock_vinardo* (default: vina).")
+    ap.add_argument("--autodock-optimize", choices=_AD_OPTIMIZERS, default="none",
+                    help="Post-docking optimizer applied to the Vina poses: 'none' "
+                         "(raw Vina modes) | 'gnina' (minimise + CNN re-rank) | "
+                         "'gnina_refinement' (CNN gradients drive the geometry) | "
+                         "'smina' (default: none).")
     # ── EquiBind tool slot: choose the variant by component, or by full name ──
     ap.add_argument("--equibind-variant", default=None,
                     help="Full equibind method string (e.g. "
@@ -4179,18 +4292,23 @@ def main(argv=None) -> int:
         cat, args.equibind_variant, args.equibind_pocket,
         args.equibind_refine, args.equibind_clamp)
     dd_variant = resolve_diffdock_variant(cat, args.diffdock_variant, args.diffdock_refine)
+    ad_variant = resolve_autodock_variant(cat, args.autodock_variant,
+                                          args.autodock_scoring, args.autodock_optimize)
+    # Figures label the AutoDock slot by the variant actually clustered, so a plot
+    # never says "AutoDock Vina" while showing gnina-reranked poses.
+    _TOOL_DISPLAY["autodock"] = _autodock_display(ad_variant)
 
     # ── reuse the cached per-complex analysis when the inputs are unchanged ──
-    sig = _analysis_signature(args, eq_variant, dd_variant)
+    sig = _analysis_signature(args, eq_variant, dd_variant, ad_variant)
     cache_path = out_dir / "analysis_cache.pkl"
     main_cents: Dict[str, Tuple[float, float, float]] = {}   # reused by the rank-1 cross-tab
     ok = None if args.force else _load_analysis_cache(cache_path, sig)
     if ok is not None:
         print(f"Reusing cached analysis: {len(ok)} complexes (inputs unchanged; "
               f"skipping re-analysis — use --force to recompute). "
-              f"equibind={eq_variant} | diffdock={dd_variant}")
+              f"autodock={ad_variant} | equibind={eq_variant} | diffdock={dd_variant}")
     else:
-        df = load_poses(csv, eq_variant, ids, args.pb_valid_only, dd_variant)
+        df = load_poses(csv, eq_variant, ids, args.pb_valid_only, dd_variant, ad_variant)
         if df.empty:
             print("No poses after filtering (check --equibind-* / --diffdock-* / --ids-file).")
             return 1
@@ -4199,8 +4317,8 @@ def main(argv=None) -> int:
             complexes = complexes[:args.limit]
             df = df[df["protein"].isin(complexes)].copy()
         print(f"Complexes: {len(complexes)} | poses: {len(df)} | "
-              f"tools: {sorted(df['tool'].unique())} | equibind={eq_variant} | "
-              f"diffdock={dd_variant}")
+              f"tools: {sorted(df['tool'].unique())} | autodock={ad_variant} | "
+              f"equibind={eq_variant} | diffdock={dd_variant}")
 
         # ── parallel centroid extraction ─────────────────────────────────
         files = sorted(df["pose_file"].unique())
@@ -4357,7 +4475,7 @@ def main(argv=None) -> int:
     try:
         _rank1_quality_crosstabs(csv, eq_variant, ids, dd_variant, args, out_dir,
                                  ok_main=ok, cents_seed=main_cents,
-                                 render_png=not args.no_plot)
+                                 render_png=not args.no_plot, ad_variant=ad_variant)
     except Exception as e:                                   # pragma: no cover
         print(f"  [rank1-quality] cross-tab skipped: {e}")
 
@@ -4592,6 +4710,7 @@ def main(argv=None) -> int:
 
     summary = {
         "n_complexes": int(n), "match_thr_A": args.match_thr,
+        "autodock_variant": ad_variant,
         "equibind_variant": eq_variant,
         "diffdock_variant": dd_variant,
         "clustering": {
@@ -4681,7 +4800,8 @@ def main(argv=None) -> int:
                 _fig_placement(df_complex, args.mode_rmsd_thr, out_dir),
                 _fig_descriptor_quality(df_complex, args.features_csv, out_dir,
                                         per_pose_csv=args.per_pose_csv,
-                                        dd_variant=dd_variant, eq_variant=eq_variant)]
+                                        dd_variant=dd_variant, eq_variant=eq_variant,
+                                        ad_variant=ad_variant)]
         for f in figs:
             if not f:
                 continue

@@ -1,0 +1,55 @@
+# Strict PoseBusters campaign for the four AutoDock/GNINA benchmark arms:
+#   Vina scoring    x CNN rescore / CNN refinement
+#   Vinardo scoring x CNN rescore / CNN refinement
+#
+# This intentionally uses a fresh output tree. Reusing the multi-engine CSV
+# would make content-aware reconciliation remove its DiffDock/EquiBind rows.
+
+work_dir: /home/manndo/master_dev
+
+# Required by the schema but unused with prepared_per_pose.
+receptors_dir: posebusters_results/_benchmark_staging/receptors
+
+docking_directories:
+  autodock: Dockings/vina_results_full_protein_vina_scoring
+  autodock_vinardo: Dockings/vina_results_full_protein_vinardo_scoring
+
+config_mode: dock
+receptor_policy: prepared_per_pose
+require_validation_receptors: true
+
+validation_receptor_directories:
+  autodock: Dockings/vina_results_full_protein_vina_scoring
+  autodock_vinardo: Dockings/vina_results_full_protein_vinardo_scoring
+
+# Both method keys share AutoDock's optimizer variant axis.
+variant_filter:
+  autodock:
+    - gnina
+    - gnina_refinement
+
+# Final benchmark gate: neither a missing method nor a partial bust may pass.
+require_all_methods: true
+require_complete_results: true
+optional_methods: []
+expected_common_combinations: 308
+
+overwrite: false
+save_interval: 200
+num_workers: 12
+quiet: true
+limit_worker_threads: true
+worker_maxtasks: 50
+pose_timeout: 600
+stall_timeout: 1800
+max_restarts: 5
+monitor: true
+monitor_interval: 30
+
+output_base_dir: posebusters_results/benchmark_full_protein_autodock_gnina_variants
+
+ligand_template_dirs:
+  - Data/PoseBuster Benchmark Set
+
+copy_proved_poses: true
+make_plots: true

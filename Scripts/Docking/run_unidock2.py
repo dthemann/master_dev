@@ -29,6 +29,20 @@ a 308-complex batch robust:
   * ``max_receptor_atoms`` — optionally pre-skip by raw protein heavy-ATOM count;
     this is a pre-preparation cost proxy, not the final engine atom count.
 
+Prep/dock split (keeps the idle GPU fed): because that CPU prep is single-threaded and
+GPU-free, it is decoupled from the GPU docking. Each receptor is prepared once with the
+``unidock2 protein_prep`` sub-command — pdbfixer + AmberTools ``tleap`` — into a
+parameterized ``.dms`` receptor; the fast ``unidock2 docking`` shot then consumes that
+``.dms`` (its ``-r`` accepts PDB *or* DMS) and skips its own internal prep entirely. The
+two produce a byte-identical scored receptor and pose SDF, so this is purely a scheduling
+change, not a scientific one. ``prep_workers`` (config) receptors are prepared CONCURRENTLY
+on the CPU while a single GPU-locked consumer docks the already-prepared ones in submission
+order — so the GPU runs its ~2 s shots back-to-back instead of once every prep-time. The
+exported prepared-receptor PDB is materialized (via ``ambpdb``) from the prep step's
+``receptor.prmtop``/``receptor.inpcrd``, because ``docking`` from a ``.dms`` no longer
+regenerates them; the completion manifest, fingerprint, and runtime attestation are
+otherwise unchanged, so existing completions still resume and re-docks stay bit-identical.
+
 Runs are RESUMABLE: only a strictly validated, scored SDF with a matching JSON
 completion sentinel (input/config/tool/output hashes) is trusted. Docking writes
 to a generation-specific temporary SDF and atomically publishes it only after a
@@ -53,9 +67,11 @@ import shutil
 import stat
 import subprocess
 import tempfile
+import threading
 import time
 import uuid
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import yaml
@@ -67,6 +83,13 @@ _SENTINEL_SCHEMA = 3
 _ID_RE = re.compile(r"^[0-9][A-Z0-9]{3}_[A-Z0-9]{3}$")
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DONE_SUFFIX = "_unidock2_completion.json"
+# CPU receptor-prep concurrency (GPU docking is always serial). The default keeps
+# well under core count so the few large-receptor preps do not starve the machine.
+_DEFAULT_PREP_WORKERS = 8
+_MAX_PREP_WORKERS = 64
+# Measured per-complex GPU docking cost once the receptor is pre-prepared (a ~2 s
+# GPU shot plus process startup). Used only for the wall-time estimate.
+_EST_DOCK_SECONDS = 5.0
 _CONFIG_KEYS = {
     "unidock2_bin", "prep_base", "converter", "ids_file", "output_dir", "log_dir",
     "overwrite", "exhaustiveness", "mc_steps", "num_pose", "energy_range", "seed",
@@ -74,8 +97,8 @@ _CONFIG_KEYS = {
     "energy_decomp", "construct_ff", "template_docking", "compute_center",
     "covalent_ligand", "preserve_receptor_hydrogen", "engine_checkpoint",
     "search_mode", "task", "gpu_device_id", "gpu_lock_file", "gpu_lock_timeout_s",
-    "n_cpu", "timeout_s", "terminate_grace_s", "scratch_dir", "max_receptor_atoms",
-    "exclude", "path_base", "_config_path", "_path_base",
+    "n_cpu", "prep_workers", "timeout_s", "terminate_grace_s", "scratch_dir",
+    "max_receptor_atoms", "exclude", "path_base", "_config_path", "_path_base",
 }
 
 
@@ -403,6 +426,14 @@ def validate_config(cfg: dict) -> dict:
     require_int("gpu_device_id", 0)
     require_int("opt_steps", -1)
     require_int("refine_steps", 0)
+    # Concurrent CPU receptor-prep workers (GPU docking stays serial on the lock).
+    # Optional; absent means the split-pipeline default.
+    workers = cfg.get("prep_workers", _DEFAULT_PREP_WORKERS)
+    if isinstance(workers, bool) or not isinstance(workers, int) or workers < 1:
+        raise ValueError("prep_workers must be an integer of at least 1")
+    if workers > _MAX_PREP_WORKERS:
+        raise ValueError(f"prep_workers must not exceed {_MAX_PREP_WORKERS}")
+    cfg["prep_workers"] = workers
     for key in (
         "randomize", "use_tor_lib", "energy_decomp", "construct_ff",
         "template_docking", "compute_center", "covalent_ligand",
@@ -564,11 +595,42 @@ def _subprocess_env(unidock2_bin: str) -> dict:
     return e
 
 
-def _run(cmd, timeout_s, log_path: Path, env: dict, terminate_grace_s: float = 5.0):
+# Prep subprocesses run on a background thread pool, so KeyboardInterrupt is
+# delivered to the main thread and cannot unwind their proc.wait(). Track every
+# live prep process group here so the main thread can reap them all on shutdown.
+_ACTIVE_PREP_LOCK = threading.Lock()
+_ACTIVE_PREP: dict[int, subprocess.Popen] = {}
+
+
+def _register_prep(proc: subprocess.Popen):
+    with _ACTIVE_PREP_LOCK:
+        _ACTIVE_PREP[id(proc)] = proc
+
+
+def _deregister_prep(proc: subprocess.Popen):
+    with _ACTIVE_PREP_LOCK:
+        _ACTIVE_PREP.pop(id(proc), None)
+
+
+def _kill_active_prep(grace_s: float = 2.0):
+    """Reap every still-running prep process group (used on batch shutdown)."""
+    with _ACTIVE_PREP_LOCK:
+        procs = list(_ACTIVE_PREP.values())
+    for proc in procs:
+        try:
+            _terminate_process_group(proc, grace_s=grace_s)
+        except Exception:
+            pass
+
+
+def _run(cmd, timeout_s, log_path: Path, env: dict, terminate_grace_s: float = 5.0,
+         on_spawn=None, on_reap=None):
     """Run in a new process group and always reap it after timeout/interruption.
 
     The log is append-only so every retry remains auditable. The return contract
     stays ``(returncode_or_None, timed_out)`` for notebook/test compatibility.
+    ``on_spawn``/``on_reap`` (optional) receive the Popen so a caller running on a
+    worker thread can register/deregister it for main-thread shutdown reaping.
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
     grace_s = float(terminate_grace_s)
@@ -580,6 +642,8 @@ def _run(cmd, timeout_s, log_path: Path, env: dict, terminate_grace_s: float = 5
         log.flush()
         proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT,
                                  start_new_session=True, env=env)
+        if on_spawn is not None:
+            on_spawn(proc)
         try:
             return proc.wait(timeout=timeout_s), False
         except subprocess.TimeoutExpired:
@@ -592,6 +656,9 @@ def _run(cmd, timeout_s, log_path: Path, env: dict, terminate_grace_s: float = 5
             log.flush()
             _terminate_process_group(proc, grace_s=grace_s)
             raise
+        finally:
+            if on_reap is not None:
+                on_reap(proc)
 
 
 def _process_group_exists(pgid: int) -> bool:
@@ -1350,6 +1417,127 @@ def _materialize_prepared_receptor(
     }
 
 
+def _rmtree_quiet(path: Path):
+    """Remove a driver-owned scratch tree, warning (not raising) on trouble."""
+    try:
+        shutil.rmtree(path)
+    except FileNotFoundError:
+        pass
+    except OSError as exc:
+        _emit_cleanup_warning(f"could not remove prep scratch {path}: {exc}")
+
+
+def _cleanup_prep_bundle(bundle):
+    """Drop the transient prep scratch once its docking stage has consumed it."""
+    scratch = bundle.get("prep_scratch") if isinstance(bundle, dict) else None
+    if scratch:
+        _rmtree_quiet(Path(scratch))
+
+
+def _prep_config(cfg: dict, temp_dir: Path) -> dict:
+    """Nested YAML for ``unidock2 protein_prep`` (reads only the Preprocessing group).
+
+    ``preserve_receptor_hydrogen`` MUST match the docking config so the parameterized
+    receptor is identical to the one the all-in-one ``docking`` path would have built.
+    """
+    return {
+        "Preprocessing": {
+            "preserve_receptor_hydrogen": cfg["preserve_receptor_hydrogen"],
+            "temp_dir_name": str(Path(temp_dir).resolve()),
+        }
+    }
+
+
+def prepare_complex(cdir: Path, info: dict, cfg: dict, unidock2_bin: str,
+                    tool_identity: dict, prep_parent: Path):
+    """CPU receptor preparation for one complex — no GPU.
+
+    Runs ``unidock2 protein_prep`` (pdbfixer + AmberTools tleap) on the raw protein
+    PDB, producing a parameterized ``.dms`` receptor plus the exported prepared-receptor
+    PDB (materialized from tleap's prmtop/inpcrd, exactly as the all-in-one path exports
+    it). Executes on a worker thread; returns a bundle the serial GPU docking stage
+    consumes. Never touches the output tree, so a failure or interrupt leaves nothing to
+    resume — the complex is simply re-prepared next run.
+    """
+    t0 = time.time()
+    pdb_id = Path(cdir).name
+    rec = Path(info["receptor"]).resolve()
+    prep_log = Path(cfg["log_dir"]) / f"{pdb_id}.prep.log"
+    prep_scratch = Path(tempfile.mkdtemp(prefix=f"prep-{pdb_id}-", dir=prep_parent))
+
+    def _fail(status, error):
+        _rmtree_quiet(prep_scratch)
+        return {"pdb_id": pdb_id, "status": status, "error": error,
+                "elapsed_s": round(time.time() - t0, 1)}
+
+    try:
+        prep_tmp = _ensure_private_directory(prep_scratch / "tmp")
+        dms = prep_scratch / f"{pdb_id}.dms"
+        prepared_pdb = prep_scratch / f"{pdb_id}_prepared.pdb"
+        prep_cfg_path = prep_scratch / f"{pdb_id}_prep_config.yaml"
+        _atomic_write_text(
+            prep_cfg_path, yaml.safe_dump(_prep_config(cfg, prep_tmp), sort_keys=False)
+        )
+        cmd = [
+            unidock2_bin, "protein_prep", "-r", str(rec),
+            "-o", str(dms.resolve()), "-cf", str(prep_cfg_path.resolve()),
+        ]
+        rc, timed_out = _run(
+            cmd, int(cfg["timeout_s"]), prep_log, _subprocess_env(unidock2_bin),
+            terminate_grace_s=float(cfg.get("terminate_grace_s", 5.0)),
+            on_spawn=_register_prep, on_reap=_deregister_prep,
+        )
+        if timed_out:
+            return _fail("timeout", f"protein_prep exceeded timeout_s={cfg['timeout_s']}")
+        if rc != 0:
+            return _fail("error", f"protein_prep exited with return code {rc}")
+        if not dms.is_file() or dms.stat().st_size == 0:
+            return _fail("error", "protein_prep produced no .dms receptor")
+        # Export the prepared receptor here (docking from a .dms no longer emits
+        # prmtop/inpcrd); the box-coverage parity check happens in dock_complex.
+        prepared_validation = _materialize_prepared_receptor(
+            prep_tmp, tool_identity, prepared_pdb, _subprocess_env(unidock2_bin)
+        )
+        return {
+            "pdb_id": pdb_id, "status": "prepared",
+            "dms": str(dms), "prepared_pdb": str(prepared_pdb),
+            "prepared_validation": prepared_validation,
+            "prep_scratch": str(prep_scratch),
+            "elapsed_s": round(time.time() - t0, 1),
+        }
+    except (KeyboardInterrupt, SystemExit):
+        _rmtree_quiet(prep_scratch)
+        raise
+    except BaseException as exc:  # noqa: BLE001 - report, do not crash the pool
+        return _fail("error", f"receptor preparation failed: {type(exc).__name__}: {exc}")
+
+
+def _install_prepared_receptor(prepared: dict, destination: Path) -> dict:
+    """Copy the prep-stage prepared-receptor PDB into the docking generation and
+    re-validate it, returning the same shape ``_materialize_prepared_receptor`` does.
+    Fails loudly if the receptor changed between preparation and docking."""
+    source = Path(prepared["prepared_pdb"])
+    destination = Path(destination)
+    with open(source, "rb") as src, open(destination, "xb") as dst:
+        shutil.copyfileobj(src, dst)
+        dst.flush()
+        os.fsync(dst.fileno())
+    validation = _validate_prepared_receptor(destination)
+    pv = prepared["prepared_validation"]
+    if (
+        validation["prepared_receptor_atoms"] != pv["prepared_receptor_atoms"]
+        or validation["prepared_receptor_heavy_atoms"] != pv["prepared_receptor_heavy_atoms"]
+        or _sha256(destination) != pv["prepared_receptor_sha256"]
+    ):
+        raise RuntimeError("prepared receptor changed between preparation and docking")
+    return {
+        **validation,
+        "prepared_receptor_sha256": pv["prepared_receptor_sha256"],
+        "receptor_prmtop_sha256": pv["receptor_prmtop_sha256"],
+        "receptor_inpcrd_sha256": pv["receptor_inpcrd_sha256"],
+    }
+
+
 def _result_from_manifest(
     info: dict, manifest: dict, out_sdf: Path, done_marker: Path,
     *, status: str = "done", elapsed_s: float = 0.0,
@@ -1387,8 +1575,15 @@ def _result_from_manifest(
     }
 
 
-def dock_complex(cdir: Path, cfg: dict, unidock2_bin: str, tool_identity: dict | None = None):
-    """Dock one complex with locking, runtime attestation, and atomic publication."""
+def dock_complex(cdir: Path, cfg: dict, unidock2_bin: str, tool_identity: dict | None = None,
+                 prepared: dict | None = None):
+    """Dock one complex with locking, runtime attestation, and atomic publication.
+
+    ``prepared`` (from :func:`prepare_complex`) supplies a pre-built ``.dms`` receptor
+    and the already-exported prepared-receptor PDB: docking then consumes the ``.dms``
+    (skipping its internal prep) and the export is installed rather than re-materialized.
+    When ``prepared`` is None the receptor is the raw PDB and Uni-Dock2 preps it inline.
+    """
     t0 = time.time()
     validate_config(cfg)
     identity = tool_identity or probe_tool_identity(unidock2_bin)
@@ -1483,11 +1678,18 @@ def dock_complex(cdir: Path, cfg: dict, unidock2_bin: str, tool_identity: dict |
             _cleanup_scratch(scratch_root, scratch_parent)
             raise
 
-        rec = Path(info["receptor"]).resolve()
         lig = Path(info["ligand"]).resolve()
         cx, cy, cz = info["center"]
+        # Fingerprint/provenance always key on the RAW receptor (info["receptor"]); the
+        # .dms is a deterministic derivative, so passing it here does not shift identity.
+        if prepared is not None:
+            if prepared.get("pdb_id") != pdb_id or prepared.get("status") != "prepared":
+                raise ValueError("prepared receptor bundle does not match this complex")
+            receptor_arg = Path(prepared["dms"]).resolve()
+        else:
+            receptor_arg = Path(info["receptor"]).resolve()
         cmd = [
-            unidock2_bin, "docking", "-r", str(rec), "-l", str(lig),
+            unidock2_bin, "docking", "-r", str(receptor_arg), "-l", str(lig),
             "-c", str(cx), str(cy), str(cz), "-o", str(tmp_sdf.resolve()),
             "-cf", str(attempt_cfg.resolve()),
         ]
@@ -1529,9 +1731,16 @@ def dock_complex(cdir: Path, cfg: dict, unidock2_bin: str, tool_identity: dict |
                     attestation = _parse_runtime_attestation(
                         attempt_log, info, cfg, runtime_cfg=runtime_cfg
                     )
-                    prepared_validation = _materialize_prepared_receptor(
-                        scratch_root, identity, tmp_prepared, _subprocess_env(unidock2_bin)
-                    )
+                    if prepared is not None:
+                        # docking from a .dms does not regenerate prmtop/inpcrd, so the
+                        # export comes from the prep stage; install and re-verify it.
+                        prepared_validation = _install_prepared_receptor(
+                            prepared, tmp_prepared
+                        )
+                    else:
+                        prepared_validation = _materialize_prepared_receptor(
+                            scratch_root, identity, tmp_prepared, _subprocess_env(unidock2_bin)
+                        )
                     if (
                         prepared_validation["prepared_receptor_heavy_atoms"]
                         != attestation["engine_receptor_heavy_atoms_in_box"]
@@ -1873,11 +2082,16 @@ def main(config_path, plan_only=False, limit=None):
 
     selected = remaining if limit is None else remaining[:limit]
     deferred = remaining[len(selected):]
-    est_s = sum(_est_seconds(info["input_protein_heavy_atoms"]) for _, info, _ in selected)
+    prep_workers = int(cfg["prep_workers"])
+    est_prep_s = sum(_est_seconds(info["input_protein_heavy_atoms"]) for _, info, _ in selected)
+    # Wall time ≈ the (parallelized) prep sum plus the serial ~few-second GPU shots.
+    est_dock_s = len(selected) * _EST_DOCK_SECONDS
+    est_wall_s = est_prep_s / max(prep_workers, 1) + est_dock_s
     excluded = sorted(set(cfg.get("exclude") or []))
-    print(f"Uni-Dock2 {tool_identity['version']} whole-protein (one shot/complex) | vina scoring "
-          f"| requested exhaustiveness {cfg['exhaustiveness']} | mc_steps {cfg['mc_steps']} "
-          f"| num_pose {cfg['num_pose']} | search_mode {cfg['search_mode']}")
+    print(f"Uni-Dock2 {tool_identity['version']} whole-protein (parallel prep -> serial GPU dock) "
+          f"| vina scoring | requested exhaustiveness {cfg['exhaustiveness']} "
+          f"| mc_steps {cfg['mc_steps']} | num_pose {cfg['num_pose']} "
+          f"| search_mode {cfg['search_mode']} | prep_workers {prep_workers}")
     print(f"  complexes: {len(remaining)} remaining ({len(selected)} selected), "
           f"{len(completed)} already-done, {len(skipped)} skipped, "
           f"{len(plan_errors)} errors, {len(excluded)} excluded "
@@ -1886,8 +2100,10 @@ def main(config_path, plan_only=False, limit=None):
         print(f"  limit defers {len(deferred)} otherwise-dockable complexes")
     if unlisted_staged:
         print(f"  ignored {len(unlisted_staged)} staged directories absent from ids_file")
-    print(f"  rough estimate: ~{est_s / 3600:.1f} h (prep-bound; ~2 s GPU/complex, "
-          f"rest is receptor prep). Per-complex timeout: {cfg['timeout_s']} s")
+    print(f"  rough estimate: ~{est_wall_s / 3600:.1f} h wall with {prep_workers} parallel "
+          f"prep workers (~{est_prep_s / 3600:.1f} h serial receptor prep + "
+          f"~{est_dock_s / 60:.0f} min serial GPU docking). "
+          f"Per-complex timeout: {cfg['timeout_s']} s")
     if cfg.get("max_receptor_atoms"):
         print(f"  receptor-size cap: skip input protein PDBs with > "
               f"{cfg['max_receptor_atoms']} heavy ATOM records (pre-preparation proxy)")
@@ -1905,7 +2121,10 @@ def main(config_path, plan_only=False, limit=None):
             "skipped": skipped, "planning_errors": plan_errors,
             "errors": plan_errors, "deferred": len(deferred),
             "unlisted_staged": unlisted_staged,
-            "est_hours": round(est_s / 3600, 2), "giants": giants,
+            "prep_workers": prep_workers,
+            "est_hours": round(est_wall_s / 3600, 2),
+            "est_prep_hours": round(est_prep_s / 3600, 2),
+            "giants": giants,
         }
 
     results = []
@@ -1938,55 +2157,106 @@ def main(config_path, plan_only=False, limit=None):
                     )
                     if result["status"] != "done" or not summary_path.is_file():
                         _atomic_write_json(summary_path, result)
-            for idx, (cdir, _info, _fingerprint) in enumerate(selected, 1):
-                try:
-                    result = dock_complex(cdir, cfg, unidock2_bin, tool_identity=tool_identity)
-                except Exception as exc:
-                    result = {
-                        "pdb_id": cdir.name, "status": "error", "phase": "docking",
-                        "error": f"{type(exc).__name__}: {exc}",
-                        "num_poses": 0, "best_affinity": None,
-                    }
-                results.append(result)
-                _atomic_write_json(
-                    Path(cfg["output_dir"]) / cdir.name / "docking_summary.json", result
-                )
-                icon = {"success": "✓", "timeout": "⏱", "skipped": "–",
-                        "error": "✗", "done": "≡", "locked": "🔒"}.get(
-                            result["status"], "?"
-                        )
-                extra = ""
-                if result["status"] == "success" and result.get("best_affinity") is not None:
-                    extra = (f" | {result['num_poses']} poses, best "
-                             f"{result['best_affinity']:.2f} | "
-                             f"{result.get('elapsed_s', 0):.0f}s")
-                elif result["status"] in ("timeout", "error"):
-                    extra = (f" | {result.get('input_protein_heavy_atoms', '?')} input "
-                             f"protein atoms | {result.get('elapsed_s', 0):.0f}s")
-                print(f"[{idx}/{len(selected)}] {icon} {cdir.name}{extra}")
-                if result.get("gpu_lock_timed_out"):
-                    reason = (
-                        "batch stopped after the shared GPU lock wait timed out; "
-                        "no additional complexes were launched"
+
+            # Parallel CPU receptor prep feeds the serial GPU docking loop. Prep
+            # bundles land in a private driver-scratch tree, never the output tree,
+            # so an interrupt or crash simply re-preps the remaining complexes.
+            scratch_base = (
+                Path(cfg["scratch_dir"]) if cfg.get("scratch_dir")
+                else Path("/tmp") / f"unidock2_driver_{os.getuid()}"
+            )
+            output_token = hashlib.sha256(
+                str(Path(cfg["output_dir"])).encode("utf-8")
+            ).hexdigest()[:16]
+            prep_parent = scratch_base / f"prep_{output_token}"
+            _ensure_private_directory(scratch_base)
+            _ensure_private_directory(prep_parent)
+
+            executor = (
+                ThreadPoolExecutor(max_workers=prep_workers, thread_name_prefix="u2prep")
+                if selected else None
+            )
+            try:
+                prep_futures = [
+                    executor.submit(
+                        prepare_complex, cdir, info, cfg, unidock2_bin,
+                        tool_identity, prep_parent,
                     )
-                    for blocked_cdir, _blocked_info, _blocked_fingerprint in selected[idx:]:
-                        blocked = {
-                            "pdb_id": blocked_cdir.name,
-                            "status": "locked",
-                            "phase": "gpu-lock-batch-stop",
-                            "gpu_lock_timed_out": True,
-                            "gpu_lock_wait_skipped": True,
-                            "error": reason,
-                            "num_poses": 0,
-                            "best_affinity": None,
+                    for cdir, info, _fingerprint in selected
+                ] if executor is not None else []
+                for idx, (cdir, info, _fingerprint) in enumerate(selected, 1):
+                    bundle = None
+                    try:
+                        bundle = prep_futures[idx - 1].result()
+                        if bundle.get("status") != "prepared":
+                            result = {
+                                "pdb_id": cdir.name,
+                                "status": "timeout" if bundle.get("status") == "timeout" else "error",
+                                "phase": "prep",
+                                "error": bundle.get("error", "receptor preparation failed"),
+                                "input_protein_heavy_atoms": info.get("input_protein_heavy_atoms"),
+                                "num_poses": 0, "best_affinity": None,
+                                "elapsed_s": bundle.get("elapsed_s", 0),
+                            }
+                        else:
+                            result = dock_complex(
+                                cdir, cfg, unidock2_bin,
+                                tool_identity=tool_identity, prepared=bundle,
+                            )
+                    except Exception as exc:
+                        result = {
+                            "pdb_id": cdir.name, "status": "error", "phase": "docking",
+                            "error": f"{type(exc).__name__}: {exc}",
+                            "num_poses": 0, "best_affinity": None,
                         }
-                        results.append(blocked)
-                        _atomic_write_json(
-                            Path(cfg["output_dir"]) / blocked_cdir.name /
-                            "docking_summary.json",
-                            blocked,
+                    finally:
+                        if bundle is not None:
+                            _cleanup_prep_bundle(bundle)
+                    results.append(result)
+                    _atomic_write_json(
+                        Path(cfg["output_dir"]) / cdir.name / "docking_summary.json", result
+                    )
+                    icon = {"success": "✓", "timeout": "⏱", "skipped": "–",
+                            "error": "✗", "done": "≡", "locked": "🔒"}.get(
+                                result["status"], "?"
+                            )
+                    extra = ""
+                    if result["status"] == "success" and result.get("best_affinity") is not None:
+                        extra = (f" | {result['num_poses']} poses, best "
+                                 f"{result['best_affinity']:.2f} | "
+                                 f"{result.get('elapsed_s', 0):.0f}s")
+                    elif result["status"] in ("timeout", "error"):
+                        extra = (f" | {result.get('input_protein_heavy_atoms', '?')} input "
+                                 f"protein atoms | {result.get('elapsed_s', 0):.0f}s")
+                    print(f"[{idx}/{len(selected)}] {icon} {cdir.name}{extra}")
+                    if result.get("gpu_lock_timed_out"):
+                        reason = (
+                            "batch stopped after the shared GPU lock wait timed out; "
+                            "no additional complexes were launched"
                         )
-                    break
+                        for blocked_cdir, _blocked_info, _blocked_fingerprint in selected[idx:]:
+                            blocked = {
+                                "pdb_id": blocked_cdir.name,
+                                "status": "locked",
+                                "phase": "gpu-lock-batch-stop",
+                                "gpu_lock_timed_out": True,
+                                "gpu_lock_wait_skipped": True,
+                                "error": reason,
+                                "num_poses": 0,
+                                "best_affinity": None,
+                            }
+                            results.append(blocked)
+                            _atomic_write_json(
+                                Path(cfg["output_dir"]) / blocked_cdir.name /
+                                "docking_summary.json",
+                                blocked,
+                            )
+                        break
+            finally:
+                if executor is not None:
+                    _kill_active_prep()
+                    executor.shutdown(wait=True, cancel_futures=True)
+                _rmtree_quiet(prep_parent)
 
     counts = {status: sum(1 for result in results if result["status"] == status)
               for status in ("success", "done", "timeout", "skipped", "error", "locked", "deferred")}

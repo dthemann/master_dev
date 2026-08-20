@@ -2,11 +2,20 @@
 # Validates docked poses produced by AutoDock Vina and EquiBind against the
 # four Orai1WT receptor variants (START-Fr0 + MD snapshots).
 #
-# The driving notebook cell stages the receptors, the AutoDock poses (renamed to
-# strip the "_meeko" converter tag so the receptor stem matches), and per-ligand
-# SDF bond-order templates. DiffDock and EquiBind poses are read straight from
-# their source dirs (their "<ligand>__<receptor>/" folders already match the
-# receptor stem, so no staging/renaming is needed).
+# The driving notebook cell stages the receptors and per-ligand SDF bond-order
+# templates. AutoDock, DiffDock and EquiBind poses are read straight from their
+# source trees.
+#
+# AutoDock is NOT staged. run_posebusters never globs optimised SDFs: it finds
+# them through the optimizer commit chain (optimization_log.csv, then a
+# <sdf>.provenance.json whose source_pose must resolve to the raw PDBQT). A flat
+# symlink farm breaks that chain, because the log lookup walks up from the
+# RESOLVED pose path and immediately leaves the staging root. So the directory
+# below points at the real tree, one level ABOVE docking/, which is where
+# run_autodock writes optimization_log.csv. The "_meeko"/"_meeko_retry1" converter
+# tag that the old staging block stripped by hand is stripped anyway by
+# run_posebusters._normalize_protein, so the protein stems still match the staged
+# receptors.
 
 work_dir: /home/manndo/master_dev
 
@@ -15,15 +24,25 @@ work_dir: /home/manndo/master_dev
 receptors_dir: posebusters_results/_orai_jku_staging/receptors
 
 docking_directories:
-  autodock:        posebusters_results/_orai_jku_staging/autodock
+  autodock:        Dockings/vina_results/JKU_meeko
   diffdock:        Dockings/diffdock_results/pdbqt
   equibind_guided: Dockings/equibind_results/pdbqt
+
+# AutoDock is deliberately NOT filtered here: both the raw Vina poses and the
+# gnina-optimised ones are busted, so the single-dataset JKU analyses can select
+# the gnina variant (--autodock-variant gnina) while the Exp-vs-Benchmark
+# comparison cells stay matched to the Orai x Benchmark arm, which is raw Vina.
+variant_filter:
+  diffdock:        smina    # keep only smina-optimised DiffDock poses (drop original + gnina)
+  equibind_guided: gnina    # keep only gnina-refined EquiBind poses (drop raw + smina)
 
 config_mode: dock          # use receptor-aware "dock" PoseBusters profile
 output_base_dir: posebusters_results/orai_jku
 save_interval: 200
-overwrite: false
-num_workers: null          # null -> all available CPU cores
+overwrite: true            # MUST be true: the gnina poses are new rows for existing
+                           # complexes, so a resume run (overwrite:false) would keep the
+                           # stale raw-Vina-only CSV. Revert to false for incremental runs.
+num_workers: 30          # null -> all available CPU cores
 make_plots: true
 copy_proved_poses: true
 

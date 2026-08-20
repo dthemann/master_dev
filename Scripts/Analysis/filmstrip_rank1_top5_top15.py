@@ -3,16 +3,19 @@
 
 Companion to ``20d_form_vs_placement_by_family__depth_filmstrip_pbvalid.png`` (which
 uses top-1/3/5). This regenerates the SAME mechanism-coloured form-vs-placement
-filmstrip — PB-valid poses, RMSD ≤ 2 Å gate removed, off-receptor poses trimmed
-(docked centroid > 8 Å from the crystal site), axes clipped at 8 Å — but with the
-ranking-depth columns set to rank-1 / top-5 / top-15, and dumps the exact per-pose
-data behind every plotted point to CSV.
+filmstrip — PB-valid poses, RMSD ≤ 2 Å gate removed, poses outside the crystal-site
+neighbourhood trimmed (docked centroid > 8 Å from the crystal site; these are NOT off
+the receptor — nearly all remain in van der Waals contact with the protein), axes
+clipped at 5 Å by ``AXIS_MAX``, where the sibling top-1/3/5 figure clips at 8 Å —
+but with the ranking-depth columns set to rank-1 / top-5 / top-15, and dumps the
+exact per-pose data behind every plotted point to CSV.
 
 Variant selection reproduces the notebook (cell 21) EXACTLY: ``--collapse-plots-only``
 implicitly turns on ``--best-equibind-only`` + ``--best-diffdock-only``, and
 ``--collapse-diffdock-variant diffdock_smina`` pins DiffDock. So the report collapses
 each tool to one variant BEFORE plotting:
-    AutoDock  → autodock
+    AutoDock  → autodock_gnina           (relabelled 'autodock'; the arm the Results
+                                          chapter reports, pinned by FORCED_AUTODOCK)
     DiffDock  → diffdock_smina           (relabelled 'diffdock' → shown 'DiffDock*')
     EquiBind  → equibind_unguided_gnina  (oracle-best EquiBind by PB-valid & RMSD≤2Å)
 This must go through :func:`_select_best_diffdock` / :func:`_select_best_equibind`, not
@@ -27,12 +30,25 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-REPORT = Path("posebusters_results/benchmark/dock/pose_comparison_report")
-CACHE = REPORT / "per_pose_metrics.csv"
+# Whole-protein (blind) run. This is the campaign the Results chapter reports, and it
+# is the only cache carrying optimizer / autodock_rank / optimized_rank, which
+# ``P._read_cached_per_pose`` requires. The older boxed cache
+# (posebusters_results/benchmark/dock/pose_comparison_report) lacks all three and also
+# predates the AutoDock gnina arm entirely, so it cannot back this figure.
+DEFAULT_REPORT = Path(
+    "posebusters_results/benchmark_full_protein_vina_scoring/dock/pose_comparison_report")
 DEPTHS = (1, 5, 15)
 AXIS_MAX = 5.0                       # x/y axes clipped to this square (Å) for legibility
 FORCED_DIFFDOCK = "diffdock_smina"   # matches --collapse-diffdock-variant in cell 21
+# The whole-protein cache carries six autodock* variants and ``P._fam_key`` maps every
+# one of them to the "autodock" family, so they would be pooled into a single scatter.
+# The chapter reports AutoDock Vina + gnina, so that arm is pinned here and relabelled
+# to "autodock", exactly as _select_best_diffdock relabels its chosen variant.
+FORCED_AUTODOCK = "autodock_gnina"
 FAM_LABEL = {"autodock": "AutoDock", "diffdock": "DiffDock", "equibind": "EquiBind"}
+
+REPORT = DEFAULT_REPORT
+CACHE = REPORT / "per_pose_metrics.csv"
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pandas as pd  # noqa: E402
@@ -43,18 +59,68 @@ def collapse_like_cell21(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]
     """Apply the exact best-variant collapse cell 21 does, and return the collapsed
     frame plus a family→source-variant map so the CSV can name the true variant behind
     the relabelled 'diffdock' family."""
+    df = _drop_non_thesis_tools(df)
+    df, best_ad = _select_autodock_arm(df, forced=FORCED_AUTODOCK)
     df, best_eq = P._select_best_equibind(df)
     df, best_dd = P._select_best_diffdock(df, forced=FORCED_DIFFDOCK)
-    src = {"autodock": "autodock",
+    src = {"autodock": best_ad or "autodock",
            "diffdock": best_dd or FORCED_DIFFDOCK,
            "equibind": best_eq or "equibind"}
-    print(f"collapse → AutoDock=autodock · DiffDock={src['diffdock']} · EquiBind={src['equibind']}")
+    print(f"collapse → AutoDock={src['autodock']} · DiffDock={src['diffdock']} "
+          f"· EquiBind={src['equibind']}")
     return df, src
+
+
+THESIS_TOOL_PREFIXES = ("autodock", "diffdock", "equibind")
+
+
+def _drop_non_thesis_tools(df: pd.DataFrame) -> pd.DataFrame:
+    """Keep only the three tool families this thesis reports.
+
+    ``P._fam_key`` classifies by prefix and FALLS THROUGH to "equibind" for anything
+    that is neither autodock* nor diffdock*, so any other engine in the cache is
+    silently pooled into the EquiBind scatter. The whole-protein cache carries
+    Uni-Dock2, which the thesis excludes: left in, it would inflate the EquiBind
+    rank-1 cohort from 126 to 288 poses and make one complex contribute two "rank-1"
+    points. That never reached the deployed figure, which shows 126, but the defect is
+    real and the older boxed cache simply had no Uni-Dock rows to expose it.
+
+    This is a WHITELIST on purpose. A blacklist of known-unwanted engines would let the
+    next engine added to the cache re-enter EquiBind just as silently, which is exactly
+    how Uni-Dock got in."""
+    fam = df["method"].astype(str)
+    keep = fam.str.startswith(THESIS_TOOL_PREFIXES)
+    if not keep.all():
+        dropped = sorted(fam[~keep].unique())
+        print(f"dropped {int((~keep).sum()):,} non-thesis poses ({', '.join(dropped)})")
+    return df[keep].copy()
+
+
+def _select_autodock_arm(df: pd.DataFrame,
+                         forced: str) -> tuple[pd.DataFrame, str | None]:
+    """Keep exactly one autodock* variant and relabel it to 'autodock'.
+
+    ``P._fam_key`` collapses every autodock* method into one family, so on a cache
+    that carries several of them the scatter would silently pool all their poses.
+    Mirrors ``P._select_best_diffdock``: drop the sibling variants, then rename the
+    survivor so downstream family mapping and panel labelling are unchanged."""
+    variants = sorted(m for m in df["method"].unique() if str(m).startswith("autodock"))
+    if forced not in variants:
+        # Fail loudly in every case. Returning the sole available variant would silently
+        # rebuild the figure from the wrong arm — e.g. raw Vina on a cache that predates
+        # the gnina arm — which is the exact defect this function exists to prevent.
+        raise SystemExit(
+            f"requested AutoDock arm {forced!r} is not in {CACHE}; available: {variants}")
+    keep = ~df["method"].astype(str).str.startswith("autodock") | df["method"].eq(forced)
+    out = df[keep].copy()
+    out.loc[out["method"].eq(forced), "method"] = "autodock"
+    return out, forced
 
 
 def build_cohorts(df: pd.DataFrame) -> dict[int, pd.DataFrame]:
     """The exact per-depth cohorts the _pbvalid filmstrip plots: PB-valid poses
-    within each method's top-d ranked (RMSD gate off), off-receptor centroid-trimmed,
+    within each method's top-d ranked (RMSD gate off), centroid-trimmed to the
+    crystal-site neighbourhood,
     with form/inplace/placement/eff_rank added. Nested: top-1 ⊆ top-5 ⊆ top-15."""
     out = {}
     for d in DEPTHS:
@@ -161,7 +227,8 @@ def write_stats_txt(path: Path, summ: pd.DataFrame, stats: dict,
     L.append("1. PER-PANEL COHORT DATA  (the numbers removed from the figure panels)")
     L.append("=" * 78)
     L.append("One row per figure panel (tool family x ranking depth). n_poses = PB-valid")
-    L.append("on-receptor poses in the cohort; n_receptors_protein / n_complexes = distinct")
+    L.append("poses inside the crystal-site neighbourhood in the cohort (not off the")
+    L.append("receptor); n_receptors_protein / n_complexes = distinct")
     L.append("receptors and protein-ligand complexes those poses span; median_inplace/form =")
     L.append("cohort centroid (the black X); drift_* = shift of that centroid from the top-1")
     L.append("cohort (the orange arrow); pct_placement/mixed/form = the mechanism composition")
@@ -242,6 +309,19 @@ def main() -> None:
         centroid_max=P.FAR_FROM_RECEPTOR_CENTROID_A, axis_max=AXIS_MAX,
         caption_out=caption, legend_loc="top", title_mechanism_line=False,
         title_fontsize=10, axis_fontsize=13, tick_fontsize=11)
+
+    # Thesis Figure 5 layout. The two variants above move the footnote into a sidecar
+    # and drop the per-panel mechanism line, but the figure embedded in the thesis
+    # keeps BOTH on the image (footer block under the axes, "place/mix/form = ..%" as
+    # the second title line) with the mechanism key inside the top-left panel. That is
+    # simply the function's own defaults, so pass caption_out=None and leave
+    # legend_loc / title_mechanism_line alone. Emitted separately so the sidecar
+    # variants stay available and the thesis copy is reproducible from this script.
+    stem_t = f"{stem}__thesis"
+    png_t = REPORT / f"{stem_t}.png"
+    P.plot_form_vs_placement_depth_filmstrip(
+        df, png_t, form_ok=P.FORM_OK_KABSCH_A, rmsd_gate=None, depths=DEPTHS,
+        centroid_max=P.FAR_FROM_RECEPTOR_CENTROID_A, axis_max=AXIS_MAX)
 
     cohorts = build_cohorts(df)
     tbl = per_pose_table(cohorts, src, axis_max=AXIS_MAX)

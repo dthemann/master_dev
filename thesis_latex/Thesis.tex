@@ -9,12 +9,6 @@
 
 \newcommand{\angstrom}{\ensuremath{\text{\AA}}}
 \newcounter{tablebeforeaitools}
-\makeatletter
-\newcommand{\labelcurrenttable}[1]{%
-  \phantomsection
-  \protected@edef\@currentlabel{\thetable}%
-  \label{#1}}
-\makeatother
 \providecommand{\tightlist}{%
   \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
 
@@ -29,6 +23,14 @@
 
 \title{Comparative Analysis of Physics-Based and AI-Based Molecular Docking Tools}
 \author{Dominik Mann, PhD BSc}
+\hypersetup{
+  pdftitle={Comparative Analysis of Physics-Based and AI-Based Molecular Docking Tools},
+  pdfauthor={Dominik Mann},
+  pdfsubject={Master's thesis in Artificial Intelligence Engineering},
+  pdfkeywords={molecular docking, AutoDock Vina, DiffDock, EquiBind, PoseBusters, Orai1}}
+\makeatletter
+\renewcommand{\@pnumwidth}{2em}
+\makeatother
 \studentnumber{2410585017}
 \supervisor{FH-Prof. Priv.-Doz. Dipl.-Ing.(FH) Dr.\\Bernhard Knapp\\DI Dr. Heinrich Krobath\\Assoz Univ-Prof. DI Dr. Isabella Derler}
 \place{Wien}
@@ -40,37 +42,54 @@
 \outline{Molecular docking predicts how small-molecule ligands bind their protein
 targets, yet physics-based and machine-learning tools embody very different
 trade-offs between geometric accuracy and physical realism. This thesis presents a
-systematic, reproducible comparison of a physics-based method (AutoDock Vina)
-against two AI-based methods --- the diffusion-generative DiffDock and the
-E(3)-equivariant regression model EquiBind --- across two complementary settings. A
+systematic, provenance-documented comparison of a physics-based method (AutoDock Vina)
+against two artificial-intelligence (AI)-based methods, namely the diffusion-based
+generative model DiffDock-L (hereafter DiffDock) and the
+E(3)-equivariant regression model EquiBind, across two complementary settings. A
 calibration benchmark of 303 co-crystallised complexes enables ground-truth
-assessment of both pose accuracy (heavy-atom RMSD) and physical validity through the
-PoseBusters test battery. A crystal-free application to the calcium-release-activated
+assessment of both pose accuracy (heavy-atom root-mean-square deviation, RMSD) and physical validity through the
+PoseBusters test battery. Because the dominant variant of each toolchain is both chosen and scored on
+this same benchmark, the reported rates are optimistic as estimates of performance
+on unseen targets. A crystal-free application to the calcium-release-activated
 channel Orai1, using molecular-dynamics receptor snapshots together with experimental
 and benchmark ligand sets, probes how the tools behave on a realistic
 membrane-protein target without a reference structure.
 
-Across both settings, physical validity --- not RMSD --- is the sharpest
-discriminator. AutoDock Vina produces physically valid poses for essentially every
-complex (94.8\% of all produced poses), whereas the raw AI outputs are largely
-non-physical (23.9\% for DiffDock and 2.7\% for unguided EquiBind). Post-hoc
-force-field minimisation is the dominant driver of usability, raising the median
-per-complex validity of DiffDock from 13.3\% to roughly 90\% and that of unguided
-EquiBind from 0\% to about 57\%, while it cannot recover an unsampled or grossly
-misplaced binding mode. Deepening the inspected ranking pool further increases the
-recovery of valid, near-native poses. On Orai1 the three tools localise to markedly
-different sites, and transmembrane-pore filtering, pose clustering and
-protein--ligand interaction-fingerprint analysis quantify their disagreement.
-Overall, the results argue for combined accuracy-and-validity criteria and routine
-geometry refinement whenever AI-based docking tools are deployed.}
+Across both settings, physical validity separates the tools most sharply in
+their raw output. On the calibration benchmark, adding the validity requirement to
+the near-native recovery criterion costs the refined pipelines at most 1.3
+percentage points of complexes, so placement and pose selection rather than
+validity become the limiting factors on that endpoint. At the level of individual
+poses the gate remains costly even after minimisation, removing 15.5\% of refined
+DiffDock poses and 48.2\% of refined EquiBind poses. Pooled over every produced pose, raw AutoDock Vina is physically valid
+almost everywhere (98.2\%), whereas the raw AI outputs are largely physically invalid
+(24.4\% for DiffDock and 2.9\% for unguided EquiBind), and AutoDock Vina followed
+by gnina rescoring reaches 99.5\% on that same pooled basis. On the separate basis of the median per-complex validity rate,
+post-hoc minimisation is the dominant driver of usability, raising DiffDock from
+13.3\% to about 93\% with smina and unguided EquiBind from 0\% to about 57\% with
+gnina, while it cannot recover an unsampled or grossly misplaced binding mode. Deepening the inspected ranking pool from rank-1 to the best of fifteen
+recovers valid, near-native poses for a further 21.1 percentage points of
+complexes with DiffDock and 20.5 with AutoDock Vina but only 5.0 with EquiBind,
+and extending it to thirty adds at most 0.7 points more, so the headroom is
+large, unequally distributed and almost exhausted by a top-15 pool. On Orai1 the three tools localise to markedly
+different sites, and there the combined screen for physical validity and
+admissible placement rather than validity alone decides which poses remain
+usable. Transmembrane-pore filtering, pose clustering and protein--ligand
+interaction-fingerprint analysis quantify their disagreement.
+Overall, the results argue for combined accuracy-and-validity criteria and for
+geometry refinement as a default stage when AI-based docking tools of this
+generation are deployed, with the choice of refinement itself validated, since one
+relaxation stage tested here damaged the geometry it was meant to repair.}
 
 \keywords{Molecular docking; Physics-based versus AI-based methods; PoseBusters
 physical validity; Post-hoc pose refinement; Orai1 calcium channel}
 
 \begin{document}
 
-% Cite all sources in their reviewed numeric order before the first body citation.
-\nocite{ref001,ref002,ref003,ref004,ref005,ref006,ref007,ref008,ref009,ref010,ref011,ref012,ref013,ref014,ref015,ref016,ref017,ref018,ref019,ref020,ref021,ref022,ref023,ref024,ref025,ref026,ref027,ref028,ref029,ref030,ref031,ref032,ref033,ref034,ref035,ref036,ref037,ref038,ref039,ref040,ref041,ref042,ref043,ref044,ref045,ref046,ref047,ref048,ref049,ref050,ref051,ref052,ref053,ref054,ref055,ref056,ref057,ref058,ref059,ref060,ref061,ref062,ref063,ref064,ref065,ref066,ref067,ref068,ref069,ref070,ref071,ref072}
+% Cite all substantively used sources in their reviewed numeric order before the
+% first body citation. ref034 and ref039 remain in the source library but are not
+% included in the thesis bibliography because the text does not rely on them.
+\nocite{ref001,ref002,ref003,ref004,ref005,ref006,ref007,ref008,ref009,ref010,ref011,ref012,ref013,ref014,ref015,ref016,ref017,ref018,ref019,ref020,ref021,ref022,ref023,ref024,ref025,ref026,ref027,ref028,ref029,ref030,ref031,ref032,ref033,ref035,ref036,ref037,ref038,ref040,ref041,ref042,ref043,ref044,ref045,ref046,ref047,ref048,ref049,ref050,ref051,ref052,ref053,ref054,ref055,ref056,ref057,ref058,ref059,ref060,ref061,ref062,ref063,ref064,ref065,ref066,ref067,ref068,ref069,ref070,ref071,ref072,ref073,ref074,ref075,ref076,ref077,ref078,ref079,ref080,ref081,ref082,ref083,ref084,ref085,ref086,ref087,ref088,ref089,ref090,ref091,ref092,ref093,ref094}
 \maketitle
 
 \input{body_main}
@@ -81,8 +100,13 @@ thesis. Compare the numbers reported in the tables and figures and make sure
 they are in line with the text.''}
 
 \aitoolentry{Claude Code}{Code review and code documentation of the analysis
-and docking scripts}{Representative prompts: ``Review the code for errors and
-bugs''; ``Please add a function description and comments.''}
+and docking scripts, verification of the reported numbers against the underlying
+data, checking and correction of citations, and application of the resulting
+corrections to the manuscript text}{Representative prompts: ``Review the code for
+errors and bugs''; ``Please add a function description and comments.''; ``Please
+perform an adversarial review of the thesis. Do all the numbers in the graphs,
+tables and prose align? Are the citations valid?''; ``Can you please correct the
+citations?''}
 
 \clearpage
 \printbibliography

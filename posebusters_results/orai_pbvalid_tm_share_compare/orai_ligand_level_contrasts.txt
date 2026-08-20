@@ -1,7 +1,7 @@
 Orai Experimental-vs-Control contrasts at the LIGAND unit (pseudoreplication-free re-test)
 ############################################################################################
 
-generated 2026-08-16 14:50:28 by Scripts/Analysis/orai_ligand_level_contrasts.py
+generated 2026-08-19 11:46:48 by Scripts/Analysis/orai_ligand_level_contrasts.py
 
 WHY: the shipped Orai cross-panel sidecars treat the (MD frame x ligand) pair as the
 independent unit. The four Orai1 frames are snapshots of the SAME receptor, so a
@@ -66,8 +66,8 @@ A2. outside-TM (usable) share of PRODUCED poses
 
   contrast                               unit           n_exp  n_bch   med_exp   med_bch   delta      p_raw      p_adj  sig
   -------------------------------------------------------------------------------------------------------------------------
-  AutoDock Vina                          frame x ligand    12   1201    70.00%    90.00%   +0.37      0.018      0.055  ns
-  AutoDock Vina                          ligand             3    305    70.00%    95.00%   +0.74      0.023      0.069  ns
+  AutoDock Vina                          frame x ligand    12   1201    60.00%    90.00%   +0.50      0.002      0.005  **
+  AutoDock Vina                          ligand             3    305    60.00%    95.00%   +0.90      0.005      0.016  *
 
   DiffDock                               frame x ligand    12   1215    65.00%    71.43%   +0.16      0.333      0.667  ns
   DiffDock                               ligand             3    308    65.00%    75.00%   +0.16      0.632      1.000  ns
@@ -417,9 +417,9 @@ F. CONCLUSION -- what the prose may cite
     2. Cluster silhouette, DiffDock        Holm 0.031 -> 0.516   (n_exp 12 -> 3)   DOES NOT SURVIVE
     3. Consensus distance, DiffDock<->EquiBind  Holm 0.027 -> 0.006  (n_exp 3 -> 2)   nominally survives, on TWO ligands
 
-  AT THE LIGAND UNIT, 2 contrast(s) across ALL families reach adjusted
-  p < 0.05: B:Calinski–Harabasz / DiffDock (Holm/BH 0.031, n_exp=3), C:DiffDock <-> EquiBind (Holm/BH 0.006, n_exp=2)
-  (for comparison, 18 do at the (frame x ligand) unit).
+  AT THE LIGAND UNIT, 3 contrast(s) across ALL families reach adjusted
+  p < 0.05: A2:AutoDock Vina (Holm/BH 0.016, n_exp=3), B:Calinski–Harabasz / DiffDock (Holm/BH 0.031, n_exp=3), C:DiffDock <-> EquiBind (Holm/BH 0.006, n_exp=2)
+  (for comparison, 19 do at the (frame x ligand) unit).
 
   NOTE one contrast moves the OTHER way: DiffDock's Calinski-Harabasz index goes from
   Holm 0.074 at the (frame x ligand) unit to Holm 0.031 at the ligand unit. That is not

@@ -1,0 +1,51 @@
+# Interim PoseBusters campaign for the completed AutoDock Vina source-scoring
+# poses after GNINA CNN refinement (`gnina_refinement`).
+#
+# Keep this campaign isolated from the later strict four-arm Vina/Vinardo
+# campaign so content-aware reconciliation cannot prune or merge its rows.
+
+work_dir: /home/manndo/master_dev
+
+# Required by the schema but unused with prepared_per_pose.
+receptors_dir: posebusters_results/_benchmark_staging/receptors
+
+docking_directories:
+  autodock: Dockings/vina_results_full_protein_vina_scoring
+
+config_mode: dock
+receptor_policy: prepared_per_pose
+require_validation_receptors: true
+
+validation_receptor_directories:
+  autodock: Dockings/vina_results_full_protein_vina_scoring
+
+variant_filter:
+  autodock:
+    - gnina_refinement
+
+require_all_methods: true
+require_complete_results: true
+optional_methods: []
+expected_common_combinations: 308
+
+# Content-aware resume: retain rows only when their input/provenance signature
+# still matches the authoritative refined pose.
+overwrite: false
+save_interval: 200
+num_workers: 4
+quiet: true
+limit_worker_threads: true
+worker_maxtasks: 50
+pose_timeout: 600
+stall_timeout: 1800
+max_restarts: 5
+monitor: true
+monitor_interval: 30
+
+output_base_dir: posebusters_results/benchmark_full_protein_autodock_vina_gnina_refinement_4w
+
+ligand_template_dirs:
+  - Data/PoseBuster Benchmark Set
+
+copy_proved_poses: true
+make_plots: true

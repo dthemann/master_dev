@@ -21,8 +21,9 @@ for only the poses that *survive the PoseBusters tests* (``pb_valid``).
 
 A third figure (docking_effort_by_quality_tier.png) turns the "per-pose cost" into a
 box-and-whiskers distribution across four NESTED quality tiers — all poses, PB-valid,
-PB-valid & near-native (pb_rmsd ≤ 2 Å), and PB-valid & near-native & correct form
-(pb_kabsch_rmsd ≤ 1 Å). For each complex the docking wall-clock is amortised over the
+PB-valid & near-native (rmsd ≤ 2 Å), and PB-valid & near-native & correct form
+(bestfit_rmsd ≤ 1 Å) — the same per-pose endpoints the headline accuracy report scores
+on, overridable with --rmsd-column / --kabsch-column. For each complex the docking wall-clock is amortised over the
 poses that reach a tier (wall_s ÷ poses-in-tier), so a box reads "wall-clock seconds of
 docking effort spent per pose of that quality"; the cost climbs as the bar tightens and
 the yield drops. Paired cross-tool tests per tier land in effort_by_quality_stats.json.
@@ -43,7 +44,8 @@ ligand anyway). L is measured for EquiBind (pipeline phase timing) and --load-* 
 Timing sources (per complex):
   * AutoDock : Dockings/Benchmark/<id>/<prep>/docking_summary.json
                -> overall.total_time_seconds              (CPU wall; Vina, N threads)
-               + optimization_log.csv for --autodock-refine smina/gnina
+               + optimization_log.csv for --autodock-refine
+                 smina/gnina/gnina_refinement
                CPU-core-seconds = wall × N threads (--autodock-cpu, default 32);
                optimizer work is added on its recorded CPU/GPU device.
   * Uni-Dock : Dockings/unidock_results_full_protein_vina_scoring/<id>/
@@ -153,6 +155,12 @@ METHODS = {
     "diffdock":  ("DiffDock (gnina)", "#ff7f0e", "GPU"),
     "equibind":  ("EquiBind (unguided+gnina)", "#2ca02c", "GPU+CPU"),
 }
+
+# AutoDock-specific post-processing identities. ``gnina`` retains its legacy
+# empirical-minimization + CNN-rescore meaning; ``gnina_refinement`` is timed and
+# selected independently. DiffDock/EquiBind continue to use only smina/gnina.
+_AUTODOCK_REFINERS = frozenset({"smina", "gnina", "gnina_refinement"})
+_AUTODOCK_GNINA_REFINERS = frozenset({"gnina", "gnina_refinement"})
 # EquiBind per-pose timing fields, classified by the hardware that does the work.
 # Inference is GPU; conformer prep / UFF / IO are CPU. The REFINE step's hardware
 # depends on the tool AND the pipeline's gnina_use_gpu flag: smina is always CPU;
@@ -232,12 +240,20 @@ BASE_NAMES = {
 # tightens and the yield falls.
 #   all    every generated pose
 #   valid  survives all PoseBusters tests   (pb_valid)
-#   near2  valid AND placed near-native     (pb_rmsd       <= 2 Å, == pb_rmsd_within_2A)
-#   form1  near2 AND correct internal form  (pb_kabsch_rmsd <= 1 Å, the report's
-#          --form-ok-kabsch default). Kabsch RMSD is a lower bound on pb_rmsd, so this
-#          only adds a conformer-fidelity constraint on top of near-native placement.
+#   near2  valid AND placed near-native     (--rmsd-column   <= 2 Å)
+#   form1  near2 AND correct internal form  (--kabsch-column <= 1 Å, the report's
+#          --form-ok-kabsch default). Best-fit RMSD is a lower bound on placement RMSD,
+#          so this only adds a conformer-fidelity constraint on top of near-nativeness.
 NEAR2_RMSD_A = 2.0
 FORM1_KABSCH_A = 1.0
+# Which per-pose columns those thresholds are read from. These MUST match the headline
+# accuracy report (posebusters_validity_report.py: --rmsd-column default "rmsd",
+# --form-ok-kabsch scored on "bestfit_rmsd") or the cost view answers a different
+# question than the accuracy view and a cost sub-cohort can report MORE qualifying poses
+# than the full accuracy cohort. PoseBusters' own pb_rmsd / pb_kabsch_rmsd stay
+# selectable via --rmsd-column / --kabsch-column but are strictly more permissive.
+DEFAULT_RMSD_COLUMN = "rmsd"
+DEFAULT_KABSCH_COLUMN = "bestfit_rmsd"
 # (tier key, per-complex count column, x-tick / legend label, colour). Looser → stricter.
 # The full four-tier ladder needs a crystal reference (pb_rmsd / pb_kabsch_rmsd). The
 # Orai datasets have none, so main() swaps in ORAI_QUALITY_TIERS (all + PB-valid only).
@@ -353,7 +369,11 @@ def _autodock_opt_time(cid: str, root: Path, prep: str, tool: str) -> Optional[f
     if not path.is_file():
         return None
     try:
-        rows = pd.read_csv(path, low_memory=False)
+        # dtype=str: every column used here is coerced explicitly below, and type
+        # inference is unsafe on these logs — a sha256 that happens to read as
+        # "<digits>e<huge exponent>" sends pandas' C float parser into a
+        # multi-hour scaling loop (observed on 7F51_BA7).
+        rows = pd.read_csv(path, low_memory=False, dtype=str)
     except Exception:
         return None
     if not {"tool", "elapsed_time_s", "status"}.issubset(rows.columns):
@@ -385,12 +405,12 @@ def _autodock_effort(
     if dock is None:
         return None
     dock_cpu_s = dock * max(int(docking_cpu), 1)
-    if refine not in {"smina", "gnina"}:
+    if refine not in _AUTODOCK_REFINERS:
         return dock, 0.0, dock_cpu_s
     opt = _autodock_opt_time(cid, root, prep, refine)
     if opt is None:
         return None
-    if refine == "gnina" and gnina_gpu:
+    if refine in _AUTODOCK_GNINA_REFINERS and gnina_gpu:
         return dock + opt, opt, dock_cpu_s
     return dock + opt, 0.0, dock_cpu_s + opt * max(int(optimizer_cpu), 1)
 
@@ -838,7 +858,9 @@ def _orai_autodock_opt_timing(root: Path, tool: str) -> Dict[str, float]:
     successful: set[str] = set()
     for path in sorted(root.glob("**/optimization_log.csv")):
         try:
-            rows = pd.read_csv(path, low_memory=False)
+            # dtype=str for the same reason as _autodock_opt_time: sha256 columns
+            # can look like huge-exponent floats and stall the C parser.
+            rows = pd.read_csv(path, low_memory=False, dtype=str)
         except Exception:
             continue
         if not {"tool", "elapsed_time_s", "status"}.issubset(rows.columns):
@@ -978,6 +1000,12 @@ def _per_pose_methods(args) -> Dict[str, str]:
     }
 
 
+def _endpoint_cols(args) -> tuple:
+    """(rmsd_column, kabsch_column) for the near2/form1 tiers — canonical by default."""
+    return (getattr(args, "rmsd_column", None) or DEFAULT_RMSD_COLUMN,
+            getattr(args, "kabsch_column", None) or DEFAULT_KABSCH_COLUMN)
+
+
 def _per_pose_optimizers(args) -> Dict[str, str]:
     """Additional provenance filter for tools whose method label stays stable."""
     refine = getattr(args, "autodock_refine", "raw") or "raw"
@@ -997,6 +1025,7 @@ def _filter_optimizer_variant(sub: pd.DataFrame, key: str,
         paths = sub["pose_file"].fillna("").astype(str).str.lower().str.replace("\\", "/", regex=False)
         actual = pd.Series("original", index=sub.index, dtype=object)
         actual.loc[paths.str.contains("/optimized_smina/")] = "smina"
+        actual.loc[paths.str.contains("/optimized_gnina_refinement/")] = "gnina_refinement"
         actual.loc[paths.str.contains("/optimized_gnina/")] = "gnina"
     else:
         # Without either explicit provenance or an optimizer path component the
@@ -1008,21 +1037,38 @@ def _filter_optimizer_variant(sub: pd.DataFrame, key: str,
 
 def load_pose_counts(csv: Path, ids: Optional[set],
                      per_pose_method: Dict[str, str],
-                     optimizer_by_method: Optional[Dict[str, str]] = None) -> Dict[str, pd.DataFrame]:
-    """Per method: a DataFrame indexed by complex id with generated + pb_valid counts."""
+                     optimizer_by_method: Optional[Dict[str, str]] = None,
+                     rmsd_column: str = DEFAULT_RMSD_COLUMN,
+                     kabsch_column: str = DEFAULT_KABSCH_COLUMN) -> Dict[str, pd.DataFrame]:
+    """Per method: a DataFrame indexed by complex id with generated + pb_valid counts.
+
+    ``rmsd_column`` / ``kabsch_column`` pick the near-nativeness and internal-form
+    endpoints. They default to the CANONICAL columns the headline accuracy tables score
+    on (posebusters_validity_report.py --rmsd-column / --form-ok-kabsch), so the cost
+    view and the accuracy view answer the same question. PoseBusters' own ``pb_rmsd`` /
+    ``pb_kabsch_rmsd`` remain selectable but are systematically more permissive
+    (pb_rmsd <= rmsd pose-by-pose), which inflates the qualifying-pose counts.
+    """
     df = pd.read_csv(csv, low_memory=False)
     if "pb_valid" in df.columns:
         df["pb_valid"] = df["pb_valid"].astype(str).str.lower().isin(("true", "1", "1.0"))
     else:
         df["pb_valid"] = False
+    missing = [c for c in (rmsd_column, kabsch_column) if c not in df.columns]
+    if missing:
+        raise SystemExit(
+            f"ERROR: per-pose CSV {csv} has no column(s) {missing}. Available RMSD-like "
+            f"columns: {[c for c in df.columns if 'rmsd' in c.lower()]}. Pick one with "
+            "--rmsd-column / --kabsch-column (silently treating them as NaN would zero "
+            "out every near-native pose).")
     # Per-pose quality-tier membership (nested subsets) for the effort-by-quality view.
     # NaN RMSDs (e.g. a target with no crystal) compare False, so such poses simply drop
     # out of near2/form1 rather than poisoning the count.
     def _numcol(name):
         return (pd.to_numeric(df[name], errors="coerce") if name in df.columns
                 else pd.Series(np.nan, index=df.index))
-    df["near2"] = df["pb_valid"] & (_numcol("pb_rmsd") <= NEAR2_RMSD_A)
-    df["form1"] = df["near2"] & (_numcol("pb_kabsch_rmsd") <= FORM1_KABSCH_A)
+    df["near2"] = df["pb_valid"] & (_numcol(rmsd_column) <= NEAR2_RMSD_A)
+    df["form1"] = df["near2"] & (_numcol(kabsch_column) <= FORM1_KABSCH_A)
     df["cid"] = df["protein"].astype(str)
     if ids is not None:
         df = df[df["cid"].isin(ids)].copy()
@@ -1153,7 +1199,7 @@ def _collect_rows_orai(args, counts) -> tuple:
     ud2_root = Path(args.unidock2_dir) if args.unidock2_dir else None
     ad_refine = getattr(args, "autodock_refine", "raw")
     ad_opt = (_orai_autodock_opt_timing(Path(args.autodock_dir), ad_refine)
-              if ad_refine in {"smina", "gnina"} else {})
+              if ad_refine in _AUTODOCK_REFINERS else {})
     dd = _orai_diffdock_timing(Path(args.diffdock_dir), args.diffdock_refine,
                                args.diffdock_gnina_gpu)
     eb = _orai_equibind_timing(Path(args.equibind_dir), args.eq_mode, args.eq_refine,
@@ -1167,12 +1213,13 @@ def _collect_rows_orai(args, counts) -> tuple:
             if key == "autodock":
                 w = ad.get(cid)
                 if w is not None:
-                    opt = ad_opt.get(cid, 0.0) if ad_refine in {"smina", "gnina"} else 0.0
-                    if ad_refine in {"smina", "gnina"} and opt <= 0:
+                    opt = ad_opt.get(cid, 0.0) if ad_refine in _AUTODOCK_REFINERS else 0.0
+                    if ad_refine in _AUTODOCK_REFINERS and opt <= 0:
                         continue
                     wall = wall_full = w + opt
                     cpu_core_s = w * args.autodock_cpu
-                    if ad_refine == "gnina" and getattr(args, "autodock_gnina_gpu", False):
+                    if (ad_refine in _AUTODOCK_GNINA_REFINERS
+                            and getattr(args, "autodock_gnina_gpu", False)):
                         gpu_s = opt
                     else:
                         gpu_s = 0.0
@@ -1222,7 +1269,8 @@ def build_table(args) -> tuple:
         rows, per_method_timed, eq_processed, eq_best = _collect_rows_orai(args, counts)
     else:
         counts = load_pose_counts(
-            Path(args.per_pose_csv), ids, _per_pose_methods(args), _per_pose_optimizers(args))
+            Path(args.per_pose_csv), ids, _per_pose_methods(args), _per_pose_optimizers(args),
+            rmsd_column=_endpoint_cols(args)[0], kabsch_column=_endpoint_cols(args)[1])
         rows, per_method_timed, eq_processed, eq_best = _collect_rows_benchmark(args, counts)
 
     if eq_processed and not eq_best:
@@ -1419,7 +1467,8 @@ def _jsonable(o):
     return o
 
 
-def compute_effort_by_quality_stats(pc: pd.DataFrame, seed: int = 0) -> dict:
+def compute_effort_by_quality_stats(pc: pd.DataFrame, seed: int = 0,
+                                    endpoint: Optional[tuple] = None) -> dict:
     """Paired cross-tool stats on the amortised docking cost per quality tier.
 
     For each nested tier the per-complex cost is wall_s(complex) / (poses reaching the
@@ -1435,6 +1484,15 @@ def compute_effort_by_quality_stats(pc: pd.DataFrame, seed: int = 0) -> dict:
                    "median/IQR are over each tool's own qualifying complexes; the paired "
                    "tests use only complexes every tool populates at that tier.",
            "min_paired": _MIN_PAIRED, "tiers": {}, "notes": []}
+    # Self-document which per-pose endpoint the near2 / form1 tiers were scored on, so a
+    # reader can tell at a glance whether this cost view matches the headline accuracy view.
+    _rc, _kc = endpoint or (DEFAULT_RMSD_COLUMN, DEFAULT_KABSCH_COLUMN)
+    out["endpoint"] = {
+        "near2_rmsd_column": _rc, "near2_rmsd_threshold_A": NEAR2_RMSD_A,
+        "form1_kabsch_column": _kc, "form1_kabsch_threshold_A": FORM1_KABSCH_A,
+        "matches_headline_accuracy_report": bool(_rc == DEFAULT_RMSD_COLUMN
+                                                 and _kc == DEFAULT_KABSCH_COLUMN),
+    }
     if pc is None or pc.empty:
         out["notes"].append("no per-complex effort rows — tests skipped.")
         return out
@@ -2122,7 +2180,8 @@ def _dataset_batch_rows(a) -> pd.DataFrame:
         rows, *_ = _collect_rows_orai(a, counts)
     else:
         counts = load_pose_counts(
-            Path(a.per_pose_csv), ids, _per_pose_methods(a), _per_pose_optimizers(a))
+            Path(a.per_pose_csv), ids, _per_pose_methods(a), _per_pose_optimizers(a),
+            rmsd_column=_endpoint_cols(a)[0], kabsch_column=_endpoint_cols(a)[1])
         rows, *_ = _collect_rows_benchmark(a, counts)
     return pd.DataFrame(rows)
 
@@ -2470,6 +2529,16 @@ def main(argv=None) -> int:
     # an explicit flag still overrides. (autodock-prep/-cpu, eq-mode/-clamp, gnina-gpu flags are
     # shared across datasets, so they keep concrete defaults.)
     ap.add_argument("--per-pose-csv", default=None)
+    ap.add_argument("--rmsd-column", default=DEFAULT_RMSD_COLUMN,
+                    help="Per-pose column scored for the near-native tier (RMSD ≤ 2 Å). "
+                         f"Default '{DEFAULT_RMSD_COLUMN}' — the SAME endpoint the headline "
+                         "accuracy tables use (posebusters_validity_report.py --rmsd-column), "
+                         "so cost and accuracy stay comparable. 'pb_rmsd' reproduces the "
+                         "legacy, systematically more permissive PoseBusters endpoint.")
+    ap.add_argument("--kabsch-column", default=DEFAULT_KABSCH_COLUMN,
+                    help="Per-pose column scored for the internal-form tier (≤ 1 Å). "
+                         f"Default '{DEFAULT_KABSCH_COLUMN}', matching the headline report's "
+                         "--form-ok-kabsch endpoint; 'pb_kabsch_rmsd' is the legacy choice.")
     ap.add_argument("--autodock-dir", default=None)
     ap.add_argument("--autodock-prep", default="meeko", choices=("meeko", "mgl_tools"),
                     help="Benchmark AutoDock prep subfolder (ignored for orai_benchmark, whose "
@@ -2477,7 +2546,8 @@ def main(argv=None) -> int:
     ap.add_argument("--autodock-cpu", type=int, default=32,
                     help="CPU threads Vina used per complex (for CPU-core-seconds). "
                          "Benchmark and Orai runs both used 32.")
-    ap.add_argument("--autodock-refine", default=None, choices=("raw", "smina", "gnina"),
+    ap.add_argument("--autodock-refine", default=None,
+                    choices=("raw", "smina", "gnina", "gnina_refinement"),
                     help="AutoDock variant to time: raw Vina, or Vina plus the serial "
                          "optimizer elapsed time from optimization_log.csv. Default: raw.")
     ap.add_argument("--autodock-opt-cpu", type=int, default=1,
@@ -2485,7 +2555,7 @@ def main(argv=None) -> int:
                          "(for optimizer CPU-core-seconds).")
     ap.add_argument("--autodock-gnina-gpu", action=argparse.BooleanOptionalAction,
                     default=False,
-                    help="AutoDock gnina optimization used the GPU. By default its elapsed "
+                    help="AutoDock gnina/gnina_refinement used the GPU. By default elapsed "
                          "time is classified as CPU work; set this for gnina_use_gpu=true.")
     ap.add_argument("--unidock-dir", default=None,
                     help="Tiled Uni-Dock result root. A complex is timed only when its "
@@ -2564,9 +2634,13 @@ def main(argv=None) -> int:
         QUALITY_TIERS = ORAI_QUALITY_TIERS
 
     # Rewrite method labels + device tags to reflect the selected variants and gnina device.
+    _ad_variant_label = {
+        "gnina_refinement": "GNINA CNN-refinement",
+    }.get(args.autodock_refine, args.autodock_refine)
     _ad_name = ("AutoDock Vina" if args.autodock_refine == "raw"
-                else f"AutoDock Vina + {args.autodock_refine}")
-    _ad_dev = ("CPU+GPU" if args.autodock_refine == "gnina" and args.autodock_gnina_gpu
+                else f"AutoDock Vina + {_ad_variant_label}")
+    _ad_dev = ("CPU+GPU" if args.autodock_refine in _AUTODOCK_GNINA_REFINERS
+               and args.autodock_gnina_gpu
                else "CPU")
     METHODS["autodock"] = (_ad_name, METHODS["autodock"][1], _ad_dev)
     if args.diffdock_refine == "raw" or (args.diffdock_refine == "gnina" and args.diffdock_gnina_gpu):
@@ -2603,7 +2677,7 @@ def main(argv=None) -> int:
     # ── effort-by-quality-tier paired stats (degrades gracefully) ────────────
     q_stats = {}
     try:
-        q_stats = compute_effort_by_quality_stats(pc)
+        q_stats = compute_effort_by_quality_stats(pc, endpoint=_endpoint_cols(args))
         (out_dir / "effort_by_quality_stats.json").write_text(
             json.dumps(_jsonable(q_stats), indent=2))
         print(f"  Stats sidecar:       {out_dir / 'effort_by_quality_stats.json'}")
@@ -2636,7 +2710,8 @@ def main(argv=None) -> int:
     print(f"\n  AutoDock docking CPU-core-seconds = Vina wall × {args.autodock_cpu} threads. "
           "DiffDock docking is GPU (CPU prep not separately recorded).")
     if args.autodock_refine != "raw":
-        _ad_opt_dev = ("GPU" if args.autodock_refine == "gnina" and args.autodock_gnina_gpu
+        _ad_opt_dev = ("GPU" if args.autodock_refine in _AUTODOCK_GNINA_REFINERS
+                       and args.autodock_gnina_gpu
                        else f"CPU × {args.autodock_opt_cpu} threads")
         print(f"  AutoDock timing = Vina wall + {args.autodock_refine} optimization "
               f"(optimization_log.csv, serial; {_ad_opt_dev}).")

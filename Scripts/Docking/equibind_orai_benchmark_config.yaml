@@ -15,6 +15,10 @@
 #
 # 10 unguided poses = 10 rdkit_seeds x conformers_per_seed:1 = 10 conformers
 # (n_unguided_poses is capped by the number of conformers, so 10 seeds suffice).
+#
+# PER-KEY REFERENCE: every option below is documented key-by-key in the sibling
+# config Scripts/Docking/equibind_docking_config.yaml. Comments here cover only the
+# settings specific to (and tuned for) this Orai × benchmark run.
 receptors_dir: Data/Receptors
 ligand_dirs: []                       # unused: the notebook cell stages *_ligand_start_conf.sdf itself
 receptor_name_filter: _cleaned

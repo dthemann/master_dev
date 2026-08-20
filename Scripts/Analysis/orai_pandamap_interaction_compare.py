@@ -140,15 +140,27 @@ def _variant_tokens(method: str) -> List[str]:
 def _pick_method(methods_present: List[str], tool: str, want: Optional[str]) -> Optional[str]:
     """Choose the single method key for *tool* preferring the variant token *want*.
 
-    AutoDock has no variant. For DiffDock/EquiBind: keep the candidate whose variant
-    tokens include *want* (e.g. 'smina' / 'gnina'); if none match but exactly one
-    candidate exists, use it (the datasets each carry one variant per tool); otherwise
-    fall back to the lexicographically-first candidate."""
+    Keep the candidate whose variant tokens include *want* (e.g. 'smina' / 'gnina');
+    if none match but exactly one candidate exists, use it (the datasets each carry
+    one variant per tool); otherwise fall back to the lexicographically-first
+    candidate. AutoDock is handled like the other tools rather than short-circuited,
+    because it now also has optimiser variants ('autodock' against 'autodock_gnina').
+    Short-circuiting it would compare a gnina AutoDock in one dataset against a raw
+    AutoDock in the other under a single "AutoDock Vina" label."""
     cands = sorted(m for m in methods_present if _tool_of(m) == tool)
     if not cands:
         return None
-    if tool == "autodock" or not want:
+    if not want:
         return cands[0]
+    # The unoptimised method carries NO variant tokens ('autodock', not
+    # 'autodock_original'), so token matching alone can never select it and the
+    # non-raw preference below would silently pick the optimised variant instead.
+    # Asking for raw therefore means "the bare base tool".
+    if str(want).lower() in ("raw", "original", "none"):
+        bare = [m for m in cands if not _variant_tokens(m)]
+        if bare:
+            return bare[0]
+        print(f"  [variant] {tool}: wanted raw but only optimised variants exist {cands}.")
     matched = [m for m in cands if want in _variant_tokens(m)]
     if matched:
         return matched[0]
@@ -207,7 +219,7 @@ def _apply_topn_gnina(summary: pd.DataFrame, inter: pd.DataFrame, keys: set
 
 def load_dataset(key: str, root: Path, diffdock_variant: str, equibind_variant: str,
                  top_n: int, posebusters_csv: Optional[Path] = None,
-                 top_n_poses: int = 0) -> dict:
+                 top_n_poses: int = 0, autodock_variant: Optional[str] = None) -> dict:
     """Load one PandaMap dataset, select one variant per tool, re-assert the
     PB-valid + top-N scope, and tag each pose/interaction with its canonical tool.
 
@@ -240,7 +252,7 @@ def load_dataset(key: str, root: Path, diffdock_variant: str, equibind_variant: 
 
     methods_present = sorted(summary["method"].astype(str).unique())
     chosen: Dict[str, str] = {}
-    for tool, want in (("autodock", None), ("diffdock", diffdock_variant),
+    for tool, want in (("autodock", autodock_variant), ("diffdock", diffdock_variant),
                        ("equibind", equibind_variant)):
         mk = _pick_method(methods_present, tool, want)
         if mk is not None:
@@ -493,23 +505,60 @@ def _residue_freq(ds: dict, tool: str) -> pd.Series:
     return (contact / n).sort_values(ascending=False)
 
 
-def _top_shared_residues(datasets: Dict[str, dict], tools: List[str], top_n: int) -> List[str]:
-    """Top-N Orai residues by pooled contact frequency across all tools + both datasets."""
+def _residue_contact_counts(ds: dict, tool: str) -> Tuple[pd.Series, int]:
+    """Distinct poses of a (dataset, tool) contacting each Orai residue, and that group's pose count."""
+    inter = ds["inter"]; s = inter[inter["tool"] == tool]
+    n = _poses_per_tool(ds["summary"], tool)
+    if n == 0 or s.empty:
+        return pd.Series(dtype=float), n
+    return s.groupby("res")["pose_name"].nunique(), n
+
+
+def _top_shared_residues(datasets: Dict[str, dict], tools: List[str], top_n: int,
+                         mode: str = "pooled") -> List[str]:
+    """Top-N Orai residues across all tools and both datasets.
+
+    mode="pooled" (default) ranks by the POSE-WEIGHTED pooled contact fraction, that is the
+    total number of distinct poses contacting a residue divided by the total number of poses.
+    This is what "the most frequently contacted residues" means and it is the basis the figure
+    caption describes.
+
+    mode="macro" reproduces the superseded rule, an unweighted sum of the six per-(dataset, tool)
+    contact fractions. Under that rule every group counts equally regardless of size, so a residue
+    contacted in a group holding a single pose scores as highly as one contacted in every pose of a
+    group of several thousand. It is retained only to regenerate pre-2026-08-19 outputs.
+    """
+    if mode not in ("pooled", "macro"):
+        raise ValueError(f"unknown residue-axis mode {mode!r}, expected 'pooled' or 'macro'")
     score: Dict[str, float] = {}
-    for ds in datasets.values():
-        for tool in tools:
-            fr = _residue_freq(ds, tool)
-            for res, f in fr.items():
-                score[res] = score.get(res, 0.0) + float(f)
-    ordered = sorted(score, key=lambda r: score[r], reverse=True)
+    if mode == "macro":
+        for ds in datasets.values():
+            for tool in tools:
+                fr = _residue_freq(ds, tool)
+                for res, f in fr.items():
+                    score[res] = score.get(res, 0.0) + float(f)
+    else:
+        hits: Dict[str, int] = {}
+        total = 0
+        for ds in datasets.values():
+            for tool in tools:
+                counts, n = _residue_contact_counts(ds, tool)
+                total += n
+                for res, c in counts.items():
+                    hits[res] = hits.get(res, 0) + int(c)
+        if total == 0:
+            return []
+        score = {res: c / total for res, c in hits.items()}
+    # tie-break on residue name so the axis is deterministic across runs
+    ordered = sorted(score, key=lambda r: (-score[r], str(r)))
     return ordered[:top_n]
 
 
 # ── View 3: Orai residue hot-spots, Exp vs Benchmark, per tool ───────────────────
 
 def fig_residue_hotspots(datasets: Dict[str, dict], tools: List[str], out: Path,
-                         top_n: int = 15):
-    residues = _top_shared_residues(datasets, tools, top_n)
+                         top_n: int = 15, residue_axis: str = "pooled"):
+    residues = _top_shared_residues(datasets, tools, top_n, residue_axis)
     if not residues:
         print("  [warn] fig_residue_hotspots: no contacted residues — skipping")
         return
@@ -564,11 +613,40 @@ def _char_residue_set(ds: dict, tool: str, min_freq: float) -> set:
 
 
 def _typed_fingerprint(ds: dict, tool: str) -> set:
-    """Set of (interaction_type, residue) contacts observed for a (dataset, tool)."""
+    """Set of (interaction_type, residue) contacts observed for a (dataset, tool).
+
+    UNTHRESHOLDED. Kept only for the provenance column in the overlap CSV, because
+    on an unthresholded basis a large pose set accumulates a long tail of one-off
+    typed contacts that inflates the union and makes the typed Jaccard incomparable
+    with the residue-level one. The reported typed Jaccard uses ``_char_typed_set``.
+    """
     s = ds["inter"][ds["inter"]["tool"] == tool]
     if s.empty:
         return set()
     return set(zip(s["interaction_type"].astype(str), s["res"].astype(str)))
+
+
+def _typed_freq(ds: dict, tool: str) -> pd.Series:
+    """fraction of a (dataset, tool)'s poses carrying each (interaction_type, residue)."""
+    inter = ds["inter"]; s = inter[inter["tool"] == tool]
+    n = _poses_per_tool(ds["summary"], tool)
+    if n == 0 or s.empty:
+        return pd.Series(dtype=float)
+    tmp = pd.DataFrame({
+        "key": list(zip(s["interaction_type"].astype(str), s["res"].astype(str))),
+        "pose_name": s["pose_name"].values,
+    })
+    contact = tmp.groupby("key")["pose_name"].nunique()
+    return (contact / n).sort_values(ascending=False)
+
+
+def _char_typed_set(ds: dict, tool: str, min_freq: float) -> set:
+    """(interaction_type, residue) contacts carried by at least *min_freq* of a
+    (dataset, tool)'s poses — the typed counterpart of ``_char_residue_set``, on the
+    SAME frequency basis. Both Jaccards must be thresholded identically, otherwise the
+    residue-to-typed drop conflates a change of contact type with a change of basis."""
+    fr = _typed_freq(ds, tool)
+    return set(fr[fr >= min_freq].index)
 
 
 def _jaccard(a: set, b: set) -> float:
@@ -583,8 +661,10 @@ def _overlap_rows(datasets: Dict[str, dict], tools: List[str], min_freq: float) 
     for tool in tools:
         exp_res = _char_residue_set(datasets["exp"], tool, min_freq)
         bench_res = _char_residue_set(datasets["bench"], tool, min_freq)
-        exp_typ = _typed_fingerprint(datasets["exp"], tool)
-        bench_typ = _typed_fingerprint(datasets["bench"], tool)
+        exp_typ = _char_typed_set(datasets["exp"], tool, min_freq)
+        bench_typ = _char_typed_set(datasets["bench"], tool, min_freq)
+        exp_typ_all = _typed_fingerprint(datasets["exp"], tool)
+        bench_typ_all = _typed_fingerprint(datasets["bench"], tool)
         rows.append({
             "tool": tool,
             "n_exp_poses": _poses_per_tool(datasets["exp"]["summary"], tool),
@@ -594,6 +674,12 @@ def _overlap_rows(datasets: Dict[str, dict], tools: List[str], min_freq: float) 
             "bench_only": len(bench_res - exp_res),
             "jaccard_res": _jaccard(exp_res, bench_res),
             "jaccard_typed": _jaccard(exp_typ, bench_typ),
+            "typed_shared": len(exp_typ & bench_typ),
+            "typed_exp_only": len(exp_typ - bench_typ),
+            "typed_bench_only": len(bench_typ - exp_typ),
+            # provenance only: the superseded unthresholded typed Jaccard, on which a
+            # large pose set's one-off contacts inflate the union (see _typed_fingerprint).
+            "jaccard_typed_unthresholded": _jaccard(exp_typ_all, bench_typ_all),
             "shared_res": sorted(exp_res & bench_res),
         })
     return rows
@@ -669,8 +755,9 @@ def fig_fingerprint_overlap(datasets: Dict[str, dict], tools: List[str], out: Pa
     fig.legend(handles=over_handles, loc="upper center", ncol=3,
                fontsize=_legend_fontsize(10), frameon=True, bbox_to_anchor=(0.5, 1 - 0.80 / 10.5))
     fig.suptitle("Orai contact-fingerprint overlap — Benchmark vs Experimental ligands, per tool\n"
-                 f"(same receptor both sets; characteristic residues = contacted in ≥ {min_freq:.0%} "
-                 "of a tool's poses)", fontsize=12.5, y=1 - 0.25 / 10.5)
+                 f"(same receptor both sets; characteristic = carried by ≥ {min_freq:.0%} of a tool's "
+                 "poses, applied to the residue and typed fingerprints alike)",
+                 fontsize=12.5, y=1 - 0.25 / 10.5)
     fig.tight_layout(rect=(0, 0, 1, 1 - 0.6 / 10.5))
     fig.savefig(out, dpi=130, bbox_inches="tight"); plt.close(fig)
     print(f"  wrote {out}")
@@ -863,7 +950,13 @@ def write_stats(datasets: Dict[str, dict], tools: List[str], types: List[str],
     A("4. Contact-fingerprint overlap — Benchmark vs Experimental, per tool")
     A("=" * 90)
     A(f"   Characteristic Orai residue set = residues contacted in ≥ {min_freq:.0%} of a tool's poses.")
-    A("   Jaccard(res) on those sets; Jaccard(typed) on (interaction_type, residue) contacts.")
+    A(f"   Jaccard(res) on those sets. Jaccard(typed) on (interaction_type, residue) contacts")
+    A(f"   carried by ≥ {min_freq:.0%} of a tool's poses, i.e. the SAME frequency basis, so the")
+    A("   residue-to-typed drop measures a change of contact type and not a change of basis.")
+    A("   An unthresholded typed Jaccard is retained in the CSV as jaccard_typed_unthresholded")
+    A("   for provenance only, and is not comparable with Jaccard(res): on an unthresholded")
+    A("   basis the large Benchmark set accumulates a long tail of one-off typed contacts that")
+    A("   inflates the union and depresses the ratio for reasons unrelated to contact chemistry.")
     A(f"   CAVEAT — set-size asymmetry: the ≥{min_freq:.0%} threshold is an ABSOLUTE count of")
     A("   ~ceil(freq·n_poses) poses, i.e. only a handful for Experimental (36 poses/tool) vs")
     A("   hundreds for Benchmark (~3400/tool). The huge Benchmark set spreads its contacts across")
@@ -878,6 +971,9 @@ def write_stats(datasets: Dict[str, dict], tools: List[str], types: List[str],
         A(f"   {TOOL_LABEL[tool]:<15} shared {r['shared']} | exp-only {r['exp_only']} | "
           f"bench-only {r['bench_only']}   Jaccard(res)={r['jaccard_res']:.2f} "
           f"Jaccard(typed)={r['jaccard_typed']:.2f}   (poses: Exp {r['n_exp_poses']}, Bench {r['n_bench_poses']})")
+        A(f"       typed sets: shared {r['typed_shared']} | exp-only {r['typed_exp_only']} | "
+          f"bench-only {r['typed_bench_only']}   "
+          f"(unthresholded typed Jaccard, superseded: {r['jaccard_typed_unthresholded']:.2f})")
         A(f"       shared residues: {shared}")
     A("")
     A("=" * 90)
@@ -904,6 +1000,11 @@ def main(argv=None) -> int:
                     help="PandaMap output dir for the Benchmark ligand run.")
     ap.add_argument("--out-dir", default="pandamap_results/orai_interaction_compare", type=Path,
                     help="Where the *_compare figures / CSVs / stats are written.")
+    ap.add_argument("--autodock-variant", default=None,
+                    help="AutoDock optimiser variant to select in BOTH datasets (e.g. gnina). "
+                         "Leave unset to take whichever single AutoDock variant each dataset "
+                         "carries. Set it only when both datasets actually hold that variant, "
+                         "otherwise the two arms are compared across different engines.")
     ap.add_argument("--diffdock-variant", default="smina",
                     help="DiffDock optimiser variant to select in both datasets (default smina).")
     ap.add_argument("--equibind-variant", default="gnina",
@@ -925,6 +1026,11 @@ def main(argv=None) -> int:
                     type=Path, help="Full per-pose PoseBusters CSV for the Benchmark run.")
     ap.add_argument("--residue-top-n", type=int, default=15,
                     help="Number of top Orai residues on the hot-spot figure (default 15).")
+    ap.add_argument("--residue-axis", choices=("pooled", "macro"), default="pooled",
+                    help="How the hot-spot residues are ranked. 'pooled' (default) weights each "
+                         "(dataset, tool) group by its pose count. 'macro' is the superseded "
+                         "unweighted per-group sum, in which a one-pose group counts as much as a "
+                         "several-thousand-pose one. Use 'macro' only to reproduce pre-2026-08-19 output.")
     ap.add_argument("--overlap-min-freq", type=float, default=0.10,
                     help="A residue is 'characteristic' for a (tool, dataset) if contacted in at "
                          "least this fraction of its poses (default 0.10). Feeds fig 4 + stats.")
@@ -942,10 +1048,12 @@ def main(argv=None) -> int:
     datasets = {
         "exp": load_dataset("exp", args.exp_dir, args.diffdock_variant,
                             args.equibind_variant, args.top_n,
-                            args.exp_posebusters_csv, args.top_n_poses),
+                            args.exp_posebusters_csv, args.top_n_poses,
+                            args.autodock_variant),
         "bench": load_dataset("bench", args.bench_dir, args.diffdock_variant,
                               args.equibind_variant, args.top_n,
-                              args.bench_posebusters_csv, args.top_n_poses),
+                              args.bench_posebusters_csv, args.top_n_poses,
+                              args.autodock_variant),
     }
 
     # tools present in BOTH datasets (keep canonical order), unless overridden
@@ -967,13 +1075,13 @@ def main(argv=None) -> int:
         print(f"  {ds['label']:<20} chosen={ds['chosen']}  poses: {counts}")
 
     types = _present_types(datasets)
-    residues = _top_shared_residues(datasets, tools, args.residue_top_n)
+    residues = _top_shared_residues(datasets, tools, args.residue_top_n, args.residue_axis)
     overlap_rows = _overlap_rows(datasets, tools, args.overlap_min_freq)
 
     fig_total_interactions(datasets, tools, out_dir / "fig_total_interactions_compare.png")
     fig_type_profile(datasets, tools, out_dir / "fig_type_profile_compare.png")
     fig_residue_hotspots(datasets, tools, out_dir / "fig_residue_hotspots_compare.png",
-                         args.residue_top_n)
+                         args.residue_top_n, args.residue_axis)
     fig_fingerprint_overlap(datasets, tools, out_dir / "fig_fingerprint_overlap_compare.png",
                             args.overlap_min_freq)
 

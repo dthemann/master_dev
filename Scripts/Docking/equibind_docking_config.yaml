@@ -1,38 +1,105 @@
-receptors_dir: Data/Receptors
-ligand_dirs:
+# ═══════════════════════════════════════════════════════════════════════════════
+# ██ DEPRECATED 2026-08-17 — DO NOT USE FOR EITHER REPORTED ARM ██
+#
+# This file used to serve BOTH the calibration benchmark and the Orai x JKU
+# experimental arm. Those arms ran with different settings, and the config-editor
+# cell (4d02725a) rewrote this file in place with the JKU values, so the file as it
+# stands reproduces NEITHER run. Concretely, it disagrees with the benchmark on
+# poses_per_pocket (3 here, 10 in all 308 benchmark records) and refine_tool, and
+# with the JKU arm on n_top_pockets (3 here, 0 in its record), refine_mode and
+# uff_minimize.
+#
+# The arms are now split into two files, each validated key-by-key against its own
+# pipeline_summary.json records:
+#   Scripts/Docking/equibind_benchmark_config.yaml   -> Dockings/Benchmark_Equibind
+#   Scripts/Docking/equibind_orai_jku_config.yaml    -> Dockings/equibind_results
+# The third EquiBind arm already had its own file:
+#   Scripts/Docking/equibind_orai_benchmark_config.yaml -> Dockings/Orai_Benchmark_Equibind
+#
+# TO FINISH THE SPLIT, in both Master_Docking.ipynb and
+# Master_Docking_AD_Full_Protein.ipynb:
+#
+#   cell b1a9baa1 (benchmark launcher) -> read equibind_benchmark_config.yaml.
+#       It also hardcodes refine_mode and refine_tool as local variables rather
+#       than reading them, which is why this file's values for those keys never
+#       affected the benchmark run. Reading them from the new file is preferable.
+#
+#   cell eqbnd-run-001 (JKU runner)    -> read equibind_orai_jku_config.yaml.
+#
+#   cell 4d02725a (JKU config editor)  -> RETIRE IT, do not repoint it. Two reasons.
+#       First, it re-dumps its target with yaml.safe_dump, which strips every
+#       comment, so pointing it at the new file destroys that file's provenance on
+#       the first run. Second, it is already stale against the run it configures:
+#       it writes n_top_pockets 3 where the JKU record shows 0, and refine_mode
+#       "both" where the record shows "on". Running it today would switch guided
+#       docking on and start keeping raw variants, reproducing neither arm.
+#       equibind_orai_jku_config.yaml now carries the values the JKU arm actually
+#       used and should be edited directly instead.
+#
+# The content below is retained unchanged for provenance only.
+# ═══════════════════════════════════════════════════════════════════════════════
+#
+# EquiBind — docking configuration
+# The runner Scripts/Docking/run_equibind.py is a thin launcher; most keys are read
+# by the equibind package: the notebook exports each as an EQ_* env var (config.py),
+# then pipeline.py / conformers.py / cropping.py / uff.py / refine.py consume them.
+# Pipeline: RDKit conformers → (optional pocket guidance) → EquiBind inference →
+# (optional UFF minimisation) → (optional smina/gnina refinement).
+# Each key falls back to a code default if omitted — the default is noted per key.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Inputs ───────────────────────────────────────────────────────────────────
+receptors_dir: Data/Receptors        # dir scanned for receptor *.pdb files (receptor_name_filter applied) → EQ_RECEPTORS_DIR
+ligand_dirs:                         # list of ligand folders; each dir is one run (→ EQ_DRUGS_DIR per iteration)
 - Data/Ligands/JKU/pdbqt
-receptor_name_filter: ''
-ligand_extensions:
+receptor_name_filter: ''             # substring a receptor filename must contain to be docked ('' = any *.pdb)
+ligand_extensions:                   # accepted ligand file extensions (dot-prefixed, lower-cased)
 - .pdb
-fpocket_results_dir: pocket_results/fpocket_results
-p2rank_results_dir: pocket_results/p2rank_results
-equibind_dir: /home/manndo/tools/EquiBind
-equibind_python: /home/manndo/anaconda3/envs/equibind/bin/python
-device: cuda
-output_dir: Dockings/equibind_results
-log_dir: Dockings/Logs/equibind_logs
-n_top_pockets: 3
-poses_per_pocket: 3
-n_unguided_poses: 30
-pocket_match_threshold: 8.0
-force_pocket: true
-clamp_pose_to_pocket: true
-clamp_mode: 'off'
-refine_mode: both
-refine_tool: gnina
-smina_search: local_only
-smina_autobox_add: 4.0
-smina_cpu: 1
-smina_seed: 0
-smina_timeout_s: 300
-smina_receptor_ext: .pdb
-smina_executable: ''
-gnina_executable: ''
-gnina_use_gpu: true
-use_protein_cropping: true
-pocket_crop_radius: 8.0
-pocket_crop_buffer: 3.0
-rdkit_seeds:
+
+# ── Pocket guidance (precomputed pocket detectors; guided docking only) ──────
+fpocket_results_dir: pocket_results/fpocket_results   # dir of fpocket outputs parsed for pocket centres
+p2rank_results_dir: pocket_results/p2rank_results     # dir of p2rank outputs parsed for pocket centres
+
+# ── EquiBind model / launcher ────────────────────────────────────────────────
+equibind_dir: /home/manndo/tools/EquiBind                          # EquiBind repo root (added to sys.path; holds the model checkpoint)
+equibind_python: /home/manndo/anaconda3/envs/equibind/bin/python   # interpreter the notebook uses to spawn run_equibind.py (notebook-only)
+device: cuda                         # torch device for EquiBind inference: cuda | cpu (falls back to cpu if no GPU)
+
+# ── Outputs ──────────────────────────────────────────────────────────────────
+output_dir: Dockings/equibind_results    # root dir for pose SDFs and results
+log_dir: Dockings/Logs/equibind_logs     # dir for per-complex stdout logs (written by the notebook launcher; notebook-only)
+
+# ── Pose counts: guided (pocket) vs unguided (pocket-free) ───────────────────
+n_top_pockets: 3                     # top-ranked pockets taken per detector (fpocket + p2rank) for guided poses; 0 = disable guided docking
+poses_per_pocket: 3                  # guided poses per selected pocket (inert when n_top_pockets: 0)
+n_unguided_poses: 30                 # cap on pocket-free EquiBind poses per lig-rec pair (capped by #conformers = seeds × conformers_per_seed)
+
+# ── Pocket enforcement (keep poses inside the guiding pocket) ────────────────
+pocket_match_threshold: 8.0          # Å a pose centroid may sit from a pocket centre to count as "in pocket"; beyond it → clamp/reject
+force_pocket: true                   # in clamp default/force mode, reject or clamp poses whose centroid drifts outside the pocket
+clamp_pose_to_pocket: true           # with force_pocket in 'default' clamp mode: clamp drifted poses inward instead of rejecting
+clamp_mode: 'off'                    # centroid clamp: on (honour force/clamp) | off (keep raw centroid) | both (emit __clampON + __clampOFF)
+
+# ── Refinement: re-search each EquiBind pose with smina/gnina ────────────────
+refine_mode: both                    # off (none) | on (replace pose with refined) | both (emit __refRAW + refined variant)
+refine_tool: gnina                   # smina (physics) | gnina (physics + CNN rescore) | both (one refined variant per tool)
+smina_search: local_only             # local_only → --local_only (local MC + scoring) | minimize → --minimize (pure energy min)
+smina_autobox_add: 4.0               # Å padding around the pose to build the smina/gnina search box (--autobox_add)
+smina_cpu: 1                         # CPU threads per refine subprocess (--cpu)
+smina_seed: 0                        # RNG seed for the re-search (--seed)
+smina_timeout_s: 300                 # per-pose refine timeout, seconds; on expiry the raw pose is kept
+smina_receptor_ext: .pdb             # receptor ext for the re-search (.pdb | .pdbqt); uses a sibling with this ext, else falls back to .pdb
+smina_executable: ''                 # smina binary path; '' = autodetect (EQ_SMINA / PATH / env-bin)
+gnina_executable: ''                 # gnina binary path; '' = autodetect; required if refine_tool includes gnina
+gnina_use_gpu: true                  # run gnina's CNN on the GPU; false → --no_gpu (keeps the GPU free for EquiBind); smina ignores this
+
+# ── Protein cropping (shrink receptor around the pocket before inference) ────
+use_protein_cropping: true           # crop the receptor to a sphere around the pocket before EquiBind (faster, less memory)
+pocket_crop_radius: 8.0              # Å radius of the residue-selection sphere around the pocket centre
+pocket_crop_buffer: 3.0             # Å extra margin (effective crop = radius + buffer)
+
+# ── Unguided conformer generation (RDKit ETKDG) ──────────────────────────────
+rdkit_seeds:                         # ETKDG seeds; each seed × conformers_per_seed makes one conformer (bounds the unguided pose count)
 - 42
 - 123
 - 456
@@ -63,16 +130,49 @@ rdkit_seeds:
 - 22222
 - 31415
 - 65536
-conformers_per_seed: 1
-uff_minimize: true
-uff_max_iters: 200
-uff_energy_tol: 0.0001
-uff_force_tol: 0.001
-uff_proximity_radius: 6.0
-uff_add_hydrogens: true
-uff_strip_nonstandard: true
-uff_vdw_thresh: 10.0
-gpu_batch_size: 8
-n_parallel_workers: 0
-parallel_conformer_gen: true
-skip_existing: false
+conformers_per_seed: 1               # RDKit conformers embedded per seed (total conformers = len(rdkit_seeds) × this)
+
+# ── UFF minimisation (relax each pose in the fixed protein field) ────────────
+uff_minimize: false                  # master switch: run UFF minimisation of each pose after EquiBind.
+                                     # OFF is the value the reported calibration-benchmark run used. All 308
+                                     # records in Dockings/Benchmark_Equibind/*/pipeline_summary.json carry
+                                     # config.uff_minimize=false, and the benchmark launcher cell reads this
+                                     # key straight out of this file (EQ_UFF_MINIMIZE), so shipping true here
+                                     # silently changes the benchmark on the next run.
+                                     # Reason it is off. uff.py builds the field with
+                                     # ignoreInterfragInteractions=False and then fixes every protein atom
+                                     # (AddFixedPoint), so on a buried pose the minimiser cannot slide the
+                                     # ligand out of the clash and relieves it by deforming the ligand.
+                                     # With UFF on only 19.3% of benchmark EquiBind poses passed the
+                                     # PoseBusters bond-angle check and 22.5% the bond-length check
+                                     # (Dockings/_ufftrue_backup_1783675978/posebusters_filtered_results.csv).
+                                     # With UFF off both pass at 100.0%
+                                     # (posebusters_results/benchmark/dock/posebusters_filtered_results.csv).
+                                     # smina/gnina cannot repair that damage because they only translate,
+                                     # rotate and re-torsion a pose (the bond-angle pass rate was identical
+                                     # at 19.3050% for the raw, smina and gnina variants of the UFF-on run),
+                                     # yet they relieve the clash on their own, so UFF off roughly doubles
+                                     # PB-validity, namely unguided + gnina 23.0% -> 52.2% of poses scored
+                                     # over the 22 canonical PoseBusters dock checks.
+                                     # CAVEATS. (1) This file is shared with the Orai x JKU EquiBind arm
+                                     # (output_dir: Dockings/equibind_results), whose committed record has
+                                     # uff_minimize=true, so one file cannot reproduce both arms.
+                                     # (2) Master_Docking.ipynb cell 4d02725a rewrites this key back to true
+                                     # and re-dumps the file with yaml.safe_dump, which also strips every
+                                     # comment here. Re-assert false before re-running the benchmark arm.
+                                     # (3) This file alone still does not reproduce the benchmark run.
+                                     # poses_per_pocket is 10 in every benchmark record but 3 here, and the
+                                     # launcher hardcodes refine_mode/refine_tool to "both".
+uff_max_iters: 200                   # max UFF minimiser iterations per pose
+uff_energy_tol: 0.0001               # UFF energy convergence tolerance (RDKit minimiser)
+uff_force_tol: 0.001                 # UFF force (gradient) convergence tolerance
+uff_proximity_radius: 6.0            # Å radius selecting which (fixed) protein atoms enter the UFF field around the ligand
+uff_add_hydrogens: true              # add explicit hydrogens to ligand/pocket before minimisation
+uff_strip_nonstandard: true          # strip non-standard residues / hetero atoms from the pocket before building the field
+uff_vdw_thresh: 10.0                 # RDKit vdwThresh: drop atom pairs beyond thresh×(sum vdW radii); 10.0 keeps clash range so overlaps are felt
+
+# ── Parallelism / rerun ──────────────────────────────────────────────────────
+gpu_batch_size: 8                    # EquiBind GPU inference batch size (jobs per protein run in slices of this many)
+n_parallel_workers: 0                # thread-pool size for conformer gen / cropping / pose phases; 0 → notebook maps to os.cpu_count()
+parallel_conformer_gen: true         # generate RDKit conformers across worker threads when >1 seed (else serial)
+skip_existing: false                 # true = reuse existing pose SDFs and skip a combo when all variant files exist

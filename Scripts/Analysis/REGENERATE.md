@@ -1,0 +1,723 @@
+# REGENERATE.md — how every reported figure and table is produced
+
+This file records, for each figure and table reported in the thesis, the committed
+output it was taken from and the exact command that rebuilds that output. It exists
+because several thesis outputs are produced by a script invoked directly rather than
+by a notebook cell, so the notebooks alone are not a complete build recipe.
+
+Everything below was checked against the repository on 2026-08-16. Provenance marked
+**verified** means the committed PNG is byte-identical (MD5) to the file embedded in
+`thesis_latex/media/media/`. Anything that could not be reconstructed is marked
+**UNRESOLVED** rather than given a guessed command.
+
+Scope note: the analysis outputs referenced below live in the working tree, not in the git
+index. `posebusters_results/`, `pandamap_results/` and `PoseBusters_Benchmark_Analysis/figures/`
+are untracked, so "stored" and "byte-identical" throughout this guide mean identical to the
+file on disk in the author's tree, not to a file recoverable from the repository history.
+
+Thesis figure and table numbers are the automatic LaTeX numbers, read from
+`thesis_latex/Thesis.lof` and `thesis_latex/Thesis.lot`.
+
+## Analysis changes of 2026-08-19
+
+Three corrections from the pre-submission audit. Any output produced before this date is superseded.
+
+1. `orai_pandamap_interaction_compare.py` — the **residue hot-spot axis is now pose-weighted**.
+   `_top_shared_residues` previously summed the six per-(dataset, tool) contact fractions without
+   weighting by group size, so a residue prominent in a one-pose group scored as highly as one
+   contacted in every pose of a 3,524-pose group. Asp287 entered the axis at rank 7 on a single
+   experimental EquiBind pose. The default is now `mode="pooled"`, ranking by the pooled contact
+   fraction over all 7,231 poses, exposed as `--residue-axis {pooled,macro}`; `macro` reproduces the
+   superseded axis exactly. The new axis drops Asp287 and Glu106 and adds Glu173 and Lys85.
+   Affects **Figure 23** and `pandamap_residue_hotspots.csv` only — re-running leaves
+   `fig_total_interactions_compare.png`, `fig_type_profile_compare.png` and
+   `fig_fingerprint_overlap_compare.png` byte-identical, which is the isolation control.
+
+2. `PoseBusters_DataSet_Analysis.ipynb` — **`_load_jku_mol` hydrogen basis fixed**. It passed
+   `sanitize=False`, which suppresses RDKit's implicit `RemoveHs`, so the three Orai ligands were
+   described on a hydrogen-explicit basis while the 308 benchmark ligands were hydrogen-suppressed.
+   Exactly two of the sixteen descriptors are basis-dependent: `rot_bonds` (2abp-NH2 6→5,
+   Synta-66 7→5, GSK-7975A 5→4) and `n_element_types` (5→4, printed nowhere). The loader now returns
+   `Chem.RemoveHs(m)`, with stereochemistry still assigned on the explicit-H molecule first.
+   Affects **Table 3**, **Table 20**, the appendix "four to five rotatable bonds" range and the
+   **Figure 35 caption** (`thesis_latex/body_appendix.tex:653`), see item 3 below.
+   The benchmark statistics and the PCA fit are unaffected, since the PCA is fit on the benchmark
+   alone — PC1/PC2/PC3/PC4 remain 45.0 / 23.3 / 6.7 / 6.4 %.
+
+3. **Figures 31 to 40 were re-rendered** from the corrected notebook and re-embedded as
+   `image33` to `image42`. Note the mapping is **not** sequential: `image39`→`09_pca_scree_loadings`,
+   `image40`→`10_pca_biplot`, `image41`→`07_receptor_profile`, `image42`→`08_startconf_rmsd`.
+   Derive it by MD5 against `PoseBusters_Benchmark_Analysis/figures/`, never by filename order.
+   All ten changed byte-wise, but only the JKU overlay in `01`, the JKU points in `05` and the
+   JKU points in `10` changed for data reasons. The `05` change is the largest and was missed on
+   the first pass: dropping Synta-66 from 7 to 5 and GSK-7975A from 5 to 4 rotatable bonds
+   collapsed their vertical gap in panel (A) to `|dy|/yspan = 0.0351`, under the `tol = 0.04`
+   coincidence tolerance in `overlay_jku_points`, so the pair now clusters and is fanned apart by
+   `0.035 * xspan = 2.93` heavy atoms each way. Because that exceeds half their true 2-heavy-atom
+   gap, the two markers cross over and panel (A) draws them in reversed left-to-right order. The
+   Figure 35 caption had named panel (A) as exact and was corrected on 2026-08-19. Note both
+   panels (A) and (B) sit within 12 % and 2 % of the `tol` cut, so any future re-render that
+   nudges the axis limits can flip a panel in or out of the fan and silently re-stale that caption. The rest is matplotlib rendering non-determinism, roughly 1 to 2.5 % of pixels
+   and a 3-pixel canvas change on `04`. The three Orai points moved 0.36 to 0.43 PC units against
+   PC1/PC2 standard deviations of 2.68 and 1.93, so all three remain at negative PC1 and positive
+   PC2 and no interpretation changes.
+
+---
+
+## Analysis changes of 2026-08-18
+
+Two scripts were corrected after an audit found the prose describing something the
+code did not do. Both were re-run and their figures re-embedded, so any output
+produced before this date is superseded.
+
+1. `pose_cluster_crystal_pocket_report.py` — crystal-cluster **reach is now gated at
+   the 4 Å centroid threshold**. Previously `correct_label` was the crystal-*nearest*
+   cluster computed unconditionally, and `correct_cluster_is_hit` was stored but never
+   used, so 21 of 303 complexes counted as reached with their nearest cluster 4.01 to
+   21.82 Å away. A complex failing the gate now carries no correct cluster at all, so it
+   contributes neither reach nor composition. Affects Table 10 and Figures 6 and 7
+   (reach, co-reach φ, all-three counts, panels A to D). It does **not** affect Figure 8,
+   whose ranking-ablation numbers (oracle 93.07 %, consensus 55.45 %, size 48.84 %) were
+   already computed at the same threshold and are byte-identical after the change.
+   Re-run with `--force`, otherwise the cached analysis is reused.
+
+2. `orai_pandamap_interaction_compare.py` — the **typed Jaccard now uses the same
+   ≥10 % characteristic-contact threshold as the residue-level one** (`_char_typed_set`).
+   Previously the residue set was thresholded and the typed set was not, so the
+   residue-to-typed drop conflated a change of contact type with a change of basis. The
+   superseded unthresholded value is retained in `pandamap_fingerprint_overlap.csv` as
+   `jaccard_typed_unthresholded` for provenance. Affects Figure 24 only.
+
+---
+
+## 1. Environments
+
+| Env | Interpreter | Used for |
+|---|---|---|
+| `vina` | `/home/manndo/anaconda3/envs/vina/bin/python` | every script and notebook in this file. It is the only env carrying pandas, matplotlib, RDKit, PoseBusters and PandaMap together. |
+| `diffdock`, `equibind`, `unidock`, `unidock2` | see `Scripts/Docking/` | re-docking only. No analysis in this file needs them. |
+
+All commands are run from the repository root `/home/manndo/master_dev`. Activate with
+
+```bash
+source ~/anaconda3/etc/profile.d/conda.sh && conda activate vina
+```
+
+The notebooks use the same env through the literal path `VINA_PY`, so a notebook cell
+and its command-line equivalent are interchangeable.
+
+---
+
+## 2. Figure index
+
+| Fig | Subject | Output file | Produced by | Provenance |
+|---|---|---|---|---|
+| 1 | Physics-based docking flow chart | `docking_workflow.png` | `Flow Charts.ipynb` (author-drawn schematic) | verified |
+| 2 | Post-hoc optimisation and PoseBusters validity | `posebusters_results/benchmark_full_protein_vina_scoring/dock/validity_report/00_figure2_validity_yield.png` | `figure2_validity_yield.py`, see [§5.8](#58-figure-2--resolved-2026-08-18-generator-added) | verified |
+| 3 | Best-of-top-N accuracy, as-placed RMSD | same report dir | see [§5.1](#51-figures-2-3-and-4-pin-the-autodock-arm-or-you-rebuild-raw-vina) | OK, needs `--collapse-autodock-variant autodock_gnina` |
+| 4 | Best-of-top-N accuracy, Kabsch RMSD | same report dir | see [§5.1](#51-figures-2-3-and-4-pin-the-autodock-arm-or-you-rebuild-raw-vina) | OK, needs `--collapse-autodock-variant autodock_gnina` |
+| 5 | Form versus placement filmstrip | `…/pose_comparison_report/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__thesis.png` | [§3.3](#33-form-versus-placement-filmstrip-figure-5) | verified |
+| 6 | Top-N crystal-cluster co-recovery | `posebusters_results/cluster_crystal_pocket_full_protein/autodock_gnina__diffdock_smina_allposes/topN_crystal_cluster_matrix.png` | `Master_Docking_AD_Full_Protein.ipynb` cell `6b9fe31d` (`pose_cluster_crystal_pocket_report.py`, `PB_VALID_ONLY` off so the out-dir tag is `allposes`) | verified |
+| 7 | Crystal-closest cluster composition | same dir, `crystal_cluster_homogeneity.png` | same cell | verified |
+| 8 | Cluster-quality assessment | same dir, `cluster_quality_metrics.png` | same cell | verified |
+| 9 | Mean Jaccard fingerprint similarity | `pandamap_results/benchmark_full_protein/report/05_fingerprint_similarity_top5.png` | [§3.2](#32-whole-protein-pandamap-interaction-fingerprints-figures-9-10-and-11) | verified |
+| 10 | Native-interaction recovery by rank | same dir, `04c_native_recovery_by_rank.png` | [§3.2](#32-whole-protein-pandamap-interaction-fingerprints-figures-9-10-and-11) | verified |
+| 11 | Matched, missed and spurious contacts by rank | same dir, `10b_contact_decomposition_by_rank.png` | [§3.2](#32-whole-protein-pandamap-interaction-fingerprints-figures-9-10-and-11) | verified |
+| 12 | Orai1 docking receptor (frame 300) | not in repository | hand-composed PyMOL render, see [§5.4](#54-hand-composed-pymol-renders-figures-12-and-14) | **UNRESOLVED** |
+| 13 | PoseBusters-valid yield, benchmark against experimental | `posebusters_results/orai_pbvalid_yield_compare/09f_pbvalid_yield_dominant_orai_benchmark_vs_experimental.png` | [§3.5](#35-orai-posebusters-valid-yield-compare-figure-13) | verified |
+| 14 | Orai Fr300 with docked ligands and TM exclusion | not in repository | hand-composed PyMOL render, see [§5.4](#54-hand-composed-pymol-renders-figures-12-and-14) | **UNRESOLVED** |
+| 15 | Usable pose yield per frame-ligand unit | `posebusters_results/orai_pbvalid_tm_share_compare/fig_pbvalid_outside_tm_whisker.png` | [§3.4](#34-orai-validity-and-transmembrane-share-compare-figures-15-and-16) | verified |
+| 16 | Transmembrane loss of PoseBusters-valid poses | same dir, `fig_tm_loss_relative_compare.png` | [§3.4](#34-orai-validity-and-transmembrane-share-compare-figures-15-and-16) | verified |
+| 17 | Inter-tool consensus-site distance histograms | `posebusters_results/orai_jku/pose_clusters/panels/orai_cross_tool_agreement_compare.png` | `Master_Docking.ipynb` cell `orai-xtool-compare-code` (`orai_cross_tool_agreement_compare.py`). **Not** the same-id cell in `Master_Docking_AD_Full_Protein.ipynb`, see [§5.7](#57-the-two-orai-xtool-compare-code-cells-read-different-inputs) | verified |
+| 18 | Cross-tool agreement on Orai | same dir, `orai_tool_agreement_compare.png` | same cell, and the same warning in [§5.7](#57-the-two-orai-xtool-compare-code-cells-read-different-inputs) | verified |
+| 19 | Reference-free cluster quality per tool | same dir, `orai_cluster_quality_compare.png` | same cell, and the same warning in [§5.7](#57-the-two-orai-xtool-compare-code-cells-read-different-inputs) | verified |
+| 20 | Validity and placement filtering versus cluster quality | `posebusters_results/orai_benchmark/pose_clusters/orai_cluster_quality_filtering.png` | `Master_Docking_AD_Full_Protein.ipynb` cell `577d6b41` (`orai_pose_cluster_report.py --cluster-quality --top-n-poses 10 --autodock-variant gnina`) | dimension match only, not byte-identical. The arm is gnina, see [§5.5](#55-the-orai-autodock-arm-all-published-figures-are-gnina) |
+| 21 | Total contacts per pose on Orai | `pandamap_results/orai_interaction_compare/fig_total_interactions_compare.png` | `Master_Docking_AD_Full_Protein.ipynb` cell `60097bb6` (`orai_pandamap_interaction_compare.py`) | verified |
+| 22 | Interaction-type profile on Orai | same dir, `fig_type_profile_compare.png` | same cell | verified |
+| 23 | Orai residue hot-spots | same dir, `fig_residue_hotspots_compare.png` | same cell | verified |
+| 24 | Contact-fingerprint overlap between ligand sets | same dir, `fig_fingerprint_overlap_compare.png` | same cell | verified |
+| 25 | Wall-clock seconds per qualifying pose | `posebusters_results/benchmark_full_protein_vina_scoring/docking_effort_gnina/panels/effort_by_quality_near2.png` | [§3.1](#31-whole-protein-cost-chapter-gnina-arm-figures-25-and-26) | verified |
+| 26 | Hardware resource per near-native valid pose | same dir, `panels/resource_per_near_native_valid_pose.png` | [§3.1](#31-whole-protein-cost-chapter-gnina-arm-figures-25-and-26) | verified |
+| 27 | Rank versus oracle, as-placed RMSD | `posebusters_results/benchmark/dock/pose_comparison_report/21a_rank_vs_oracle_crystal.png` | `Master_Docking.ipynb` cell `ad0af9dd` (`posebusters_pose_comparison.py`, boxed benchmark run) | verified |
+| 28 | Rank versus oracle, Kabsch RMSD | same dir, `21b_rank_vs_oracle_kabsch.png` | same cell | verified |
+| 29 | PoseBusters validity by rank | same dir, `21c_validity_by_rank.png` | same cell | verified |
+| 30 | Rank versus oracle, combined criterion | same dir, `21d_rank_vs_oracle_combined.png` | same cell | verified |
+| 31 | Univariate descriptor distributions | `PoseBusters_Benchmark_Analysis/figures/01_ligand_univariate_distributions.png` | [§3.6](#36-appendix-chemical-space-figures-31-to-40) | byte-identical to FIG_DIR, see §5.3 |
+| 32 | Drug-likeness | same dir, `02_druglikeness_ro5_qed.png` | [§3.6](#36-appendix-chemical-space-figures-31-to-40) | byte-identical to FIG_DIR, see §5.3 |
+| 33 | Elemental and charge composition | same dir, `03_elemental_charge_composition.png` | [§3.6](#36-appendix-chemical-space-figures-31-to-40) | byte-identical to FIG_DIR, see §5.3 |
+| 34 | Descriptor correlation heat map | same dir, `04_ligand_correlation_heatmap.png` | [§3.6](#36-appendix-chemical-space-figures-31-to-40) | byte-identical to FIG_DIR, see §5.3 |
+| 35 | Two-dimensional attribute mappings | same dir, `05_2d_attribute_mappings.png` | [§3.6](#36-appendix-chemical-space-figures-31-to-40) | byte-identical to FIG_DIR, see §5.3 |
+| 36 | Pairplot of six core descriptors | same dir, `06_pairplot_core_descriptors.png` | [§3.6](#36-appendix-chemical-space-figures-31-to-40) | byte-identical to FIG_DIR, see §5.3 |
+| 37 | PCA scree and loadings | same dir, `09_pca_scree_loadings.png` | [§3.6](#36-appendix-chemical-space-figures-31-to-40) | byte-identical to FIG_DIR, see §5.3 |
+| 38 | PCA biplot | same dir, `10_pca_biplot.png` | [§3.6](#36-appendix-chemical-space-figures-31-to-40) | byte-identical to FIG_DIR, see §5.3 |
+| 39 | Receptor profile | same dir, `07_receptor_profile.png` | [§3.6](#36-appendix-chemical-space-figures-31-to-40) | byte-identical to FIG_DIR, see §5.3 |
+| 40 | Conformer-generation difficulty | same dir, `08_startconf_rmsd.png` | [§3.6](#36-appendix-chemical-space-figures-31-to-40) | byte-identical to FIG_DIR, see §5.3 |
+
+---
+
+## 2b. Table index
+
+Only the tables whose source could be confirmed by re-deriving their printed values are
+listed. The remainder were not audited in this pass and are marked as such rather than
+assigned a guessed source.
+
+Table numbers below are the THESIS numbers (corrected 2026-08-20; this index previously ran one to two behind).
+
+| Table | Subject | Source file | Produced by | Provenance |
+|---|---|---|---|---|
+| 6 | PoseBusters pass-all recovery by ranking depth | `…/pose_comparison_report/topk_recovery_validity_gnina_arm.{csv,txt}` | [§5.1](#51-figures-2-3-and-4-no-committed-generator-for-the-published-arm) | value-checked |
+| 7 | Decomposition of the rank-1 to best-of-top-15 gain | same file | [§5.1](#51-figures-2-3-and-4-no-committed-generator-for-the-published-arm) | value-checked |
+| 8 | Near-nativeness and form recovery by ranking depth | same file | [§5.1](#51-figures-2-3-and-4-no-committed-generator-for-the-published-arm) | value-checked, and see the warning in [§5.2](#52-topn_within_thresholds_pbvalid_depthscsv-is-the-wrong-arm-do-not-regenerate-table-8-from-it) |
+| 11 | Orai1 validity and placement yield | `posebusters_results/orai_pbvalid_tm_share_compare/pbvalid_tm_share_pooled.csv` and `pbvalid_tm_share_per_unit.csv` | [§3.4](#34-orai-validity-and-transmembrane-share-compare-figures-15-and-16) | value-checked. The pooled rows 120 / 119 / 99.2% / 66 / 55.0%, 120 / 112 / 93.3% / 82 / 68.3% and 120 / 29 / 24.2% / 1 / 0.8% reproduce the printed totals row exactly. **Re-verified 2026-08-20.** The AutoDock cell was 84 / 70.0% until the `optimized_rank` fix to `_CARRY` in `orai_transmembrane_exclusion.py`; the CSV was regenerated 2026-08-19 11:46 and now gives 66 / 55.0%, which is what the thesis prints. Do not restore the old pair |
+| 1 to 5, 9, 10, 12 to 25 | — | — | — | not audited in this pass |
+
+---
+
+## 3. Commands with no notebook cell
+
+These are the outputs the thesis depends on that no notebook cell produces. Each was
+reconstructed from the script defaults plus the stored output's own provenance
+header, and each reconstruction was checked by re-deriving the numbers the output
+contains.
+
+### 3.1 Whole-protein cost chapter, gnina arm (Figures 25 and 26)
+
+Output directory `posebusters_results/benchmark_full_protein_vina_scoring/docking_effort_gnina/`.
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/docking_effort_comparison.py \
+    --dataset benchmark \
+    --autodock-dir Dockings/vina_results_full_protein_vina_scoring \
+    --autodock-prep mgl_tools \
+    --autodock-refine gnina --autodock-gnina-gpu \
+    --per-pose-csv posebusters_results/benchmark_full_protein_vina_scoring/dock/pose_comparison_report/per_pose_metrics.csv \
+    --out-dir posebusters_results/benchmark_full_protein_vina_scoring/docking_effort_gnina
+```
+
+`--diffdock-refine smina` and `--eq-refine gnina` are the `benchmark` dataset defaults
+and were left unset, which is why the committed `effort_summary.csv` labels the arms
+`DiffDock (smina)` and `EquiBind (unguided+gnina)`.
+
+How the four non-default flags were recovered.
+
+* `--autodock-refine gnina --autodock-gnina-gpu` follow from the committed summary row
+  `AutoDock Vina + gnina` with device `CPU+GPU`. The arithmetic closes exactly. Raw
+  Vina wall is 2.2065 h and the gnina pass is 12.1334 h, summing to the recorded
+  14.3398 h, while CPU-core hours stay at 70.6067 h = 2.2065 × 32 threads because the
+  whole gnina pass was charged to the GPU.
+* `--autodock-dir` and `--autodock-prep mgl_tools` match the sibling `docking_effort`
+  cell (`Master_Docking_AD_Full_Protein.ipynb` cell `4821046f`) and the on-disk layout
+  `Dockings/vina_results_full_protein_vina_scoring/<id>/mgl_tools/`.
+* `--per-pose-csv` is the flag that distinguishes this run from its sibling. Under the
+  308-id allowlist the whole-protein per-pose table gives `autodock_gnina` 9,043 poses
+  of which 8,995 are PoseBusters-valid, `diffdock_smina` 8,993 of which 7,597, and
+  `equibind_unguided_gnina` 9,074 of which 4,702. The committed summary carries 9,013 /
+  8,965, 8,963 / 7,567 and 9,060 / 4,702, that is exactly 30 poses fewer per method,
+  which is the three complexes dropped to reach the recorded common timed set of 302.
+  The dataset-default per-pose table (`posebusters_results/benchmark/dock/…`) gives
+  6,956, 6,979 and 4,734 valid poses instead and reproduces only the older
+  `docking_effort/` directory.
+
+Beware that the sibling directory `docking_effort/` was produced by the notebook cell
+without `--per-pose-csv`, so it pairs whole-protein AutoDock timing with boxed-search
+pose counts. It is a hybrid and is not the arm the cost chapter reports.
+
+### 3.2 Whole-protein PandaMap interaction fingerprints (Figures 9, 10 and 11)
+
+Output directory `pandamap_results/benchmark_full_protein/`. The two steps are recorded
+in the header of `Scripts/Analysis/pandamap_benchmark_full_protein_config.yaml`, which
+also pins every variant used.
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/run_pandamap.py \
+    --config Scripts/Analysis/pandamap_benchmark_full_protein_config.yaml
+
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/pandamap_interaction_report.py \
+    --config Scripts/Analysis/pandamap_benchmark_full_protein_config.yaml \
+    --in-dir pandamap_results/benchmark_full_protein \
+    --exclude-methods unidock2
+```
+
+The config header shows the report step invoked with `--in-dir` alone. Passing
+`--config` as well is preferred and does not change the result, because the report
+reads its variant pins, `benchmark_dir`, `poses_per_combo`, `oracle_summary` and
+`per_pose_metrics` from that same file, and any of those left to the CLI defaults would
+silently fall back to the superseded boxed run.
+
+Two settings in the config are load-bearing and must not be dropped. `poses_per_combo:
+5` is what the top-5 fingerprint figure reports, and `canonical_receptor_dir:
+posebusters_results/benchmark/dock/hetatm_cleaned` is what stops the renumbered
+whole-protein receptors from driving measured native recovery to near zero.
+
+The notebook PandaMap cells (`Master_Docking_AD_Full_Protein.ipynb` cells `3c3a757d`
+and `68f54daf`) use `Scripts/Analysis/pandamap_config.yaml`, which is the superseded
+crystal-boxed run. They do not produce the figures in the Results chapter.
+
+### 3.3 Form versus placement filmstrip (Figure 5)
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/filmstrip_rank1_top5_top15.py
+```
+
+The script takes no arguments. Every choice is pinned in the file itself, namely the
+report directory `posebusters_results/benchmark_full_protein_vina_scoring/dock/pose_comparison_report`,
+the depths 1 / 5 / 15, the 5 Å axis clip, and the collapse to `autodock_gnina`,
+`diffdock_smina` and `equibind_unguided_gnina`. The thesis figure is the `__thesis`
+stem. The script also writes a `__compact_titles` variant and the per-pose CSV behind
+every plotted point.
+
+### 3.4 Orai validity and transmembrane share compare (Figures 15 and 16)
+
+Output directory `posebusters_results/orai_pbvalid_tm_share_compare/`.
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/orai_pbvalid_tm_share_compare.py \
+    --autodock-variant gnina --diffdock-variant smina --equibind-variant gnina \
+    --top-n-poses 10
+```
+
+All four values are the script defaults except `--top-n-poses`, which defaults to 0.
+They are stated explicitly because the Orai classification tables now carry both the
+raw and the gnina AutoDock arm and a silent default is not a record.
+
+Recovered from the committed sidecar as follows. `pbvalid_tm_share_compare_stats.txt`
+records `POSE CAP: kept only each tool's top-10 ranked poses per (frame × ligand)`,
+which fixes `--top-n-poses 10`. It reports 12,010 produced AutoDock poses on the control
+panel, and the classification table splits its 24,160 AutoDock rows into 12,010 with
+`variant == gnina` and 12,150 raw, so the gnina arm is the one selected. On the
+experimental panel the same variant gives 360 rows over 12 frame-ligand units, capped
+to the recorded 120. DiffDock 11,673 and EquiBind 12,150 match the `smina` and `gnina`
+selections.
+
+This directory also holds the ligand-level sensitivity analysis, which the Results and
+Discussion chapters cite repeatedly but which has no figure or table number. It must be
+run after the command above, because it reads that run's per-unit CSV.
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/orai_ligand_level_contrasts.py \
+    --autodock-variant gnina --diffdock-variant smina --equibind-variant gnina
+```
+
+Everything else is a default, and the defaults are the shipped run. The generated
+sidecar `orai_ligand_level_contrasts.txt` names its own generator and lists every input
+CSV in a `SOURCES` block, so the reconstruction is self-checking.
+
+### 3.5 Orai PoseBusters-valid yield compare (Figure 13)
+
+Output directory `posebusters_results/orai_pbvalid_yield_compare/`.
+
+This one does have a cell. It is `Master_Docking_AD_Full_Protein.ipynb` cell id
+`ee79ca6e` (index 101), duplicated as cell index 91 in `Master_Docking.ipynb`. The cell
+is self-contained inline code rather than a `subprocess.run` of a script, which is why
+a plain grep for a script name does not find it.
+
+Its pins are `AUTODOCK_KEY = "autodock_gnina"`, `DIFFDOCK_KEY = "diffdock_smina"`, a
+top-10 pose cap through `pose_topn.top_n_allowlist`, and `EXCLUDE_LIGANDS =
+{"gsk7975a-deprot-OPT"}`.
+
+**Corrected 2026-08-16.** An earlier draft of this guide recorded the AutoDock arm here
+as raw Vina and reported an arm asymmetry against the transmembrane compare in §3.4.
+That was wrong. The stored output is the gnina arm and agrees with the thesis: the
+sidecar `09f_pbvalid_yield_dominant_stats.txt` reads `AutoDock Vina Benchmark(gnina)
+... Experimental(gnina)`, and every row of `pbvalid_yield_dominant_per_complex.csv`
+carries `method_key = autodock_gnina`, 1,201 units on the benchmark panel and 12 on the
+experimental one. Both Orai panels are therefore on the same gnina arm, exactly as
+`body_main.tex` states. There is a real arm asymmetry among the Orai figures, but it is
+in Figures 17, 18 and 19, not here. §5.5 records it.
+
+The confusion came from a genuine defect, now fixed. The two notebooks carried the
+SAME cell id `ee79ca6e` with DIFFERENT pins. `Master_Docking.ipynb` had the correct
+`autodock_gnina` with an explanatory comment, while `Master_Docking_AD_Full_Protein.ipynb`
+still had the older bare `autodock`. The committed figure came from the former.
+
+**The repair is complete as of 2026-08-16 and was re-checked for this entry.** The two
+copies of `ee79ca6e` are now byte-identical, 14,832 characters with MD5
+`353b36cbfff763323c4781ebc46efad4` in both notebooks (cell index 101 in
+`Master_Docking_AD_Full_Protein.ipynb`, index 91 in `Master_Docking.ipynb`). The
+successor copy carries all three pieces the pin needs, namely
+`AUTODOCK_KEY, DIFFDOCK_KEY = "autodock_gnina", "diffdock_smina"` plus the matching
+lookup entries `TOOL_OF["autodock_gnina"] = "autodock"` and
+`_VLABEL["autodock_gnina"] = "gnina"`. Both dictionaries also keep their bare
+`"autodock"` entries, so either arm can be selected. Re-running either notebook now
+reproduces the published figure.
+
+Note for anyone bisecting the history: an intermediate state existed in which the pin
+had been changed to `autodock_gnina` while `TOOL_OF` and `_VLABEL` still held only the
+bare `"autodock"` key. That state raises `KeyError: 'autodock_gnina'` at plot time
+rather than drawing the wrong arm. A cell that fails this way is mid-repair, not
+broken by the fix.
+
+**Watch this class of defect.** 21 of the 104 cell ids shared between the two notebooks
+have diverged. Most divergences are deliberate, because `Master_Docking_AD_Full_Protein.ipynb`
+is the whole-protein successor and points at different result directories. Before
+trusting either notebook as the producer of a given output, diff the specific cell
+against its twin rather than assuming the two agree.
+
+### 3.6 Appendix chemical-space figures (Figures 31 to 40)
+
+Open `PoseBusters_DataSet_Analysis.ipynb` on the `vina` kernel and run all cells. It
+writes ten PNGs to `PoseBusters_Benchmark_Analysis/figures/` through its own `savefig`
+helper. See §5.3 for why those ten files are not the ten figures in the appendix.
+
+---
+
+## 4. Ordering
+
+Nothing in §3 re-docks anything. Every step reads committed CSVs, so the order matters
+only where one step consumes another's output.
+
+1. **Docking**, then **PoseBusters** (`Scripts/Docking/`, `run_posebusters.py`),
+   producing `posebusters_results/<dataset>/dock/posebusters_filtered_results.csv`.
+2. **Pose comparison** for the whole-protein benchmark
+   (`Master_Docking_AD_Full_Protein.ipynb` cell `24f6dd5d`), producing
+   `per_pose_metrics.csv` and `oracle_summary.csv` in
+   `benchmark_full_protein_vina_scoring/dock/pose_comparison_report/`. Required by
+   §3.1, §3.2, §3.3 and by the Table 6 to 8 sidecar in §5.1.
+3. **Transmembrane exclusion** for both Orai panels
+   (`Master_Docking_AD_Full_Protein.ipynb` cell `tm-both-groups-compare-code`), producing
+   `posebusters_results/orai_{jku,benchmark}/transmembrane_filter/tm_pose_classification.csv`.
+   Required by §3.4.
+4. **Orai pose clustering** (cells `d2a207d2`, `3a10a8ca` and `577d6b41`, the last of
+   which carries `--cluster-quality`) and **Orai PandaMap
+   compare** (cell `60097bb6`), producing `pose_clusters/cluster_quality_per_tool.csv`,
+   `pose_clusters/per_pair.csv` and `pandamap_results/orai_interaction_compare/pandamap_pose_totals.csv`.
+   Required by the ligand-level contrasts in §3.4 and by Figures 17 to 19, which read
+   the two `per_pair.csv` files rather than any pose table. See the input warning in
+   [§5.7](#57-the-two-orai-xtool-compare-code-cells-read-different-inputs).
+5. §3.1, §3.2, §3.3 and §3.5 are independent of one another and can run in any order
+   once step 2 is done.
+6. §3.4 in two parts. `orai_pbvalid_tm_share_compare.py` first, because
+   `orai_ligand_level_contrasts.py` reads its `pbvalid_tm_share_per_unit.csv`. The
+   contrasts script is the last thing to run in the whole chain, since it also consumes
+   steps 3 and 4.
+
+---
+
+## 5. Known gaps and traps
+
+### 5.1 Figures 2, 3 and 4, pin the AutoDock arm or you rebuild raw Vina
+
+RESOLVED 2026-08-17 for Figures 3 and 4, whose problem was a missing flag rather than a
+missing script. **Correction 2026-08-18:** this section used to say Figure 2 "always
+rebuilt from the notebook cell of §3.5". That is wrong. §3.5 is the Orai yield figure,
+and no committed cell rebuilds Figure 2 at all. See [§5.8](#58-figure-2-is-an-orphaned-render-values-reproduce-panel-set-does-not).
+
+`posebusters_pose_comparison.py` collapses each tool family to one presentation variant
+before it draws the headline figures. DiffDock had `--collapse-diffdock-variant` to pin
+which one. AutoDock had no counterpart, so its slot always fell back to **raw Vina**
+while the Results chapter reports the **gnina** arm. That is the whole discrepancy.
+
+`--collapse-autodock-variant` now supplies the missing pin. It mirrors the DiffDock
+flag, relabels the collapsed slot (`AutoDock Vina + gnina`) and leaves Vinardo alone.
+Unset, it keeps the old raw-Vina behaviour, so every earlier command still reproduces
+what it used to.
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/posebusters_pose_comparison.py \
+    --report-dir posebusters_results/benchmark_full_protein_vina_scoring/dock/pose_comparison_report \
+    --reuse-cache --collapse-plots-only \
+    --collapse-diffdock-variant diffdock_smina \
+    --collapse-autodock-variant autodock_gnina
+```
+
+Verified: that run reproduces Table 8 exactly, AutoDock 29.37 / 49.83 / 49.83, DiffDock
+33.99 / 55.12 / 55.78, EquiBind 15.18 / 20.13 / 20.46 at 2 Å across depths 1 / 15 / 30,
+and the legend reads `AutoDock Vina + gnina` as the published figures do. Dropping the
+new flag reproduces the committed raw-arm CSV byte for byte (md5
+`8a4ec9c43d47a38c7c36f44dd9229644`), which is the regression check for the change.
+
+The gnina-arm outputs are committed alongside the raw ones as `…_gnina_arm.{png,csv}`
+sidecars so both arms stay inspectable from one report directory. `thesis_latex/media/media/image3.png`
+and `image4.png` are the gnina pair.
+
+`Scripts/Analysis/topk_recovery_gnina_arm.py` remains the CSV/text source for the
+numbers behind Tables 5, 6 and 7. It draws no figure, and it is no longer the only way
+to reach the gnina arm.
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/topk_recovery_gnina_arm.py
+```
+
+### 5.2 `topn_within_thresholds_pbvalid_depths.csv` is the WRONG ARM. Do not regenerate Table 8 from it.
+
+File:
+`posebusters_results/benchmark_full_protein_vina_scoring/dock/pose_comparison_report/topn_within_thresholds_pbvalid_depths.csv`
+
+It contains only `[autodock, autodock_vinardo, diffdock, equibind, unidock2]`, and at
+the 2 Å threshold its AutoDock series across depths 1 / 15 / 30 reads
+
+```
+25.742574  47.854785  49.504950     (= 78 / 145 / 150 of 303 complexes)
+```
+
+That is **raw Vina**, the consequence of the hard-coded keep-set in §5.1. Table 8 and
+Figures 3 and 4 report the gnina arm
+
+```
+29.4%  49.8%  49.8%                 (= 89 / 151 / 151 of 303 complexes)
+```
+
+The printed thesis values are the correct ones. They were verified against
+`per_pose_metrics.csv` and are reproduced exactly by
+`topk_recovery_validity_gnina_arm.txt`, which prints
+`AutoDock gnina*   89 (29.4%)   151 (49.8%)   151 (49.8%)`. The thesis itself states
+both arms side by side in the Results chapter, giving 25.7% and 47.9% for the
+unoptimised search against 29.4% and 49.8% for the rescored one.
+
+It is the committed sidecar CSV that is the raw arm, not the table. Nobody should
+regenerate Table 8 from that CSV.
+
+### 5.3 Appendix chemical-space figures — RESOLVED 2026-08-18
+
+`PoseBusters_DataSet_Analysis.ipynb` writes ten PNGs to
+`PoseBusters_Benchmark_Analysis/figures/`. Until 2026-08-18 those files were dated
+2026-06-20 and none matched any thesis image, because the appendix carried the
+notebook's **inline cell output** from a later re-run that was never written back to
+`FIG_DIR`. Five of the ten reproduced from the stored notebook outputs (Figures 33, 34,
+36, 39 and 40) and **five were unresolved** (Figures 31, 32, 35, 37 and 38). An earlier
+revision of this section said four, and credited `pca-fit`/Figure 37 as matching; it did
+not, in the working tree or at HEAD.
+
+The gap is now closed. The notebook was re-executed end to end
+(`jupyter nbconvert --to notebook --execute --inplace`, exit 0), which refreshed both
+`FIG_DIR` and the stored inline outputs from the same run, and the ten published images
+were then replaced with the **`FIG_DIR` files themselves** rather than the inline
+outputs. `FIG_DIR` renders at `savefig.dpi = 150` against the inline `figure.dpi = 110`,
+so the two were never going to be byte-identical, and publishing the saved artifact is
+what makes the provenance exact. The published images are correspondingly 1.364x larger
+in each dimension at identical aspect ratio and content.
+
+Every appendix chemical-space figure is therefore now byte-identical to a stored `FIG_DIR` file:
+
+| Thesis fig | `media/media/` | `PoseBusters_Benchmark_Analysis/figures/` | notebook cell |
+|---|---|---|---|
+| 31 | `image33.png` | `01_ligand_univariate_distributions.png` | `0f1d42fb` |
+| 32 | `image34.png` | `02_druglikeness_ro5_qed.png` | `d31ff00e` |
+| 33 | `image35.png` | `03_elemental_charge_composition.png` | `ea2dcd61` |
+| 34 | `image36.png` | `04_ligand_correlation_heatmap.png` | `a22996c6` |
+| 35 | `image37.png` | `05_2d_attribute_mappings.png` | `87264e87` |
+| 36 | `image38.png` | `06_pairplot_core_descriptors.png` | `1b4b17d0` |
+| 37 | `image39.png` | `09_pca_scree_loadings.png` | `pca-fit` |
+| 38 | `image40.png` | `10_pca_biplot.png` | `pca-biplot` |
+| 39 | `image41.png` | `07_receptor_profile.png` | `37f35e86` |
+| 40 | `image42.png` | `08_startconf_rmsd.png` | `1ee29749` |
+
+Note that the `FIG_DIR` numbering follows save order, not cell order, so 07/08 sit after
+09/10 in the thesis sequence. Rebuild with
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python -m jupyter nbconvert --to notebook \
+    --execute --inplace --ExecutePreprocessor.timeout=1800 \
+    PoseBusters_DataSet_Analysis.ipynb
+cp PoseBusters_Benchmark_Analysis/figures/01_*.png thesis_latex/media/media/image33.png
+# ...and so on per the table above.
+```
+
+### 5.8 Figure 2 — RESOLVED 2026-08-18, generator added
+
+`thesis_latex/media/media/image2.png` used to match **no file anywhere in the repository
+and no stored notebook inline output**. It came from a run that was never committed, so
+the published copy could not be rebuilt byte for byte. §5.1 previously claimed Figure 2
+"always rebuilt from the notebook cell of §3.5"; that was wrong twice, since §3.5 is the
+Orai yield figure and no committed cell rebuilt Figure 2 at all.
+
+The obstacle was the **panel set, not the data**. Figure 2 shows a curated nine series in
+three families, while `posebusters_validity_report.py` draws every variant in the CSV,
+which since then also gained AutoDock Vinardo and Uni-Dock2. The uncollapsed
+`01_per_tool_validity.png` is correspondingly 3807 px wide with fourteen variants, and
+the report script has no engine keep-set, only `--split-equibind`, `--diffdock-variant`
+and `--equibind-variant`.
+
+`Scripts/Analysis/figure2_validity_yield.py` supplies that keep-set. It scores the CSV
+through `posebusters_validity_report.load_and_score`, so validity and the variant splits
+mean exactly what they mean in the report, and it takes the panel as an explicit
+`--series` spec so the nine are a stated choice rather than whatever the CSV holds.
+Statistics follow the thesis Methods, namely a paired Wilcoxon signed-rank per optimised
+arm against its family's raw arm, a Hodges-Lehmann estimate of the median paired
+difference, and Holm correction across the six comparisons drawn on the panel.
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/figure2_validity_yield.py \
+    --csv posebusters_results/benchmark_full_protein_vina_scoring/dock/posebusters_filtered_results.csv \
+    --out posebusters_results/benchmark_full_protein_vina_scoring/dock/validity_report/00_figure2_validity_yield.png
+cp posebusters_results/benchmark_full_protein_vina_scoring/dock/validity_report/00_figure2_validity_yield.png \
+   thesis_latex/media/media/image2.png
+```
+
+**Validated against the superseded published render**, all 24 annotated values reproduce
+exactly: nine medians (100.0, 100.0, 93.3, 13.3, 93.3, 96.6, 0.0, 26.7, 56.7 %), nine
+`complexes/valid-poses` labels (303/8883, 303/8995, 303/8372, 242/2198, 300/7597,
+300/7831, 35/263, 218/3565, 247/4702) and six Hodges-Lehmann deltas (+0.0, -5.0, +62.1,
++65.0, +36.7, +48.3 pp). The nine means also match the plotted mean diamonds. Only the
+raster differs, since the original was drawn by an uncommitted script at a different
+matplotlib version.
+
+A `.txt` sidecar carrying every plotted number is written beside the PNG, per the house
+convention that inferential detail lives off the panel.
+
+### 5.4 Hand-composed PyMOL renders (Figures 12 and 14)
+
+Neither image exists anywhere in the repository. `Scripts/Analysis/pymol_pose_cluster_scene.py`
+builds the per-frame scene files (`poses.pdb` plus `.pml`) that these views were
+composed from, but the camera, colouring and final render were set interactively in
+PyMOL and were not scripted. Both are therefore **UNRESOLVED** as automatic rebuilds.
+
+### 5.5 The Orai AutoDock arm: all published figures are gnina
+
+Every Orai per-pose table now carries BOTH the raw Vina and the gnina-rescored AutoDock
+arm, on both panels. In `posebusters_results/orai_benchmark/dock/posebusters_filtered_results.no_tm.csv`
+the AutoDock rows split as `optimizer == original` 10,611 and `optimizer == gnina`
+10,477, and `pandamap_results/orai_benchmark/pandamap_pose_summary.csv` carries
+`autodock` 6,699 poses next to `autodock_gnina` 3,406. Selecting an arm is therefore a
+choice that every Orai run has to make, and the shipped runs did not all make the same
+one.
+
+**Every published Orai figure sits on the gnina arm.** Re-derived 2026-08-17 from the
+committed artifacts themselves, by matching each thesis image to its source file by md5
+and then reading the AutoDock pose provenance out of that source.
+
+| Fig | Output | Exp. (JKU) panel | Orai × Benchmark panel | Evidence |
+|---|---|---|---|---|
+| 13 | `orai_pbvalid_yield_compare/09f_…` | gnina | gnina | inline cell `ee79ca6e`, `AUTODOCK_KEY = "autodock_gnina"` |
+| 15, 16 | `orai_pbvalid_tm_share_compare/` | gnina | gnina | `--autodock-variant gnina` (§3.4) |
+| 17, 18, 19 | `orai_jku/pose_clusters/panels/` | gnina | gnina | `per_pose.csv` AutoDock rows are 67/67 and 10,477/10,477 from `optimized_gnina/` |
+| 20 | `orai_benchmark/pose_clusters/orai_cluster_quality_filtering.png` | not shown | gnina | same benchmark `per_pose.csv`, 10,477/10,477 gnina |
+| 21 to 24 | `pandamap_results/orai_interaction_compare/` | gnina | gnina | stats sidecar line 7, `AutoDock Vina=autodock_gnina` |
+
+There is no cross-panel arm mismatch in any published figure. An earlier revision of
+this section claimed one for Figures 17 to 20 and for 21 to 24. That claim was derived
+from the `--autodock-variant original` pins in the notebook cells rather than from the
+outputs, and the outputs disagree with the pins.
+
+**The stale pins were the error, not the figures.** Cells `577d6b41`, `3a10a8ca` and
+`60097bb6` pinned `original` and justified it with `this arm carries only the raw Vina
+poses`. That was true when written and stopped being true on 2026-08-15, when the
+gnina arm was added to the Orai × Benchmark panel. The pins therefore did **not**
+reproduce the committed figures. All three are now pinned to `gnina`, which does, and
+their comments record the counts instead of the obsolete claim. The legacy
+`Master_Docking.ipynb` twins of those cells carried no `--autodock-variant` at all,
+which pools both arms and doubles every AutoDock count. They are pinned to `gnina` too.
+
+**One cell could still emit a mixed comparison.** `tm-both-groups-compare-code` pinned
+its Benchmark group to `original` and its JKU group to `gnina`. Its four combined
+figures are not in the thesis and its numbers are not cited, so nothing published was
+affected, and re-running both passes on `gnina` reproduces all six of its artifacts
+byte for byte. The reason is that the combined figures are built in the last pass and
+read both datasets under that pass's flag, which was always `gnina`. The Benchmark
+group's own flag reached only its single-dataset outputs. Both groups are now pinned to
+`gnina` so the cell cannot express a mixed comparison at all.
+
+Note that `group_toolchain_tm_comparison.csv` in that folder is written by the notebook
+cell, not by the script, so a script-only re-run leaves it untouched. Its AutoDock
+`generated` count of 12,150 is the raw-arm figure. The gnina arm holds 12,010 poses.
+
+**Which scripts can even express the choice.** Checked by
+`grep -n "autodock-variant" Scripts/Analysis/orai_*.py`.
+
+| Script | `--autodock-variant` | Default |
+|---|---|---|
+| `orai_transmembrane_exclusion.py` | yes | `all` |
+| `orai_pose_cluster_report.py` | yes | `all` |
+| `orai_pbvalid_tm_share_compare.py` | yes | `gnina` |
+| `orai_ligand_level_contrasts.py` | yes | `gnina` |
+| `orai_pandamap_interaction_compare.py` | yes | unset, takes whichever single variant each dataset carries |
+| `orai_cross_tool_agreement_compare.py` | **no such flag** | arm is whatever the `--exp-csv` and `--bench-csv` runs used |
+| `pymol_pose_cluster_scene.py` | no | — |
+
+The yield compare has no script at all. It is the inline cell `ee79ca6e` of §3.5 and
+sets its arm through the `AUTODOCK_KEY` constant.
+
+State the flag explicitly wherever it exists, including where the default is already
+right, because a default is not a record. Where it does not exist, namely
+`orai_cross_tool_agreement_compare.py`, the only way to state the arm is to name the
+`per_pair.csv` inputs and the runs that produced them.
+
+### 5.6 Cost figures come from `docking_effort_gnina/`, not `docking_effort/`
+
+See the closing note of §3.1. The `docking_effort/` directory pairs whole-protein
+AutoDock timing with boxed-search pose counts and is not what the cost chapter reports.
+
+### 5.7 The two `orai-xtool-compare-code` cells read DIFFERENT inputs
+
+Figures 17, 18 and 19 are reproduced by the cell in **`Master_Docking.ipynb`** (index
+68), which hard-codes
+
+```python
+EXP_CSV   = "posebusters_results/orai_jku/pose_clusters/per_pair.csv"
+```
+
+The same-id cell in `Master_Docking_AD_Full_Protein.ipynb` (index 77) does not. It reads
+
+```python
+_EXP_MATCHED  = "posebusters_results/orai_jku/pose_clusters_advina_matched/per_pair.csv"
+_EXP_HEADLINE = "posebusters_results/orai_jku/pose_clusters/per_pair.csv"
+EXP_CSV = _EXP_MATCHED if Path(_EXP_MATCHED).exists() else _EXP_HEADLINE
+```
+
+and the matched directory now exists, written by the second `subprocess.run` that the
+successor copy of cell `d2a207d2` added. That cell re-runs the JKU clustering with
+`--autodock-variant original` into `pose_clusters_advina_matched/`. Running the
+successor notebook therefore silently swaps the Exp. input and overwrites all three
+published PNGs in place, with no warning printed, because the warning is on the
+fallback branch and the fallback is not taken.
+
+The committed figures are the headline gnina run. Three independent checks agree.
+
+* The sidecar `posebusters_results/orai_jku/pose_clusters/panels/orai_tool_agreement_compare_stats.txt`
+  names `posebusters_results/orai_jku/pose_clusters/per_pair.csv` as its Exp. source.
+* Its printed tool-pair medians are AutoDock ↔ DiffDock 30.1 Å over n = 11,
+  AutoDock ↔ EquiBind 27.2 Å over n = 3 and DiffDock ↔ EquiBind 47.6 Å over n = 3. The
+  headline `per_pair.csv` reproduces all three exactly. The matched one gives 33.0 Å
+  over n = 12, 47.1 Å over n = 3 and 47.6 Å over n = 3.
+* For Figure 19, `orai_cluster_quality_compare_stats.txt` prints an Exp. AutoDock
+  silhouette of 0.67 and a Calinski-Harabasz of 169.33 over n = 11. The headline
+  `cluster_quality_per_tool.csv` gives exactly that once the default
+  `--exclude-ligand gsk7975a-deprot` is applied. The matched one gives 0.83 and 650.56
+  over n = 12.
+
+All three committed PNGs are byte-identical to the thesis images
+`thesis_latex/media/media/image16.png`, `image17.png` and `image18.png`.
+
+The command-line equivalent, which is the safer way to rebuild them, is
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/orai_cross_tool_agreement_compare.py \
+    --exp-csv posebusters_results/orai_jku/pose_clusters/per_pair.csv \
+    --exp-label "Exp. Ligands" \
+    --bench-csv posebusters_results/orai_benchmark/pose_clusters/per_pair.csv \
+    --bench-label "Benchmark ligands × Orai" \
+    --out-dir posebusters_results/orai_jku/pose_clusters/panels
+```
+
+**Corrected 2026-08-18.** The strict all-three-tools-agree figure annotation and the
+stats sidecar both used to assert a hard-coded `0 %` for both panels. That was never
+measured. Computed over the units that actually carry all three tools it is
+**0/3 for the experimental ligands and 1/467 = 0.2% for the benchmark control panel**,
+the single agreeing unit being `7OZC_G6S` on frame `Orai1WT-MDSnap-Fr300`, which is what
+the Results prose has always reported. `strict_all3()` in
+`orai_cross_tool_agreement_compare.py` now derives it from `au_di_dist`, `au_eq_dist` and
+`di_eq_dist`, counting only units where all three distances exist, so two-tool units are
+excluded from the denominator rather than silently counted as disagreements. Figure 16
+(`image17.png`) was regenerated from this fix.
+
+`--bench-label` must be passed, since the script default is the shorter
+`Benchmark ligands`. Both clustering runs must exist first, that is cell `d2a207d2` for
+the JKU side and cell `577d6b41` for the benchmark side, which is step 4 of §4. The
+`_poreblockers` suffix run that both cells fire afterwards writes a separate ligand
+subset and is not a thesis figure.
+
+The successor cell was written to remove a raw-versus-gnina asymmetry that an earlier
+revision of §5.5 reported. That asymmetry does not exist. Both published panels are
+gnina, so the matched run does not fix anything.
+
+It is worse than redundant. `pose_clusters_advina_matched/` is the JKU side re-clustered
+on `--autodock-variant original`, while the Benchmark side it is compared against is
+gnina. Adopting the matched input would therefore put raw Vina on one panel and gnina
+on the other, which is precisely the mismatch it was meant to remove. The headline
+input is the correct one on the merits as well as being the one the thesis shows.
+
+Do not let the successor cell take the `_MATCHED` branch. Either delete
+`pose_clusters_advina_matched/` or rebuild the three PNGs with the command above, which
+names its inputs explicitly and cannot silently swap them. The gnina cluster quality is
+also the conservative reading: the Exp. AutoDock silhouette is 0.67 on the published
+arm against 0.83 on the matched one.

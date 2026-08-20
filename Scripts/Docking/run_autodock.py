@@ -10,6 +10,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
 import contextlib
 import hashlib
 import itertools
@@ -101,7 +102,7 @@ def load_config(config_path: Path) -> dict:
 
     cfg["failed_job_policy"] = _failed_job_policy(cfg)
 
-    # ── Validate post-pose optimisation mode (none/smina/gnina/all) ──
+    # ── Validate post-pose optimisation mode (including explicit CNN refinement) ──
     # Raises early on a typo rather than silently docking without re-ranking.
     resolve_optimizers(cfg)
     _validate_optimizer_config(cfg)
@@ -164,7 +165,7 @@ def print_config(cfg: dict) -> None:
         print(f"  Empirical score:   {cfg.get('optimize_scoring', 'default')}")
         top_n = int(cfg.get("optimize_top_n", 0) or 0)
         print(f"  Re-rank poses:     top {top_n}" if top_n else "  Re-rank poses:     all poses")
-        if "gnina" in opt_tools:
+        if any(_is_gnina_optimizer(tool) for tool in opt_tools):
             print(f"  gnina GPU:         {'on' if cfg.get('gnina_use_gpu', False) else 'off (--no_gpu)'}")
             if cfg.get("gnina_use_gpu", False):
                 print(f"  GPU lock:          {cfg.get('gpu_lock_file')}")
@@ -898,6 +899,7 @@ def _collect_receptors(
     base_dir: Path,
     prepared_manifest: dict,
     workflow_data: dict | None,
+    receptor_dirs: "tuple[Path, ...] | list[Path]" = (),
 ) -> list[dict]:
     groups: defaultdict[str, dict] = defaultdict(dict)
 
@@ -948,6 +950,34 @@ def _collect_receptors(
                     "pdbqt": pdbqt_path.resolve(),
                     "box": box_path.resolve(),
                 })
+
+    if not receptors and receptor_dirs:
+        # Receptor preparation produced nothing this run — e.g. mk_prepare_receptor
+        # failing against a newer Meeko CLI — but the receptors that produced the
+        # existing poses are still on disk. Recover exactly the stems those poses
+        # were docked against, so a re-optimisation pass (``optimization: gnina``)
+        # can run without re-preparing or re-docking anything. Deriving the stems
+        # from the existing output filenames is what keeps receptor-to-pose parity:
+        # it can never introduce a receptor variant the poses were not docked with.
+        stems = {p.name.split("__", 1)[0]
+                 for p in (base_dir / "docking").glob("*__*_vina_vina_out.pdbqt")
+                 if "__" in p.name}
+        for rdir in receptor_dirs:
+            rdir = Path(rdir)
+            if not rdir.is_dir():
+                continue
+            for stem in sorted(stems):
+                pdbqt_path = rdir / f"{stem}.pdbqt"
+                box_path = rdir / f"{stem}.box.txt"
+                if pdbqt_path.exists() and box_path.exists():
+                    receptors.append({
+                        "name": _normalize_key(pdbqt_path),
+                        "pdbqt": pdbqt_path.resolve(),
+                        "box": box_path.resolve(),
+                    })
+        if receptors:
+            print(f"  (receptor prep produced none; reusing {len(receptors)} already-prepared "
+                  f"receptor(s) matching the existing poses)")
 
     receptors.sort(key=lambda r: r["name"])
     return receptors
@@ -1650,7 +1680,10 @@ def run_autodock_vina(
     dock_dir.mkdir(parents=True, exist_ok=True)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    receptors = _collect_receptors(base_dir, prepared_manifest, protein_workflow_data)
+    _rec_root = cfg.get("receptors_dir")
+    receptors = _collect_receptors(
+        base_dir, prepared_manifest, protein_workflow_data,
+        receptor_dirs=([Path(_rec_root).expanduser() / "pdbqt"] if _rec_root else []))
     ligands = _collect_ligands(base_dir, prepared_manifest, ligand_workflow_data)
     print(f"Docking receptors: {len(receptors)} | ligands: {len(ligands)} | scoring: {scoring}")
 
@@ -1870,16 +1903,60 @@ def run_autodock_vina(
 #                      metric diffdock_gnina_rerank_analysis.py re-ranks on.
 #
 # Each pose is first rebuilt from its Vina PDBQT into a clean SDF (Meeko mk_export
-# via the embedded REMARK SMILES, Open Babel fallback) because smina/gnina cannot
-# parse Meeko's macrocycle glue pseudo-atoms (CG0/G0) — see the macrocycle
-# ring-opening fix. The original Vina PDBQT is never modified. Optimised poses are
+# via embedded REMARK SMILES, an authoritative SDF+serial map for MGLTools, or a
+# guarded Open Babel fallback) because smina/gnina cannot parse Meeko's macrocycle
+# glue pseudo-atoms (CG0/G0) — see the macrocycle ring-opening fix. The original
+# Vina PDBQT is never modified. Optimised poses are
 # written to a per-complex optimized_<tool>/ subfolder (one SDF per pose, rank
 # encoded in the filename) and both rankings + scores are recorded in
 # optimization_log.csv — mirroring run_diffdock.optimize_results so the downstream
 # reports treat AutoDock+gnina like the other tools' optimised variants.
 
-OPTIMIZER_TOOLS = ("smina", "gnina")
+# ``gnina`` is deliberately the historical/default CNN-rescore protocol.  Its
+# name, output directory, log identity, and cache provenance must stay stable:
+# existing benchmark trees contain many validated ``optimized_gnina`` caches.
+# ``gnina_refinement`` is a distinct protocol identity that uses the same gnina
+# executable but lets the CNN participate in geometry refinement.  It therefore
+# gets a separate output/cache/log namespace.
+OPTIMIZER_TOOLS = ("smina", "gnina", "gnina_refinement")
+_LEGACY_ALL_OPTIMIZERS = ("smina", "gnina")
 OPTIMIZER_CACHE_SCHEMA = 2
+_TEMPLATE_RECONSTRUCTION_CONVERTER = "rdkit_template_map"
+_TEMPLATE_RECONSTRUCTION_SCHEMA = "mgltools-template-coordinate-map-v1"
+_TEMPLATE_MAPPING_TOLERANCE_A = 0.002
+
+
+@dataclass(frozen=True)
+class MGLPoseTemplate:
+    """Authoritative ligand graph plus the MGLTools serial-coordinate map.
+
+    MGLTools PDBQT files do not carry bond orders.  The atom serials do remain
+    stable through Vina, however, so the prepared ligand's unchanged starting
+    coordinates provide a deterministic bridge from the authoritative SDF atom
+    indices to every docked pose.
+    """
+
+    ligand_name: str
+    template_sdf: Path
+    prepared_pdbqt: Path
+    molecule: Chem.Mol
+    atom_serial_map: Dict[int, int]
+    prepared_atom_signature: Tuple[Tuple[int, str], ...]
+    template_sha256: str
+    prepared_pdbqt_sha256: str
+    mapping_sha256: str
+
+    def converter_inputs(self) -> dict:
+        """Stable conversion inputs included in optimizer cache provenance."""
+        return {
+            "schema": _TEMPLATE_RECONSTRUCTION_SCHEMA,
+            "template_sdf": str(self.template_sdf),
+            "template_sdf_sha256": self.template_sha256,
+            "prepared_pdbqt": str(self.prepared_pdbqt),
+            "prepared_pdbqt_sha256": self.prepared_pdbqt_sha256,
+            "atom_serial_mapping_sha256": self.mapping_sha256,
+            "mapped_atom_count": len(self.atom_serial_map),
+        }
 
 
 @dataclass
@@ -1968,17 +2045,46 @@ _MK_EXPORT_OUTPUT_FLAG_CACHE: Dict[str, str] = {}
 _OPTIMIZER_PREFLIGHT_CACHE: Dict[str, dict] = {}
 
 
+def _optimizer_base_tool(tool: str) -> str:
+    """Executable family for a public optimizer protocol identity."""
+    normalized = str(tool).strip().lower()
+    if normalized == "gnina_refinement":
+        return "gnina"
+    if normalized in {"smina", "gnina"}:
+        return normalized
+    raise ValueError(f"unknown optimizer protocol {tool!r}")
+
+
+def _is_gnina_optimizer(tool: str) -> bool:
+    return _optimizer_base_tool(tool) == "gnina"
+
+
+def _required_cnn_scoring(tool: str) -> Optional[str]:
+    """Pinned CNN mode for a gnina protocol, else ``None`` for smina."""
+    normalized = str(tool).strip().lower()
+    if normalized == "gnina":
+        return "rescore"
+    if normalized == "gnina_refinement":
+        return "refinement"
+    _optimizer_base_tool(normalized)  # validate before returning
+    return None
+
+
 def resolve_optimizers(cfg: dict) -> List[str]:
     """Map the ``optimization`` config value to a list of tools to run."""
     mode = str(cfg.get("optimization", "none")).strip().lower()
     if mode in ("none", "off", "false", ""):
         return []
     if mode == "all":
-        return list(OPTIMIZER_TOOLS)
+        # Backward compatibility: ``all`` historically meant smina + gnina's
+        # default rescore protocol.  CNN refinement is opt-in via the explicit
+        # ``gnina_refinement`` value and is commonly run in a separate cell.
+        return list(_LEGACY_ALL_OPTIMIZERS)
     if mode in OPTIMIZER_TOOLS:
         return [mode]
     raise ValueError(
-        f"optimization must be one of none/smina/gnina/all (got {mode!r})"
+        "optimization must be one of "
+        f"none/smina/gnina/gnina_refinement/all (got {mode!r})"
     )
 
 
@@ -2006,11 +2112,23 @@ def _validate_optimizer_config(cfg: dict) -> None:
         raise ValueError(
             f"gnina_cnn_scoring must be one of {', '.join(sorted(_ALLOWED_CNN_SCORING))}"
         )
-    if "gnina" in tools and rank_by.startswith("cnn_") and cnn_scoring == "none":
+    for tool in tools:
+        required_cnn_scoring = _required_cnn_scoring(tool)
+        if required_cnn_scoring is not None and cnn_scoring != required_cnn_scoring:
+            raise ValueError(
+                f"optimization={tool!r} requires "
+                f"gnina_cnn_scoring={required_cnn_scoring!r} "
+                f"(got {cnn_scoring!r})"
+            )
+    if (
+        any(_is_gnina_optimizer(tool) for tool in tools)
+        and rank_by.startswith("cnn_")
+        and cnn_scoring == "none"
+    ):
         raise ValueError(
             f"optimize_rank_by={rank_by!r} requires gnina_cnn_scoring != 'none'"
         )
-    if "gnina" in tools and bool(cfg.get("gnina_use_gpu", False)):
+    if any(_is_gnina_optimizer(tool) for tool in tools) and bool(cfg.get("gnina_use_gpu", False)):
         lock_value = cfg.get("gpu_lock_file")
         if not isinstance(lock_value, (str, os.PathLike)) or not str(lock_value).strip():
             raise ValueError(
@@ -2052,7 +2170,7 @@ def _optimizer_settings(tool: str, cfg: dict) -> dict:
         "timeout_s": float(cfg.get("optimize_timeout", 300)),
         "num_modes": 1,
     }
-    if tool == "gnina":
+    if _is_gnina_optimizer(tool):
         settings.update({
             "cnn_scoring": str(cfg.get("gnina_cnn_scoring", "rescore")).strip().lower(),
             "cnn_model": str(
@@ -2066,13 +2184,14 @@ def _optimizer_settings(tool: str, cfg: dict) -> dict:
 
 def _resolve_optimizer_exe(tool: str, cfg: dict) -> str:
     """Locate a tool's executable: explicit config path → PATH → ''."""
-    explicit = cfg.get(f"{tool}_executable")
+    base_tool = _optimizer_base_tool(tool)
+    explicit = cfg.get(f"{base_tool}_executable")
     if explicit:
         path = os.path.expanduser(str(explicit))
         if Path(path).exists():
             return path
         return shutil.which(path) or ""
-    return shutil.which(tool) or ""
+    return shutil.which(base_tool) or ""
 
 
 def _gnina_subprocess_env(cfg: dict) -> dict:
@@ -2126,7 +2245,7 @@ def _interprocess_gpu_lock(lock_file: Path | str):
 def _probe_optimizer(tool: str, exe: str, cfg: dict) -> Tuple[bool, str]:
     """Run ``<exe> --version`` to confirm the binary actually loads (used by
     --dry-run to catch missing shared libraries before a real run)."""
-    env = _gnina_subprocess_env(cfg) if tool == "gnina" else None
+    env = _gnina_subprocess_env(cfg) if _is_gnina_optimizer(tool) else None
     try:
         proc = subprocess.run([exe, "--version"], capture_output=True, text=True,
                               timeout=30, env=env)
@@ -2331,7 +2450,7 @@ def _molecule_identity(mol: Chem.Mol) -> dict:
 
 def _required_score_columns(tool: str, cfg: dict) -> Set[str]:
     required = {"minimized_affinity"}
-    if tool == "gnina" and _optimizer_settings(tool, cfg)["cnn_scoring"] != "none":
+    if _is_gnina_optimizer(tool) and _optimizer_settings(tool, cfg)["cnn_scoring"] != "none":
         required.update({"cnn_score", "cnn_affinity"})
     return required
 
@@ -2542,6 +2661,14 @@ def _pdbqt_atom_coordinates(text: str) -> Dict[int, Tuple[float, float, float]]:
     return coordinates
 
 
+# Elements AutoDock Vina has no atom type for. Meeko writes them into the PDBQT with
+# a carbon type (so the force field can score them) but keeps the real element in the
+# ATOM-NAME column. Boron is the case that matters here: the JKU 2-APB analogue is a
+# boronate, and reading its type column as chemistry made every one of its poses
+# unreconstructible.
+_AUTODOCK_UNTYPEABLE_ELEMENTS = {"B", "Si", "Se", "Li", "Be", "Na", "K", "Ca", "Al"}
+
+
 def _pdbqt_atom_elements(text: str) -> Dict[int, str]:
     """Return PDBQT serial→element, interpreting AutoDock atom types safely."""
     autodock_elements = {
@@ -2577,14 +2704,249 @@ def _pdbqt_atom_elements(text: str) -> Dict[int, str]:
                         break
                 except RuntimeError:
                     continue
+        # AutoDock's type set cannot express every element. Meeko types boron (and
+        # other untypeable atoms) as carbon for the force field while keeping the
+        # true element in the ATOM-NAME column, so a type-derived element would
+        # read B as C and the SMILES-to-PDBQT element check would reject a pose
+        # that is in fact mapped correctly. Prefer the atom name when it names a
+        # real element that AutoDock has no type for. The per-atom coordinate
+        # identity check below is untouched and remains the guarantee of pose
+        # fidelity — this only stops the type column from being read as chemistry
+        # it was never able to carry.
+        if element == "C":
+            name_letters = re.sub(r"[^A-Za-z]", "", line[12:16])
+            if name_letters:
+                candidate = name_letters[0].upper() + name_letters[1:2].lower()
+                for sym in (candidate, name_letters[0].upper()):
+                    if sym in _AUTODOCK_UNTYPEABLE_ELEMENTS:
+                        element = sym
+                        break
         if element:
             elements[serial] = element
     return elements
 
 
+def _template_reconstruction_settings(
+    cfg: dict,
+) -> Tuple[bool, bool, Optional[Path], Optional[Path]]:
+    """Resolve and validate the optional authoritative-template configuration."""
+    required = bool(cfg.get("optimize_require_template_reconstruction", False))
+    template_value = cfg.get("optimize_ligand_template_root")
+    prepared_value = cfg.get("optimize_prepared_ligand_pdbqt_dir")
+    enabled = bool(required or template_value or prepared_value)
+    if not enabled:
+        return False, False, None, None
+    if not template_value or not prepared_value:
+        raise ValueError(
+            "template reconstruction requires both optimize_ligand_template_root "
+            "and optimize_prepared_ligand_pdbqt_dir"
+        )
+    template_root = Path(str(template_value)).expanduser().resolve()
+    prepared_root = Path(str(prepared_value)).expanduser().resolve()
+    if not template_root.is_dir():
+        raise ValueError(f"ligand template root is not a directory: {template_root}")
+    if not prepared_root.is_dir():
+        raise ValueError(
+            f"prepared ligand PDBQT directory is not a directory: {prepared_root}"
+        )
+    return True, required, template_root, prepared_root
+
+
+def _pdbqt_atom_type_signature(text: str) -> Tuple[Tuple[int, str], ...]:
+    """Return the ordered ``(serial, AutoDock type)`` ligand atom signature."""
+    signature: List[Tuple[int, str]] = []
+    seen: Set[int] = set()
+    for line in text.splitlines():
+        if not line.startswith(("ATOM", "HETATM")):
+            continue
+        try:
+            serial = int(line[6:11])
+        except (ValueError, IndexError) as e:
+            raise ValueError("PDBQT contains a malformed atom serial") from e
+        if serial in seen:
+            raise ValueError(f"PDBQT contains duplicate atom serial {serial}")
+        tail = line[77:].strip() if len(line) > 77 else ""
+        atom_type = tail.split()[0] if tail else ""
+        if not atom_type:
+            fields = line.split()
+            atom_type = fields[-1] if fields else ""
+        if not atom_type:
+            raise ValueError(f"PDBQT atom {serial} has no AutoDock type")
+        signature.append((serial, atom_type.upper()))
+        seen.add(serial)
+    if not signature:
+        raise ValueError("PDBQT contains no ligand atoms")
+    return tuple(signature)
+
+
+def _load_mgl_pose_template(
+    ligand_name: str,
+    template_sdf: Path,
+    prepared_pdbqt: Path,
+) -> MGLPoseTemplate:
+    """Build a strict SDF-atom to prepared-PDBQT-serial coordinate map."""
+    template_sdf = template_sdf.resolve()
+    prepared_pdbqt = prepared_pdbqt.resolve()
+    full_mol, message = _read_single_sdf_molecule(template_sdf)
+    if full_mol is None:
+        raise ValueError(f"invalid authoritative ligand SDF {template_sdf}: {message}")
+
+    # Remove ordinary explicit hydrogens, but deliberately retain hydrogens
+    # needed to encode double-bond stereochemistry (RDKit's default RemoveHs
+    # behaviour). RemoveAllHs would erase the directional imine identity in
+    # benchmark ligands such as 5SAK_ZRY and 8D5D_5DK.
+    template_mol = Chem.RemoveHs(full_mol)
+    if template_mol.GetNumConformers() != 1 or not template_mol.GetConformer().Is3D():
+        raise ValueError(f"authoritative ligand template is not a single 3D conformer: {template_sdf}")
+    try:
+        _molecule_identity(template_mol)
+    except Exception as e:
+        raise ValueError(f"invalid authoritative ligand chemistry in {template_sdf}: {e}") from e
+
+    try:
+        prepared_text = prepared_pdbqt.read_text(errors="strict")
+    except OSError as e:
+        raise ValueError(f"cannot read prepared ligand PDBQT {prepared_pdbqt}: {e}") from e
+    signature = _pdbqt_atom_type_signature(prepared_text)
+    coordinates = _pdbqt_atom_coordinates(prepared_text)
+    elements = _pdbqt_atom_elements(prepared_text)
+    signature_serials = {serial for serial, _ in signature}
+    if set(coordinates) != signature_serials:
+        raise ValueError(f"prepared ligand PDBQT has invalid atom coordinates: {prepared_pdbqt}")
+    if any(
+        not all(math.isfinite(value) for value in xyz)
+        for xyz in coordinates.values()
+    ):
+        raise ValueError(f"prepared ligand PDBQT has non-finite coordinates: {prepared_pdbqt}")
+    if set(elements) != signature_serials:
+        missing = sorted(signature_serials - set(elements))
+        raise ValueError(
+            f"prepared ligand PDBQT has unsupported atom types at serials {missing}: "
+            f"{prepared_pdbqt}"
+        )
+
+    tolerance_sq = _TEMPLATE_MAPPING_TOLERANCE_A ** 2
+    conformer = template_mol.GetConformer()
+    atom_serial_map: Dict[int, int] = {}
+    for atom in template_mol.GetAtoms():
+        atom_idx = atom.GetIdx()
+        point = conformer.GetAtomPosition(atom_idx)
+        candidates: List[int] = []
+        for serial, element in elements.items():
+            if element != atom.GetSymbol():
+                continue
+            xyz = coordinates[serial]
+            delta_sq = sum(
+                (actual - expected) ** 2
+                for actual, expected in zip((point.x, point.y, point.z), xyz)
+            )
+            if delta_sq <= tolerance_sq:
+                candidates.append(serial)
+        if len(candidates) != 1:
+            raise ValueError(
+                f"{ligand_name}: template atom {atom_idx + 1} ({atom.GetSymbol()}) "
+                f"has {len(candidates)} prepared-PDBQT coordinate matches"
+            )
+        atom_serial_map[atom_idx] = candidates[0]
+
+    mapped_serials = list(atom_serial_map.values())
+    if len(set(mapped_serials)) != len(mapped_serials):
+        raise ValueError(f"{ligand_name}: template-to-PDBQT atom map is not one-to-one")
+    mapped_heavy = {
+        serial for atom_idx, serial in atom_serial_map.items()
+        if template_mol.GetAtomWithIdx(atom_idx).GetAtomicNum() != 1
+    }
+    prepared_heavy = {serial for serial, element in elements.items() if element != "H"}
+    if mapped_heavy != prepared_heavy:
+        raise ValueError(
+            f"{ligand_name}: authoritative template and prepared PDBQT heavy atoms differ "
+            f"(template-only={sorted(mapped_heavy - prepared_heavy)}, "
+            f"PDBQT-only={sorted(prepared_heavy - mapped_heavy)})"
+        )
+
+    mapping_material = json.dumps(
+        sorted(atom_serial_map.items()), separators=(",", ":"),
+    ).encode()
+    return MGLPoseTemplate(
+        ligand_name=ligand_name,
+        template_sdf=template_sdf,
+        prepared_pdbqt=prepared_pdbqt,
+        molecule=template_mol,
+        atom_serial_map=atom_serial_map,
+        prepared_atom_signature=signature,
+        template_sha256=_sha256_file(template_sdf),
+        prepared_pdbqt_sha256=_sha256_file(prepared_pdbqt),
+        mapping_sha256=hashlib.sha256(mapping_material).hexdigest(),
+    )
+
+
+def _resolve_mgl_pose_template(ligand_name: str, cfg: dict) -> Optional[MGLPoseTemplate]:
+    """Resolve one result's authoritative SDF and prepared MGLTools PDBQT."""
+    enabled, required, template_root, prepared_root = (
+        _template_reconstruction_settings(cfg)
+    )
+    if not enabled or template_root is None or prepared_root is None:
+        return None
+    if Path(ligand_name).name != ligand_name:
+        raise ValueError(f"unsafe ligand name for template lookup: {ligand_name!r}")
+
+    candidates: List[Path] = []
+    suffix = "_ligand_start_conf"
+    if ligand_name.endswith(suffix) and len(ligand_name) > len(suffix):
+        complex_id = ligand_name[: -len(suffix)]
+        candidates.append(template_root / complex_id / f"{complex_id}{suffix}.sdf")
+    candidates.append(template_root / f"{ligand_name}.sdf")
+    template_sdf = next((path for path in candidates if path.is_file()), None)
+    prepared_pdbqt = prepared_root / f"{ligand_name}.pdbqt"
+    if template_sdf is None or not prepared_pdbqt.is_file():
+        if required:
+            raise ValueError(
+                f"{ligand_name}: required template pair is missing "
+                f"(SDF candidates={[str(path) for path in candidates]}, "
+                f"prepared PDBQT={prepared_pdbqt})"
+            )
+        return None
+    return _load_mgl_pose_template(ligand_name, template_sdf, prepared_pdbqt)
+
+
+def preflight_mgl_pose_templates(
+    ligand_names: Iterable[str],
+    cfg: dict,
+) -> Dict[str, MGLPoseTemplate]:
+    """Load every requested authoritative template pair before optimizer work.
+
+    Thin benchmark drivers can call this during ``--verify-only`` so a missing,
+    ambiguous, or atom-incompatible ligand fails before the long-running job is
+    launched.
+    """
+    enabled, required, _, _ = _template_reconstruction_settings(cfg)
+    if not enabled:
+        return {}
+    resolved: Dict[str, MGLPoseTemplate] = {}
+    errors: List[str] = []
+    for ligand_name in sorted({str(name) for name in ligand_names}):
+        try:
+            context = _resolve_mgl_pose_template(ligand_name, cfg)
+        except Exception as e:
+            errors.append(f"{ligand_name}: {e}")
+            continue
+        if context is None:
+            if required:
+                errors.append(f"{ligand_name}: required template context was not resolved")
+            continue
+        resolved[ligand_name] = context
+    if errors:
+        preview = "; ".join(errors[:10])
+        if len(errors) > 10:
+            preview += f"; ... {len(errors) - 10} more"
+        raise ValueError(f"template reconstruction preflight failed: {preview}")
+    return resolved
+
+
 def _validate_reconstructed_sdf(
     model_pdbqt: Path,
     out_sdf: Path,
+    pose_template: Optional[MGLPoseTemplate] = None,
 ) -> Tuple[bool, str, Optional[dict]]:
     """Verify chemistry and PDBQT→SDF atom-coordinate mapping."""
     try:
@@ -2601,13 +2963,121 @@ def _validate_reconstructed_sdf(
     except Exception as e:
         return False, f"cannot determine reconstructed molecule identity: {e}", None
 
-    if smiles:
+    if pose_template is not None:
+        try:
+            pose_signature = _pdbqt_atom_type_signature(source_text)
+        except ValueError as e:
+            return False, f"invalid template-mapped source pose: {e}", None
+        if pose_signature != pose_template.prepared_atom_signature:
+            return False, (
+                "docked pose atom serial/type signature differs from the prepared "
+                "MGLTools ligand"
+            ), None
+        coordinates = _pdbqt_atom_coordinates(source_text)
+        elements = _pdbqt_atom_elements(source_text)
+        signature_serials = {serial for serial, _ in pose_signature}
+        if set(coordinates) != signature_serials or set(elements) != signature_serials:
+            return False, "docked pose has invalid coordinates or AutoDock atom types", None
+        if any(
+            not all(math.isfinite(value) for value in xyz)
+            for xyz in coordinates.values()
+        ):
+            return False, "docked pose has non-finite atom coordinates", None
+
+        expected = pose_template.molecule
+        try:
+            expected_identity = _molecule_identity(expected)
+            forward_mapping = mol.GetSubstructMatch(expected, useChirality=True)
+            reverse_mapping = expected.GetSubstructMatch(mol, useChirality=True)
+        except Exception as e:
+            return False, f"cannot compare reconstructed template topology: {e}", None
+        invariant_fields = (
+            "canonical_isomeric_smiles", "formula", "heavy_atom_count",
+        )
+        if any(
+            identity.get(field) != expected_identity.get(field)
+            for field in invariant_fields
+        ):
+            return False, (
+                "reconstructed molecule does not match authoritative SDF topology"
+            ), None
+        if (
+            mol.GetNumAtoms() != expected.GetNumAtoms()
+            or len(forward_mapping) != expected.GetNumAtoms()
+            or len(reverse_mapping) != mol.GetNumAtoms()
+        ):
+            return False, (
+                "reconstructed molecule has no complete chirality-preserving "
+                "authoritative-template mapping"
+            ), None
+
+        conformer = mol.GetConformer()
+        tolerance_sq = _TEMPLATE_MAPPING_TOLERANCE_A ** 2
+        for atom_idx, serial in pose_template.atom_serial_map.items():
+            output_atom = mol.GetAtomWithIdx(atom_idx)
+            expected_atom = expected.GetAtomWithIdx(atom_idx)
+            if output_atom.GetAtomicNum() != expected_atom.GetAtomicNum():
+                return False, (
+                    f"reconstructed SDF changed template atom {atom_idx + 1} identity"
+                ), None
+            if elements.get(serial) != expected_atom.GetSymbol():
+                return False, (
+                    f"element mapping mismatch for template atom {atom_idx + 1} "
+                    f"and PDBQT atom {serial}"
+                ), None
+            position = conformer.GetAtomPosition(atom_idx)
+            pose_position = coordinates[serial]
+            delta_sq = sum(
+                (actual - expected_coordinate) ** 2
+                for actual, expected_coordinate in zip(
+                    (position.x, position.y, position.z), pose_position,
+                )
+            )
+            if delta_sq > tolerance_sq:
+                return False, (
+                    f"coordinate mapping mismatch for template atom {atom_idx + 1} "
+                    f"and PDBQT atom {serial}"
+                ), None
+    elif smiles:
         expected = Chem.MolFromSmiles(smiles)
         if expected is None:
             return False, "invalid REMARK SMILES in source PDBQT", None
         expected_identity = _molecule_identity(expected)
-        if identity != expected_identity:
+        # Atom chiral tags (CW/CCW) encode parity relative to the molecule's
+        # internal bond ordering, and SDF can represent an unspecified,
+        # non-stereogenic double bond as STEREOANY instead of STEREONONE.
+        # Consequently, atoms_by_index/bonds_by_index are useful diagnostics
+        # but are not serialization-stable identity invariants.  Compare the
+        # canonical chemistry first, then require a complete chirality-aware
+        # graph match in both directions.  The explicit REMARK mapping checks
+        # below still enforce index, element and coordinate preservation.
+        invariant_fields = (
+            "canonical_isomeric_smiles", "formula", "heavy_atom_count",
+        )
+        if any(
+            identity.get(field) != expected_identity.get(field)
+            for field in invariant_fields
+        ):
             return False, "reconstructed molecule does not match REMARK SMILES topology", None
+        try:
+            expected_heavy = Chem.RemoveHs(expected)
+            reconstructed_heavy = Chem.RemoveHs(mol)
+            forward_mapping = reconstructed_heavy.GetSubstructMatch(
+                expected_heavy, useChirality=True,
+            )
+            reverse_mapping = expected_heavy.GetSubstructMatch(
+                reconstructed_heavy, useChirality=True,
+            )
+        except Exception as e:
+            return False, f"cannot compare reconstructed molecule topology: {e}", None
+        if (
+            len(forward_mapping) != expected_heavy.GetNumAtoms()
+            or len(reverse_mapping) != reconstructed_heavy.GetNumAtoms()
+        ):
+            return False, (
+                "reconstructed molecule has no complete chirality-preserving "
+                "REMARK SMILES topology mapping"
+            ), None
 
         mapping = _remark_smiles_mapping(source_text)
         # Meeko's SMILES IDX maps every atom explicitly represented by REMARK
@@ -2696,14 +3166,86 @@ def _validate_reconstructed_sdf(
     return True, "validated", identity
 
 
-def _convert_pose_to_sdf(model_pdbqt: Path, out_sdf: Path, converters: Dict[str, str]) -> Tuple[bool, str]:
+def _reconstruct_template_pose_sdf(
+    model_pdbqt: Path,
+    out_sdf: Path,
+    pose_template: MGLPoseTemplate,
+) -> Tuple[bool, str]:
+    """Copy docked serial coordinates onto an authoritative RDKit SDF graph."""
+    try:
+        source_text = model_pdbqt.read_text(errors="strict")
+        pose_signature = _pdbqt_atom_type_signature(source_text)
+    except (OSError, ValueError) as e:
+        return False, f"cannot read template-mapped pose: {e}"
+    if pose_signature != pose_template.prepared_atom_signature:
+        return False, (
+            "docked pose atom serial/type signature differs from the prepared "
+            "MGLTools ligand"
+        )
+    coordinates = _pdbqt_atom_coordinates(source_text)
+    elements = _pdbqt_atom_elements(source_text)
+    signature_serials = {serial for serial, _ in pose_signature}
+    if set(coordinates) != signature_serials or set(elements) != signature_serials:
+        return False, "docked pose has invalid coordinates or AutoDock atom types"
+    if any(
+        not all(math.isfinite(value) for value in xyz)
+        for xyz in coordinates.values()
+    ):
+        return False, "docked pose has non-finite atom coordinates"
+
+    reconstructed = Chem.Mol(pose_template.molecule)
+    conformer = reconstructed.GetConformer()
+    for atom_idx, serial in pose_template.atom_serial_map.items():
+        expected_element = reconstructed.GetAtomWithIdx(atom_idx).GetSymbol()
+        if elements.get(serial) != expected_element:
+            return False, (
+                f"element mapping mismatch for template atom {atom_idx + 1} "
+                f"and PDBQT atom {serial}"
+            )
+        conformer.SetAtomPosition(atom_idx, coordinates[serial])
+
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{out_sdf.stem}.", suffix=".sdf", dir=str(out_sdf.parent),
+    )
+    os.close(fd)
+    temporary = Path(temporary_name)
+    temporary.unlink(missing_ok=True)
+    try:
+        writer = Chem.SDWriter(str(temporary))
+        if writer is None:
+            return False, "RDKit could not create the template-reconstructed SDF"
+        try:
+            writer.write(reconstructed)
+        finally:
+            writer.close()
+        ok, message, _ = _validate_reconstructed_sdf(
+            model_pdbqt, temporary, pose_template,
+        )
+        if not ok:
+            return False, f"template reconstruction validation failed: {message}"
+        os.replace(temporary, out_sdf)
+        return True, _TEMPLATE_RECONSTRUCTION_CONVERTER
+    except Exception as e:
+        return False, f"template reconstruction failed: {e}"
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _convert_pose_to_sdf(
+    model_pdbqt: Path,
+    out_sdf: Path,
+    converters: Dict[str, str],
+    pose_template: Optional[MGLPoseTemplate] = None,
+) -> Tuple[bool, str]:
     """Reconstruct a real-molecule SDF from a single Vina pose PDBQT.
 
     smina/gnina cannot parse Meeko's macrocycle glue pseudo-atom types (CG0/G0),
     so every pose is first rebuilt into a clean SDF. Meeko ``mk_export`` uses the
     embedded ``REMARK SMILES`` to restore exact bond orders (closing macrocycle
-    rings and dropping glue atoms); Open Babel is the fallback for PDBQTs without
-    that header. Returns ``(ok, message)``.
+    rings and dropping glue atoms). For MGLTools poses, an optional authoritative
+    SDF/prepared-PDBQT context transfers docked coordinates without asking Open
+    Babel to perceive any bonds. Open Babel remains the legacy fallback when no
+    authoritative topology is configured. Returns ``(ok, converter_or_error)``.
     """
     out_sdf.parent.mkdir(parents=True, exist_ok=True)
     out_sdf.unlink(missing_ok=True)
@@ -2751,6 +3293,11 @@ def _convert_pose_to_sdf(model_pdbqt: Path, out_sdf: Path, converters: Dict[str,
             return False, f"mk_export failed: {e}; unsafe Open Babel fallback disabled"
         finally:
             Path(tmp_name).unlink(missing_ok=True)
+
+    if pose_template is not None:
+        return _reconstruct_template_pose_sdf(
+            model_pdbqt, out_sdf, pose_template,
+        )
 
     if has_macrocycle_glue:
         return False, (
@@ -2836,7 +3383,7 @@ def run_optimizer_tool(
     # ligand at its input pose and never run a global search, so the optimised
     # pose stays in the same pocket — preserving the pose identity we re-rank.
     cmd.append("--minimize" if search == "minimize" else "--local_only")
-    if tool == "gnina":
+    if _is_gnina_optimizer(tool):
         cmd.extend(["--cnn_scoring", settings["cnn_scoring"]])
         if settings["cnn_model_file"]:
             cmd.extend(["--cnn_model", settings["cnn_model_file"]])
@@ -2845,11 +3392,11 @@ def run_optimizer_tool(
         if not settings["use_gpu"]:
             cmd.append("--no_gpu")
 
-    proc_env = _gnina_subprocess_env(cfg) if tool == "gnina" else None
+    proc_env = _gnina_subprocess_env(cfg) if _is_gnina_optimizer(tool) else None
 
     gpu_lock = (
         _interprocess_gpu_lock(cfg["gpu_lock_file"])
-        if tool == "gnina" and settings["use_gpu"]
+        if _is_gnina_optimizer(tool) and settings["use_gpu"]
         else contextlib.nullcontext()
     )
     try:
@@ -2906,7 +3453,14 @@ def _build_optimizer_provenance(
     optimizer_exe: str,
     optimizer_version: str,
     input_identity: dict,
+    converter_inputs: Optional[dict] = None,
 ) -> dict:
+    converter_material = {
+        "name": converter,
+        **_executable_identity(converter_exe, converter_version),
+    }
+    if converter_inputs:
+        converter_material["inputs"] = dict(converter_inputs)
     material = {
         "schema_version": OPTIMIZER_CACHE_SCHEMA,
         "pipeline": "run_autodock.optimize_autodock_results",
@@ -2918,10 +3472,7 @@ def _build_optimizer_provenance(
         "rank_metric": str(cfg.get("optimize_rank_by", "minimized_affinity")).strip().lower(),
         "settings": _optimizer_settings(tool, cfg),
         "optimizer": _executable_identity(optimizer_exe, optimizer_version),
-        "converter": {
-            "name": converter,
-            **_executable_identity(converter_exe, converter_version),
-        },
+        "converter": converter_material,
         "input_identity": input_identity,
     }
     encoded = json.dumps(material, sort_keys=True, separators=(",", ":")).encode()
@@ -3032,7 +3583,7 @@ def _optimizer_preflight(
         exes[tool] = exe
         optimizer_versions[tool] = version
         settings = _optimizer_settings(tool, cfg)
-        if tool == "gnina":
+        if _is_gnina_optimizer(tool):
             model_file = settings.get("cnn_model_file", "")
             model = settings.get("cnn_model", "")
             if model_file and not Path(model_file).is_file():
@@ -3093,11 +3644,34 @@ def _optimizer_preflight(
                 converters[name] = ""
                 continue
             converter_versions[name] = _converter_version(name, exe)
-    if cfg.get("optimize_require_mk_export", True) and not converters.get("mk_export"):
+
+    template_enabled = False
+    template_required = bool(
+        cfg.get("optimize_require_template_reconstruction", False)
+    )
+    try:
+        template_enabled, template_required, _, _ = (
+            _template_reconstruction_settings(cfg)
+        )
+    except ValueError as e:
+        errors.append(f"template reconstruction preflight failed: {e}")
+    if template_enabled:
+        converters[_TEMPLATE_RECONSTRUCTION_CONVERTER] = str(
+            Path(__file__).resolve()
+        )
+        converter_versions[_TEMPLATE_RECONSTRUCTION_CONVERTER] = (
+            f"rdkit {Chem.rdBase.rdkitVersion}; {_TEMPLATE_RECONSTRUCTION_SCHEMA}"
+        )
+
+    require_mk_export = bool(cfg.get("optimize_require_mk_export", True))
+    if (
+        require_mk_export and not template_required
+        and not converters.get("mk_export")
+    ):
         errors.append(
             "Meeko mk_export not found (required for REMARK SMILES/macrocycle-safe reconstruction)"
         )
-    elif not converters.get("mk_export") and not converters.get("obabel"):
+    elif not any(converters.values()):
         errors.append("no PDBQT→SDF converter found")
     return exes, optimizer_versions, converters, converter_versions, errors
 
@@ -3123,6 +3697,8 @@ def preflight_optimizers(cfg: dict, *, refresh: bool = False) -> dict:
         "optimization", "smina_executable", "gnina_executable",
         "mk_export_executable", "obabel_executable", "gnina_lib_dirs",
         "gnina_python", "diffdock_python", "optimize_require_mk_export",
+        "optimize_require_template_reconstruction",
+        "optimize_ligand_template_root", "optimize_prepared_ligand_pdbqt_dir",
         "optimize_search", "optimize_scoring", "optimize_autobox_add",
         "optimize_cpu", "optimize_seed", "gnina_cnn_scoring",
         "gnina_cnn_model", "gnina_cnn_model_file", "gnina_use_gpu",
@@ -3199,7 +3775,21 @@ def _write_optimization_log(
         try:
             if log_path.exists():
                 try:
-                    df_old = pd.read_csv(log_path)
+                    # Pandas' native CSV parser can abort the entire process on
+                    # otherwise valid optimizer logs (observed as SIGSEGV in
+                    # pandas_parser.so).  The stdlib reader is fast enough for
+                    # these small per-complex logs and, importantly, turns bad
+                    # input into a catchable Python exception.
+                    with log_path.open("r", encoding="utf-8-sig", newline="") as handle:
+                        reader = csv.DictReader(handle)
+                        if not reader.fieldnames:
+                            raise ValueError("optimization log has no header")
+                        records = list(reader)
+                        if any(None in row for row in records):
+                            raise ValueError("optimization log has excess CSV fields")
+                    df_old = pd.DataFrame.from_records(
+                        records, columns=reader.fieldnames,
+                    )
                 except Exception:
                     # Never merge against a malformed/truncated concurrent log.
                     df_old = pd.DataFrame(columns=OPTIMIZATION_LOG_COLUMNS)
@@ -3223,7 +3813,11 @@ def _write_optimization_log(
             )
             key_cols = ["combo_name", "tool", "autodock_rank"]
             if not df_all.empty and set(key_cols).issubset(df_all.columns):
-                df_all = df_all.drop_duplicates(subset=key_cols, keep="last")
+                # Existing CSV values are strings while freshly generated ranks
+                # are integers. Compare normalized keys without changing the
+                # values written to the merged log.
+                normalized_keys = df_all[key_cols].astype(str)
+                df_all = df_all.loc[~normalized_keys.duplicated(keep="last")]
             extra_columns = [
                 column for column in df_all.columns
                 if column not in OPTIMIZATION_LOG_COLUMNS
@@ -3298,7 +3892,12 @@ def discover_existing_autodock_results(
         source_scoring = scoring_match.group(1)
         ligand_name = ligand_part[: scoring_match.start()]
         discovered.append(DockingResult(
-            protein_name=get_file_stem(receptor),
+            # The output prefix is the exact receptor identity used by the live
+            # docking path.  Do not pass the prepared receptor through
+            # ``get_file_stem`` here: that helper strips the semantic token
+            # ``_protein`` and would give optimizer-only/resumed runs a
+            # different combo_name from freshly docked runs.
+            protein_name=protein_prefix,
             ligand_name=ligand_name,
             protein_path=receptor,
             ligand_path=pose_path,
@@ -3369,6 +3968,27 @@ def optimize_autodock_results(
     ]
     summary.target_complexes = len(targets)
 
+    pose_templates: Dict[int, Optional[MGLPoseTemplate]] = {
+        id(result): None for result in targets
+    }
+    try:
+        template_enabled, _, _, _ = _template_reconstruction_settings(cfg)
+    except ValueError as e:
+        summary.status = "preflight_failed"
+        summary.errors.append(f"template reconstruction preflight failed: {e}")
+        raise OptimizationError(summary.errors[-1], summary) from e
+    if template_enabled:
+        try:
+            templates_by_ligand = preflight_mgl_pose_templates(
+                (result.ligand_name for result in targets), cfg,
+            )
+        except ValueError as e:
+            summary.status = "preflight_failed"
+            summary.errors.append(str(e))
+            raise OptimizationError(str(e), summary) from e
+        for result in targets:
+            pose_templates[id(result)] = templates_by_ligand.get(result.ligand_name)
+
     print("\n" + "=" * 80)
     print(f"Pose optimization + re-ranking: {', '.join(tools)}")
     print("=" * 80)
@@ -3387,6 +4007,7 @@ def optimize_autodock_results(
     for idx, r in enumerate(targets, 1):
         receptor = Path(r.protein_path)
         pose_pdbqt = Path(r.pose_files[0])
+        pose_template = pose_templates[id(r)]
         combo_name = f"{r.ligand_name}__{r.protein_name}"
         pose_cfg = {
             **cfg,
@@ -3422,10 +4043,20 @@ def optimize_autodock_results(
                         _discard_optimizer_cache(out_sdf)
                     t0 = time.time()
                     pose_sdf = Path(tmp) / f"{pose_file.stem}_in.sdf"
-                    conv_ok, conv_msg = _convert_pose_to_sdf(
-                        pose_file, pose_sdf, converters,
-                    )
+                    if pose_template is None:
+                        conv_ok, conv_msg = _convert_pose_to_sdf(
+                            pose_file, pose_sdf, converters,
+                        )
+                    else:
+                        conv_ok, conv_msg = _convert_pose_to_sdf(
+                            pose_file, pose_sdf, converters, pose_template,
+                        )
                     converter = conv_msg if conv_ok else ""
+                    active_pose_template = (
+                        pose_template
+                        if converter == _TEMPLATE_RECONSTRUCTION_CONVERTER
+                        else None
+                    )
                     converter_version = converter_versions.get(converter, "")
                     provenance: Optional[dict] = None
                     expected_identity: Optional[dict] = None
@@ -3436,9 +4067,16 @@ def optimize_autodock_results(
                         ok, scores = False, {}
                         msg = f"pdbqt→sdf failed: {conv_msg}"
                     else:
-                        valid_input, input_message, expected_identity = (
-                            _validate_reconstructed_sdf(pose_file, pose_sdf)
-                        )
+                        if active_pose_template is None:
+                            valid_input, input_message, expected_identity = (
+                                _validate_reconstructed_sdf(pose_file, pose_sdf)
+                            )
+                        else:
+                            valid_input, input_message, expected_identity = (
+                                _validate_reconstructed_sdf(
+                                    pose_file, pose_sdf, active_pose_template,
+                                )
+                            )
                         if not valid_input or expected_identity is None:
                             _discard_optimizer_cache(out_sdf)
                             ok, scores = False, {}
@@ -3457,6 +4095,10 @@ def optimize_autodock_results(
                                     optimizer_exe=exes[tool],
                                     optimizer_version=optimizer_versions[tool],
                                     input_identity=expected_identity,
+                                    converter_inputs=(
+                                        active_pose_template.converter_inputs()
+                                        if active_pose_template is not None else None
+                                    ),
                                 )
                             except Exception as e:
                                 _discard_optimizer_cache(out_sdf)
@@ -3701,10 +4343,14 @@ def main():
         help="Validate configuration and inputs without running docking",
     )
     parser.add_argument(
-        "--optimize", choices=["none", "smina", "gnina", "all"], default=None,
+        "--optimize",
+        choices=["none", "smina", "gnina", "gnina_refinement", "all"],
+        default=None,
         help="Post-dock pose optimisation + re-ranking tool (overrides the config "
              "'optimization' key). Poses are locally minimised and re-ranked on the "
-             "optimiser's affinity while the original Vina rank is preserved.",
+             "optimiser's affinity while the original Vina rank is preserved. "
+             "'gnina' preserves the historical CNN-rescore protocol; "
+             "'gnina_refinement' requires gnina_cnn_scoring=refinement.",
     )
     args = parser.parse_args()
 

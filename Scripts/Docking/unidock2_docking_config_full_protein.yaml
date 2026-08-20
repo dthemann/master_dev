@@ -51,6 +51,16 @@ gpu_device_id:  0
 gpu_lock_file: /tmp/master_docking_gpu0.lock
 n_cpu:          1             # one ligand/call; avoid Uni-Dock2's default 32-worker pool
 
+# CPU receptor-prep concurrency. Uni-Dock2 receptor prep (pdbfixer + AmberTools tleap)
+# is single-threaded, GPU-free, and dominates wall time, so the driver runs it as a
+# separate `unidock2 protein_prep` step across this many worker threads while a single
+# GPU-locked consumer docks each already-prepared (.dms) receptor in submission order.
+# The GPU shots (~2 s each) then run back-to-back instead of once per prep-time, which
+# is what recovers the otherwise-idle GPU. Docking output is byte-identical to the
+# all-in-one path — this only changes scheduling. Tune to cores (i9-14900HX: 32 threads);
+# 8 is a safe default that leaves headroom for the occasional 20k-42k-atom giant prep.
+prep_workers:   8
+
 # ── Receptor/ligand preprocessing protocol (pin v0.6.3 defaults explicitly) ──
 construct_ff:                false
 template_docking:            false

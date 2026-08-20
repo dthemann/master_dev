@@ -83,7 +83,7 @@ validation_receptor_directories:
 
 save_interval: 200
 overwrite: false
-num_workers: 0
+num_workers: 12
 
 # ---------------------------------------------------------------------------
 # Performance / stability (see posebusters_benchmark_config.yaml for the full
@@ -92,8 +92,8 @@ num_workers: 0
 quiet: true
 limit_worker_threads: true
 worker_maxtasks: 200
-pose_timeout: null
-stall_timeout: null
+pose_timeout: 600
+stall_timeout: 1800
 max_restarts: 5
 monitor: true
 monitor_interval: 30

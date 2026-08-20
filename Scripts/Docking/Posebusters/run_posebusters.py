@@ -10,6 +10,7 @@ outputs."""
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import importlib.metadata
 import json
@@ -251,7 +252,8 @@ class PipelineConfig:
     max_restarts: int = 5
 
     # Variant restriction: keep only the listed variant(s) per tool when
-    # collecting poses. AutoDock and DiffDock use optimizer
+    # collecting poses. AutoDock uses optimizer
+    # (original/smina/gnina/gnina_refinement), DiffDock uses
     # (original/smina/gnina), EquiBind uses refine_variant (raw/smina/gnina),
     # and tiled Uni-Dock uses variant=tiled. Empty -> keep every variant
     # (default). See _apply_variant_filter / config key `variant_filter`.
@@ -278,6 +280,13 @@ _VARIANT_FIELD = {
     "diffdock": "optimizer",
     "equibind": "refine_variant",
 }
+
+# AutoDock-specific post-processing identities.  ``gnina`` deliberately keeps
+# its historical meaning (empirical minimization followed by CNN rescoring),
+# while ``gnina_refinement`` is the distinct CNN-refinement protocol.  Keep this
+# separate from DiffDock/EquiBind variant sets: those pipelines have no new
+# alias and their existing ``gnina`` meaning must not change.
+_AUTODOCK_OPTIMIZER_VARIANTS = ("smina", "gnina", "gnina_refinement")
 
 
 def _variant_base_method(key: str) -> str:
@@ -384,7 +393,8 @@ def load_config(config_path: str | Path) -> PipelineConfig:
 
     # variant_filter: restrict which per-tool variant is validated. Keys are the
     # docking_directories method keys (or base tool names); values are the variant
-    # label(s) to KEEP (a scalar or a list). AutoDock/DiffDock use optimizer
+    # label(s) to KEEP (a scalar or a list). AutoDock uses optimizer
+    # (original/smina/gnina/gnina_refinement), DiffDock uses
     # (original/smina/gnina), EquiBind uses refine_variant (raw/smina/gnina), and
     # Uni-Dock uses variant=tiled. A tool not listed keeps every variant.
     # See _apply_variant_filter.
@@ -605,6 +615,8 @@ _METADATA_COLS = {
     # AutoDock/DiffDock post-pose optimizer provenance (original / smina / gnina).
     "optimizer", "optimization_log_file", "optimizer_provenance_file",
     "optimizer_provenance_fingerprint", "source_pose_model_sha256",
+    "source_scoring", "optimizer_scoring", "optimizer_search",
+    "cnn_scoring", "cnn_model",
     # Tiled Uni-Dock native rank/affinity and provenance.
     "unidock_rank", "unidock_affinity", "variant", "scoring", "engine",
     "docking_receptor_file", "docking_summary_file",
@@ -758,8 +770,10 @@ def coerce_test_cols_to_bool(df: pd.DataFrame, test_cols: list[str]) -> None:
 # emitted by every collector aligns and `filter_common_combos` can intersect.
 _PROTEIN_SUFFIXES = ("_cleaned", "_clean", "_protein", "_receptor")
 _LIGAND_SUFFIXES = (
+    "_ligand_start_conf_vinardo",  # AutoDock Vinardo scoring
     "_ligand_start_conf_vina",   # AutoDock (post-meeko/mgltools naming)
     "_ligand_start_conf",        # EquiBind
+    "_start_conf_vinardo",
     "_start_conf_vina",
     "_start_conf",               # DiffDock
     "_ligand",
@@ -1112,87 +1126,199 @@ def _autodock_optimized_rows(
     if log_path is None:
         return []
     try:
-        log = pd.read_csv(log_path, low_memory=False)
+        # Some valid optimizer logs trigger an uncatchable SIGSEGV in the
+        # Pandas 2.3 native parser (notably benchmark complex 7F51_BA7).  These
+        # per-complex files are small, so use the stdlib parser and turn any
+        # malformed input into an ordinary, fail-closed Python exception.
+        with log_path.open("r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            if not reader.fieldnames:
+                return []
+            records = list(reader)
+            if any(None in record for record in records):
+                return []
+        log = pd.DataFrame.from_records(records, columns=reader.fieldnames)
     except Exception:
         return []
     required = {"tool", "autodock_rank", "optimized_rank", "optimized_file", "status"}
     if not required.issubset(log.columns):
         return []
     affinities = dict(current_models)
+    raw_ranks = sorted(affinities)
+    # Vina's model numbers are its rank axis.  A malformed/non-contiguous raw
+    # axis cannot define an optimizer selection scope safely.
+    if raw_ranks != list(range(1, len(raw_ranks) + 1)):
+        return []
     model_digests = _autodock_model_sha256s(pdbqt_file)
     if set(model_digests) != set(affinities):
         return []
-    committed: dict[tuple[str, int], dict] = {}
+
+    # The optimizer writes optimization_log.csv atomically after processing a
+    # complete complex/tool scope, with one row for every rank selected by
+    # optimize_top_n (including failed ranks).  Keep that full row scope as the
+    # commit boundary: silently dropping a failed/missing row would otherwise
+    # expose a shorter, scientifically biased optimizer variant downstream.
+    scoped_records: dict[str, list[dict]] = {
+        tool: [] for tool in _AUTODOCK_OPTIMIZER_VARIANTS
+    }
+    invalid_scopes: set[str] = set()
+    explicit_top_n: dict[str, set[int]] = {
+        tool: set() for tool in _AUTODOCK_OPTIMIZER_VARIANTS
+    }
+
+    def _record_top_n(value: Any) -> tuple[int | None, bool]:
+        """Return (top_n, valid); blank means legacy/no explicit evidence."""
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None, True
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return None, False
+        if not np.isfinite(number):
+            # pandas represents an absent CSV field as NaN.
+            return (None, True) if np.isnan(number) else (None, False)
+        if number < 0 or not number.is_integer():
+            return None, False
+        return int(number), True
+
     for record in log.to_dict("records"):
         tool = str(record.get("tool") or "").strip().lower()
-        if tool not in {"smina", "gnina"} or not _autodock_variant_ok(tool, keep_variants):
-            continue
-        if str(record.get("status") or "").strip().lower() != "success":
+        if (tool not in _AUTODOCK_OPTIMIZER_VARIANTS
+                or not _autodock_variant_ok(tool, keep_variants)):
             continue
         source_name = str(record.get("pose_file") or "").strip()
-        if source_name and source_name.lower() != "nan" and Path(source_name).name != pdbqt_file.name:
+        if not source_name or source_name.lower() == "nan":
+            # Without the source filename a failed row cannot be attributed to
+            # one raw container, so the tool scope is ambiguous and fails shut.
+            invalid_scopes.add(tool)
+            continue
+        if Path(source_name).name != pdbqt_file.name:
             continue
         autodock_rank = _positive_int(record.get("autodock_rank"))
-        optimized_rank = _positive_int(record.get("optimized_rank"))
-        if autodock_rank not in affinities or optimized_rank is None:
+        if autodock_rank is None:
+            invalid_scopes.add(tool)
             continue
-        rank_metric = str(record.get("rank_metric") or "").strip().lower()
-        if rank_metric not in {"minimized_affinity", "cnn_affinity", "cnn_score"}:
+        if autodock_rank not in affinities:
+            # Stale rows from a formerly longer raw output are not part of the
+            # current source scope; current provenance/ranks remain authoritative.
             continue
-        if _finite_float(record.get(rank_metric)) is None:
-            continue
-        optimized_file = _resolve_optimized_sdf(
-            record.get("optimized_file"), log_path, pdbqt_file, tool)
-        if optimized_file is None:
-            continue
-        validated = _validated_optimizer_provenance(
-            record, log_path, pdbqt_file, optimized_file, tool,
-            model_digests[autodock_rank])
-        if validated is None:
-            continue
-        provenance_file, provenance = validated
-        row = {
-            "docking_tool": "autodock",
-            "protein": protein,
-            "ligand": ligand,
-            "file_path": str(optimized_file),
-            "source_pdbqt": str(pdbqt_file.resolve()),
-            "pose_count": 1,
-            "optimizer": tool,
-            "autodock_rank": autodock_rank,
-            "optimized_rank": optimized_rank,
-            "autodock_affinity": (
-                _finite_float(record.get("vina_affinity"))
-                if _finite_float(record.get("vina_affinity")) is not None
-                else affinities[autodock_rank]
-            ),
-            "rank_metric": rank_metric,
-            "optimization_log_file": str(log_path.resolve()),
-            "optimizer_provenance_file": str(provenance_file),
-            "optimizer_provenance_fingerprint": provenance["fingerprint"],
-            "source_pose_model_sha256": provenance["source_pose_sha256"],
-        }
-        for source, target in (
-            ("minimized_affinity", "minimized_affinity"),
-            ("cnn_score", "cnn_score"),
-            ("cnn_affinity", "cnn_affinity"),
-            ("elapsed_time_s", "optimizer_elapsed_time_s"),
-            ("processing_elapsed_time_s", "optimizer_processing_elapsed_time_s"),
-        ):
-            value = _finite_float(record.get(source))
-            if value is not None:
-                row[target] = value
-        committed[(tool, autodock_rank)] = row
+        scoped_records[tool].append(record)
+        top_n, valid_top_n = _record_top_n(record.get("optimize_top_n"))
+        if not valid_top_n:
+            invalid_scopes.add(tool)
+        elif top_n is not None:
+            explicit_top_n[tool].add(top_n)
+
+    committed: dict[tuple[str, int], dict] = {}
+    for tool, records in scoped_records.items():
+        for record in records:
+            if str(record.get("status") or "").strip().lower() != "success":
+                continue
+            autodock_rank = _positive_int(record.get("autodock_rank"))
+            optimized_rank = _positive_int(record.get("optimized_rank"))
+            if autodock_rank is None or optimized_rank is None:
+                continue
+            rank_metric = str(record.get("rank_metric") or "").strip().lower()
+            if rank_metric not in {"minimized_affinity", "cnn_affinity", "cnn_score"}:
+                continue
+            if _finite_float(record.get(rank_metric)) is None:
+                continue
+            optimized_file = _resolve_optimized_sdf(
+                record.get("optimized_file"), log_path, pdbqt_file, tool)
+            if optimized_file is None:
+                continue
+            validated = _validated_optimizer_provenance(
+                record, log_path, pdbqt_file, optimized_file, tool,
+                model_digests[autodock_rank])
+            if validated is None:
+                continue
+            provenance_file, provenance = validated
+            provenance_top_n, valid_top_n = _record_top_n(
+                (provenance.get("settings") or {}).get("optimize_top_n"))
+            if not valid_top_n:
+                invalid_scopes.add(tool)
+            elif provenance_top_n is not None:
+                explicit_top_n[tool].add(provenance_top_n)
+            row = {
+                "docking_tool": "autodock",
+                "protein": protein,
+                "ligand": ligand,
+                "file_path": str(optimized_file),
+                "source_pdbqt": str(pdbqt_file.resolve()),
+                "pose_count": 1,
+                "optimizer": tool,
+                "autodock_rank": autodock_rank,
+                "optimized_rank": optimized_rank,
+                "autodock_affinity": (
+                    _finite_float(record.get("vina_affinity"))
+                    if _finite_float(record.get("vina_affinity")) is not None
+                    else affinities[autodock_rank]
+                ),
+                "rank_metric": rank_metric,
+                "optimization_log_file": str(log_path.resolve()),
+                "optimizer_provenance_file": str(provenance_file),
+                "optimizer_provenance_fingerprint": provenance["fingerprint"],
+                "source_pose_model_sha256": provenance["source_pose_sha256"],
+                # Carry the cryptographically validated optimizer protocol into
+                # each PoseBusters row.  This lets strict campaign supervisors
+                # prove Vina versus Vinardo input scoring and CNN rescore versus
+                # CNN refinement, rather than inferring either from a directory.
+                "source_scoring": str(provenance.get("source_scoring") or "").strip().lower(),
+                "optimizer_scoring": str(
+                    (provenance.get("settings") or {}).get("empirical_scoring") or ""
+                ).strip().lower(),
+                "optimizer_search": str(
+                    (provenance.get("settings") or {}).get("search") or ""
+                ).strip().lower(),
+                "cnn_scoring": str(
+                    (provenance.get("settings") or {}).get("cnn_scoring") or ""
+                ).strip().lower(),
+                "cnn_model": str(
+                    (provenance.get("settings") or {}).get("cnn_model") or ""
+                ).strip(),
+            }
+            for source, target in (
+                ("minimized_affinity", "minimized_affinity"),
+                ("cnn_score", "cnn_score"),
+                ("cnn_affinity", "cnn_affinity"),
+                ("elapsed_time_s", "optimizer_elapsed_time_s"),
+                ("processing_elapsed_time_s", "optimizer_processing_elapsed_time_s"),
+            ):
+                value = _finite_float(record.get(source))
+                if value is not None:
+                    row[target] = value
+            committed[(tool, autodock_rank)] = row
     output: list[dict] = []
-    for tool in ("smina", "gnina"):
+    for tool in _AUTODOCK_OPTIMIZER_VARIANTS:
+        records = scoped_records[tool]
+        if not records or tool in invalid_scopes or len(explicit_top_n[tool]) > 1:
+            continue
+        selected_ranks = [_positive_int(record.get("autodock_rank")) for record in records]
+        if (any(rank is None for rank in selected_ranks)
+                or len(selected_ranks) != len(set(selected_ranks))):
+            continue
+        selected_rank_set = set(selected_ranks)
+        if explicit_top_n[tool]:
+            top_n = next(iter(explicit_top_n[tool]))
+            intended_ranks = set(raw_ranks if top_n == 0 else raw_ranks[:top_n])
+        else:
+            # Legacy schema-v2 provenance did not serialize optimize_top_n.  A
+            # smaller prefix therefore cannot be proven intentional; fail closed
+            # under the producer's default (0 = every current raw Vina rank).
+            intended_ranks = set(raw_ranks)
+        if selected_rank_set != intended_ranks:
+            continue
         tool_rows = [row for (row_tool, _), row in committed.items() if row_tool == tool]
+        committed_ranks = {row["autodock_rank"] for row in tool_rows}
         optimized_ranks = [row["optimized_rank"] for row in tool_rows]
         rank_metrics = {row["rank_metric"] for row in tool_rows}
-        if (len(optimized_ranks) != len(set(optimized_ranks))
+        if (committed_ranks != intended_ranks
+                or len(tool_rows) != len(intended_ranks)
+                or len(optimized_ranks) != len(set(optimized_ranks))
                 or sorted(optimized_ranks) != list(range(1, len(optimized_ranks) + 1))
                 or len(rank_metrics) > 1):
-            # An internally inconsistent rank table cannot safely define a
-            # variant; fail the whole tool closed instead of choosing rows.
+            # Missing/failed commits and internally inconsistent ranking both
+            # invalidate the whole complex/tool variant.
             continue
         output.extend(sorted(tool_rows, key=lambda row: row["autodock_rank"]))
     return output
@@ -1987,7 +2113,7 @@ def _expand_autodock_poses(row: dict, conv_dir: Path, ctx: PipelineConfig) -> li
         if not source_pdbqt.is_file():
             return []
         optimizer = str(row.get("optimizer") or "").strip().lower()
-        if optimizer not in {"smina", "gnina"}:
+        if optimizer not in _AUTODOCK_OPTIMIZER_VARIANTS:
             return []
         pose = {
             "method": row["docking_tool"],
@@ -2009,6 +2135,8 @@ def _expand_autodock_poses(row: dict, conv_dir: Path, ctx: PipelineConfig) -> li
             "optimization_log_file",
             "optimizer_provenance_file", "optimizer_provenance_fingerprint",
             "source_pose_model_sha256",
+            "source_scoring", "optimizer_scoring", "optimizer_search",
+            "cnn_scoring", "cnn_model",
         ):
             if key in row and row[key] not in (None, ""):
                 pose[key] = row[key]
@@ -3140,6 +3268,11 @@ def _obabel_available() -> str | None:
     return _OBABEL_BIN
 
 
+# Elements AutoDock Vina cannot type. Meeko writes them with a carbon type but keeps
+# the real element in the ATOM-NAME column, so the type map alone misreads them.
+_AD4_UNTYPEABLE_ELEMENTS = {"B", "Si", "Se", "Li", "Be", "Na", "K", "Ca", "Al"}
+
+
 def _converted_model_is_valid(model_pdbqt: Path, output_sdf: Path) -> bool:
     """Require sane chemistry and preservation of every docked heavy coordinate."""
     from rdkit import Chem
@@ -3163,8 +3296,32 @@ def _converted_model_is_valid(model_pdbqt: Path, output_sdf: Path) -> bool:
             if atom_type not in ligand_types:
                 return False
             element = ligand_types[atom_type]
+            # Meeko's macrocycle handling breaks a ring and inserts glue pseudo-atoms.
+            # They are typed as carbon for the force field but named "G"/"G0"/"G1" in
+            # the ATOM-NAME column, so keying the dummy check on the TYPE alone misses
+            # them: the model then carries two more heavy atoms than the reconstructed
+            # molecule and a correct pose is rejected. mk_export already drops them, so
+            # skip them here too. This is what blocked every macrocyclic ligand, e.g.
+            # the cyclic dinucleotide 6YJA_2BA.
+            if re.fullmatch(r"G\d*", line[12:16].strip(), flags=re.IGNORECASE):
+                continue
             if element in {None, "H"}:  # macrocycle glue dummy or hydrogen
                 continue
+            # AutoDock has no atom type for some elements, so Meeko types them as
+            # carbon for the force field while keeping the true element in the
+            # ATOM-NAME column. Comparing the type-derived element against the SDF
+            # would then reject a correctly reconstructed pose: the JKU 2-APB
+            # analogue is a boronate, and every one of its poses failed here for
+            # exactly that reason. The coordinate match below is unchanged and
+            # remains the guarantee that the pose was not moved.
+            if element == "C":
+                name_letters = re.sub(r"[^A-Za-z]", "", line[12:16])
+                if name_letters:
+                    for sym in (name_letters[0].upper() + name_letters[1:2].lower(),
+                                name_letters[0].upper()):
+                        if sym in _AD4_UNTYPEABLE_ELEMENTS:
+                            element = sym
+                            break
             xyz = tuple(
                 int(round(float(line[start:end]) * 1000))
                 for start, end in ((30, 38), (38, 46), (46, 54))
@@ -3426,7 +3583,8 @@ def _apply_variant_filter(poses: list[dict], variant_filter: dict[str, set[str]]
     """Keep only poses whose tool-variant is allowed by *variant_filter*.
 
     *variant_filter* maps a base tool name to the set of labels to keep.
-    AutoDock/DiffDock use ``optimizer`` (original/smina/gnina), EquiBind uses
+    AutoDock uses ``optimizer`` (original/smina/gnina/gnina_refinement),
+    DiffDock uses ``optimizer`` (original/smina/gnina), EquiBind uses
     ``refine_variant`` (raw/smina/gnina), and Uni-Dock uses ``variant=tiled``.
     Poses whose variant label is missing or not allowed are dropped. Returns
     *poses* unchanged when the filter is empty.
@@ -3735,6 +3893,8 @@ def _process_single_pose(pose_info: dict):
             "optimization_log_file",
             "optimizer_provenance_file", "optimizer_provenance_fingerprint",
             "source_pose_model_sha256",
+            "source_scoring", "optimizer_scoring", "optimizer_search",
+            "cnn_scoring", "cnn_model",
         ):
             if key in pose_info:
                 df[key] = pose_info[key]

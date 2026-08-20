@@ -60,9 +60,11 @@ Quick usage:
     # Keep EquiBind as a single "equibind_guided" bucket (old behaviour)
     python Scripts/Analysis/posebusters_validity_report.py --no-split-equibind
 
-    # Show only the single best EquiBind variant (highest PB-Valid AND RMSD ≤ 2 Å =
-    # oracle_pb_valid_and_rmsd2_%, read from --oracle-summary), relabelled "EquiBind*". For
-    # crystal-free sets (Orai) the default --oracle-summary borrows the benchmark ranking.
+    # Show only the single best EquiBind variant (highest docking-success gate =
+    # oracle_pb_valid_and_rmsd2_%, near-native AND PB-valid, read from --oracle-summary),
+    # relabelled "EquiBind*". Because that gate contains PB-validity, the collapsed across-tool
+    # comparison is reported descriptively (see validity_stats.txt). For crystal-free sets
+    # (Orai) the default --oracle-summary borrows the benchmark ranking.
     python Scripts/Analysis/posebusters_validity_report.py --best-equibind-only
 
     # Keep only poses within 5 Å of the crystal (RMSD joined from per_pose_metrics.csv,
@@ -74,11 +76,13 @@ Quick usage:
     # subset within the cutoff).
     python Scripts/Analysis/posebusters_validity_report.py --max-rmsd 5
 
-    # Keep every variant in the CSV tables / printed summary but collapse each tool to
-    # a single variant ('DiffDock*'/'EquiBind*') in the main comparison figures (01-05
-    # + the RMSD sweep). Also emits a per-tool variant-comparison figure (06 EquiBind,
-    # 07 DiffDock). Pair with a selector to choose the kept variant, or let it default
-    # to each tool's best on PB-Valid AND RMSD ≤ 2 Å.
+    # Keep every variant in the CSV tables / printed summary but collapse EACH engine to a
+    # single best variant ('AutoDock*'/'DiffDock*'/'EquiBind*') in the main comparison
+    # figures (01-05 + the RMSD sweep) — symmetric, none pinned to raw. Also emits per-tool
+    # variant-comparison figures (06 EquiBind, 06a/06b AutoDock Vina/Vinardo, 07 DiffDock).
+    # Pair with a selector to choose the kept variant, or let it default to each engine's
+    # best on the docking-success gate (near-native AND PB-valid → collapsed across-tool
+    # comparison is descriptive, not inferential).
     python Scripts/Analysis/posebusters_validity_report.py --collapse-plots-only
     python Scripts/Analysis/posebusters_validity_report.py \
         --collapse-plots-only --diffdock-variant smina --best-equibind-only
@@ -113,22 +117,57 @@ import stats_utils as su  # noqa: E402
 
 # Single source of truth: reuse the pipeline's canonical PoseBusters test set and
 # its bool-coercion so this report and run_posebusters.py agree exactly on what
-# counts as a valid pose. (run_posebusters lives one package over; add it to the
-# path and import the constant + coercer rather than duplicating a check list.)
+# counts as a valid pose. (run_posebusters lives one package over; add it to the path
+# and import the constant + coercer rather than duplicating a check list.)
+#
+# The import is DEFERRED to the first real scoring call (_load_pb_constants), not done
+# at module scope: importing run_posebusters pulls in the whole PoseBusters runtime,
+# which only exists in the docking ('vina') conda env. Doing it at import time would
+# make even `python posebusters_validity_report.py --help` crash in any other shell.
+# So argparse/--help stay dependency-free and only an actual run needs PoseBusters.
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _PB_DIR = _PROJECT_ROOT / "Scripts" / "Docking" / "Posebusters"
 for _p in (str(_PROJECT_ROOT), str(_PB_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
-from run_posebusters import (  # noqa: E402
-    CANONICAL_TEST_COLUMNS, coerce_test_cols_to_bool,
-)
 
-# Boolean columns; True == pass. The canonical 20-test PB-Valid set (the full
-# criterion, incl. cofactor/metal/water clash checks). Only the columns actually
-# present in a given CSV are used (a 'mol'-mode CSV omits the protein/cofactor
-# columns), so the report degrades gracefully instead of erroring.
-CRITICAL_CHECKS: list[str] = list(CANONICAL_TEST_COLUMNS)
+# Populated lazily by _load_pb_constants(). CRITICAL_CHECKS is the canonical dock-mode
+# PB-Valid set (the full criterion, incl. cofactor/metal/water clash checks);
+# MOLECULE_TEST_COLUMNS is the molecule-only subset for 'mol'-mode CSVs.
+CANONICAL_TEST_COLUMNS: tuple = ()
+MOLECULE_TEST_COLUMNS: tuple = ()
+CRITICAL_CHECKS: list[str] = []
+coerce_test_cols_to_bool = None          # set by _load_pb_constants
+expected_test_columns = None             # set by _load_pb_constants
+
+
+def _load_pb_constants() -> None:
+    """Import the canonical PoseBusters columns + coercers from run_posebusters.
+
+    Deferred so `--help` works without the PoseBusters runtime; raises a clear,
+    actionable error the first time real scoring needs it and it is unavailable."""
+    global CANONICAL_TEST_COLUMNS, MOLECULE_TEST_COLUMNS, CRITICAL_CHECKS
+    global coerce_test_cols_to_bool, expected_test_columns
+    if CRITICAL_CHECKS:
+        return
+    try:
+        from run_posebusters import (
+            CANONICAL_TEST_COLUMNS as _canon,
+            MOLECULE_TEST_COLUMNS as _mol,
+            coerce_test_cols_to_bool as _coerce,
+            expected_test_columns as _expected,
+        )
+    except Exception as e:  # PoseBusters runtime absent in this interpreter
+        raise ImportError(
+            "posebusters_validity_report needs the PoseBusters runtime "
+            "(run_posebusters) to score poses; run it in the 'vina' conda env "
+            f"(e.g. `conda run -n vina python …`). Original import error: {e}"
+        ) from e
+    CANONICAL_TEST_COLUMNS = _canon
+    MOLECULE_TEST_COLUMNS = _mol
+    coerce_test_cols_to_bool = _coerce
+    expected_test_columns = _expected
+    CRITICAL_CHECKS = list(_canon)
 
 # ───────────────────── method labelling / ordering ──────────────────────
 # The grouping key is the ``docking_method`` column. For EquiBind it is
@@ -144,10 +183,10 @@ _CLAMP_ORDER = {None: 0, "clampON": 1, "clampOFF": 2}
 # Green family for EquiBind variants (cycled if more than this many appear).
 _EQ_PALETTE = ["#2ca02c", "#74c476", "#1b7837", "#a6dba0",
                "#006d2c", "#5aae61", "#00441b", "#c7e9c0"]
-# Blue family for AutoDock smina/gnina optimizer variants (raw uses the base
+# Blue family for AutoDock smina/GNINA optimizer variants (raw uses the base
 # blue in _BASE_COLORS). Optimizer variants are separate methods: combining
 # them with the Vina output would mix different geometries and ranking axes.
-_AD_PALETTE = ["#6baed6", "#08519c"]
+_AD_PALETTE = ["#6baed6", "#08519c", "#08306b"]
 # Orange family for DiffDock smina/gnina optimizer variants (raw uses the base
 # orange in _BASE_COLORS; these are the lighter/darker shades for the variants).
 _DD_PALETTE = ["#ffbb78", "#d95f02", "#fdae6b", "#a63603"]
@@ -168,6 +207,14 @@ _LABEL_OVERRIDES: dict[str, str] = {}
 # Appended to every figure title when --max-rmsd is active, so a filtered report's
 # figures can never be mistaken for the unfiltered one. Set once in main().
 _RMSD_FILTER_NOTE: str = ""
+
+# AutoDock alone has the additional CNN-refinement protocol.  The legacy
+# ``gnina`` ID remains empirical minimization + CNN rescore; keeping the longer
+# suffix first prevents ``gnina_refinement`` paths/methods from being mistaken
+# for the legacy GNINA variant.  DiffDock and EquiBind retain their original
+# raw/smina/gnina axes.
+_AUTODOCK_OPTIMIZERS = frozenset({"smina", "gnina", "gnina_refinement"})
+_AUTODOCK_OPTIMIZER_SUFFIXES = ("_gnina_refinement", "_smina", "_gnina")
 
 
 def _eq_tokens(method: str) -> tuple[str | None, str | None, str | None]:
@@ -193,12 +240,16 @@ def _pretty_method(m: str) -> str:
         return "AutoDock Vina (smina-opt)"
     if m == "autodock_gnina":
         return "AutoDock Vina (gnina-opt)"
+    if m == "autodock_gnina_refinement":
+        return "AutoDock Vina (GNINA CNN-refinement)"
     if m == "autodock_vinardo":
         return "AutoDock Vinardo"
     if m == "autodock_vinardo_smina":
         return "AutoDock Vinardo (smina-opt)"
     if m == "autodock_vinardo_gnina":
         return "AutoDock Vinardo (gnina-opt)"
+    if m == "autodock_vinardo_gnina_refinement":
+        return "AutoDock Vinardo (GNINA CNN-refinement)"
     if m == "unidock":
         return "Uni-Dock"
     if m == "unidock2":
@@ -227,11 +278,13 @@ def _method_sort_key(m: str):
     # Uni-Dock / Uni-Dock2); bucket 1 = DiffDock, bucket 2 = EquiBind.
     if m.startswith("autodock_vinardo"):
         return (0, 10 + {"autodock_vinardo": 0, "autodock_vinardo_smina": 1,
-                         "autodock_vinardo_gnina": 2}.get(m, 3), 0, 0)
+                         "autodock_vinardo_gnina": 2,
+                         "autodock_vinardo_gnina_refinement": 3}.get(m, 4), 0, 0)
     if m.startswith("autodock"):
         # Raw Vina first, then its smina/gnina post-optimization variants.
         return (0, {"autodock": 0, "autodock_smina": 1,
-                    "autodock_gnina": 2}.get(m, 3), 0, 0)
+                    "autodock_gnina": 2,
+                    "autodock_gnina_refinement": 3}.get(m, 4), 0, 0)
     if m == "unidock":
         return (0, 20, 0, 0)
     if m == "unidock2":
@@ -373,28 +426,58 @@ def _apply_equibind_split(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+_WARNED_UNKNOWN_AUTODOCK: set[str] = set()
+
+
+def _warn_unknown_autodock(token: str) -> None:
+    """One-time warning that an unrecognized AutoDock optimizer/method token was seen."""
+    if token and token not in _WARNED_UNKNOWN_AUTODOCK:
+        _WARNED_UNKNOWN_AUTODOCK.add(token)
+        print(f"[warn] unrecognized AutoDock optimizer/method token '{token}' — bucketed "
+              "as 'unknown' (kept out of the raw Vina denominator, not silently pooled).")
+
+
 def _classify_autodock(row) -> str:
-    """Optimizer axis for one AutoDock pose: original | smina | gnina.
+    """AutoDock optimizer axis, including the distinct GNINA refinement mode.
 
     Current PoseBusters exports carry an explicit ``optimizer`` field.  The
     path/method fallbacks keep older exports readable without ever pooling an
-    ``optimized_*`` pose into the raw Vina bucket.
+    ``optimized_*`` pose into the raw Vina bucket. An explicit-but-unrecognized
+    optimizer value, or an ``autodock_<suffix>`` method whose suffix matches no known
+    optimizer, is bucketed as ``"unknown"`` (with a one-time warning) rather than
+    silently mislabelled ``"original"`` (raw Vina) — a new/typo'd optimizer must not
+    inflate the raw denominator.
     """
     opt = (_col_value(row, "optimizer") or "").lower()
-    if opt in ("smina", "gnina"):
+    if opt in _AUTODOCK_OPTIMIZERS:
         return opt
     if opt in ("original", "raw", "native", "none"):
         return "original"
+    if opt:                                   # explicit optimizer field, unknown value
+        _warn_unknown_autodock(opt)
+        return "unknown"
     method = str(row.get("docking_method", "")).strip().lower()
+    if method.endswith("_gnina_refinement"):
+        return "gnina_refinement"
     if method.endswith("_smina"):
         return "smina"
     if method.endswith("_gnina"):
         return "gnina"
     name = " ".join(str(row.get(k, "")) for k in ("pose_name", "pose_file")).lower()
+    if "optimized_gnina_refinement" in name:
+        return "gnina_refinement"
     if "optimized_smina" in name:
         return "smina"
     if "optimized_gnina" in name:
         return "gnina"
+    # No optimizer signal from the field or the pose path. If the method key still
+    # carries an unrecognized suffix beyond its Vina/Vinardo scoring base, that is an
+    # unknown variant — flag it rather than folding it into raw Vina.
+    base = _autodock_scoring_base(method)
+    suffix = method[len(base):].lstrip("_") if method.startswith(base) else ""
+    if suffix:
+        _warn_unknown_autodock(suffix)
+        return "unknown"
     return "original"
 
 
@@ -403,7 +486,7 @@ def _autodock_scoring_base(method: str) -> str:
     'autodock_vinardo' — with any optimizer suffix stripped, so the split is
     idempotent and never merges Vinardo into Vina."""
     mm = str(method).strip().lower()
-    for suf in ("_smina", "_gnina"):
+    for suf in _AUTODOCK_OPTIMIZER_SUFFIXES:
         if mm.endswith(suf):
             mm = mm[: -len(suf)]
             break
@@ -472,19 +555,39 @@ def _load_allowed_ids(path: Path) -> set[str]:
             if ln.strip() and not ln.lstrip().startswith("#")}
 
 
-def load_and_score(csv_path: Path, split_equibind: bool = True) -> pd.DataFrame:
-    df = pd.read_csv(csv_path, low_memory=False)
-    checks = _present_checks(df)
-    if not checks:
-        raise ValueError(
-            "No canonical PoseBusters check columns found in CSV: "
-            f"{CRITICAL_CHECKS}"
-        )
-    missing = [c for c in CRITICAL_CHECKS if c not in df.columns]
-    if missing:
-        print(f"[warn] {len(missing)} canonical check(s) absent from CSV "
-              f"(skipped — likely a 'mol'-mode run): {missing}")
+def _resolve_check_schema(df: pd.DataFrame) -> tuple[list[str], str]:
+    """Resolve which COMPLETE PoseBusters schema *df* carries → (checks, mode).
 
+    A pose is PB-valid only when it passes the FULL mode-appropriate check set — the
+    same rule run_posebusters enforces via require_test_columns. Accepting any nonempty
+    subset (the old behaviour) would silently score a truncated CSV missing 21 of 22
+    checks as '100% PB-valid'. So require every column of one known mode:
+      dock : the 22 canonical checks (protein/cofactor/metal/water clashes included)
+      mol  : the 12 molecule-only checks (a legitimate 'mol'-mode PoseBusters run)
+    and raise if the CSV matches neither completely."""
+    dock_missing = [c for c in CANONICAL_TEST_COLUMNS if c not in df.columns]
+    if not dock_missing:
+        return list(CANONICAL_TEST_COLUMNS), "dock"
+    mol_missing = [c for c in MOLECULE_TEST_COLUMNS if c not in df.columns]
+    if not mol_missing:
+        print("[info] CSV carries the molecule-only PB schema (no protein/cofactor "
+              "clash checks) — scoring molecule-valid, not full dock PB-valid.")
+        return list(MOLECULE_TEST_COLUMNS), "mol"
+    present = [c for c in CANONICAL_TEST_COLUMNS if c in df.columns]
+    raise ValueError(
+        "PoseBusters CSV matches neither the complete dock schema "
+        f"({len(dock_missing)} of {len(CANONICAL_TEST_COLUMNS)} checks missing, e.g. "
+        f"{dock_missing[:5]}) nor the complete molecule schema ({len(mol_missing)} of "
+        f"{len(MOLECULE_TEST_COLUMNS)} missing). Present canonical checks: {present}. "
+        "A partial schema must never be scored as PB-valid — re-run PoseBusters so "
+        "every mode-specific check column is present, or pass a complete CSV."
+    )
+
+
+def load_and_score(csv_path: Path, split_equibind: bool = True) -> pd.DataFrame:
+    _load_pb_constants()
+    df = pd.read_csv(csv_path, low_memory=False)
+    checks, _mode = _resolve_check_schema(df)
     df["pb_valid"] = _bool_checks(df, checks).all(axis=1)
     df["pair"] = df["protein"].astype(str) + " / " + df["ligand"].astype(str)
     df["docking_method"] = df["docking_method"].astype(str).str.lower()
@@ -524,14 +627,94 @@ DEFAULT_PER_POSE_METRICS = Path(
 _RMSD_COLUMNS = ("rmsd", "pb_rmsd", "pb_kabsch_rmsd")
 
 
+def _attach_rmsd_to_crystal(df: pd.DataFrame, metrics: pd.DataFrame,
+                            rmsd_col: str) -> pd.DataFrame:
+    """Return a copy of *df* with a numeric ``rmsd_to_crystal`` column joined from the
+    already-loaded *metrics* frame (per_pose_metrics.csv).
+
+    The join is method-AWARE whenever *metrics* carries a per-pose ``method`` column and
+    *df* carries ``docking_method``: it keys on (protein, ligand, pose_name, method).
+    This matters because the full-protein per_pose_metrics reuse the SAME ``…_poseN``
+    pose_name across autodock / autodock_vinardo / unidock2 (with genuinely different
+    RMSDs) — a method-blind (protein, ligand, pose_name) key collapses those rows via
+    drop_duplicates so every Vina-family variant inherits the first method's RMSD. Both
+    files label the variants identically (load_and_score has already relabelled
+    ``docking_method`` to match ``method``), so the method-aware key lines up 1:1.
+
+    Rows whose (protein, ligand, pose_name, method) has no metrics match fall back to the
+    method-blind key (first row per pose), so pose sets that never reused a pose_name
+    across methods — the pocket benchmark, and the DiffDock/EquiBind families here — join
+    exactly as before. Unmatched poses end up NaN and are handled by the caller."""
+    key = ["protein", "ligand", "pose_name"]
+    d = df.copy()
+    for k in key:
+        d[k] = d[k].astype(str)
+    d["rmsd_to_crystal"] = np.nan
+    matched = pd.Series(False, index=d.index)
+
+    if "method" in metrics.columns and "docking_method" in d.columns:
+        mkey = key + ["docking_method"]
+        m = metrics[key + ["method", rmsd_col]].copy()
+        for k in key:
+            m[k] = m[k].astype(str)
+        m["docking_method"] = m["method"].astype(str).str.lower()
+        m = m.drop_duplicates(subset=mkey)[mkey + [rmsd_col]]
+        left = d[mkey].copy()
+        left["docking_method"] = left["docking_method"].astype(str).str.lower()
+        j = left.merge(m.rename(columns={rmsd_col: "_r"}), on=mkey,
+                       how="left", validate="m:1")
+        d["rmsd_to_crystal"] = pd.to_numeric(j["_r"].to_numpy(), errors="coerce")
+        matched = d["rmsd_to_crystal"].notna()
+
+    need = ~matched
+    if need.any():
+        m2 = metrics[key + [rmsd_col]].copy()
+        for k in key:
+            m2[k] = m2[k].astype(str)
+        # Method-blind fallback for poses the method-aware key didn't match — but ONLY
+        # for pose keys that are UNAMBIGUOUS in the metrics file (i.e. (protein, ligand,
+        # pose_name) occurs under a single method). The full-protein metrics reuse the
+        # same pose_name across autodock / autodock_vinardo / unidock2 with genuinely
+        # different RMSDs; a method-blind "first row per pose" pick there is order-
+        # dependent and would assign another method's RMSD. Those ambiguous keys are left
+        # NaN (dropped and counted) rather than silently mis-joined.
+        grp_size = m2.groupby(key, sort=False)[rmsd_col].transform("size")
+        m2_unique = m2[grp_size == 1]
+        if not m2_unique.empty:
+            j2 = d.loc[need, key].merge(m2_unique.rename(columns={rmsd_col: "_r"}),
+                                        on=key, how="left", validate="m:1")
+            d.loc[need, "rmsd_to_crystal"] = pd.to_numeric(j2["_r"].to_numpy(),
+                                                           errors="coerce")
+        # A method present in the poses but absent from the metrics file can only ever
+        # reach this fallback — the pocket-default per_pose_metrics lacks autodock_vinardo
+        # / unidock2, so a full-protein report run without an explicit --per-pose-metrics
+        # would otherwise inherit AutoDock's RMSD for those rows. Warn loudly and leave the
+        # ambiguous ones unmatched instead.
+        if "method" in metrics.columns and "docking_method" in d.columns:
+            df_methods = set(d["docking_method"].astype(str).str.lower().unique())
+            met_methods = set(metrics["method"].astype(str).str.lower().unique())
+            missing_methods = sorted(df_methods - met_methods)
+            if missing_methods:
+                still_nan = int(d.loc[need, "rmsd_to_crystal"].isna().sum())
+                print(f"  [rmsd-join] {len(missing_methods)} pose method(s) have NO rows "
+                      f"in the metrics file (e.g. {missing_methods[:4]}); their RMSD can "
+                      f"only come from the method-blind fallback, and {still_nan} pose(s) "
+                      "with a reused pose_name are left unmatched rather than assigned "
+                      "another method's RMSD. Pass the matching --per-pose-metrics.")
+
+    d["rmsd_to_crystal"] = pd.to_numeric(d["rmsd_to_crystal"], errors="coerce")
+    return d
+
+
 def apply_rmsd_filter(df: pd.DataFrame, metrics_csv: Path, max_rmsd: float,
                       rmsd_col: str, out_dir: Path) -> pd.DataFrame:
     """Keep only poses whose RMSD-to-crystal (``rmsd_col``) is ≤ ``max_rmsd`` Å.
 
     The PoseBusters filtered-results CSV has no RMSD, so the per-pose RMSD-to-crystal
     is joined in from *metrics_csv* (per_pose_metrics.csv, written by
-    posebusters_pose_comparison.py) on the globally-unique (protein, ligand,
-    pose_name) key — sidestepping any method-label differences between the two files.
+    posebusters_pose_comparison.py) via _attach_rmsd_to_crystal — a method-aware
+    (protein, ligand, pose_name, method) join, because the full-protein metrics reuse
+    the same pose_name across autodock / autodock_vinardo / unidock2.
     Poses with no RMSD value — absent from the metrics file or scored NaN — cannot be
     confirmed ≤ threshold and are dropped and counted, the same as poses above it.
     Writes a per-method rmsd_filter_summary.csv next to the plots.
@@ -553,23 +736,8 @@ def apply_rmsd_filter(df: pd.DataFrame, metrics_csv: Path, max_rmsd: float,
     if any(k not in metrics.columns for k in key):
         sys.exit(f"[rmsd-filter] {metrics_csv} lacks join columns {key}.")
 
-    m = metrics[key + [rmsd_col]].copy()
-    for k in key:
-        m[k] = m[k].astype(str)
-    n_dup = int(m.duplicated(subset=key).sum())
-    if n_dup:
-        print(f"[rmsd-filter] warning: {n_dup} duplicate (protein,ligand,pose_name) "
-              "rows in the metrics file — keeping the first of each.")
-        m = m.drop_duplicates(subset=key)
-
-    d = df.copy()
-    for k in key:
-        d[k] = d[k].astype(str)
-    n_in = len(d)
-    # left + validate='m:1' keeps every report row exactly once (never multiplies).
-    d = d.merge(m.rename(columns={rmsd_col: "rmsd_to_crystal"}), on=key,
-                how="left", validate="m:1")
-    d["rmsd_to_crystal"] = pd.to_numeric(d["rmsd_to_crystal"], errors="coerce")
+    n_in = len(df)
+    d = _attach_rmsd_to_crystal(df, metrics, rmsd_col)
 
     d["_has_rmsd"] = d["rmsd_to_crystal"].notna()
     d["_kept"] = d["_has_rmsd"] & (d["rmsd_to_crystal"] <= max_rmsd)
@@ -627,11 +795,19 @@ def _resolve_variant_oracle(oracle_csv: Path) -> Path:
     return sibling if sibling.exists() else p
 
 
-# The metric the best-variant selectors rank on: the combined docking-success criterion
-# PB-Valid AND RMSD ≤ 2 Å (a pose must be BOTH near-native AND physically valid), written
-# per variant by posebusters_pose_comparison.py. This is what makes "best" mean a pose that
-# is usable, not merely close to the crystal (raw DiffDock, say, is often near-native but
-# clashing). Older summaries that predate the combined column fall back to the RMSD-only rate.
+# The metric the best-variant selectors rank on: the docking-success GATE
+# ``oracle_pb_valid_and_rmsd2_%`` — a pose must be near-native (RMSD ≤ 2 Å) AND PB-valid.
+# On a single-site crystal RMSD ≤ 2 Å already implies the correct binding site (centroid
+# ≤ 4 Å), so this is the full site → placement → validity 3-step success gate for every
+# crystal-bearing dataset here. "Best" therefore means the most USABLE variant, not merely
+# the one closest to the crystal (raw DiffDock is often near-native but clashing). Falls
+# back to the RMSD-only rate for summaries predating the combined column.
+#
+# IMPORTANT: because this gate CONTAINS PB-validity, a variant selected on it and then
+# compared on PB-validity is post-selection. The collapsed across-tool comparison is
+# therefore reported as DESCRIPTIVE, not inferential (compute_validity_stats /
+# write_stats_sidecar flag it via ``post_selection``). The per-variant tests, run on the
+# full unselected set, are unaffected and stay inferential.
 BEST_VARIANT_METRIC = "oracle_pb_valid_and_rmsd2_%"
 BEST_VARIANT_METRIC_FALLBACK = "oracle_rmsd_le_2.0A_%"
 
@@ -639,11 +815,11 @@ BEST_VARIANT_METRIC_FALLBACK = "oracle_rmsd_le_2.0A_%"
 def _variant_ranking_scores(oracle_csv: Path, tag: str) -> tuple[pd.Series | None, str | None]:
     """Per-variant ranking scores and the metric column used, read from *oracle_csv*.
 
-    Ranks on ``oracle_pb_valid_and_rmsd2_%`` (PB-Valid AND RMSD ≤ 2 Å — the combined
-    docking-success criterion), falling back to ``oracle_rmsd_le_2.0A_%`` when a summary
-    predates the combined column. Returns (scores, metric) or (None, None) — with a ``[tag]``
-    note — when the file carries neither column. The caller has already resolved *oracle_csv*
-    to its ``*_all_variants.csv`` sibling (see _resolve_variant_oracle)."""
+    Ranks on the docking-success gate ``oracle_pb_valid_and_rmsd2_%`` (near-native AND
+    PB-valid), falling back to ``oracle_rmsd_le_2.0A_%`` (RMSD-only) for summaries predating
+    the combined column. Returns (scores, metric) or (None, None) — with a ``[tag]`` note —
+    when the file carries neither column. The caller has already resolved *oracle_csv* to its
+    ``*_all_variants.csv`` sibling (see _resolve_variant_oracle)."""
     osum = pd.read_csv(oracle_csv, index_col=0)
     col = (BEST_VARIANT_METRIC if BEST_VARIANT_METRIC in osum.columns
            else BEST_VARIANT_METRIC_FALLBACK if BEST_VARIANT_METRIC_FALLBACK in osum.columns
@@ -652,88 +828,78 @@ def _variant_ranking_scores(oracle_csv: Path, tag: str) -> tuple[pd.Series | Non
         print(f"  [{tag}] neither '{BEST_VARIANT_METRIC}' nor "
               f"'{BEST_VARIANT_METRIC_FALLBACK}' in {oracle_csv} — keeping all variants.")
         return None, None
+    if col == BEST_VARIANT_METRIC_FALLBACK:
+        print(f"  [{tag}] success-gate metric '{BEST_VARIANT_METRIC}' absent; falling back to "
+              f"'{BEST_VARIANT_METRIC_FALLBACK}' (RMSD ≤ 2 Å only) for variant selection.")
     return pd.to_numeric(osum[col], errors="coerce"), col
 
 
-def select_best_equibind(df: pd.DataFrame, oracle_csv: Path) -> tuple[pd.DataFrame, str | None]:
-    """Keep non-EquiBind rows + only the single best EquiBind variant.
+def _select_best_family(df: pd.DataFrame, oracle_csv: Path, family_fn,
+                        tag: str, keep_msg: str) -> tuple[pd.DataFrame, str | None]:
+    """Keep all rows outside a tool family + only the single best in-family variant.
 
-    "Best" = the EquiBind variant with the highest PB-Valid AND RMSD ≤ 2 Å rate
-    (``oracle_pb_valid_and_rmsd2_%``, falling back to ``oracle_rmsd_le_2.0A_%`` for older
-    summaries — see _variant_ranking_scores) in *oracle_csv*, the oracle_summary.csv written by
-    posebusters_pose_comparison.py (its per-variant ``*_all_variants.csv`` sibling is preferred
-    when present, see _resolve_variant_oracle, so the split variant labels are ranked rather than
-    silently collapsed to the one ``equibind_*`` row the summary carries). For datasets without
-    their own crystal (Orai),
-    point --oracle-summary at the benchmark summary to borrow its ranking. The best
-    variant is chosen among the variants actually present in *df*; AutoDock/DiffDock
-    rows are always kept. Returns (filtered_df, best_variant_key); best is None and
-    df unchanged when no EquiBind variant is present, the summary is missing/unreadable,
-    or no present variant has a score.
-    """
+    "Best" = the in-family variant with the highest docking-success-gate rate (near-native
+    AND PB-valid; see BEST_VARIANT_METRIC). *family_fn* maps a method key to True when it
+    belongs to the family; the per-variant ``*_all_variants.csv`` sibling of *oracle_csv* is
+    used when present (see _resolve_variant_oracle) so split smina/gnina/pocket labels are
+    actually ranked rather than collapsed to one row. Returns (filtered_df, best_key), or the
+    inputs unchanged with None when the family is absent, the oracle is missing/unreadable, or
+    no present variant has a score."""
     methods = df["docking_method"].astype(str)
-    eq_mask = methods.str.startswith("equibind")
-    if not eq_mask.any():
+    mask = methods.map(family_fn).astype(bool)
+    if not mask.any():
         return df, None
     oracle_csv = _resolve_variant_oracle(oracle_csv)
     if not oracle_csv or not Path(oracle_csv).exists():
-        print(f"  [best-equibind-only] oracle summary not found at {oracle_csv} — "
-              "keeping all EquiBind variants.")
+        print(f"  [{tag}] oracle summary not found at {oracle_csv} — {keep_msg}")
         return df, None
-
-    scores, _ = _variant_ranking_scores(oracle_csv, "best-equibind-only")
+    scores, _ = _variant_ranking_scores(oracle_csv, tag)
     if scores is None:
         return df, None
-    eq_present = sorted(methods[eq_mask].unique())
-    cand = {m: float(scores[m]) for m in eq_present
+    present = sorted(methods[mask].unique())
+    cand = {m: float(scores[m]) for m in present
             if m in scores.index and pd.notna(scores[m])}
     if not cand:
-        print("  [best-equibind-only] none of the present EquiBind variants have a "
-              f"score in {oracle_csv} — keeping all EquiBind variants.")
+        print(f"  [{tag}] none of the present variants have a score in {oracle_csv} — {keep_msg}")
         return df, None
-
     best = max(cand, key=cand.get)
-    keep = (~eq_mask) | (methods == best)
+    keep = (~mask) | (methods == best)
     return df[keep].reset_index(drop=True), best
+
+
+def select_best_equibind(df: pd.DataFrame, oracle_csv: Path) -> tuple[pd.DataFrame, str | None]:
+    """Keep non-EquiBind rows + only the single best EquiBind variant (docking-success gate:
+    near-native AND PB-valid). For crystal-free sets (Orai) point --oracle-summary at the
+    benchmark summary to borrow its ranking. AutoDock/DiffDock rows are always kept. Returns
+    (filtered_df, best_variant_key) — best None / df unchanged when no EquiBind variant is
+    present, the summary is missing, or no variant has a score."""
+    return _select_best_family(df, oracle_csv, lambda m: m.startswith("equibind"),
+                               "best-equibind-only", "keeping all EquiBind variants.")
 
 
 def select_best_diffdock(df: pd.DataFrame, oracle_csv: Path) -> tuple[pd.DataFrame, str | None]:
-    """Keep non-DiffDock rows + only the single best DiffDock optimizer variant.
+    """Keep non-DiffDock rows + only the single best DiffDock optimizer variant (docking-
+    success gate: near-native AND PB-valid). AutoDock/EquiBind rows are always kept."""
+    return _select_best_family(df, oracle_csv, lambda m: m.startswith("diffdock"),
+                               "best-diffdock-only", "keeping all DiffDock variants.")
 
-    "Best" = the DiffDock variant (diffdock / diffdock_smina / diffdock_gnina) with the
-    highest PB-Valid AND RMSD ≤ 2 Å rate (``oracle_pb_valid_and_rmsd2_%``, falling back to
-    ``oracle_rmsd_le_2.0A_%`` for older summaries — see _variant_ranking_scores) in *oracle_csv*
-    (its per-variant ``*_all_variants.csv`` sibling is used when present — see
-    _resolve_variant_oracle — so the split smina/gnina labels are actually ranked, not silently
-    dropped, which would otherwise leave bare ``diffdock`` as the only candidate). Mirrors
-    select_best_equibind; AutoDock/EquiBind rows are always kept. Returns
-    (filtered_df, best_variant_key), or the inputs unchanged with ``None`` when no
-    DiffDock variant is present, the summary is missing/unreadable, or no present
-    variant has a score."""
-    methods = df["docking_method"].astype(str)
-    dd_mask = methods.str.startswith("diffdock")
-    if not dd_mask.any():
-        return df, None
-    oracle_csv = _resolve_variant_oracle(oracle_csv)
-    if not oracle_csv or not Path(oracle_csv).exists():
-        print(f"  [best-diffdock-only] oracle summary not found at {oracle_csv} — "
-              "keeping all DiffDock variants.")
-        return df, None
 
-    scores, _ = _variant_ranking_scores(oracle_csv, "best-diffdock-only")
-    if scores is None:
-        return df, None
-    dd_present = sorted(methods[dd_mask].unique())
-    cand = {m: float(scores[m]) for m in dd_present
-            if m in scores.index and pd.notna(scores[m])}
-    if not cand:
-        print("  [best-diffdock-only] none of the present DiffDock variants have a "
-              f"score in {oracle_csv} — keeping all DiffDock variants.")
-        return df, None
+def select_best_autodock(df: pd.DataFrame, oracle_csv: Path) -> tuple[pd.DataFrame, str | None]:
+    """Keep non-AutoDock-Vina rows + only the single best AutoDock Vina variant (raw vs
+    smina-/gnina-optimised / GNINA-refinement) by the docking-success gate. Symmetric with the
+    DiffDock/EquiBind selectors so AutoDock is not pinned to raw in the collapsed headline;
+    Vinardo, Uni-Dock and other engines are untouched."""
+    return _select_best_family(
+        df, oracle_csv,
+        lambda m: m.startswith("autodock") and _autodock_scoring_base(m) == "autodock",
+        "best-autodock-only", "keeping all AutoDock Vina variants.")
 
-    best = max(cand, key=cand.get)
-    keep = (~dd_mask) | (methods == best)
-    return df[keep].reset_index(drop=True), best
+
+def select_best_autodock_vinardo(df: pd.DataFrame, oracle_csv: Path) -> tuple[pd.DataFrame, str | None]:
+    """Keep non-Vinardo rows + only the single best AutoDock Vinardo variant by the docking-
+    success gate (symmetric counterpart to select_best_autodock for the Vinardo family)."""
+    return _select_best_family(df, oracle_csv, lambda m: m.startswith("autodock_vinardo"),
+                               "best-autodock-vinardo-only", "keeping all AutoDock Vinardo variants.")
 
 
 def select_diffdock_variant(df: pd.DataFrame, variant: str) -> tuple[pd.DataFrame, str | None]:
@@ -791,6 +957,51 @@ def select_equibind_variant(df: pd.DataFrame, spec: str) -> tuple[pd.DataFrame, 
     return df, (kept[0] if len(kept) == 1 else None)
 
 
+def _engine_family(m: str) -> str:
+    """Coarse docking-engine bucket for a method key — one 'engine' per headline bar."""
+    m = str(m)
+    if m.startswith("autodock_vinardo"):
+        return "autodock_vinardo"
+    if m.startswith("autodock"):
+        return "autodock"
+    if m.startswith("diffdock"):
+        return "diffdock"
+    if m.startswith("equibind"):
+        return "equibind"
+    return m                       # unidock, unidock2, or any single-variant engine
+
+
+def _select_presentation_tools(df: pd.DataFrame) -> pd.DataFrame:
+    """Reduce a collapsed plot frame to ONE variant per docking engine.
+
+    The caller (--collapse-plots-only) has already collapsed each multi-variant family to
+    its best variant on the docking-success gate (near-native AND PB-valid) and starred it
+    in _LABEL_OVERRIDES. Here we keep exactly one representative per
+    engine so the headline compares each tool at its selected best — symmetric across
+    AutoDock (Vina and Vinardo), Uni-Dock, Uni-Dock2, DiffDock and EquiBind, with no engine
+    pinned to raw and none silently dropped. For a family with no oracle-based selection
+    (crystal-free set / no explicit pin) fall back to its raw base variant; single-variant
+    engines pass through unchanged."""
+    methods = df["docking_method"].astype(str)
+    present = list(dict.fromkeys(methods))
+    starred = set(_LABEL_OVERRIDES)
+    fams: dict[str, list[str]] = {}
+    for m in present:
+        fams.setdefault(_engine_family(m), []).append(m)
+    keep_labels: set[str] = set()
+    for fam, variants in fams.items():
+        fam_starred = [v for v in variants if v in starred]
+        if fam_starred:
+            keep_labels.update(fam_starred)          # oracle-selected best for this engine
+        elif len(variants) == 1:
+            keep_labels.add(variants[0])             # single-variant engine — pass through
+        elif fam in variants:
+            keep_labels.add(fam)                     # unselected multi-variant → raw base
+        else:
+            keep_labels.update(variants)             # no base label present → keep all
+    return df[methods.isin(keep_labels)].reset_index(drop=True)
+
+
 def _analyzed_count_col(summary: pd.DataFrame) -> str:
     """Name of the column holding the pose count validity is scored against.
 
@@ -827,32 +1038,52 @@ def per_tool_summary(df: pd.DataFrame, order: list[str],
     same total/valid/fraction triple over just the near-native (≤ 2 Å) subset. Passed
     only for crystal-bearing sets; omitted (columns absent) for crystal-free ones.
     """
-    grp = (
-        df.groupby("docking_method")
-        .agg(analyzed_poses=("pb_valid", "size"),
-             valid_poses=("pb_valid", "sum"))
-        .reindex(order)
-        .dropna(how="all")
-    )
+    agg = df.groupby("docking_method").agg(
+        analyzed_poses=("pb_valid", "size"), valid_poses=("pb_valid", "sum"))
+
     if generated_counts is not None:
+        # Under --max-rmsd, keep methods that generated poses but had ZERO within the
+        # cutoff (generated_poses = N, within_rmsd_poses = 0) instead of letting them
+        # vanish from the summary because the post-filter frame no longer contains them.
+        idx = [m for m in order if (m in agg.index) or (m in generated_counts.index)]
+        for m in generated_counts.index:
+            if m not in idx:
+                idx.append(m)
+        grp = agg.reindex(idx)
+        grp["analyzed_poses"] = grp["analyzed_poses"].fillna(0)
+        grp["valid_poses"] = grp["valid_poses"].fillna(0)
         grp = grp.rename(columns={"analyzed_poses": "within_rmsd_poses"})
-        # Every method in the (post-filter) summary is a subset of the pre-filter
-        # population, so the reindex never introduces a NaN → safe int cast.
-        gen = generated_counts.reindex(grp.index).astype("int64")
+        gen = generated_counts.reindex(grp.index).fillna(0).astype("int64")
         grp.insert(0, "generated_poses", gen)
         if generated_valid_counts is not None:
-            gval = generated_valid_counts.reindex(grp.index).astype("int64")
+            gval = generated_valid_counts.reindex(grp.index).fillna(0).astype("int64")
             grp.insert(1, "generated_valid_poses", gval)
-            grp.insert(2, "generated_valid_fraction", gval / gen)
+            grp.insert(2, "generated_valid_fraction", gval / gen.replace(0, np.nan))
         analyzed_col = "within_rmsd_poses"
     else:
-        grp = grp.rename(columns={"analyzed_poses": "total_poses"})
+        grp = agg.reindex(order).dropna(how="all").rename(
+            columns={"analyzed_poses": "total_poses"})
         analyzed_col = "total_poses"
-    grp["valid_fraction"] = grp["valid_poses"] / grp[analyzed_col]
+    grp[analyzed_col] = grp[analyzed_col].astype("int64")
+    grp["valid_poses"] = grp["valid_poses"].astype("int64")
+    # A method with 0 poses in the analysed population has an undefined validity fraction
+    # (NaN), not 0/0 → 0; keep it NaN so it reads as "no data", not "all invalid".
+    grp["valid_fraction"] = grp["valid_poses"] / grp[analyzed_col].replace(0, np.nan)
+
+    # Per-method complex coverage: how many receptor-ligand pairs the method actually
+    # produced a pose for, out of the dataset total. Makes a valid_fraction computed over
+    # a subset of complexes impossible to misread as full-set performance — a method that
+    # skipped the hard complexes shows pairs_covered < pairs_total here.
+    if "pair" in df.columns:
+        cov = df.groupby("docking_method")["pair"].nunique().reindex(grp.index).fillna(0)
+        grp["pairs_covered"] = cov.astype("int64")
+        grp["pairs_total"] = int(df["pair"].nunique())
 
     if rmsd2_counts is not None:
         # Near-native subset: poses within NEAR_NATIVE_RMSD_A Å of the crystal, and
-        # PB-valid among them. Methods with none in-cutoff reindex to 0 → fraction NaN.
+        # PB-valid among them. An empty (but non-None) rmsd2_counts means "RMSD available,
+        # zero within 2 Å" → all 0 (distinct from the crystal-free case, which omits these
+        # columns entirely). Methods with none in-cutoff reindex to 0 → fraction NaN.
         r2 = rmsd2_counts.reindex(grp.index).fillna(0).astype("int64")
         grp["rmsd2_poses"] = r2
         if rmsd2_valid_counts is not None:
@@ -1025,37 +1256,13 @@ def _pairwise_caption(pairwise: list[dict], label_fn=_pretty_method,
     return "pairwise (Holm): " + "; ".join(parts) if parts else None
 
 
-def _draw_star_brackets(ax, method_to_x: dict, pairwise: list[dict],
-                        y0: float, step: float, max_brackets: int = 6) -> float:
-    """Draw significance brackets between bars for the significant pairwise contrasts.
-
-    Returns the top y reached (so the caller can extend the y-limit). Only drawn for a
-    small number of bars — the caller gates on bar count to avoid overplotting."""
-    sig = [d for d in pairwise if d.get("star") in ("*", "**", "***")
-           and d["a"] in method_to_x and d["b"] in method_to_x]
-    sig.sort(key=lambda d: abs(method_to_x[d["a"]] - method_to_x[d["b"]]))
-    sig = sig[:max_brackets]
-    top = y0
-    for lvl, d in enumerate(sig):
-        xa, xb = method_to_x[d["a"]], method_to_x[d["b"]]
-        y = y0 + lvl * step
-        ax.plot([xa, xa, xb, xb], [y, y + step * 0.25, y + step * 0.25, y],
-                color="black", lw=0.8, clip_on=False)
-        ax.text((xa + xb) / 2, y + step * 0.25, d["star"], ha="center",
-                va="bottom", fontsize=8)
-        top = max(top, y + step * 0.5)
-    return top
-
-
-def _variant_paired_stats(df_full: pd.DataFrame, prefix: str,
+def _variant_paired_stats(df_full: pd.DataFrame, variants: list[str],
                           n_units: int) -> dict | None:
-    """Paired per-complex stats across the variants of one tool (*prefix*).
+    """Paired per-complex stats across a tool's *variants* (an explicit method list).
 
     Returns {any_valid: paired_proportions, valid_count: paired_continuous,
-    variants:[...], n} or None when the tool has <2 variants / too few units."""
-    variants = sorted(m for m in df_full["docking_method"].astype(str).unique()
-                      if m.startswith(prefix))
-    variants = _usable_methods(df_full, variants)
+    variants:[...], n} or None when the tool has <2 usable variants / too few units."""
+    variants = _usable_methods(df_full, sorted(variants))
     if len(variants) < 2:
         return None
     cnt = _pair_valid_count_matrix(df_full, variants).dropna()
@@ -1080,13 +1287,18 @@ def _variant_paired_stats(df_full: pd.DataFrame, prefix: str,
 
 def compute_validity_stats(df_plot: pd.DataFrame, df_full: pd.DataFrame,
                            order_plot: list[str], order_full: list[str],
-                           dataset_label: str) -> dict:
+                           dataset_label: str, post_selection: bool = False) -> dict:
     """All paired, per-complex validity statistics for the report.
 
     Aggregates the correlated poses to one value per receptor-ligand ``pair`` FIRST,
     then runs the paired tests across tools (df_plot / order_plot) and across each
     tool's variants (df_full / order_full). Returns a JSON-ready dict; individual
-    tests are wrapped so one failure never sinks the rest."""
+    tests are wrapped so one failure never sinks the rest.
+
+    *post_selection* True means each tool's variant in ``df_plot`` was chosen on the
+    docking-success gate (which contains PB-validity), so the across-tool contrasts are
+    post-selection and are reported DESCRIPTIVELY, not as unbiased inference (the sidecar
+    banners them). The per-variant tests (on ``df_full``, unselected) stay inferential."""
     n_units = int(df_plot["pair"].nunique())
     # Drop structurally-sparse methods (e.g. the 1-complex legacy 'equibind_guided'
     # bucket) so listwise completeness across the remaining tools doesn't collapse n.
@@ -1095,12 +1307,20 @@ def compute_validity_stats(df_plot: pd.DataFrame, df_full: pd.DataFrame,
                    "n_units": n_units,
                    "exploratory": _exploratory(n_units),
                    "min_units_for_test": _MIN_UNITS_FOR_TEST,
+                   "across_tools_post_selection": bool(post_selection),
                    "methods_tested": usable_plot,
                    "methods_dropped_sparse": [m for m in order_plot if m not in usable_plot]}
 
     # ── Across tools: per-complex valid-pose count + ≥1-valid (figs 01/03/04) ──
-    cnt = _pair_valid_count_matrix(df_plot, usable_plot).dropna()
+    cnt_full = _pair_valid_count_matrix(df_plot, usable_plot)
+    cnt = cnt_full.dropna()
     stats["n_complete_units"] = int(len(cnt))
+    # Complexes listwise-deleted from the paired tests because a tested method produced no
+    # pose there. Surfaced so a shrink from n_units → n_complete_units (a method skipping
+    # hard complexes) is visible in the sidecar, not silent.
+    dropped_units = [p for p in cnt_full.index if p not in cnt.index]
+    stats["incomplete_units_dropped"] = int(len(dropped_units))
+    stats["incomplete_units"] = [str(p) for p in dropped_units[:50]]
     if len(cnt) >= _MIN_UNITS_FOR_TEST and cnt.shape[1] >= 2:
         if cnt.shape[1] >= 3:            # Friedman needs >=3 tools
             try:
@@ -1145,22 +1365,133 @@ def compute_validity_stats(df_plot: pd.DataFrame, df_full: pd.DataFrame,
             stats["per_check_significant_bh"] = sig
         stats["per_check"] = per_check
 
-    # ── Variants are paired (same poses minimized): raw vs smina vs gnina (06/07/07b) ──
-    for prefix, key in (("equibind", "equibind_variants"),
-                        ("diffdock", "diffdock_variants")):
+    # ── Variants are paired (same poses minimized): raw vs smina vs gnina, per engine
+    # family (06/06a/06b/07/07b). AutoDock Vina and Vinardo are tested separately so the
+    # Vina figure is never mixed with Vinardo. ──
+    methods_full = [str(m) for m in pd.unique(df_full["docking_method"])]
+    variant_groups = {
+        "equibind_variants": [m for m in methods_full if m.startswith("equibind")],
+        "diffdock_variants": [m for m in methods_full if m.startswith("diffdock")],
+        "autodock_variants": [m for m in methods_full if _engine_family(m) == "autodock"],
+        "autodock_vinardo_variants":
+            [m for m in methods_full if m.startswith("autodock_vinardo")],
+    }
+    for key, variants in variant_groups.items():
         try:
-            res = _variant_paired_stats(df_full, prefix, n_units)
+            res = _variant_paired_stats(df_full, variants, n_units)
             if res is not None:
                 stats[key] = res
         except Exception as e:  # pragma: no cover
-            print(f"  [stats] {prefix} variant stats failed: {e}")
+            print(f"  [stats] {key} stats failed: {e}")
 
     return stats
 
 
+def write_stats_sidecar(stats: dict | None, out_dir: Path) -> None:
+    """Write validity_stats.txt — the inferential results that used to be annotated onto the
+    figure panels. Per the project's 'stats off panels into sidecars' convention, the figures
+    stay purely descriptive (pose counts / pooled % / per-pair distributions) and every test
+    lives here, each labelled with the exact per-complex estimand and unit of analysis it
+    tests — so a per-complex '≥1-valid' or 'valid-count' test is never mistaken for the
+    pose-level rate a panel plots. Numbers are also in validity_stats.json."""
+    if not stats:
+        return
+    lines: list[str] = []
+    w = lines.append
+
+    def w_pairwise(pairwise, indent="    "):
+        """One significant Holm-adjusted contrast per line (most significant first), with a
+        tally of the non-significant ones so the block stays readable for many methods."""
+        sig = [d for d in pairwise if d.get("star") in ("*", "**", "***")]
+        ns = len(pairwise) - len(sig)
+        sig.sort(key=lambda d: (d.get("p_holm", 1.0)
+                                if d.get("p_holm") == d.get("p_holm") else 1.0))
+        for d in sig:
+            w(f"{indent}{_pretty_method(d['a'])} vs {_pretty_method(d['b'])}  "
+              f"{d['star']}  (Holm p={su.fmt_p(d.get('p_holm'))})")
+        if ns:
+            w(f"{indent}(+{ns} further pairwise contrast(s) n.s.)")
+
+    w("PoseBusters validity — inferential statistics (companion to the figures)")
+    w(f"dataset: {stats.get('dataset', '?')}")
+    w(f"unit of analysis: {stats.get('unit_of_analysis', 'receptor-ligand pair')}")
+    w(f"n units (total): {stats.get('n_units', '?')}   |   "
+      f"n complete units used in paired tests: {stats.get('n_complete_units', '?')}")
+    if stats.get("exploratory"):
+        w("NOTE: exploratory — small n (below the pre-registered threshold).")
+    dropped = stats.get("incomplete_units_dropped", 0)
+    if dropped:
+        w(f"listwise-deleted complexes (a tested method produced no pose there): {dropped}")
+        names = stats.get("incomplete_units", [])
+        if names:
+            w("  " + ", ".join(names) + ("  …" if dropped > len(names) else ""))
+    if stats.get("methods_dropped_sparse"):
+        w("methods dropped as structurally sparse (<50% coverage): "
+          + ", ".join(stats["methods_dropped_sparse"]))
+    w("")
+
+    w("== Across tools (per-complex; poses aggregated to one value per pair first) ==")
+    if stats.get("across_tools_post_selection"):
+        w("*** DESCRIPTIVE ONLY — each tool's variant was selected on the docking-success")
+        w("    gate (which contains PB-validity), so these across-tool contrasts are")
+        w("    post-selection: read them as effect sizes, NOT as unbiased inference. The")
+        w("    per-variant tests below (run on the full, unselected set) are unaffected. ***")
+    vc = stats.get("valid_count")
+    if vc:
+        w("valid-pose COUNT per complex — Friedman + Kendall's W:")
+        w("  " + (_fmt_cont_omnibus(vc) or "n/a"))
+        w_pairwise(vc.get("pairwise", []), indent="  ")
+    av = stats.get("any_valid")
+    if av:
+        w("≥1 PB-valid pose per complex — Cochran's Q:")
+        w("  " + (_fmt_prop_omnibus(av) or "n/a"))
+        w_pairwise(av.get("pairwise", []), indent="  ")
+    if not (vc or av):
+        w(stats.get("note_tools", "  (no across-tool test available)"))
+
+    if stats.get("per_check") is not None:
+        w("")
+        w("== Per-check family (per-complex '≥1 pose passes check', Cochran Q, BH over checks) ==")
+        sig = stats.get("per_check_significant_bh", [])
+        w("checks where tools differ (BH q<0.05): " + (", ".join(sig) if sig else "none"))
+
+    for key, lab in (("equibind_variants", "EquiBind variants"),
+                     ("diffdock_variants", "DiffDock variants"),
+                     ("autodock_variants", "AutoDock Vina variants"),
+                     ("autodock_vinardo_variants", "AutoDock Vinardo variants")):
+        v = stats.get(key)
+        if not v:
+            continue
+        w("")
+        w(f"== {lab} (paired, per-complex) ==")
+        w(f"variants: {', '.join(v.get('variants', []))}   (n={v.get('n', '?')})")
+        if v.get("note"):
+            w("  " + str(v["note"]))
+        av2 = v.get("any_valid")
+        if av2:
+            c = _fmt_prop_omnibus(av2)
+            if c:
+                w("  ≥1-valid: " + c)
+            w_pairwise(av2.get("pairwise", []))
+        vc2 = v.get("valid_count")
+        if vc2:
+            c = _fmt_cont_omnibus(vc2)
+            if c:
+                w("  valid-count: " + c)
+            w_pairwise(vc2.get("pairwise", []))
+
+    w("")
+    w("Estimand note: the figure panels are descriptive only. The tests above are paired,")
+    w("per-complex (one value per receptor-ligand pair before testing). Do not read a bar's")
+    w("height as the tested quantity — e.g. fig 05 plots pose-level per-check pass rates,")
+    w("while its test is the per-complex '≥1 pose passes' contrast reported here.")
+    (out_dir / "validity_stats.txt").write_text("\n".join(lines) + "\n")
+
+
 # ───────────────────────────── plots ─────────────────────────────
 
-def plot_per_tool(summary: pd.DataFrame, out: Path, stats: dict | None = None) -> None:
+def plot_per_tool(summary: pd.DataFrame, out: Path,
+                  title_prefix: str = "PoseBusters Benchmark") -> None:
     count_col = _analyzed_count_col(summary)
     has_gen = "generated_poses" in summary.columns
     analyzed_label = "Poses within cutoff" if count_col == "within_rmsd_poses" else "Total poses"
@@ -1202,21 +1533,10 @@ def plot_per_tool(summary: pd.DataFrame, out: Path, stats: dict | None = None) -
     ax.set_xticklabels([_pretty_method(t) for t in summary.index],
                        rotation=20, ha="right")
     ax.set_ylabel("Number of poses")
-    title = ("PoseBusters Benchmark — Pose validity per docking method\n"
+    # Descriptive title only — the paired per-complex tests live in validity_stats.txt
+    # (write_stats_sidecar), not on the panel.
+    title = (f"{title_prefix} — Pose validity per docking method\n"
              "(valid = passes all canonical PB checks)" + _RMSD_FILTER_NOTE)
-    # Paired per-complex tests (aggregated to one value per receptor-ligand pair first):
-    # valid-pose COUNT (Friedman + Kendall W) and ≥1-valid-pose (Cochran Q).
-    if stats:
-        try:
-            caps = [c for c in (_fmt_cont_omnibus(stats.get("valid_count", {})),
-                                _fmt_prop_omnibus(stats.get("any_valid", {}))) if c]
-            if caps:
-                # Each omnibus on its own line so the caption never overflows the width;
-                # per-complex pairwise stars are drawn on fig 04 (matched y-axis).
-                title += "\nper-complex paired: " + caps[0]
-                title += "".join("\n" + c for c in caps[1:])
-        except Exception as e:  # pragma: no cover
-            print(f"  [stats] plot_per_tool annotation failed: {e}")
     ax.set_title(title, fontsize=10)
     ax.legend()
     ax.grid(axis="y", alpha=0.3)
@@ -1254,7 +1574,7 @@ def plot_heatmap(valid_mat: pd.DataFrame, out: Path, top_n: int = 60,
 
 
 def plot_grouped_bars(valid_mat: pd.DataFrame, out: Path, colors: dict,
-                      top_n: int = 30, stats: dict | None = None) -> None:
+                      top_n: int = 30) -> None:
     # Cleveland dot plot: one row per receptor-ligand pair, one coloured dot per
     # tool, joined by a faint connector. Replaces a dense top-N grouped-bar wall
     # and complements the per-pair validity heatmap (fig 02).
@@ -1279,20 +1599,9 @@ def plot_grouped_bars(valid_mat: pd.DataFrame, out: Path, colors: dict,
     ax.set_yticks(y)
     ax.set_yticklabels(pairs, fontsize=8)
     ax.set_xlabel("Valid poses")
+    # Descriptive title only — the whole-set paired ≥1-valid test lives in validity_stats.txt.
     title = (f"Valid poses per docking method — top {len(pairs)} receptor-ligand pairs"
              + _RMSD_FILTER_NOTE)
-    # Whole-set paired test (all complexes, not just the top-N shown): does the tool a
-    # complex gets ≥1 valid pose from differ? Cochran's Q + pairwise McNemar/Holm.
-    if stats:
-        try:
-            cap = _fmt_prop_omnibus(stats.get("any_valid", {}))
-            pw = _pairwise_caption((stats.get("any_valid") or {}).get("pairwise", []))
-            if cap:
-                title += "\n(all complexes) " + cap
-            if pw:
-                title += "\n" + pw
-        except Exception as e:  # pragma: no cover
-            print(f"  [stats] plot_grouped_bars annotation failed: {e}")
     ax.set_title(title, fontsize=10)
     ax.legend(fontsize=8)
     ax.grid(axis="x", alpha=0.3); ax.set_axisbelow(True)
@@ -1301,8 +1610,7 @@ def plot_grouped_bars(valid_mat: pd.DataFrame, out: Path, colors: dict,
     plt.close(fig)
 
 
-def plot_validity_distribution(df: pd.DataFrame, out: Path, order: list[str],
-                               stats: dict | None = None) -> None:
+def plot_validity_distribution(df: pd.DataFrame, out: Path, order: list[str]) -> None:
     """Distribution of per-pair valid-pose counts by method (boxplot)."""
     valid = df.pivot_table(index="pair", columns="docking_method",
                            values="pb_valid", aggfunc="sum", fill_value=0)
@@ -1323,24 +1631,11 @@ def plot_validity_distribution(df: pd.DataFrame, out: Path, order: list[str],
     ax.set_xticklabels([f"{_pretty_method(c)}\n(n = {int(counts.get(c, 0)):,})" for c in cols],
                        rotation=20, ha="right")
     ax.set_ylabel("Valid poses per receptor-ligand pair")
+    # Descriptive title only — the paired per-complex valid-count test lives in
+    # validity_stats.txt (no significance brackets are drawn on the panel).
     title = ("Distribution of valid poses across receptor-ligand pairs\n"
              "(n = poses assessed per variant; whiskers/caps in red)"
              + _RMSD_FILTER_NOTE)
-    # Paired per-complex valid-pose COUNT: Friedman + Kendall's W, Wilcoxon post-hoc (Holm).
-    if stats:
-        try:
-            vc = stats.get("valid_count")
-            cap = _fmt_cont_omnibus(vc or {})
-            if cap:
-                title += "\nper-complex paired: " + cap
-            if vc and len(cols) <= 5:
-                m2x = {m: i + 1 for i, m in enumerate(cols)}
-                top = float(np.nanmax(valid.to_numpy())) * 1.05 + 0.5
-                ytop = _draw_star_brackets(ax, m2x, vc.get("pairwise", []),
-                                           top, max(0.5, top * 0.06))
-                ax.set_ylim(top=max(ax.get_ylim()[1], ytop * 1.05))
-        except Exception as e:  # pragma: no cover
-            print(f"  [stats] plot_validity_distribution annotation failed: {e}")
     ax.set_title(title)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
@@ -1348,8 +1643,7 @@ def plot_validity_distribution(df: pd.DataFrame, out: Path, order: list[str],
     plt.close(fig)
 
 
-def plot_check_passrate(df: pd.DataFrame, out: Path, order: list[str],
-                        stats: dict | None = None) -> None:
+def plot_check_passrate(df: pd.DataFrame, out: Path, order: list[str]) -> None:
     """Per-check pass rate per method (which PB criterion is failing most)."""
     checks = _present_checks(df)
     rows = []
@@ -1369,25 +1663,12 @@ def plot_check_passrate(df: pd.DataFrame, out: Path, order: list[str],
     fig, ax = plt.subplots(figsize=(max(8, 1.2 * len(pr.columns)), 6))
     sns.heatmap(pr * 100, annot=True, fmt=".1f", cmap="RdYlGn", vmin=0, vmax=100,
                 cbar_kws={"label": "Pass rate (%)"}, ax=ax)
+    # Descriptive panel only: the heatmap shows POSE-LEVEL per-check pass rates. The
+    # per-complex '≥1 pose passes' test (a different estimand) that used to ★-mark rows is
+    # in validity_stats.txt, so a significant per-complex contrast is never conflated with
+    # the pose-level rate plotted here.
     title = ("Per-check pass rate (%) per docking method (n = poses per variant)"
              + _RMSD_FILTER_NOTE)
-    # Per-complex paired test on EACH check ('≥1 pose passes it'): Cochran's Q, BH-corrected
-    # across the checks. Star (★) the checks where tools genuinely differ — this is what
-    # substantiates the 'EquiBind fails bond angles/lengths' claim.
-    if stats:
-        try:
-            sig = set(stats.get("per_check_significant_bh", []))
-            per_check = stats.get("per_check", {})
-            if per_check:
-                ylabels = []
-                for chk in pr.index:                       # raw check names
-                    star = "★ " if chk in sig else ""
-                    ylabels.append(star + str(chk))
-                ax.set_yticklabels(ylabels, rotation=0)
-                title += ("\n★ tools differ (per-complex ≥1-pose-passes; "
-                          "Cochran Q, BH q<0.05)")
-        except Exception as e:  # pragma: no cover
-            print(f"  [stats] plot_check_passrate annotation failed: {e}")
     ax.set_title(title)
     ax.set_xlabel("")
     ax.set_ylabel("PoseBusters critical check")
@@ -1402,6 +1683,11 @@ def _variant_short_label(m: str, prefix: str) -> str:
     Deliberately ignores ``_LABEL_OVERRIDES`` (the 'DiffDock*'/'EquiBind*' stars) so
     per-variant comparison figures always show the true optimizer/pocket identity of
     every bar — including the variant chosen as 'best' elsewhere."""
+    if str(m).startswith("autodock"):
+        base = _autodock_scoring_base(m)
+        opt = m[len(base):].lstrip("_") if str(m).startswith(base) else ""
+        return {"": "native", "smina": "smina-opt", "gnina": "gnina-opt",
+                "gnina_refinement": "GNINA CNN-refine"}.get(opt, opt or "native")
     if prefix == "diffdock":
         return {"diffdock": "original", "diffdock_smina": "smina-opt",
                 "diffdock_gnina": "gnina-opt"}.get(m, m)
@@ -1419,16 +1705,21 @@ def _variant_short_label(m: str, prefix: str) -> str:
 
 
 def plot_tool_variant_comparison(summary: pd.DataFrame, out: Path, colors: dict, *,
-                                 prefix: str, tool_label: str,
-                                 subtitle: str = "", stats: dict | None = None) -> bool:
+                                 prefix: str, tool_label: str, subtitle: str = "",
+                                 select=None) -> bool:
     """Bar chart comparing PB-validity (%) across the variants of one docking tool.
 
-    Filters *summary* to methods whose key starts with *prefix* (``diffdock`` /
-    ``equibind``) and draws one bar per variant, annotated with the pass rate and
-    valid/total counts. Returns False (nothing written) when the tool has < 2 variants —
-    there is nothing to compare. Labels bypass the 'best'-variant star so every
-    optimizer/pocket flavour stays identifiable."""
-    sub = summary[summary.index.str.startswith(prefix)]
+    Selects *summary* rows via *select* (a method-key predicate) when given, else by
+    ``str.startswith(prefix)``. The predicate lets the caller separate the AutoDock Vina
+    family from Vinardo (a bare ``startswith("autodock")`` would sweep Vinardo into a
+    "Vina" figure). Draws one bar per variant, annotated with the pass rate and valid/total
+    counts. Returns False (nothing written) when the tool has < 2 variants. Labels bypass
+    the 'best'-variant star so every optimizer/pocket flavour stays identifiable. Inferential
+    tests live in validity_stats.txt, not on this panel."""
+    if select is not None:
+        sub = summary[[bool(select(str(m))) for m in summary.index]]
+    else:
+        sub = summary[summary.index.str.startswith(prefix)]
     if len(sub) < 2:
         return False
     sub = sub.loc[sorted(sub.index, key=lambda m: (_method_sort_key(m), m))]
@@ -1450,36 +1741,12 @@ def plot_tool_variant_comparison(summary: pd.DataFrame, out: Path, colors: dict,
     ax.set_xticklabels(labels, rotation=20, ha="right")
     ax.set_ylabel("PB-Valid poses (%)")
     ax.set_ylim(0, max(5, sub["valid_fraction"].max() * 100 * 1.25))
+    # Descriptive title only — the paired raw-vs-smina-vs-gnina per-complex tests (which
+    # validate gnina > smina) live in validity_stats.txt, not as brackets on this panel.
     title = f"{tool_label} — PB-validity per variant"
     if subtitle:
         title += "\n" + subtitle
     title += _RMSD_FILTER_NOTE
-    # Variants are PAIRED (the same complexes' poses minimized): per-complex ≥1-valid
-    # (Cochran's Q) + raw-vs-smina-vs-gnina pairwise McNemar/Holm brackets. Validates
-    # gnina > smina.
-    vstats = (stats or {}).get(f"{prefix}_variants")
-    if vstats:
-        try:
-            av = vstats.get("any_valid")
-            vc = vstats.get("valid_count")
-            caps = [c for c in (_fmt_prop_omnibus(av or {}),
-                                _fmt_cont_omnibus(vc or {}) and
-                                ("valid-count " + _fmt_cont_omnibus(vc))) if c]
-            if caps:
-                title += "\nper-complex paired: " + caps[0]
-                title += "".join("\n" + c for c in caps[1:])
-            # Prefer the valid-COUNT pairwise for the brackets — the ≥1-valid level
-            # saturates (both smina & gnina almost always get one), so gnina>smina only
-            # shows in the count. Fall back to ≥1-valid pairwise when count is absent (k=2).
-            pw_src = (vc or av or {}).get("pairwise", [])
-            if pw_src and len(sub) <= 6:
-                m2x = {m: i for i, m in enumerate(sub.index)}
-                top = float(sub["valid_fraction"].max() * 100) * 1.10 + 2
-                ytop = _draw_star_brackets(ax, m2x, pw_src,
-                                           top, max(2.0, top * 0.06))
-                ax.set_ylim(top=max(ax.get_ylim()[1], ytop * 1.05))
-        except Exception as e:  # pragma: no cover
-            print(f"  [stats] plot_tool_variant_comparison annotation failed: {e}")
     ax.set_title(title, fontsize=10)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()
@@ -1488,24 +1755,23 @@ def plot_tool_variant_comparison(summary: pd.DataFrame, out: Path, colors: dict,
     return True
 
 
-def plot_equibind_variants(summary: pd.DataFrame, out: Path, colors: dict,
-                           stats: dict | None = None) -> bool:
+def plot_equibind_variants(summary: pd.DataFrame, out: Path, colors: dict) -> bool:
     """Valid fraction (%) per EquiBind variant. Returns False if < 2 variants.
 
     Thin wrapper over plot_tool_variant_comparison kept for its original call site."""
     return plot_tool_variant_comparison(
         summary, out, colors, prefix="equibind", tool_label="EquiBind",
-        subtitle="(fpocket / p2rank / unguided, smina re-search, centroid clamp)",
-        stats=stats)
+        subtitle="(fpocket / p2rank / unguided, smina re-search, centroid clamp)")
 
 
 def _variant_matrix_cell(m: str) -> tuple[str, str] | None:
     """Map a variant key to (row, column) for the base-method × optimizer validity
     matrix, or None for methods with no place in it. EquiBind and DiffDock share a
-    raw/smina/gnina optimizer axis, so all three tool families slot into the same
-    columns."""
+    raw/smina/gnina optimizer axis. AutoDock additionally gets a dedicated
+    GNINA-refinement column; DiffDock and EquiBind keep their existing axes."""
     col_of = {"": "raw / original", "raw": "raw / original", "original": "raw / original",
-              "smina": "smina", "gnina": "gnina"}
+              "smina": "smina", "gnina": "gnina",
+              "gnina_refinement": "gnina refinement"}
     if m.startswith("autodock"):
         base = "autodock_vinardo" if m.startswith("autodock_vinardo") else "autodock"
         opt = m[len(base):].lstrip("_")
@@ -1523,23 +1789,36 @@ def _variant_matrix_cell(m: str) -> tuple[str, str] | None:
     return None
 
 
-def plot_variant_validity_matrix(summary: pd.DataFrame, out: Path,
-                                 stats: dict | None = None) -> bool:
+def plot_variant_validity_matrix(summary: pd.DataFrame, out: Path) -> bool:
     """Heatmap of PB-validity (%) per variant — the matrix view of the per-tool variant
     bar charts (figs 06/07). Rows are the base method (AutoDock, DiffDock, and EquiBind by
-    pocket × clamp); columns are the shared optimizer axis (raw/original, smina, gnina);
+    pocket × clamp); columns are the optimizer axis (raw/original, smina, gnina,
+    plus AutoDock-only GNINA refinement);
     each cell is that variant's PB-valid fraction. Returns False when fewer than two
     variant cells exist (nothing worth a matrix)."""
-    cells: dict[str, dict[str, float]] = {}
+    # Accumulate valid/total pose COUNTS per (row, col) rather than assigning the
+    # fraction directly: two distinct variants can legitimately map to the same cell
+    # (e.g. the unsuffixed ``equibind_fpocket`` and the explicit-raw ``equibind_fpocket_raw``
+    # both mean "fpocket · raw / original"). A plain assignment let the second silently
+    # overwrite the first; pooling their counts gives the correct combined rate instead.
+    count_col = _analyzed_count_col(summary)
+    cell_valid: dict[str, dict[str, float]] = {}
+    cell_total: dict[str, dict[str, float]] = {}
     for m in summary.index:
         rc = _variant_matrix_cell(str(m))
         if rc is None:
             continue
         r, c = rc
-        cells.setdefault(r, {})[c] = float(summary.loc[m, "valid_fraction"]) * 100.0
+        cell_valid.setdefault(r, {}).setdefault(c, 0.0)
+        cell_total.setdefault(r, {}).setdefault(c, 0.0)
+        cell_valid[r][c] += float(summary.loc[m, "valid_poses"])
+        cell_total[r][c] += float(summary.loc[m, count_col])
+    cells = {r: {c: (cell_valid[r][c] / cell_total[r][c] * 100.0
+                     if cell_total[r][c] else np.nan)
+                 for c in cols} for r, cols in cell_valid.items()}
     if not cells:
         return False
-    col_order = ["raw / original", "smina", "gnina"]
+    col_order = ["raw / original", "smina", "gnina", "gnina refinement"]
     mat = pd.DataFrame(cells).T
     mat = mat.reindex(columns=[c for c in col_order if c in mat.columns])
     lead = [r for r in ("AutoDock Vina", "DiffDock") if r in mat.index]
@@ -1555,21 +1834,9 @@ def plot_variant_validity_matrix(summary: pd.DataFrame, out: Path,
                 cbar_kws={"label": "PB-Valid poses (%)"}, ax=ax)
     ax.set_xlabel("Optimizer / re-search")
     ax.set_ylabel("Base method")
+    # Descriptive title only — the per-complex omnibus across each engine's optimizer
+    # variants lives in validity_stats.txt.
     title = ("PB-validity (%) per variant — base method × optimizer" + _RMSD_FILTER_NOTE)
-    # Paired per-complex omnibus across each tool's optimizer variants (Cochran's Q on
-    # ≥1-valid); the raw-vs-smina-vs-gnina pairwise stars live in the 06/07 bar charts.
-    if stats:
-        try:
-            caps = []
-            for prefix, name in (("equibind", "EquiBind"), ("diffdock", "DiffDock")):
-                v = stats.get(f"{prefix}_variants", {})
-                c = _fmt_prop_omnibus((v or {}).get("any_valid", {}))
-                if c:
-                    caps.append(f"{name} {c}")
-            if caps:
-                title += "\nper-complex paired: " + "\n".join(caps)
-        except Exception as e:  # pragma: no cover
-            print(f"  [stats] plot_variant_validity_matrix annotation failed: {e}")
     ax.set_title(title, fontsize=10)
     fig.tight_layout()
     fig.savefig(out, dpi=160)
@@ -1580,10 +1847,11 @@ def plot_variant_validity_matrix(summary: pd.DataFrame, out: Path,
 def _join_rmsd_to_crystal(df: pd.DataFrame, metrics_csv: Path, rmsd_col: str,
                           label: str = "rmsd-sweep") -> pd.DataFrame | None:
     """Return *df* with a numeric ``rmsd_to_crystal`` column joined from *metrics_csv*
-    (per_pose_metrics.csv) on (protein, ligand, pose_name), or None when the metrics
-    file / column / join keys are unavailable. Unlike apply_rmsd_filter this never
-    exits — callers (the RMSD sweep, the ≤2 Å summary columns) degrade gracefully (e.g.
-    crystal-free Orai) instead of aborting the run. *label* only tags the skip message."""
+    (per_pose_metrics.csv) via _attach_rmsd_to_crystal — a method-aware (protein, ligand,
+    pose_name, method) join — or None when the metrics file / column / join keys are
+    unavailable. Unlike apply_rmsd_filter this never exits — callers (the RMSD sweep, the
+    ≤2 Å summary columns) degrade gracefully (e.g. crystal-free Orai) instead of aborting
+    the run. *label* only tags the skip message."""
     if not metrics_csv or not Path(metrics_csv).exists():
         print(f"  [{label}] per-pose metrics not found at {metrics_csv} — skipping.")
         return None
@@ -1592,17 +1860,7 @@ def _join_rmsd_to_crystal(df: pd.DataFrame, metrics_csv: Path, rmsd_col: str,
     if rmsd_col not in metrics.columns or any(k not in metrics.columns for k in key):
         print(f"  [{label}] {metrics_csv} lacks '{rmsd_col}' or join keys {key} — skipping.")
         return None
-    m = metrics[key + [rmsd_col]].copy()
-    for k in key:
-        m[k] = m[k].astype(str)
-    m = m.drop_duplicates(subset=key)
-    d = df.copy()
-    for k in key:
-        d[k] = d[k].astype(str)
-    d = d.merge(m.rename(columns={rmsd_col: "rmsd_to_crystal"}), on=key,
-                how="left", validate="m:1")
-    d["rmsd_to_crystal"] = pd.to_numeric(d["rmsd_to_crystal"], errors="coerce")
-    return d
+    return _attach_rmsd_to_crystal(df, metrics, rmsd_col)
 
 
 # Near-native RMSD-to-crystal cutoff for the rmsd2_* summary columns (the canonical
@@ -1612,24 +1870,27 @@ NEAR_NATIVE_RMSD_A = 2.0
 
 def _rmsd_le2_counts(df: pd.DataFrame, metrics_csv: Path, rmsd_col: str,
                      thresh: float = NEAR_NATIVE_RMSD_A):
-    """Per-method (poses, PB-valid poses) with RMSD-to-crystal ≤ *thresh* Å.
+    """Per-method (poses, PB-valid poses) within *thresh* Å of the crystal.
 
-    Reuses the ``rmsd_to_crystal`` column already joined by --max-rmsd when present,
-    otherwise joins it from *metrics_csv*. Returns (None, None) for a crystal-free set
-    (no metrics / no RMSD) or when nothing lands within the cutoff, so the caller simply
-    omits the rmsd2_* summary columns."""
-    if "rmsd_to_crystal" in df.columns:
-        d = df
-    else:
-        d = _join_rmsd_to_crystal(df, metrics_csv, rmsd_col, label="rmsd≤2")
-        if d is None:
-            return None, None
+    Joins RMSD-to-crystal fresh from *metrics_csv*; *df* should be the UNFILTERED frame so
+    the near-native (≤ *thresh* Å) subset is measured over every generated pose. Reusing a
+    pre-filtered --max-rmsd column would make the ≤ 2 Å count a no-op when the filter cutoff
+    is itself < 2 Å — the columns would be labelled ≤ 2 Å while actually holding the ≤ cutoff
+    subset.
+
+    Returns (poses, valid_poses) per docking_method, distinguishing the two zero cases the
+    caller renders differently:
+      * no RMSD data at all (crystal-free set / metrics missing) → (None, None): columns omitted.
+      * RMSD available but nothing within *thresh* → EMPTY Series (not None): the caller then
+        still reports rmsd2_poses = 0, so a genuine 0 % near-native is not shown like N/A."""
+    d = _join_rmsd_to_crystal(df, metrics_csv, rmsd_col, label="rmsd≤2")
+    if d is None:
+        return None, None
     r = pd.to_numeric(d["rmsd_to_crystal"], errors="coerce")
     near = d[r <= thresh]
     if near.empty:
-        print(f"  [rmsd≤2] no pose within {thresh:g} Å of the crystal — "
-              "omitting rmsd2_* summary columns.")
-        return None, None
+        print(f"  [rmsd≤2] RMSD available but no pose within {thresh:g} Å of the crystal "
+              "— reporting rmsd2_* columns as 0 (not omitting them).")
     return (near.groupby("docking_method").size(),
             near.groupby("docking_method")["pb_valid"].sum())
 
@@ -1645,10 +1906,15 @@ def plot_validity_vs_rmsd(df: pd.DataFrame, metrics_csv: Path, rmsd_col: str,
 
     RMSD-to-crystal is joined from *metrics_csv*; returns [] (no files) for a set with no
     usable RMSD (e.g. crystal-free Orai), else the basenames of the figures written."""
-    d = _join_rmsd_to_crystal(df, metrics_csv, rmsd_col)
-    if d is None:
+    d_all = _join_rmsd_to_crystal(df, metrics_csv, rmsd_col)
+    if d_all is None:
         return []
-    d = d[d["rmsd_to_crystal"].notna()]
+    # Yield denominator = each method's FULL pose count (BEFORE dropping poses with no
+    # joined RMSD), so the curve is a true "% of the method's poses" (as the axis says),
+    # not "% of the RMSD-matched poses" — poses absent from the metrics file must count
+    # against the denominator, not silently shrink it.
+    method_totals = d_all.groupby("docking_method").size()
+    d = d_all[d_all["rmsd_to_crystal"].notna()]
     if d.empty:
         print("  [rmsd-sweep] no pose has an RMSD-to-crystal value — skipping figure.")
         return []
@@ -1660,7 +1926,7 @@ def plot_validity_vs_rmsd(df: pd.DataFrame, metrics_csv: Path, rmsd_col: str,
         sub = d[d["docking_method"] == method]
         rvalid = np.sort(sub.loc[sub["pb_valid"], "rmsd_to_crystal"].to_numpy())
         cum = np.searchsorted(rvalid, taus, side="right").astype(float)
-        curves[method] = (cum, len(sub))
+        curves[method] = (cum, int(method_totals.get(method, len(sub))))
 
     note = _RMSD_FILTER_NOTE.replace("\n", " ")
 
@@ -1851,6 +2117,35 @@ def plot_failure_waterfall(df: pd.DataFrame, methods: list[str], out: Path) -> b
     return True
 
 
+# Conditionally-produced outputs: written only for some configs (a variant figure that
+# needs >1 variant, an --max-rmsd summary, the RMSD sweep, the failure waterfall, the
+# stats sidecar). Cleared at the start of every run so a reused out-dir can never mix a
+# stale artifact from a different config into the current report. Always-overwritten
+# outputs (01–05, summary_per_tool.csv, validity_stats.json …) are not listed.
+_CONDITIONAL_OUTPUTS = (
+    "06_equibind_variant_validity.png",
+    "06a_autodock_variant_validity.png",
+    "06b_autodock_vinardo_variant_validity.png",
+    "07_diffdock_variant_validity.png",
+    "07b_variant_validity_matrix.png",
+    "08a_validity_vs_rmsd_count.png",
+    "08b_validity_vs_rmsd_yield.png",
+    "09_failure_waterfall_top.png",
+    "equibind_axis_breakdown.csv",
+    "check_failure_rates_per_variant.csv",
+    "rmsd_filter_summary.csv",
+    "validity_stats.txt",
+)
+
+
+def _clear_stale_outputs(out_dir: Path) -> None:
+    """Unlink this report's conditionally-produced artifacts in *out_dir* (if present)."""
+    for name in _CONDITIONAL_OUTPUTS:
+        f = out_dir / name
+        if f.exists():
+            f.unlink()
+
+
 # ───────────────────────────── main ─────────────────────────────
 
 def main() -> None:
@@ -1883,11 +2178,11 @@ def main() -> None:
                          "(filename fallback) (default: on).")
     ap.add_argument("--best-equibind-only", action="store_true",
                     help="Keep only the single best-performing EquiBind variant "
-                         "(highest PB-Valid AND RMSD ≤ 2 Å = oracle_pb_valid_and_rmsd2_%%, "
-                         "read from --oracle-summary) in all plots/CSVs, relabelled "
-                         "'EquiBind*'. AutoDock/DiffDock are unaffected. For datasets without "
-                         "a crystal (Orai), the default --oracle-summary borrows the benchmark "
-                         "ranking.")
+                         "(highest docking-success gate = oracle_pb_valid_and_rmsd2_%%, "
+                         "near-native AND PB-valid, read from --oracle-summary) in all "
+                         "plots/CSVs, relabelled 'EquiBind*'. AutoDock/DiffDock are unaffected. "
+                         "For datasets without a crystal (Orai), the default --oracle-summary "
+                         "borrows the benchmark ranking.")
     ap.add_argument("--oracle-summary", type=Path, default=DEFAULT_ORACLE_SUMMARY,
                     help="oracle_summary.csv from posebusters_pose_comparison.py used "
                          "to pick the best EquiBind/DiffDock variant for "
@@ -1897,15 +2192,16 @@ def main() -> None:
                          "file lists only one row per tool) (default: %(default)s).")
     ap.add_argument("--best-diffdock-only", action="store_true",
                     help="Keep only the single best-performing DiffDock optimizer "
-                         "variant (raw/smina/gnina, highest PB-Valid AND RMSD ≤ 2 Å = "
-                         "oracle_pb_valid_and_rmsd2_%%, read from --oracle-summary) in all "
-                         "plots/CSVs, relabelled 'DiffDock*'. AutoDock/EquiBind are unaffected.")
+                         "variant (raw/smina/gnina, highest docking-success gate = "
+                         "oracle_pb_valid_and_rmsd2_%%, near-native AND PB-valid, read from "
+                         "--oracle-summary) in all plots/CSVs, relabelled 'DiffDock*'. "
+                         "AutoDock/EquiBind are unaffected.")
     ap.add_argument("--diffdock-variant", choices=["raw", "original", "smina", "gnina"],
                     default=None,
                     help="Keep only this DiffDock optimizer variant in all plots/CSVs, "
                          "relabelled 'DiffDock*'. Explicit, crystal-free alternative to "
                          "--best-diffdock-only (names the variant instead of ranking by "
-                         "PB-Valid AND RMSD ≤ 2 Å). AutoDock/EquiBind are unaffected.")
+                         "the docking-success gate). AutoDock/EquiBind are unaffected.")
     ap.add_argument("--equibind-variant", default=None, metavar="SPEC",
                     help="Keep only the EquiBind variant matching SPEC (tokens split on "
                          "'_' or '/', matched against the pocket/refine/clamp axes, e.g. "
@@ -1928,14 +2224,17 @@ def main() -> None:
                          "use (default: %(default)s — symmetry-corrected, no "
                          "superposition, matching the oracle RMSD ≤ 2 Å metric).")
     ap.add_argument("--collapse-plots-only", action="store_true",
-                    help="Keep every variant in the CSV tables and the printed summary, "
-                         "but collapse each tool to a single variant in the main "
-                         "comparison figures (01-05 + the RMSD sweep), shown as "
-                         "'DiffDock*'/'EquiBind*'. Pairs with --best-*-only / "
-                         "--diffdock-variant / --equibind-variant to choose which variant "
-                         "is kept; with none of those it keeps each tool's best variant on "
-                         "PB-Valid AND RMSD ≤ 2 Å (oracle_pb_valid_and_rmsd2_%%). Also emits a "
-                         "per-tool variant comparison figure for every tool that has >1 variant.")
+                    help="Keep every variant in the CSV tables and the printed summary, but "
+                         "show ONE variant per engine in the main comparison figures (01-05 + "
+                         "the RMSD sweep), each at its best variant (relabelled "
+                         "'AutoDock*'/'DiffDock*'/'EquiBind*'), symmetric across engines with "
+                         "none pinned to raw. Pairs with --best-*-only / --diffdock-variant / "
+                         "--equibind-variant to choose which variant is kept; with none of "
+                         "those it selects each engine's best by the docking-success gate "
+                         "(oracle_pb_valid_and_rmsd2_%%, near-native AND PB-valid) — so the "
+                         "collapsed across-tool comparison is DESCRIPTIVE, not inferential "
+                         "(see validity_stats.txt). Also emits a per-tool variant comparison "
+                         "figure for every tool with >1 variant.")
     ap.add_argument("--rmsd-sweep-max", type=float, default=None, metavar="A",
                     help="Also draw a sweep figure (08) of how PB-validity accumulates as "
                          "the RMSD-to-crystal cutoff is relaxed from 0 to this many Å "
@@ -1946,7 +2245,20 @@ def main() -> None:
                          "(default: %(default)s).")
     args = ap.parse_args()
 
+    # Conflicting per-tool selectors must fail loudly, not resolve by silent apply-order
+    # (an explicit --*-variant would otherwise be discarded after --best-*-only ran).
+    if args.best_diffdock_only and args.diffdock_variant:
+        ap.error("--best-diffdock-only and --diffdock-variant are mutually exclusive; "
+                 "choose one DiffDock selector.")
+    if args.best_equibind_only and args.equibind_variant:
+        ap.error("--best-equibind-only and --equibind-variant are mutually exclusive; "
+                 "choose one EquiBind selector.")
+
     args.out_dir.mkdir(parents=True, exist_ok=True)
+    # Reusing an output dir must not leave stale, conditionally-produced artifacts from a
+    # different config (e.g. a prior --max-rmsd run's rmsd_filter_summary.csv, or a variant
+    # figure that self-skips this run) masquerading as current output.
+    _clear_stale_outputs(args.out_dir)
     df = load_and_score(args.csv, split_equibind=args.split_equibind)
 
     # Restrict to the official benchmark-set ids (the complex id is the 'protein'
@@ -1961,6 +2273,9 @@ def main() -> None:
     # Optionally keep only poses within --max-rmsd Å of the crystal. Done before the
     # best-variant selection and all scoring so every downstream CSV/figure reflects
     # the filtered set (which is also flagged in each figure title via _RMSD_FILTER_NOTE).
+    # The pre-filter frame is retained so the near-native (≤ 2 Å) rmsd2_* columns are
+    # always measured over ALL generated poses, never a < 2 Å --max-rmsd subset.
+    df_unfiltered = df
     generated_counts: pd.Series | None = None
     generated_valid_counts: pd.Series | None = None
     if args.max_rmsd is not None:
@@ -1989,23 +2304,25 @@ def main() -> None:
 
     def _select(frame: pd.DataFrame) -> pd.DataFrame:
         """Apply the requested variant selectors to *frame* (populating the
-        'DiffDock*'/'EquiBind*' label overrides). With --collapse-plots-only and no
-        explicit selector, falls back to keeping each tool's best variant on
-        PB-Valid AND RMSD ≤ 2 Å."""
+        'DiffDock*'/'EquiBind*'/'AutoDock*' label overrides). With --collapse-plots-only and
+        no explicit selector, collapses EVERY multi-variant engine to its best variant on the
+        docking-success gate (near-native AND PB-valid) — the most usable variant per engine,
+        symmetric (no engine pinned to raw). Because the gate contains PB-validity, the
+        collapsed across-tool comparison is reported descriptively, not inferentially."""
         dd_selected = bool(args.best_diffdock_only or args.diffdock_variant)
         eq_selected = bool(args.best_equibind_only or args.equibind_variant)
         if args.best_equibind_only:
             frame, best = select_best_equibind(frame, args.oracle_summary)
             if best:
                 _LABEL_OVERRIDES[best] = "EquiBind*"
-                print(f"best-equibind-only: '{best}' is the top EquiBind variant by "
-                      "PB-Valid AND RMSD ≤ 2 Å — collapsing to it (shown as 'EquiBind*').")
+                print(f"best-equibind-only: '{best}' is the top EquiBind variant by the "
+                      "docking-success gate — collapsing to it (shown as 'EquiBind*').")
         if args.best_diffdock_only:
             frame, best = select_best_diffdock(frame, args.oracle_summary)
             if best:
                 _LABEL_OVERRIDES[best] = "DiffDock*"
-                print(f"best-diffdock-only: '{best}' is the top DiffDock variant by "
-                      "PB-Valid AND RMSD ≤ 2 Å — collapsing to it (shown as 'DiffDock*').")
+                print(f"best-diffdock-only: '{best}' is the top DiffDock variant by the "
+                      "docking-success gate — collapsing to it (shown as 'DiffDock*').")
         if args.diffdock_variant:
             frame, kept = select_diffdock_variant(frame, args.diffdock_variant)
             if kept:
@@ -2016,25 +2333,30 @@ def main() -> None:
             if kept:
                 _LABEL_OVERRIDES[kept] = "EquiBind*"
                 print(f"equibind-variant: keeping only '{kept}' (shown as 'EquiBind*').")
-        # Under --collapse-plots-only, collapse each tool that wasn't given an explicit
-        # selector above to its best variant on PB-Valid AND RMSD ≤ 2 Å, so both tools
-        # collapse by default (a lone --diffdock-variant no longer leaves EquiBind expanded).
-        # Needs an oracle; crystal-free sets (Orai) should pin the variant explicitly instead.
-        if args.collapse_plots_only and not dd_selected:
-            frame, best_dd = select_best_diffdock(frame, args.oracle_summary)
-            if best_dd:
-                _LABEL_OVERRIDES[best_dd] = "DiffDock*"
-                print(f"collapse-plots-only: keeping DiffDock's best on PB-Valid & RMSD ≤ 2 Å "
-                      f"'{best_dd}' in the plots (shown as 'DiffDock*').")
-        if args.collapse_plots_only and not eq_selected:
-            frame, best_eq = select_best_equibind(frame, args.oracle_summary)
-            if best_eq:
-                _LABEL_OVERRIDES[best_eq] = "EquiBind*"
-                print(f"collapse-plots-only: keeping EquiBind's best on PB-Valid & RMSD ≤ 2 Å "
-                      f"'{best_eq}' in the plots (shown as 'EquiBind*').")
+        # Under --collapse-plots-only, collapse EVERY engine that wasn't given an explicit
+        # selector to its best variant on the docking-success gate (near-native AND PB-valid).
+        # AutoDock (Vina and Vinardo) get the same treatment as DiffDock/EquiBind, so no engine
+        # is pinned to raw. Needs an oracle; crystal-free sets (Orai) should pin the ML variants
+        # explicitly (AutoDock has no crystal ranking there and stays raw).
+        if args.collapse_plots_only:
+            for selector, star, on in (
+                (select_best_diffdock, "DiffDock*", not dd_selected),
+                (select_best_equibind, "EquiBind*", not eq_selected),
+                (select_best_autodock, "AutoDock*", True),
+                (select_best_autodock_vinardo, "AutoDock Vinardo*", True),
+            ):
+                if not on:
+                    continue
+                frame, best = selector(frame, args.oracle_summary)
+                if best:
+                    _LABEL_OVERRIDES[best] = star
+                    print(f"collapse-plots-only: keeping {star.rstrip('*')}'s best on the "
+                          f"docking-success gate '{best}' in the plots (shown as '{star}').")
         return frame
 
     df_plot = _select(df_full)
+    if args.collapse_plots_only:
+        df_plot = _select_presentation_tools(df_plot)
     if not args.collapse_plots_only:
         # Legacy: no table/plot split — the selection (if any) applies everywhere.
         df_full = df_plot
@@ -2055,7 +2377,7 @@ def main() -> None:
     # rmsd2_valid_fraction. Reuses --max-rmsd's join if present, else joins
     # per_pose_metrics; (None, None) for crystal-free sets (Orai) → columns omitted.
     rmsd2_counts, rmsd2_valid_counts = _rmsd_le2_counts(
-        df_full, args.per_pose_metrics, args.rmsd_column)
+        df_unfiltered, args.per_pose_metrics, args.rmsd_column)
 
     # ── Tables (always the full, all-variants set) ───────────────────────────
     summary_full = per_tool_summary(df_full, order_full,
@@ -2093,32 +2415,48 @@ def main() -> None:
     # to the current, test-free figures. Numbers are also written to validity_stats.json.
     dataset_label = args.out_dir.parent.parent.name if len(args.out_dir.parts) >= 2 \
         else str(args.out_dir.name)
+    # Friendly title prefix for fig 01 — derived from the dataset, no longer hardcoded
+    # "PoseBusters Benchmark" for every input (F13).
+    dataset_title = {
+        "benchmark": "PoseBusters Benchmark",
+        "benchmark_full_protein_vina_scoring": "PoseBusters Benchmark (full protein)",
+        "orai_benchmark": "Orai (benchmark ligands)",
+        "orai": "Orai",
+    }.get(dataset_label, dataset_label.replace("_", " ").title())
+    # Across-tool contrasts are post-selection (descriptive) whenever a tool's variant was
+    # data-driven-selected on the docking-success gate: --collapse-plots-only auto-collapse or
+    # --best-*-only. Explicit --*-variant pins are pre-declared, but a collapse run still
+    # auto-selects the other engines, so flag the whole across-tool block conservatively.
+    post_selection = bool(args.collapse_plots_only or args.best_equibind_only
+                          or args.best_diffdock_only)
     stats: dict | None = None
     try:
         stats = compute_validity_stats(df_plot, df_full, order_plot, order_full,
-                                       dataset_label)
+                                       dataset_label, post_selection=post_selection)
         (args.out_dir / "validity_stats.json").write_text(
             json.dumps(_json_safe(stats), indent=2, default=str))
+        # Inferential tests live in a companion sidecar, not on the figure panels.
+        write_stats_sidecar(stats, args.out_dir)
         note = (" (exploratory — small n)" if stats.get("exploratory") else "")
         print(f"Stats: paired per-complex tests over n={stats.get('n_complete_units')} "
-              f"complete units{note}; wrote validity_stats.json")
+              f"complete units{note}; wrote validity_stats.json + validity_stats.txt")
     except Exception as e:  # pragma: no cover - never crash the pipeline
-        print(f"[warn] statistics step failed ({e}); figures drawn without tests.")
+        print(f"[warn] statistics step failed ({e}); figures drawn without the sidecar.")
         stats = None
 
     figures: list[str] = []
-    plot_per_tool(summary_plot, args.out_dir / "01_per_tool_validity.png", stats=stats)
+    plot_per_tool(summary_plot, args.out_dir / "01_per_tool_validity.png",
+                  title_prefix=dataset_title)
     plot_heatmap(valid_mat_plot, args.out_dir / "02_valid_heatmap_top.png",
                  top_n=args.top_n_heatmap)
     plot_heatmap(valid_mat_plot, args.out_dir / "02b_valid_heatmap_bottom.png",
                  top_n=args.top_n_heatmap, worst=True)
     plot_grouped_bars(valid_mat_plot, args.out_dir / "03_valid_grouped_bars_top.png",
-                      colors_plot, top_n=args.top_n_bars, stats=stats)
+                      colors_plot, top_n=args.top_n_bars)
     plot_validity_distribution(df_plot,
                                args.out_dir / "04_valid_per_pair_distribution.png",
-                               order_plot, stats=stats)
-    plot_check_passrate(df_plot, args.out_dir / "05_per_check_passrate.png", order_plot,
-                        stats=stats)
+                               order_plot)
+    plot_check_passrate(df_plot, args.out_dir / "05_per_check_passrate.png", order_plot)
     figures += ["01_per_tool_validity.png", "02_valid_heatmap_top.png",
                 "02b_valid_heatmap_bottom.png", "03_valid_grouped_bars_top.png",
                 "04_valid_per_pair_distribution.png", "05_per_check_passrate.png"]
@@ -2130,22 +2468,31 @@ def main() -> None:
     # variant is left, so they self-skip.
     if plot_equibind_variants(summary_full,
                               args.out_dir / "06_equibind_variant_validity.png",
-                              colors_full, stats=stats):
+                              colors_full):
         figures.append("06_equibind_variant_validity.png")
+    # AutoDock Vina and Vinardo are SEPARATE figures — a bare "autodock" prefix would sweep
+    # the Vinardo variants into a figure titled "AutoDock Vina" (F7). Each selects its own
+    # scoring-base family explicitly.
     if plot_tool_variant_comparison(
             summary_full, args.out_dir / "06a_autodock_variant_validity.png",
             colors_full, prefix="autodock", tool_label="AutoDock Vina",
             subtitle="(native Vina vs smina- / gnina-optimised and re-ranked)",
-            stats=stats):
+            select=lambda m: m.startswith("autodock") and _autodock_scoring_base(m) == "autodock"):
         figures.append("06a_autodock_variant_validity.png")
+    if plot_tool_variant_comparison(
+            summary_full, args.out_dir / "06b_autodock_vinardo_variant_validity.png",
+            colors_full, prefix="autodock_vinardo", tool_label="AutoDock Vinardo",
+            subtitle="(native Vinardo vs smina- / gnina-optimised and re-ranked)",
+            select=lambda m: m.startswith("autodock_vinardo")):
+        figures.append("06b_autodock_vinardo_variant_validity.png")
     if plot_tool_variant_comparison(
             summary_full, args.out_dir / "07_diffdock_variant_validity.png",
             colors_full, prefix="diffdock", tool_label="DiffDock",
-            subtitle="(original vs smina- / gnina-optimised)", stats=stats):
+            subtitle="(original vs smina- / gnina-optimised)"):
         figures.append("07_diffdock_variant_validity.png")
-    # Matrix view of 06/07: PB-validity (%) per variant as base method × optimizer.
+    # Matrix view of 06/06a/06b/07: PB-validity (%) per variant as base method × optimizer.
     if plot_variant_validity_matrix(
-            summary_full, args.out_dir / "07b_variant_validity_matrix.png", stats=stats):
+            summary_full, args.out_dir / "07b_variant_validity_matrix.png"):
         figures.append("07b_variant_validity_matrix.png")
 
     # ── RMSD-relaxation sweep (opt-in via --rmsd-sweep-max; crystal sets only) ──
@@ -2160,8 +2507,8 @@ def main() -> None:
     # ── Failure waterfall for the top variant of each tool ──
     # AutoDock, best DiffDock, best EquiBind side by side — each variant's poses cascade
     # from 100% down through the checks they fail to the PB-valid %. "Best" is the same
-    # PB-Valid AND RMSD ≤ 2 Å pick the collapsed comparison figures use (falls back to
-    # highest PB-valid fraction for crystal-free sets), so the report names one 'best' variant.
+    # docking-success-gate pick the collapsed comparison figures use (falls back to highest
+    # PB-valid fraction for crystal-free sets), so the report names one 'best' variant.
     # Honour an explicit --diffdock-variant pin so the waterfall highlights the
     # SAME DiffDock variant as the collapsed figures (otherwise it re-ranks via the
     # oracle and can disagree — e.g. showing smina while the plots show gnina).

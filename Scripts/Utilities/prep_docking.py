@@ -1076,6 +1076,14 @@ def convert_ligand_with_mgltools(
         intermediate_path = mol2_path
 
     log(f"Running MGL Tools ligand prep for {intermediate_path.name} → {output_path.name}")
+
+    # ``prepare_ligand4.py`` intentionally reduces ``-l`` to a basename before
+    # reading it. Run from the ligand's directory and pass only that basename;
+    # otherwise every input outside the current working directory is reported as
+    # missing. Keep the output absolute because the subprocess cwd changes.
+    ligand_work_dir = intermediate_path.parent.resolve()
+    ligand_input_arg = intermediate_path.name
+    ligand_output_arg = output_path.resolve().as_posix()
     
     # Use ADFRsuite prepare_ligand binary (works better than calling Python scripts directly)
     prepare_ligand_bin = Path(MGLTOOLS_PATH) / "bin" / "prepare_ligand" if MGLTOOLS_PATH else None
@@ -1085,9 +1093,9 @@ def convert_ligand_with_mgltools(
         cmd = [
             str(prepare_ligand_bin),
             "-l",
-            intermediate_path.as_posix(),
+            ligand_input_arg,
             "-o",
-            output_path.as_posix(),
+            ligand_output_arg,
             "-A",
             "hydrogens",
         ]
@@ -1096,21 +1104,32 @@ def convert_ligand_with_mgltools(
         cmd = [
             "prepare_ligand4.py",
             "-l",
-            intermediate_path.as_posix(),
+            ligand_input_arg,
             "-o",
-            output_path.as_posix(),
+            ligand_output_arg,
             "-A",
             "hydrogens",
         ]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            cmd,
+            cwd=ligand_work_dir,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         if verbose and result.stdout:
             log(result.stdout.strip())
         if verbose and result.stderr:
             log(result.stderr.strip())
     except (subprocess.CalledProcessError, FileNotFoundError) as exc:
+        details = ""
+        if isinstance(exc, subprocess.CalledProcessError):
+            details = (exc.stderr or exc.stdout or "").strip()
         message = f"MGL Tools ligand preparation failed for {ligand_path}: {exc}"
+        if details:
+            message += f" — {details[:500]}"
         raise RuntimeError(message) from exc
 
     return output_path.as_posix()
