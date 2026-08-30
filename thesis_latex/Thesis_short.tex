@@ -1,0 +1,267 @@
+\PassOptionsToPackage{hyperfootnotes=false}{hyperref}
+\PassOptionsToPackage{ngerman,english}{babel}
+% The class loads acronym (twbook.cls:114). The abbreviations are spelled out in the
+% prose rather than invoked with \ac, so no \label anchors are ever emitted and the
+% list's back-links would dangle. nohyperlinks prints the list without them.
+\PassOptionsToPackage{nohyperlinks}{acronym}
+\documentclass[Master,english,IEEE]{twbook}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{longtable,booktabs,multirow,calc,etoolbox}
+\usepackage{pdflscape}
+\usepackage{footnotehyper}
+\usepackage{microtype}
+% No [H] placements remain. A forced-here float cannot move, so a figure that does not
+% fit abandons the rest of the page. [!htbp] keeps the same figures beside their prose,
+% measured as identical or one page earlier, without the half-empty pages.
+\usepackage{float}
+
+% Page economy for the shortened review version: allow LaTeX to set more text on a
+% page that already carries a float, and to accept a fuller float page, so that
+% figures and tables pack against the prose instead of forcing near-empty pages.
+\renewcommand{\topfraction}{0.9}
+\renewcommand{\bottomfraction}{0.7}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.8}
+\setcounter{topnumber}{3}
+\setcounter{bottomnumber}{2}
+\setcounter{totalnumber}{4}
+
+\newcommand{\angstrom}{\ensuremath{\text{\AA}}}
+\newcounter{tablebeforeaitools}
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+
+\degreecourse{Artificial Intelligence Engineering}
+\addbibresource{Literatur.bib}
+\ExecuteBibliographyOptions{sorting=none}
+\DeclareBibliographyDriver{misc}{%
+  \printfield{note}%
+  \newunit\newblock%
+  \printfield{url}%
+  \finentry}
+
+\title{Comparative Analysis of Physics-Based and AI-Based Molecular Docking Tools}
+\author{Dominik Mann, PhD BSc}
+\hypersetup{
+  pdftitle={Comparative Analysis of Physics-Based and AI-Based Molecular Docking Tools},
+  pdfauthor={Dominik Mann},
+  pdfsubject={Master's thesis in Artificial Intelligence Engineering},
+  pdfkeywords={molecular docking, AutoDock Vina, DiffDock, EquiBind, PoseBusters, Orai1}}
+\makeatletter
+\renewcommand{\@pnumwidth}{2em}
+\makeatother
+\studentnumber{2410585017}
+\supervisor{FH-Prof. Priv.-Doz. Dipl.-Ing.(FH) Dr.\\Bernhard Knapp\\DI Dr. Heinrich Krobath\\Assoz Univ-Prof. DI Dr. Isabella Derler}
+\place{Wien}
+
+% The English abstract and its keywords occupy one page. The German translation is
+% embedded after an explicit page break because the shared twbook class otherwise
+% places \kurzfassung before \outline in an English-language master's thesis.
+\outline{Molecular docking predicts protein--ligand binding poses, but physics-based
+and artificial-intelligence (AI)-based tools differ in how they search, rank and
+represent molecular geometry. This thesis compares three configured blind
+whole-protein workflows. These are AutoDock Vina with gnina rescoring, the diffusion
+model DiffDock-L with smina optimisation and the equivariant regression model
+EquiBind with gnina optimisation. A calibration benchmark of 303 co-crystallised complexes permits
+assessment against known poses. The primary endpoint combines physical validity under
+the PoseBusters test battery with a heavy-atom root-mean-square deviation of at most
+2\angstrom{}. A reference-free case study additionally docks three modulators to four
+supplied molecular-dynamics snapshots of the Orai1 calcium channel and evaluates
+physical validity, operational placement, pose clustering and interaction
+fingerprints. Because workflow variants were selected and evaluated on the same
+benchmark, the comparison is descriptive and may be optimistic for unseen targets.
+
+Raw-pose validity was 98.2\% for AutoDock Vina, 24.4\% for DiffDock and 2.9\% for
+unguided EquiBind. Local optimisation raised the median per-complex validity yield
+from 13.3\% to 93.3\% for DiffDock and from 0\% to 56.7\% for EquiBind. It repaired
+local geometry but could not recover an unsampled or grossly misplaced binding mode.
+Rank-1 recovery of a pose that was both valid and within 2\angstrom{} of the crystal
+ligand reached 34.0\% of complexes for DiffDock, 29.4\% for AutoDock Vina and 15.2\%
+for EquiBind. The DiffDock--AutoDock difference was not statistically resolved.
+Inspecting the best of the first fifteen poses raised recovery to 55.1\%, 49.8\% and
+20.1\%, respectively, while extending the pool to thirty added no more than 0.7
+percentage points. The AutoDock rates are a lower bound, because search effort stayed
+fixed across whole-receptor boxes. Under the implementation-specific cost accounting, the configured
+AutoDock workflow had the highest cost per qualifying pose, whereas EquiBind's short
+conditional runtime accompanied successful recovery on only 62 of 303 complexes.
+
+On Orai1, the workflows localised the ligands to markedly different sites. The small,
+correlated and reference-free panel supports comparison of workflow behaviour but
+does not validate a native pose or binding site. Overall, the results support joint
+accuracy-and-validity criteria, local geometry optimisation for the evaluated learned
+workflows and explicit inspection of ranking depth. The conclusions apply to the
+configured pipelines and hardware rather than to physics-based and AI-based docking
+as universal method classes.
+
+\vfill\paragraph*{Keywords:}Molecular docking; Physics-based and AI-based methods;
+PoseBusters physical validity; Local pose optimisation; Orai1 calcium channel
+
+\clearpage
+\begin{otherlanguage}{ngerman}
+\chapter*{Kurzfassung}
+
+Molekulares Docking sagt Bindungsposen von Protein--Ligand-Komplexen voraus.
+Physikbasierte und auf künstlicher Intelligenz (KI) beruhende Werkzeuge unterscheiden
+sich jedoch in Suche, Reihung und Darstellung der Molekülgeometrie. Diese Arbeit
+vergleicht drei konfigurierte Arbeitsabläufe für blindes Ganzprotein-Docking:
+AutoDock Vina mit gnina-Rescoring, DiffDock-L mit smina-Optimierung und EquiBind mit
+gnina-Optimierung. Ein Kalibrierungsdatensatz aus 303 kokristallisierten Komplexen
+ermöglicht die Bewertung anhand bekannter Posen. Der primäre Endpunkt verbindet
+PoseBusters-Gültigkeit mit einer Schweratom-RMSD von höchstens 2\angstrom{}. Eine
+referenzfreie Fallstudie untersucht zusätzlich drei Modulatoren an vier bereitgestellten
+Molekulardynamik-Schnappschüssen des Orai1-Kalziumkanals mittels Gültigkeit, operativer
+Platzierung, Posen-Clustering und Interaktionsfingerabdrücken. Da die Varianten auf
+demselben Datensatz ausgewählt und bewertet wurden, ist der Vergleich deskriptiv und
+kann die Leistung auf unbekannten Zielproteinen überschätzen.
+
+Die Gültigkeit der Rohposen betrug 98,2\% für AutoDock Vina, 24,4\% für DiffDock und
+2,9\% für EquiBind ohne Bindungsstellenvorgabe. Lokale Optimierung erhöhte den medianen
+Gültigkeitsanteil pro Komplex bei DiffDock von 13,3\% auf 93,3\% und bei EquiBind von
+0\% auf 56,7\%. Sie korrigierte lokale Geometrie, nicht jedoch fehlende oder grob
+fehlplatzierte Bindungsmodi. Am Rang 1 betrug die Wiederfindungsrate einer gültigen
+Pose innerhalb von 2\angstrom{} zur Kristallpose 34,0\% für DiffDock,
+29,4\% für AutoDock Vina und 15,2\% für EquiBind; der Unterschied zwischen DiffDock
+und AutoDock war statistisch nicht auflösbar. Die beste der ersten fünfzehn Posen
+erhöhte diese Raten auf 55,1\%, 49,8\% und 20,1\%; dreißig Posen brachten höchstens
+weitere 0,7 Prozentpunkte. Die AutoDock-Raten sind Untergrenzen, da die
+Gründlichkeit über alle Ganzprotein-Boxen konstant blieb.
+In der implementierungsspezifischen Kostenrechnung hatte
+der konfigurierte AutoDock-Ablauf die höchsten Kosten pro qualifizierender Pose.
+Die kurze bedingte Laufzeit von EquiBind galt dagegen nur für 62 von 303
+erfolgreiche Komplexe.
+
+Für Orai1 lokalisierten die Arbeitsabläufe die Liganden an deutlich unterschiedlichen
+Stellen. Das kleine, korrelierte und referenzfreie Panel vergleicht ihr Verhalten,
+validiert jedoch weder eine native Pose noch eine Bindungsstelle. Insgesamt sprechen
+die Ergebnisse für eine gemeinsame Beurteilung von Genauigkeit und physikalischer
+Gültigkeit, für lokale Geometrieoptimierung in den untersuchten KI-Pipelines und für
+die explizite Untersuchung der Rangtiefe. Die Schlussfolgerungen gelten für die konfigurierten
+Pipelines und die verwendete Hardware, nicht allgemein für physikbasierte oder
+KI-basierte Dockingmethoden.
+
+\vfill\paragraph*{Schlagworte:}Molekulares Docking; Physikbasierte und KI-basierte
+Methoden; Physikalische PoseBusters-Gültigkeit; Lokale Posenoptimierung;
+Orai1-Kalziumkanal
+\end{otherlanguage}}
+
+\begin{document}
+
+% Cite all substantively used sources in their reviewed numeric order before the
+% first body citation. Every key listed here is also cited somewhere in the text, so the
+% printed bibliography contains no uncited entry. Verified 2026-08-23 by diffing this list
+% against every \cite in body_main_short.tex and body_appendix_short.tex.
+% The following remain in Literatur.bib but are deliberately NOT listed here, because no
+% surviving sentence relies on them:
+%   ref034, ref039 - never cited in either build.
+%   ref089 = ADFRsuite, dropped 2026-08-22 with the Docking Protocols streamline: the
+%     only sentence citing it recorded a preparation tool that no reported run used.
+%   ref042 (Kong, CRAC antagonists) and ref094 (Zitt, CRAC inhibition) - dropped
+%     2026-08-23; the Appendix E pharmacology pass deleted their only citing sentences.
+%   ref053 (Zheng, scoring-correction term), ref078 (Durant, interrogating ML scoring
+%     functions), ref085 (Wang, differentiable pose optimisation) - dropped 2026-08-23;
+%     orphaned by earlier Literature Review and Discussion cuts.
+%   ref051 (Noor, VirtuDockDL) - dropped 2026-08-23; its only citing sentence claimed
+%     computational efficiency for AI-based docking. Its deep-learning stage is a ligand
+%     activity pre-filter, its pose generation is delegated to AutoDock Vina, and it
+%     reports no runtime anywhere. That claim now cites ref010 (EquiBind, 0.04 s per
+%     complex against 49 s for the fastest search baseline) and ref027 (KarmaDock),
+%     which both measure what the sentence asserts.
+%   ref074 (Ragoza, ligand pose optimization with atomic grid-based convolutional
+%     neural networks) and ref077 (Sunseri, convolutional neural network scoring and
+%     minimization in the D3R 2017 community challenge) -
+%     dropped 2026-08-29 with the gnina refinement mode. Their only citing sentences
+%     described CNN-gradient minimisation, which is no longer part of the analysis.
+% If any of these is cited again, re-add its key here in numeric position.
+\nocite{ref001,ref002,ref003,ref004,ref005,ref006,ref007,ref008,ref009,ref010,ref011,ref012,ref013,ref014,ref015,ref016,ref017,ref018,ref019,ref020,ref021,ref022,ref023,ref024,ref025,ref026,ref027,ref028,ref029,ref030,ref031,ref032,ref033,ref035,ref036,ref037,ref038,ref040,ref041,ref043,ref044,ref045,ref046,ref047,ref048,ref049,ref050,ref052,ref054,ref055,ref056,ref057,ref058,ref059,ref060,ref061,ref062,ref063,ref064,ref065,ref066,ref067,ref068,ref069,ref070,ref071,ref072,ref073,ref075,ref076,ref079,ref080,ref081,ref082,ref083,ref084,ref086,ref087,ref088,ref090,ref091,ref092,ref093}
+\maketitle
+
+\input{body_main_short}
+
+% Transparent disclosure of the assistance used for this revision and conversion.
+\aitoolentry{OpenAI Codex}{Consistency review}{Prompt: ``Please conduct a very detailed review of the
+thesis. Compare the numbers reported in the tables and figures and make sure
+they are in line with the text.''}
+
+\aitoolentry{Claude Code}{Code review and code documentation of the analysis
+and docking scripts, verification of the reported numbers against the underlying
+data, checking and correction of citations, and application of the resulting
+corrections to the manuscript text}{Representative prompts: ``Review the code for
+errors and bugs''; ``Please add a function description and comments.''; ``Please
+perform an adversarial review of the thesis. Do all the numbers in the graphs,
+tables and prose align? Are the citations valid?''; ``Can you please correct the
+citations?''}
+
+\clearpage
+\printbibliography
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
+\clearpage
+% List of abbreviations. The class already loads the acronym package (twbook.cls:114)
+% and defines \listacroname (twbook.cls:175-180), which resolves to "List of
+% Abbreviations" in the english build. The phantomsection/addcontentsline/chapter*
+% sequence mirrors the class's own \listaitools front-matter pattern (twbook.cls:294-296).
+\phantomsection
+\addcontentsline{toc}{chapter}{\listacroname}
+\chapter*{\listacroname}
+
+\begin{acronym}[ETKDGv3]
+\acro{APB}[2-APB]{2-aminoethoxydiphenyl borate}
+\acro{AI}{artificial intelligence}
+\acro{BEDROC}{Boltzmann-enhanced discrimination of the receiver operating characteristic}
+\acro{BFGS}{Broyden-Fletcher-Goldfarb-Shanno}
+\acro{BH}{Benjamini-Hochberg}
+\acro{CC1}{coiled-coil 1 domain of STIM1}
+\acro{CI}{confidence interval}
+\acro{cLogP}{calculated octanol--water partition coefficient}
+\acro{CNN}{convolutional neural network}
+\acro{CPU}{central processing unit}
+\acro{CRAC}{calcium release-activated calcium}
+\acro{CUDA}{Compute Unified Device Architecture}
+\acro{Da}{dalton}
+\acro{EF}{enrichment factor}
+\acro{ETKDGv3}{Experimental-Torsion Knowledge Distance Geometry, version 3}
+\acro{GPU}{graphics processing unit}
+\acro{HBA}{hydrogen-bond acceptor}
+\acro{HBD}{hydrogen-bond donor}
+\acro{IC50}[\ensuremath{\mathrm{IC}_{50}}]{half-maximal inhibitory concentration}
+\acro{InChI}{International Chemical Identifier}
+\acro{IQR}{interquartile range}
+\acro{JKU}{Johannes Kepler University Linz}
+\acro{MD}{molecular dynamics}
+\acro{MMFF}{Merck Molecular Force Field}
+\acro{MW}{molecular weight}
+\acro{PB}{PoseBusters, as in PB-valid}
+\acro{PC}{principal component, numbered PC1 to PC4}
+\acro{PCA}{principal-component analysis}
+\acro{PDB}{Protein Data Bank}
+\acro{PDBQT}{Protein Data Bank format with Partial Charge (Q) and Atom Type (T)}
+\acro{PLIP}{Protein-Ligand Interaction Profiler}
+\acro{QED}{quantitative estimate of drug-likeness}
+\acro{RBL}{rat basophilic leukaemia}
+\acro{RMSD}{root-mean-square deviation}
+\acro{RO5}[Ro5]{Lipinski's rule of five}
+\acro{ROCAUC}[ROC-AUC]{area under the receiver operating characteristic curve}
+\acro{RQ}{research question, numbered RQ1 to RQ4}
+\acro{SDF}{structure-data file}
+\acro{SE3}[SE(3)]{special Euclidean group in three dimensions}
+\acro{SOAR}{STIM1 Orai-activating region}
+\acro{STIM1}{stromal interaction molecule 1}
+\acro{TM1}{transmembrane helix 1 of Orai1, with TM3 the third such helix}
+\acro{TPSA}{topological polar surface area}
+\acro{TRPV6}{transient receptor potential vanilloid 6}
+\acro{UFF}{Universal Force Field}
+\acro{VS}{virtual screening}
+\end{acronym}
+\clearpage
+
+\setcounter{tablebeforeaitools}{\value{table}}
+\listaitools
+\setcounter{table}{\value{tablebeforeaitools}}
+
+\clearpage
+\input{body_appendix_short}
+
+\end{document}
