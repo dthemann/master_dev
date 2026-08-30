@@ -421,6 +421,14 @@ The experimental panel is not axially dominated in the same way. Its tool sites 
 
 \begin{figure}[!htbp]
 \centering
+\includegraphics[width=\linewidth,height=0.78\textheight,keepaspectratio]{media/media/image18.png}
+\caption[Reference-free cluster quality per tool on Orai]{Reference-free cluster quality per tool on Orai, the experimental ligands against the benchmark control panel on the raw pose cloud. Panel (A) silhouette, panel (B) Calinski-Harabasz index, panel (C) Davies-Bouldin index, panel (D) compactness, panel (E) separation and panel (F) bootstrap stability. Panel (B) is truncated on the vertical axis, with 148 outliers off-scale up to a maximum of 2,209,006}\label{fig:results-r17}
+\end{figure}
+
+Figure~\ref{fig:results-r17} reports reference-free cluster quality. AutoDock Vina forms the best-separated clouds in both panels and the most compact benchmark clouds. Experimentally, DiffDock is tighter, with a median within-cluster spread of 0.34\angstrom{} versus 0.62\angstrom{} for AutoDock Vina. EquiBind forms the loosest clouds and often one diffuse mode. High bootstrap stability then indicates reproducibility, not accurate site resolution. Among eighteen tool-by-metric cells, the largest cross-panel gap is DiffDock\textquotesingle s silhouette, with medians of 0.17 experimentally and 0.42 on the benchmark (benchmark-higher \ensuremath{\delta} = +0.53). It reaches Holm p = 0.031 at the frame-ligand unit but 0.516 after each ligand is collapsed across four frames and is therefore descriptive. DiffDock\textquotesingle s Calinski-Harabasz result reverses under that collapse. The sensitivity analysis identifies removal of within-ligand spread rather than new evidence. No other difference was detected. With only three experimental ligands, null results neither establish equivalence nor validate the control panel as a substitute.
+
+\begin{figure}[!htbp]
+\centering
 \includegraphics[width=\linewidth,height=0.78\textheight,keepaspectratio]{media/media/image19.png}
 \caption[Effect of validity and placement filtering on cluster quality]{Effect of validity and placement filtering on cluster quality for the benchmark ligands. Each panel contrasts the raw pose cloud with the filtered cloud of PoseBusters-valid poses outside the transmembrane exclusion slab, for panel (A) within-cluster spread, panel (B) silhouette and panel (C) bootstrap stability. The boxes are the unpaired distributions over every frame-ligand unit that has a cloud of the given kind, whereas the medians and the tests quoted in the text are taken over the units that carry both clouds, so the two readings differ wherever filtering removes most of a tool\textquotesingle s units, most visibly for EquiBind}\label{fig:results-r18}
 \end{figure}
