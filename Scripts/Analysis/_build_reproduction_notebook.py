@@ -396,11 +396,16 @@ reg.add(Stage(
          "--top-n", "15", "--diffdock-variant", "all",
          "--collapse-plots-only",
          "--collapse-diffdock-variant", "diffdock_smina",
-         "--collapse-autodock-variant", "autodock_gnina",
+         "--collapse-autodock-variant", "autodock_mgltools_exh128_gnina",
          "--exclude-preset", "meeko", "--workers", "24"],
     notes="--top-n 15 and --diffdock-variant all shaped the cached table. A re-render "
           "with --reuse-cache omits them, so dropping the cache after changing the "
-          "input silently rebuilds at --top-n 5 on the raw diffdock key."))
+          "input silently rebuilds at --top-n 5 on the raw diffdock key.\n"
+          "CORRECTED 2026-09-02: the pin was --collapse-autodock-variant autodock_gnina, "
+          "which the meeko preset cancels, because autodock_gnina is IN that preset. "
+          "The two flags together dropped the whole AutoDock family and Figures 2 and 3 "
+          "rendered with two tools instead of three. No error was raised. The dominant "
+          "arm must be named in full."))
 print(f"{len(reg)} stages registered")
 ''')
 

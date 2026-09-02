@@ -9713,6 +9713,10 @@ _TOPK_RECOVERY_SPECS = [
     ("AutoDock Vina",        _DOMINANT_AUTODOCK_RAW,    "native"),
     ("AutoDock (gnina-opt)", _DOMINANT_AUTODOCK_OPT,    "native"),
     ("DiffDock (raw)",       "diffdock",                "native"),
+    # ADDED 2026-09-02. smina is the DiffDock variant the Results chapter carries
+    # forward, so the table that reports DiffDock's optimisation should show it
+    # beside the gnina one rather than only the arm that is not selected.
+    ("DiffDock + smina",     "diffdock_smina",          "native"),
     ("DiffDock (gnina-opt)", "diffdock_gnina",          "native"),
     ("EquiBind (raw)",       "equibind_unguided_raw",   "generation"),
     ("EquiBind (gnina-opt)", "equibind_unguided_gnina", "gnina"),
@@ -9758,13 +9762,39 @@ _TOPK_TEST_DEPTHS = (1, 5, 10, 15)
 # Each is a (baseline, comparison) pair of variant labels from _TOPK_RECOVERY_SPECS;
 # the full family of (pair × depth) exact-McNemar p-values is Holm-corrected together.
 _TOPK_TEST_PAIRS = [
+    # ADDED 2026-09-02, the two within-tool contrasts this family was missing.
+    #
+    # AutoDock was absent while DiffDock and EquiBind were present, so the table
+    # showed a raw-to-optimised effect for the two deep-learning tools and only the
+    # optimised arm for the physics one. The contrast is not the same operation for
+    # all three and the table note now says so: AutoDock's gnina step minimises AND
+    # re-orders on CNN affinity, DiffDock keeps its confidence order, and EquiBind
+    # has none to keep. Reporting all three is a comparison of what each deployed
+    # pipeline gains from the same tool, which is what the chapter is about.
+    ("AutoDock Vina",        "AutoDock (gnina-opt)"),      # rescoring effect (AutoDock)
+    ("DiffDock (raw)",       "DiffDock + smina"),          # refinement effect, smina
     ("DiffDock (raw)",       "DiffDock (gnina-opt)"),      # refinement effect (DiffDock)
     ("EquiBind (raw)",       "EquiBind (gnina-opt)"),      # refinement effect (EquiBind)
+    # -- the four above are WITHIN-tool; the rest are BETWEEN-tool. --
     ("AutoDock Vina",        "DiffDock (raw)"),            # physics vs raw DL
     ("AutoDock Vina",        "DiffDock (gnina-opt)"),      # physics vs refined DL
     ("DiffDock (gnina-opt)", "EquiBind (gnina-opt)"),      # DL vs DL (matched refinement)
     ("AutoDock Vina",        "EquiBind (gnina-opt)"),      # physics vs EquiBind
 ]
+
+# Two Holm families, not one, changed 2026-09-02.
+#
+# The within-tool contrasts ask "does optimising this tool's own poses help?" and
+# the between-tool ones ask "which tool wins?". Those are different questions, and
+# pooling them means adding a tool's optimisation row makes every cross-tool verdict
+# more conservative for no methodological reason. Each family is now corrected on
+# its own and the table caption states which family a p-value belongs to.
+_TOPK_WITHIN_TOOL_PAIRS = {
+    ("AutoDock Vina",  "AutoDock (gnina-opt)"),
+    ("DiffDock (raw)", "DiffDock + smina"),
+    ("DiffDock (raw)", "DiffDock (gnina-opt)"),
+    ("EquiBind (raw)", "EquiBind (gnina-opt)"),
+}
 
 
 def _topk_recovery_ranks(df: pd.DataFrame, thr: float = 2.0):
@@ -9863,7 +9893,8 @@ def topk_recovery_stats(df: pd.DataFrame, thr: float = 2.0,
         rec = (frame[col] <= k)
         return {f"{p}||{l}": bool(v) for (p, l), v in zip(frame.index, rec)}
 
-    between, fam = [], []
+    between = []
+    fams = {"within_tool": [], "between_tool": []}
     for a, b in _TOPK_TEST_PAIRS:
         if a not in ranks or b not in ranks:
             continue
@@ -9872,12 +9903,20 @@ def topk_recovery_stats(df: pd.DataFrame, thr: float = 2.0,
                                    _cmap(ranks[b], "near_rank", k))
             if rec is None:
                 continue
-            rec = {"baseline": a, "comparison": b, "k": k, **rec}
+            which = ("within_tool" if (a, b) in _TOPK_WITHIN_TOOL_PAIRS
+                     else "between_tool")
+            rec = {"baseline": a, "comparison": b, "k": k, "family": which, **rec}
             between.append(rec)
-            fam.append(rec)
-    for rec, pa in zip(fam, su.holm([r["mcnemar_p"] for r in fam])):
-        rec["p_holm"] = float(pa)
-        rec["star"] = su.p_stars(pa)
+            fams[which].append(rec)
+    # Holm within each family separately; `family` is written out so a reader can
+    # see which set of hypotheses a given p-value was corrected against.
+    for name, fam in fams.items():
+        if not fam:
+            continue
+        for rec, pa in zip(fam, su.holm([r["mcnemar_p"] for r in fam])):
+            rec["p_holm"] = float(pa)
+            rec["star"] = su.p_stars(pa)
+            rec["family_size"] = len(fam)
 
     gap = []
     for variant, frame in ranks.items():
@@ -14072,10 +14111,14 @@ def main() -> None:
                 _bm = _bm.rename(columns={"a_wins": "baseline_only_wins",
                                           "b_wins": "comparison_only_wins",
                                           "n": "n_complexes"})
-                _write_csv(_bm[["baseline", "comparison", "k", "n_complexes",
-                     "baseline_rate_%", "comparison_rate_%",
-                     "baseline_only_wins", "comparison_only_wins",
-                     "mcnemar_p", "p_holm", "star"]],
+                # `family` and `family_size` are written out so a reader can see
+                # which set of hypotheses each p-value was corrected against.
+                _cols = ["baseline", "comparison", "k", "n_complexes",
+                         "baseline_rate_%", "comparison_rate_%",
+                         "baseline_only_wins", "comparison_only_wins",
+                         "mcnemar_p", "p_holm", "star"]
+                _cols += [c for c in ("family", "family_size") if c in _bm.columns]
+                _write_csv(_bm[_cols],
                     args.out_dir / "topk_recovery_stats.csv", index=False)
                 print("  wrote top-k paired McNemar tests → topk_recovery_stats.csv")
 

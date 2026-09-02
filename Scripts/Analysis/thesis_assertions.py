@@ -172,6 +172,84 @@ def check_table_2(spec: dict, rep: Report, verbose: bool = False) -> None:
 
 
 # =============================================================================
+# Tables 18 and 19
+# =============================================================================
+
+def check_tables_18_19(spec: dict, rep: Report, verbose: bool = False) -> None:
+    """The top-k recovery table and the within-tool optimisation contrasts.
+
+    Both were extended on 2026-09-02: Table 18 gained AutoDock Vina (raw) and
+    DiffDock + smina, Table 19 gained the AutoDock rescoring and DiffDock smina
+    contrasts. Table 19's Holm family was split from the between-tool one at the
+    same time, so `family_size` is asserted as well; a silent change there would
+    move every star in the table.
+    """
+    t18 = spec.get("table_18")
+    if t18:
+        csv = ROOT / t18["input"]
+        if not csv.exists():
+            rep.add("table_18", "7 variants", f"input missing: {t18['input']}",
+                    False, t18["source"])
+        else:
+            import math
+            d = pd.read_csv(csv)
+            for variant, cells in t18["rows"].items():
+                bad = 0
+                for k, (want_near, want_valid) in zip(t18["depths"], cells):
+                    row = d[(d["variant"] == variant) & (d["k"] == k)]
+                    if row.empty:
+                        rep.add(f"table_18[{variant}].k{k}", [want_near, want_valid],
+                                "variant absent", False, t18["source"])
+                        bad += 1
+                        continue
+                    r = row.iloc[0]
+                    n = int(r["n_complexes"])
+                    got = [round(100 * r["near_k"] / n, 1), round(100 * r["valid_k"] / n, 1)]
+                    for lbl, g, w in (("near", got[0], want_near), ("valid", got[1], want_valid)):
+                        ok = _close(g, w, TOL_PCT)
+                        bad += not ok
+                        rep.add(f"table_18[{variant}].k{k}.{lbl}", w, g, ok, t18["source"])
+                if verbose:
+                    print(f"  Table 18 {variant:24s} {'ok' if not bad else f'{bad} CELLS DIFFER'}")
+
+    t19 = spec.get("table_19")
+    if t19:
+        csv = ROOT / t19["input"]
+        if not csv.exists():
+            rep.add("table_19", "4 contrasts", f"input missing: {t19['input']}",
+                    False, t19["source"])
+            return
+        d = pd.read_csv(csv)
+        if "family" not in d.columns:
+            rep.add("table_19.family", "family column present", "absent", False,
+                    t19["source"], "the split Holm families are not recorded in the CSV")
+            return
+        d = d[d["family"] == t19["family"]]
+        rep.add("table_19.family_size", t19["family_size"], int(d["family_size"].iloc[0]),
+                int(d["family_size"].iloc[0]) == t19["family_size"], t19["source"],
+                "a changed family size moves every star in the table")
+        for label, cells in t19["rows"].items():
+            a, b = [x.strip() for x in label.split("->")]
+            bad = 0
+            for k, want in zip(t19["depths"], cells):
+                row = d[(d["baseline"] == a) & (d["comparison"] == b) & (d["k"] == k)]
+                if row.empty:
+                    rep.add(f"table_19[{label}].k{k}", want, "contrast absent", False,
+                            t19["source"])
+                    bad += 1
+                    continue
+                r = row.iloc[0]
+                got = [round(r["baseline_rate_%"], 1), round(r["comparison_rate_%"], 1),
+                       int(r["baseline_only_wins"]), int(r["comparison_only_wins"])]
+                for i, lbl in enumerate(("raw", "opt", "raw_wins", "opt_wins")):
+                    ok = (_close(got[i], want[i], TOL_PCT) if i < 2 else got[i] == want[i])
+                    bad += not ok
+                    rep.add(f"table_19[{label}].k{k}.{lbl}", want[i], got[i], ok, t19["source"])
+            if verbose:
+                print(f"  Table 19 {label:46s} {'ok' if not bad else f'{bad} CELLS DIFFER'}")
+
+
+# =============================================================================
 # Table 5
 # =============================================================================
 
@@ -503,6 +581,7 @@ def run_all(verbose: bool = False) -> Report:
     check_table_5(spec, rep, verbose)
     check_table_6(spec, rep, verbose)
     check_table_8(spec, rep, verbose)
+    check_tables_18_19(spec, rep, verbose)
     check_figures(spec, rep, verbose)
     check_prose(spec, rep, verbose)
     return rep

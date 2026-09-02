@@ -14,7 +14,7 @@
 > been retired and its paths predated the matched-EquiBind migration. That
 > drift is what this generator exists to prevent. See [`FINDINGS_2026-09-02.md`](FINDINGS_2026-09-02.md).
 
-Generated 2026-09-02 16:51 from 60 registered stages.
+Generated 2026-09-03 00:23 from 60 registered stages.
 
 Float numbers are the SHORT build's, read from the figure environments of
 `body_main_short.tex` and `body_appendix_short.tex` in document order.
@@ -363,12 +363,13 @@ Re-refines from the committed __refRAW.sdf, which is the exact input the origina
     --diffdock-variant all \
     --collapse-plots-only \
     --collapse-diffdock-variant diffdock_smina \
-    --collapse-autodock-variant autodock_gnina \
+    --collapse-autodock-variant autodock_mgltools_exh128_gnina \
     --exclude-preset meeko \
     --workers 24
 ```
 
 --top-n 15 and --diffdock-variant all shaped the cached table. A re-render with --reuse-cache omits them, so dropping the cache after changing the input silently rebuilds at --top-n 5 on the raw diffdock key.
+CORRECTED 2026-09-02: the pin was --collapse-autodock-variant autodock_gnina, which the meeko preset cancels, because autodock_gnina is IN that preset. The two flags together dropped the whole AutoDock family and Figures 2 and 3 rendered with two tools instead of three. No error was raised. The dominant arm must be named in full.
 
 #### `bench_validity_report` — Validity report per tool and complex
 
@@ -1116,6 +1117,8 @@ Tables whose printed values are recomputed and asserted on every run by
 | Table | Source | Location in the thesis |
 | --- | --- | --- |
 | 1 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv` | body_main_short.tex:261, tab:results-pose-production |
+| 18 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_validity.csv` | body_appendix_short.tex, tab:appendix-top-k-recovery |
+| 19 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_stats.csv` | body_appendix_short.tex, tab:appendix-refinement-mcnemar |
 | 2 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_validity_gnina_arm.csv` | body_main_short.tex:336, tab:results-depth-recovery |
 | 5 | `posebusters_results/_orai_matched_root/orai_pbvalid_tm_share_compare/pbvalid_tm_share_pooled.csv` | body_main_short.tex, tab:results-orai-yield |
 | 6 | `posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/effort_summary.csv` | body_main_short.tex, tab:results-cost-per-qualifying-pose |
