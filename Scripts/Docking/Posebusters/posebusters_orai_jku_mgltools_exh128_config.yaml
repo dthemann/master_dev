@@ -1,0 +1,65 @@
+# PoseBusters config — Orai receptors × JKU ligands
+# ADFRsuite("MGLTools")-LIGAND AutoDock arm, exhaustiveness 128, gnina-RESCORED.
+#
+# Validates Dockings/Orai_Benchmark_MGLTools_exh128, the arm that closes the missing
+# cell of the Orai × Benchmark matrix:
+#   Orai_Benchmark                  ADFRsuite receptor + MEEKO     ligand · Vina · exh 32
+#   Orai_Benchmark_Vinardo          ADFRsuite receptor + ADFRsuite ligand · Vinardo · exh 32
+#   Orai_Benchmark_MGLTools_exh128  ADFRsuite receptor + ADFRsuite ligand · Vina · exh 128  <- THIS
+#
+# Compare against posebusters_results/orai_jku/ (the Meeko-ligand control,
+# same gnina rescore protocol). Both arms must be read with --autodock-variant gnina.
+#
+# Run under the vina env:
+#   python Scripts/Docking/Posebusters/run_posebusters.py \
+#       -c Scripts/Docking/Posebusters/posebusters_orai_benchmark_mgltools_exh128_config.yaml
+
+work_dir: /home/manndo/master_dev
+
+# Same shared legacy receptor staging as the control arm — 4 symlinks to the raw
+# Data/Receptors PDBs. Using the identical directory keeps the two arms' validation
+# receptors byte-identical, so the comparison is not confounded on the receptor axis.
+# (Known, pre-existing, and IDENTICAL for both arms: PoseBusters validates against the
+# raw PDBs rather than the PDBFixer/OpenMM-processed receptors actually docked into.
+# It weakens absolute intermolecular validity but cancels in the arm-vs-arm contrast.)
+receptors_dir: posebusters_results/_orai_jku_staging/receptors
+
+# ROOT AT mgl_tools/, NOT at its docking/ subfolder.
+# _find_autodock_optimization_log (run_posebusters.py) walks UP from each
+# *_vina_out.pdbqt looking for optimization_log.csv, and stops at the configured root.
+# This arm's poses are at   <root>/mgl_tools/docking/*_vina_out.pdbqt
+# and its optimiser log at  <root>/mgl_tools/optimization_log.csv
+# so rooting at mgl_tools/ finds the log on the second hop. Rooting at docking/ would
+# return None and silently skip every gnina pose, quietly validating the raw arm instead.
+# Rooting one level higher (the arm root) would also work but drags _staging/ into the
+# recursive glob; mgl_tools/ is the tightest root that still contains the log.
+#
+# AutoDock only. The DiffDock and EquiBind arms are unchanged by this experiment and
+# are already validated in posebusters_results/orai_jku/ — re-busting their
+# ~24k poses here would cost hours and add nothing. Join against that CSV if a
+# cross-tool view is needed.
+docking_directories:
+  autodock: Dockings/Orai_JKU_MGLTools_exh128/mgl_tools
+
+# Keep ONLY the gnina-rescored poses. This is load-bearing, not cosmetic: the raw
+# variant would be collected as *_vina_out.pdbqt and handed to _convert_pdbqt_to_sdf,
+# which cannot rebuild ADFRsuite ligands (no REMARK SMILES) and, in this flat tree
+# layout, cannot resolve the prepared-ligand template either — run_posebusters'
+# _resolve_mgl_pose_template uses a fixed pdbqt_path.parents[2] hop. It would fall back
+# to Open Babel bond perception, which the code documents as failing on ~63% of the
+# benchmark, and it fails SILENTLY: rows are still emitted, they are just wrong.
+# The gnina variant is SDF-sourced and never enters that path.
+variant_filter:
+  autodock: gnina
+
+config_mode: dock
+output_base_dir: posebusters_results/orai_jku_mgltools_exh128
+save_interval: 200
+overwrite: false           # fresh output dir; keeps the run resumable
+num_workers: 30
+make_plots: true
+copy_proved_poses: true
+
+ligand_template_dirs:
+  - Dockings/Orai_JKU_MGLTools_exh128/_staging/ligands/pdbqt
+  - posebusters_results/_orai_jku_staging/ligand_templates

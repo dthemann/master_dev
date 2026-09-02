@@ -3,23 +3,21 @@
 
 WHY THIS SCRIPT EXISTS
 ----------------------
-``posebusters_pose_comparison.py`` hard-codes its presentation keep-set to the RAW
-AutoDock arm::
+The report generator collapses every engine to ONE arm before it writes the
+presentation sidecars, and WHICH arm that is depends on the run flags
+(``--collapse-plots-only``, ``--collapse-diffdock-variant``, ``--best-equibind-only``)
+and on the pin inside ``_select_autodock_arm``. The sidecars behind the thesis
+Tables 5-7 — ``18_topn_within_thresholds_pbvalid_depths_report.txt`` and
+``topn_within_thresholds_pbvalid_depths.csv`` — therefore report the surviving arm
+under the anonymous ``autodock`` / ``diffdock`` keys, with nothing in the file
+recording which variant actually produced the row. Read back later, those files cannot
+be attributed to an arm at all.
 
-    _select_presentation_tools()  keep = {"autodock", "autodock_vinardo",
-                                          "diffdock", "unidock", "unidock2"}
-
-so every committed sidecar in ``pose_comparison_report/`` (notably
-``18_topn_within_thresholds_pbvalid_depths_report.txt`` and
-``topn_within_thresholds_pbvalid_depths.csv``) carries AutoDock **raw Vina**
-(78 / 145 / 150 complexes at ranking depths 1 / 15 / 30). The thesis Tables 5-7 print
-the post-hoc-optimised arm — ``autodock_gnina`` (89 / 151 / 151) alongside
-``diffdock_smina`` (103 / 167 / 169) and ``equibind_unguided_gnina`` (46 / 61 / 62) —
-which is correct but was not reproducible from any committed file.
-
-This script closes that gap WITHOUT touching the report generator or the existing
-raw-arm sidecars. It imports ``posebusters_pose_comparison`` and calls the very same
-helpers the thesis numbers came from:
+This script pins the three arms BY NAME instead, so the Tables 5-7 family is
+reproducible from a flag-free invocation and the emitted ``method_key`` column states
+the arm on every row. It touches neither the report generator nor the existing
+sidecars. It imports ``posebusters_pose_comparison`` and calls the very same helpers
+the thesis numbers came from:
 
     * ``_topn_within_frames``   — per-complex best-of-top-d frames (identical de-dup of
       DiffDock's duplicated rank-1 pose, identical gnina-affinity ranking for EquiBind,
@@ -31,10 +29,16 @@ helpers the thesis numbers came from:
       report so the two arms can be diffed line for line.
 
 The only thing this script does differently is WHICH per-method rows are handed to
-those helpers: the AutoDock slot is filled with ``autodock_gnina`` (whose ``rank``
-column already IS ``optimized_rank``, i.e. the gnina re-ranking) and the DiffDock slot
-with ``diffdock_smina``, each relabelled to the canonical ``autodock`` / ``diffdock``
-key the helpers key off. EquiBind is passed as ``eq_df`` exactly as ``main()`` does.
+those helpers: the AutoDock slot is filled with the dominant arm
+``pc._DOMINANT_AUTODOCK_OPT`` (whose ``rank`` column already IS ``optimized_rank``,
+i.e. the gnina re-ranking) and the DiffDock slot with ``diffdock_smina``, each
+relabelled to the canonical ``autodock`` / ``diffdock`` key the helpers key off.
+EquiBind is passed as ``eq_df`` exactly as ``main()`` does.
+
+The committed sidecar ``topk_recovery_validity_gnina_arm.csv`` (n = 303 complexes)
+records what those defaults produce: PB-valid near-native complexes at ranking depths
+1 / 15 / 30 are 111 / 198 / 199 for the AutoDock arm, 103 / 167 / 169 for
+``diffdock_smina`` and 46 / 61 / 62 for ``equibind_unguided_gnina``.
 
 THE GATE
 --------
@@ -66,6 +70,7 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
 import posebusters_pose_comparison as pc          # noqa: E402
+import method_filter as mf  # noqa: E402  (shared single-point method exclusion)
 
 DEFAULT_REPORT_DIR = Path(
     "/home/manndo/master_dev/posebusters_results/benchmark_full_protein_vina_scoring"
@@ -76,8 +81,14 @@ DEFAULT_THRESHOLD = 2.0
 DEFAULT_STEM = "topk_recovery_validity_gnina_arm"
 
 # The three printed arms. (slot key the helpers use, per_pose_metrics method key, label)
+# The AutoDock entry is read from posebusters_pose_comparison — which must already be
+# imported above, or the dict body raises NameError at import time — so this file cannot
+# drift from the arm the rest of the suite reports. The literal is only a fallback for an
+# older sibling module that predates the constant. It was previously the Meeko-ligand key
+# 'autodock_gnina', which silently rebuilt the Tables 5/6/7 family on the wrong arm for
+# anyone who ran this script without --autodock-variant.
 DEFAULT_ARM = {
-    "autodock": "autodock_gnina",
+    "autodock": getattr(pc, "_DOMINANT_AUTODOCK_OPT", "autodock_mgltools_exh128_gnina"),
     "diffdock": "diffdock_smina",
     "equibind": "equibind_unguided_gnina",
 }
@@ -142,10 +153,19 @@ def main() -> None:
     ap.add_argument("--depths", type=int, nargs="+", default=list(DEFAULT_DEPTHS))
     ap.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD,
                     help="near-native RMSD threshold in Angstrom (default 2.0)")
-    ap.add_argument("--autodock-variant", default=DEFAULT_ARM["autodock"])
-    ap.add_argument("--diffdock-variant", default=DEFAULT_ARM["diffdock"])
-    ap.add_argument("--equibind-variant", default=DEFAULT_ARM["equibind"])
+    # The defaults are printed: which arm filled each slot is the one thing a reader of
+    # Tables 5/6/7 has to be able to check without opening the source.
+    ap.add_argument("--autodock-variant", default=DEFAULT_ARM["autodock"],
+                    help="per_pose_metrics method key for the AutoDock slot "
+                         "(default: %(default)s)")
+    ap.add_argument("--diffdock-variant", default=DEFAULT_ARM["diffdock"],
+                    help="per_pose_metrics method key for the DiffDock slot "
+                         "(default: %(default)s)")
+    ap.add_argument("--equibind-variant", default=DEFAULT_ARM["equibind"],
+                    help="per_pose_metrics method key for the EquiBind slot "
+                         "(default: %(default)s)")
     ap.add_argument("--out-stem", default=DEFAULT_STEM)
+    mf.add_method_filter_args(ap)
     args = ap.parse_args()
 
     depths = sorted({int(d) for d in args.depths})
@@ -158,6 +178,11 @@ def main() -> None:
     if not per_pose.is_file():
         raise SystemExit(f"missing {per_pose}")
     df_full = pd.read_csv(per_pose, low_memory=False)
+    # Before _build_arm_frames, which overwrites each arm's method key with its
+    # slot name ('autodock_gnina' -> 'autodock') and validates the requested
+    # variants against what is present.
+    df_full = mf.apply_method_filter(df_full, "method", args, label="topk-recovery",
+                                     out_dir=args.report_dir)
     df, eq_df = _build_arm_frames(df_full, arm)
 
     # Labels so the reused report writer names the ACTUAL variants, not the slots.

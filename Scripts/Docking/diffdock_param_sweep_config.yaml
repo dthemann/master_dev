@@ -1,0 +1,271 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# DiffDock — inference-parameter sweep
+# Consumed by Scripts/Docking/run_diffdock_arm.py, driven by
+# DiffDock_Parameter_Sweep.ipynb.
+#
+# One base configuration shared by every arm, plus an `arms:` registry in which
+# each arm declares the ONE thing it changes. The runner refuses to launch if an
+# arm touches anything outside its declared change, so the arms differ by
+# construction rather than by inspection.
+#
+# The parameters below are the ones DiffDock's own inference reads. Everything
+# except samples_per_complex / inference_steps / actual_steps was previously
+# unreachable from a project config and pinned to DiffDock-L's upstream tuned
+# defaults; `inference_overrides` is the hook that exposes them.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── DiffDock executable / environment ────────────────────────────────────────
+diffdock_dir: /home/manndo/docking_tools/DiffDock
+diffdock_python: /home/manndo/anaconda3/envs/diffdock/bin/python
+
+# ── Base sampling settings — the thesis campaign's values ────────────────────
+# An arm may override num_samples and inference_steps at the top level, and any
+# DiffDock inference argument under inference_overrides.
+num_samples: 30
+inference_steps: 20
+inference_overrides: {}
+
+# ── Compute ──────────────────────────────────────────────────────────────────
+device: cuda:0
+# The published campaign's slowest complex took 1157 s at 30 samples. The arms that
+# double samples or steps roughly double that, which would overrun a 1800 s cap and
+# lose exactly the largest complexes — a silent, size-correlated dropout.
+timeout_per_complex: 3600
+batch_mode: true              # keeps DIFFDOCK_SEED wired through the batch path
+# One complex per DiffDock process. Batching would make the timeout and the logged
+# elapsed time per-batch rather than per-complex, and ESM embeddings for a whole
+# batch are what exhausted this 8 GB card before.
+batch_size: 1
+group_by_receptor: true
+max_workers: 1
+
+# ── Rerun control ────────────────────────────────────────────────────────────
+# false = a complex whose poses already exist is not re-docked, so an interrupted
+# arm resumes where it stopped. That is the whole resume mechanism.
+overwrite_existing: false
+# true = clear the failure log at start, so a complex that failed once is retried
+# rather than skipped forever with zero poses while the arm still reports success.
+overwrite_error_log: true
+
+# ── Post-hoc refinement ──────────────────────────────────────────────────────
+# none | smina | gnina | all
+#
+# DEFAULT: none. This sweep asks what DiffDock's INFERENCE parameters do, and
+# minimisation is a different lever that partly masks them — it lifts PoseBusters
+# validity from 50 to 94 per cent while pushing median Kabsch form from 0.414 to
+# 0.633 A, so a parameter effect measured on refined poses is measured through it.
+# Raw poses are the clean read, and skipping refinement also removes about a
+# third of the wall clock.
+#
+# Set to `all` to reproduce the benchmark campaign's geometry and to enable the
+# raw-versus-refined comparison (notebook switch COMPARE) and the gentle_min arm.
+optimization: none
+optimize_search: minimize
+optimize_autobox_add: 4.0
+optimize_cpu: 1
+optimize_seed: 0
+optimize_timeout: 300
+gnina_use_gpu: true
+
+# Bounds on how far minimisation may walk the pose. null = smina/gnina defaults
+# (minimise to convergence). The `gentle_min` arm overrides these; see the note
+# in Scripts/Docking/run_diffdock.py run_optimizer_tool().
+optimize_minimize_iters: null
+optimize_force_cap: null
+
+# ── Optimizer executables ────────────────────────────────────────────────────
+smina_executable: /home/manndo/anaconda3/envs/diffdock/bin/smina
+gnina_executable: /home/manndo/docking_tools/gnina
+gnina_lib_dirs: []
+
+# ── Reproducibility ─────────────────────────────────────────────────────────
+# Exported as DIFFDOCK_SEED; the local inference.py patch seeds python/numpy/torch.
+# The runner's --seed flag overrides this for replicate draws.
+inference_seed: 42
+
+# ── Output ───────────────────────────────────────────────────────────────────
+# Each arm writes to <output_root>/<arm_key>/<PDBID>_<LIG>/, mirroring the
+# layout of Dockings/Benchmark_DiffDock/<PDBID>_<LIG>/.
+output_root: Dockings/DiffDock_ParamSweep
+log_dir: Dockings/Logs/diffdock_param_sweep_logs
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Arms
+# ═══════════════════════════════════════════════════════════════════════════════
+# Each arm may set:
+#   overrides            -> merged into DiffDock's inference args
+#   num_samples          -> top-level sampling count
+#   inference_steps      -> top-level denoising steps
+#   optimize_*           -> post-hoc refinement knobs (no re-docking needed)
+# Anything else is rejected. `targets` records which stage of the three-stage
+# gate the arm is meant to move; it is documentation, not control flow.
+#
+# Measured headroom on the full 303-complex benchmark, DiffDock + smina:
+#   127 complexes have no pose within 2 A anywhere      -> sampling
+#    38 have one but never also PB-valid and form-correct -> validity/form
+#    62 have one that is not ranked first                 -> ranking
+# ═══════════════════════════════════════════════════════════════════════════════
+
+arms:
+
+  ctrl:
+    label: Control
+    targets: baseline
+    rationale: >-
+      The thesis campaign's settings, re-run inside this experiment so every arm
+      is produced by the same code path on the same cohort with the same seed.
+    overrides: {}
+
+  # The two noise arms are a deliberate pair: the mechanism argues in opposite
+  # directions and the sweep is not in a position to guess which wins.
+  # initial_noise_std_proportion scales the initial random ligand placement by
+  # std_rec / 1.73, and the score model was trained to denoise from at most
+  # tr_sigma_max = 19 A (workdir/v1.1/score_model/model_parameters.yml).
+
+  noise_hi:
+    label: Wider initial placement
+    targets: sampling
+    rationale: >-
+      Starts the 30 draws further apart, attacking the 127 complexes where no
+      sample ever lands within 2 A. Recovery saturating at 16 of 30 poses says
+      the current draws explore little distinct space. The competing prediction
+      is that this loses, because a start beyond tr_sigma_max is a distance the
+      score model was never trained to denoise.
+    overrides:
+      initial_noise_std_proportion: 2.2
+
+  noise_lo:
+    label: Tighter initial placement
+    targets: sampling
+    rationale: >-
+      The opposite bet. On a whole protein the default 1.46 already places a
+      large share of starts beyond the 19 A the score model can denoise, so the
+      sampler may be wasting draws it cannot recover from. Pulling the start
+      inside that support trades breadth for draws that can actually converge.
+    overrides:
+      initial_noise_std_proportion: 1.0
+
+  temp_tr_lo:
+    label: Less greedy translation
+    targets: sampling
+    rationale: >-
+      In DiffDock's low-temperature sampler the score drift is amplified by
+      lambda = (sigma_data + sigma) / (sigma_data + sigma / temp_sampling), so a
+      temp_sampling above 1 makes the update greedier and the samples more alike.
+      Translation is the component that has to find the pocket in whole-protein
+      blind docking and sits at 1.17, essentially unsharpened; lowering it trades
+      per-pose sharpness for pool diversity.
+    overrides:
+      temp_sampling_tr: 0.8
+
+  temp_tor_lo:
+    label: Less greedy torsion
+    targets: form
+    rationale: >-
+      temp_sampling_tor is 7.04, by far the most sharpened of the nine temperature
+      values. Torsion angles are what set Kabsch form fidelity, since torsional
+      diffusion inherits bond lengths and angles from the seed conformer. This
+      arm tests whether the torsional update is over-committed.
+    overrides:
+      temp_sampling_tor: 3.0
+
+  steps40:
+    label: Forty denoising steps
+    targets: sampling
+    enabled: false
+    rationale: >-
+      RETIRED for the raw-pose gate. The endgame is already far finer than the
+      errors being failed: at 20 steps the last executed step sits at a
+      translational sigma of 0.169 A and a torsional sigma of 2.85 degrees,
+      roughly 0.15-0.25 A of atom displacement. The gate fails on a ~0.9 A clash
+      gap and a >1 A Kabsch error. Going to 40 steps moves those residuals only
+      to 0.130 A and 2.26 degrees, so it buys about 20 per cent on a quantity
+      that is already 4-7x below threshold, for twice the wall clock. Re-enable
+      only if evidence appears that resolution, rather than convergence target,
+      is the limit.
+    inference_steps: 40
+
+  samples60:
+    label: Sixty samples per complex
+    targets: sampling
+    enabled: false
+    rationale: >-
+      RETIRED for the screening pass on COST, not on saturation. The saturation
+      argument was wrong: the marginal is still about 0.9 gate-complexes per extra
+      pose between ranks 25 and 30. But the arm costs twice the wall clock, draws
+      from an unchanged distribution, and needs the subsample correction to stay
+      comparable. Re-enable once a distribution-changing arm has been shown to
+      work, to ask how far it then scales.
+    num_samples: 60
+
+  # ── TERMINAL OVERSHOOT ──────────────────────────────────────────────────
+  # sampling.py:98 gives the LAST executed iteration
+  #     dt = schedule[t_idx]                (the whole remaining schedule)
+  # rather than schedule[t_idx] - schedule[t_idx+1] (one increment). Writing the
+  # update as a fraction k of the model's own estimated remaining offset,
+  #     k = 2*ln(sigma_max/sigma_min) * dt * (lambda + temp_sampling*temp_psi/2)
+  # the shipped 19-of-20 configuration gives k_tr = 1.50 and k_tor = 2.90. The
+  # final step moves PAST the model's target, by half a step in translation and
+  # nearly two in torsion.
+  #
+  # That is a mechanism for the measured failure. Raw near-native poses are not
+  # buried: they sit a median 0.32 A too tight at one or two mostly polar
+  # contacts, and 60 per cent need under 0.4 A of outward motion to pass. An
+  # overshooting terminal step is exactly how a pose ends up slightly past the
+  # target and into the receptor. Relaxing the clash check entirely is worth
+  # +36 complexes (+11.9 pp), so this is the bounded prize these arms compete for.
+  #
+  # DiffDock-L tuned these temperatures on RMSD, where overshoot is cheap. It is
+  # not cheap on PoseBusters validity. All three arms below REDUCE k.
+
+  full_steps:
+    label: Run the final step
+    targets: validity
+    rationale: >-
+      actual_steps 19 -> 20 halves the terminal step's dt, taking k_tr from 1.50
+      to 0.75 and k_tor from 2.90 to 1.45. It is the cheapest arm in the set --
+      one extra step out of twenty, about 5 per cent more compute -- and the only
+      one that reduces overshoot on both axes at once. Highest expected value per
+      GPU-hour of anything available.
+    overrides:
+      actual_steps: 20
+
+  psi_tr_lo:
+    label: No translational psi
+    targets: validity
+    rationale: >-
+      temp_psi_tr 0.727 -> 0.0 removes the temp_sampling*psi/2 term from the
+      translational drift, taking k_tr from 1.50 to 1.05, and also cuts the
+      injected noise. Isolates the translational half of the overshoot. Note the
+      earlier psi_tr_hi arm raised temp_psi and made k_tr 1.97 -- the wrong way
+      once the mechanism is overshoot rather than under-exploration.
+    overrides:
+      temp_psi_tr: 0.0
+
+  psi_tor_lo:
+    label: No torsional psi
+    targets: form
+    rationale: >-
+      temp_psi_tor 0.595 -> 0.0 takes k_tor from 2.90 to 0.97, the largest single
+      reduction available on the worst-overshooting axis, without touching
+      temp_sampling_tor and so without collapsing torsional search the way
+      setting temp_sampling_tor to 1.0 would (that value disables the whole
+      low-temperature branch). Aimed at the form stage, which loses 28 complexes.
+    overrides:
+      temp_psi_tor: 0.0
+
+  gentle_min:
+    label: Gentler refinement
+    targets: form
+    rationale: >-
+      No re-docking. Minimising to convergence lifts PoseBusters validity from
+      50 to 94 per cent but pushes median Kabsch form from 0.414 to 0.633 A and
+      torsion fingerprint deviation from 0.065 to 0.121. Capping the steepest
+      descent and the per-step force should relieve the receptor clash without
+      walking the internal geometry as far. Runs against the control's poses.
+    posthoc_of: ctrl
+    optimize_minimize_iters: 20
+    # smina and gnina already default to 10.0, so a cap must be BELOW it to do
+    # anything. Verified by md5 of the output pose: --force_cap 10.0 reproduces
+    # the unflagged run byte for byte, --force_cap 2.0 does not.
+    optimize_force_cap: 2.0

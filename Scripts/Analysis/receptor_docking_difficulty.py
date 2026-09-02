@@ -31,6 +31,7 @@ import seaborn as sns
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 import stats_utils as su
+import method_filter as mf  # noqa: E402  (shared single-point method exclusion)
 
 TOOLS = ["autodock", "diffdock", "equibind"]
 FEATURES = ["prot_heavy_atoms", "n_residues", "n_chains", "prot_hetatm",
@@ -72,6 +73,7 @@ def main() -> None:
                     choices=("all", "raw", "smina", "gnina"),
                     help="Restrict DiffDock to one optimizer variant before the per-tool "
                          "min-RMSD oracle (default 'all' pools raw+smina+gnina).")
+    mf.add_method_filter_args(ap)
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     n = args.n
@@ -83,6 +85,10 @@ def main() -> None:
                    "gnina": "diffdock_gnina"}[args.diffdock_variant]
         _dd = met["method"].astype(str).str.startswith("diffdock")
         met = met[(~_dd) | (met["method"].astype(str) == _target)].copy()
+    # Before the fold below, which collapses every variant key onto its bare
+    # engine name and makes the arms indistinguishable.
+    met = mf.apply_method_filter(met, "method", args, label="receptor-difficulty",
+                                 out_dir=args.out_dir)
     met["tool"] = met["method"].astype(str).str.replace(r"_.*$", "", regex=True)
     oracle = (met.groupby(["tool", "protein"])["rmsd"].min().reset_index()
               .rename(columns={"protein": "entry", "rmsd": "oracle_rmsd"})

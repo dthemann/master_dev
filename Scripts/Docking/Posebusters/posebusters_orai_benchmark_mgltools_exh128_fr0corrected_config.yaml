@@ -1,0 +1,45 @@
+# FR0-CORRECTED re-bust of the Orai x Benchmark MGLTools exh128 arm (2026-08-30).
+#
+# Identical to posebusters_orai_benchmark_mgltools_exh128_config.yaml except for
+# receptors_dir and output_base_dir.
+#
+# WHY. The shipped exh128 run screened every frame against the RAW deposited PDB
+# (receptor_policy defaults to legacy_shared), but the START-Fr0 poses were docked into
+# the OpenMM-MINIMISED receptor. That mismatch produced 893 spurious
+# minimum_distance_to_protein failures and pushed Fr0 to 70.70% while Fr300/Fr400/Fr499
+# sat at 99.06/99.19/99.09%.
+#
+# PARITY VERIFIED 2026-08-30 against this staging, symmetry-free (sorted heavy-atom
+# coordinate multiset, because atom-name keys collide across the six identical Orai
+# subunits and manufacture a phantom 43 A mismatch):
+#     Fr300 10362/10362, Fr400 10362/10362, Fr499 10362/10362 coordinate-identical
+#     START-Fr0 10368/10368 coordinate-identical (RMSD 0.000000 A)
+# The Fr0 file is the heavy-atom form of
+# Dockings/Orai_Benchmark_old/_staging/receptors/pdbqt/Orai1WT-START-Fr0_minimised.pdb,
+# which is an EXACT match to this tree's docking PDBQT.
+#
+# AutoDock only. DiffDock and EquiBind have no exhaustiveness parameter and dock against
+# the raw PDB, so raw validation is already correct for them and they are merged in
+# unchanged downstream.
+
+work_dir: /home/manndo/master_dev
+
+receptors_dir: posebusters_results/_orai_benchmark_staging_fr0corrected/receptors
+
+docking_directories:
+  autodock: Dockings/Orai_Benchmark_MGLTools_exh128/mgl_tools
+
+variant_filter:
+  autodock: gnina
+
+config_mode: dock
+output_base_dir: posebusters_results/orai_benchmark_mgltools_exh128_fr0corrected
+save_interval: 200
+overwrite: false           # fresh output dir; keeps the run resumable
+num_workers: 30
+make_plots: true
+copy_proved_poses: true
+
+ligand_template_dirs:
+  - posebusters_results/_orai_benchmark_staging/ligand_templates
+  - Data/PoseBuster Benchmark Set

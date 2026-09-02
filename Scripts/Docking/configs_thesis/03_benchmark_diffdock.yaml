@@ -1,0 +1,54 @@
+# ============================================================================
+# THESIS REPRODUCTION CONFIG - DiffDock-L (benchmark)
+#
+#   Thesis section  : App. B "DiffDock"; 20 denoising steps, 30 samples, blind whole receptor
+#   Supports        : Tables 1, 2, 6; Figures 1-3, 5-7, 15, 16
+#   Dataset         : Calibration benchmark, 308 PoseBusters ligands (303 analysed)
+#   Driver          : run_diffdock.py -c <this>
+#   Writes          : Dockings/Benchmark_DiffDock
+#   Analysis tree   : posebusters_results/benchmark_matched_equibind
+#
+#   Copied from     : Scripts/Docking/diffdock_docking_config.yaml
+#   Deviations      : output_dir, log_dir and optimization baked in. The old notebook
+#                     applied these in memory (cell 22), so the YAML on disk never
+#                     described the run that produced the reported poses.
+#                     inference_seed set to null to RECORD the truth: the reported run
+#                     was unseeded. Setting 42 here would silently claim reproducibility
+#                     the stored tree does not have.
+#
+#   Determinism     : verify-only - the reported run was an UNSEEDED single draw; a re-run is a new sample.
+#                     0 of the stored run logs carry the '[repro] seeded' marker, so the
+#                     reported benchmark poses cannot be redrawn. Verified by checksum only.
+#
+#   This file is READ-ONLY to the pipeline. Thesis_Reproduction.ipynb loads it
+#   and never writes it back. Rationale in THESIS_REPRODUCTION.md.
+# ============================================================================
+receptors_dir: Data/Receptors
+ligand_dirs:
+- Data/Ligands/JKU/pdbqt
+diffdock_dir: /home/manndo/docking_tools/DiffDock
+diffdock_python: /home/manndo/anaconda3/envs/diffdock/bin/python
+diffdock_conda_env: diffdock
+num_samples: 30
+inference_steps: 20
+device: cuda:0
+timeout_per_complex: 1800
+output_dir: Dockings/Benchmark_DiffDock
+log_dir: Dockings/Logs/benchmark_diffdock_logs
+batch_mode: true
+batch_size: 2
+group_by_receptor: true
+max_workers: 1
+overwrite_existing: true
+overwrite_error_log: true
+optimization: all
+optimize_search: minimize
+optimize_autobox_add: 4.0
+optimize_cpu: 1
+optimize_seed: 0
+optimize_timeout: 300
+gnina_use_gpu: true
+smina_executable: /home/manndo/anaconda3/envs/diffdock/bin/smina
+gnina_executable: /home/manndo/docking_tools/gnina
+gnina_lib_dirs: []
+inference_seed: null

@@ -1,0 +1,270 @@
+# =============================================================================
+# Numbers the thesis prints, with where they appear and what recomputes them.
+#
+# Read by Scripts/Analysis/thesis_assertions.py, which is the last cell of
+# Thesis_Reproduction.ipynb. Every entry names its source in the document so a
+# later edit to either side can be traced to the other.
+#
+# Figure and table numbers are the SHORT build (Thesis_short.tex, 39 figures and
+# 27 tables). The retired full build numbered them differently.
+#
+# A mismatch here is a finding, not a bug to paper over. The harness reports it
+# and changes nothing.
+# =============================================================================
+
+meta:
+  thesis_main: thesis_latex/body_main_short.tex
+  thesis_appendix: thesis_latex/body_appendix_short.tex
+  build: short
+  recorded: "2026-09-02"
+
+# -----------------------------------------------------------------------------
+# Cohort
+# -----------------------------------------------------------------------------
+cohort:
+  source: "body_main_short.tex:192"
+  benchmark_ids: 308
+  analysed_complexes: 303
+  note: >-
+    308 ligands were prepared and docked; DiffDock produced no pose for five, so
+    303 carry a complete three-tool record and are the analysed set. Every paired
+    test uses the 303.
+  orai_frames: 4
+  orai_experimental_units: 12          # 3 modulators x 4 frames
+  orai_control_units: 1232             # 308 ligands x 4 frames
+
+# -----------------------------------------------------------------------------
+# Determinism evidence (App. B; the reproducibility hook)
+# -----------------------------------------------------------------------------
+determinism:
+  source: 'body_appendix_short.tex, "Orai1 Panels"'
+  diffdock_seeded_logs:
+    benchmark: 0
+    orai_control: 0
+    orai_experimental: 24
+  note: >-
+    The local DiffDock seed patch prints "[repro] seeded" when it fires. Counting
+    that marker in the stored run logs is what classifies each arm. The appendix
+    states the same asymmetry: the hook appears in the experimental run logs and
+    is absent from the control ones.
+
+# -----------------------------------------------------------------------------
+# Table 1 - Pose Production and Physical-Validity Summary
+# -----------------------------------------------------------------------------
+# Gates, established by reproducing all 70 printed cells:
+#   validity    pb_valid
+#   near-native rmsd <= 2.0                      (NOT conditioned on validity)
+#   form        bestfit_rmsd <= 1.0 AND rmsd < 1000
+#   triple      pb_valid AND rmsd <= 2.0 AND bestfit_rmsd <= 1.0
+#
+# The near-native column being unconditioned is easy to get wrong, because the
+# COST table's complex counts use the validity-aware version of the same gate.
+# Both are checked below, which is how the difference stays visible.
+table_1:
+  source: "body_main_short.tex:261, tab:results-pose-production"
+  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv
+  columns: [poses, valid_complexes, valid_poses, valid_pct,
+            near_complexes, near_poses, near_pct,
+            form_complexes, form_poses, form_pct,
+            triple_complexes, triple_poses, triple_pct]
+  rows:
+    autodock_mgltools_exh128:       [8976, 303, 8943, 99.6, 202,  307,  3.4, 225, 2848, 31.7, 164,  221,  2.5]
+    autodock_mgltools_exh128_gnina: [8976, 301, 8880, 98.9, 202,  319,  3.6, 227, 2836, 31.6, 160,  221,  2.5]
+    diffdock:                       [9013, 242, 2198, 24.4, 152, 1683, 18.7, 225, 4012, 44.5,  83,  722,  8.0]
+    diffdock_smina:                 [8993, 300, 7597, 84.5, 173, 1715, 19.1, 237, 3903, 43.4, 138, 1227, 13.6]
+    diffdock_gnina:                 [8993, 300, 7831, 87.1, 176, 1716, 19.1, 235, 3873, 43.1, 138, 1219, 13.6]
+    equibind_unguided_raw:          [9090,  35,  263,  2.9,  19,  103,  1.1, 185, 2479, 27.3,   2,   21,  0.2]
+    equibind_unguided_smina:        [9090, 236, 4664, 51.3,  64,  453,  5.0, 191, 2610, 28.7,  48,  249,  2.7]
+    equibind_unguided_gnina:        [9088, 266, 5633, 62.0,  83,  498,  5.5, 200, 2661, 29.3,  55,  282,  3.1]
+    equibind_fpocket_raw:           [9090,  13,   27,  0.3,   0,    0,  0.0, 180, 2449, 26.9,   0,    0,  0.0]
+    equibind_p2rank_raw:            [8520,  12,   47,  0.6,   0,    0,  0.0, 181, 2336, 27.4,   0,    0,  0.0]
+
+# -----------------------------------------------------------------------------
+# Table 2 - PoseBusters Pass-All Recovery by Ranking Depth
+# -----------------------------------------------------------------------------
+# Recovery is the PoseBusters-valid, within-2 A gate applied at a ranking depth,
+# using each tool's own order: AutoDock by optimized_rank on the gnina arm,
+# DiffDock by rank on the smina variant, EquiBind by ascending gnina_affinity.
+#
+# The sidecar this reads did not exist on the canonical tree until 2026-09-02;
+# it had only ever been written under the superseded whole-protein tree. It was
+# regenerated here and reproduces every printed cell exactly.
+table_2:
+  source: "body_main_short.tex:336, tab:results-depth-recovery"
+  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_validity_gnina_arm.csv
+  columns: [rank1, top15, top30]
+  rows:
+    AutoDock: [111, 198, 199]
+    DiffDock: [103, 167, 169]
+    EquiBind: [55, 80, 80]
+  note: >-
+    Printed as percentages of 303 with the count in brackets: 36.6 (111),
+    65.3 (198), 65.7 (199) for AutoDock. The counts are asserted, since the
+    percentages are derived from them.
+
+# -----------------------------------------------------------------------------
+# Table 5 - Physical-Validity and Operational-Placement Yield, Orai1
+# -----------------------------------------------------------------------------
+# Usable = PoseBusters-valid AND outside the transmembrane pore slab, over the
+# top ten ranked poses of each frame-ligand unit in each tool's own order.
+table_5:
+  source: "body_main_short.tex, tab:results-orai-yield"
+  input: posebusters_results/_orai_matched_root/orai_pbvalid_tm_share_compare/pbvalid_tm_share_pooled.csv
+  columns: [poses, pb_valid, pb_valid_pct, usable, usable_pct]
+  experimental_totals:
+    AutoDock: [120, 120, 100.0, 65, 54.2]
+    DiffDock: [120, 112,  93.3, 82, 68.3]
+    EquiBind: [120, 107,  89.2,  1,  0.8]
+  note: >-
+    The pooled base is 120 poses per tool, not the per-unit tally. Appendix B
+    records that restricting the experimental panel to the first ten Vina modes,
+    which is the control panel's selection rule, raises AutoDock's usable yield
+    from 54.2 to 65.8 per cent pooled.
+
+# -----------------------------------------------------------------------------
+# Table 6 - Cost per Qualifying Pose (charged basis)
+# -----------------------------------------------------------------------------
+# A qualifying pose is PoseBusters-valid and within 2 A. The charged basis is
+# cpu_core_s / 32 + gpu_s, applied uniformly. The default elapsed basis divides
+# wall_s, which is not one quantity across arms and moves with the optimiser
+# worker count; the charged basis does not.
+table_6:
+  source: "body_main_short.tex, tab:results-cost-per-qualifying-pose"
+  input: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/effort_summary.csv
+  rows:
+    autodock: {complexes: 199, cpu_core_s_per_near2: 1752.8, gpu_s_per_near2: 118.9, poses_near2: 311}
+    diffdock: {complexes: 169, cpu_core_s_per_near2: 2.93,   gpu_s_per_near2: 49.9,  poses_near2: 1622}
+    equibind: {complexes: 80,  cpu_core_s_per_near2: 165.3,  gpu_s_per_near2: 1.4,   poses_near2: 466}
+  note: >-
+    The complexes column uses the VALIDITY-AWARE near-native gate
+    (pb_valid AND rmsd <= 2), unlike Table 1's near-native column, which is
+    unconditioned. That is why AutoDock reads 199 here and 202 there.
+
+# -----------------------------------------------------------------------------
+# Table 8 - AutoDock Exhaustiveness Ladder
+# -----------------------------------------------------------------------------
+# Recovery is the CONJUNCTION gate the caption states: a pose that is
+# PoseBusters-valid AND within 2 A, among the first d ranks. That is not the
+# gate the exh_yield_by_depth sidecar carries, whose four gates are each a single
+# criterion, so this table is recomputed from the per-pose table instead.
+#
+# Ranking differs by arm. A raw rung orders by Vina `rank`; a rescored one orders
+# by `optimized_rank`, which is gnina's CNNaffinity order over the same poses.
+table_8:
+  source: "body_appendix_short.tex, tab:appendix-exhaustiveness-ladder"
+  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv
+  depths: [1, 5, 15, 30]
+  rows:
+    autodock_mgltools_exh18:        {rank_col: rank,           counts: [72, 108, 121, 125]}
+    autodock_mgltools:              {rank_col: rank,           counts: [85, 130, 148, 154]}
+    autodock_mgltools_exh64:        {rank_col: rank,           counts: [94, 145, 175, 182]}
+    autodock_mgltools_exh92:        {rank_col: rank,           counts: [91, 150, 182, 194]}
+    autodock_mgltools_exh128:       {rank_col: rank,           counts: [94, 153, 185, 202]}
+    autodock_mgltools_gnina:        {rank_col: optimized_rank, counts: [100, 144, 154, 154]}
+    autodock_mgltools_exh64_gnina:  {rank_col: optimized_rank, counts: [110, 169, 182, 182]}
+    autodock_mgltools_exh128_gnina: {rank_col: optimized_rank, counts: [111, 184, 198, 199]}
+  note: >-
+    The selected arm is exhaustiveness 128 with gnina rescoring. Note the raw
+    exh128 rung leads it over the full pool, 202 against 199, because rescoring
+    reorders a pool rather than extending it and a few poses cross the threshold
+    the wrong way.
+
+# -----------------------------------------------------------------------------
+# Figure provenance
+# -----------------------------------------------------------------------------
+# The shipped asset must be byte-identical to the file the pipeline writes. This
+# is the end-to-end check: it ties a rebuilt output to the image in the PDF.
+#
+# The three omissions are deliberate. Figures 22 and 27 are hand-composed PyMOL
+# renders that exist nowhere in the repository, and Figure 17 is an author-drawn
+# schematic. They cannot be regenerated and are not claimed to be.
+figures:
+  media_dir: thesis_latex/media/media
+  pairs:
+    image2:  posebusters_results/benchmark_matched_equibind/dock/validity_report_mgltools/00_figure2_validity_yield.png
+    image3:  posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/18_topn_within_thresholds_pbvalid_depths.png
+    image4:  posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/18_topn_within_thresholds_kabsch_pbvalid_depths.png
+    image5:  posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__thesis.png
+    image6:  posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/topN_crystal_cluster_matrix.png
+    image7:  posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/crystal_cluster_homogeneity.png
+    image8:  posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/cluster_quality_metrics.png
+    image9:  pandamap_results/benchmark_matched_equibind/report/05_fingerprint_similarity_top5.png
+    image11: pandamap_results/benchmark_matched_equibind/report/10b_contact_decomposition_by_rank.png
+    image13: posebusters_results/_orai_matched_root/orai_pbvalid_yield_compare/09f_pbvalid_yield_dominant_orai_benchmark_vs_experimental.png
+    image15: posebusters_results/_orai_matched_root/orai_pbvalid_tm_share_compare/fig_tm_loss_relative_compare.png
+    image16: posebusters_results/_orai_matched_root/orai_jku/pose_clusters/panels/orai_cross_tool_agreement_compare.png
+    image17: posebusters_results/_orai_matched_root/orai_jku/pose_clusters/panels/orai_tool_agreement_compare.png
+    image18: posebusters_results/_orai_matched_root/orai_jku/pose_clusters/panels/orai_cluster_quality_compare.png
+    image19: posebusters_results/_orai_matched_root/orai_benchmark/pose_clusters/orai_cluster_quality_filtering.png
+    image21: pandamap_results/orai_interaction_compare_matched/fig_type_profile_compare.png
+    image23: pandamap_results/orai_interaction_compare_matched/fig_fingerprint_overlap_compare.png
+    image24: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/panels/effort_by_quality_near2.png
+    image25: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2/panels/resource_per_near_native_valid_pose.png
+    image43: posebusters_results/_orai_matched_root/orai_pbvalid_tm_share_compare/fig_pbvalid_outside_tm_whisker.png
+    image44: posebusters_results/autodock_exhaustiveness_returns/figures/exh_raw_vs_rescored.png
+    image45: posebusters_results/autodock_exhaustiveness_returns/figures/exh_depth_sweep.png
+    image46: posebusters_results/autodock_exhaustiveness_returns/figures/exh_yield_vs_cost.png
+    image47: posebusters_results/autodock_exhaustiveness_returns/figures/exh_marginal_return.png
+
+prose:
+  figure_23:
+    source: "body_appendix_short.tex, the paragraph on fig:results-r17"
+    input: posebusters_results/_orai_matched_root/orai_jku/pose_clusters/cluster_quality_per_tool.csv
+    pose_set: raw
+    note: >-
+      Medians are over the RAW pose cloud, which the caption specifies. Filtering
+      to raw matters: over both pose sets AutoDock's compactness reads 0.42 and
+      the quoted 0.62 looks wrong when it is not.
+    compactness_median:
+      autodock: 0.62
+      diffdock: 0.34
+      equibind: 1.53
+    silhouette_median:
+      autodock: 0.776
+      diffdock: 0.174
+      equibind: 0.587
+  figure_24:
+    source: "body_appendix_short.tex, the paragraph on fig:results-r18"
+    input: posebusters_results/_orai_matched_root/orai_benchmark/pose_clusters/cluster_quality_per_tool.csv
+    equibind_paired_stability_units: 46
+    equibind_single_cluster_after_filtering: 39
+    equibind_multicluster_units: 7
+    equibind_multicluster_stability_raw: 0.67
+    equibind_multicluster_stability_filtered: 0.74
+  figure_39:
+    source: "body_appendix_short.tex, the paragraph on fig:results-r9"
+    input: pandamap_results/benchmark_matched_equibind/report/10b_contact_decomposition_by_rank.csv
+    autodock_spurious_rank1: 15.3
+    diffdock_spurious_rank1: 14.1
+    autodock_spurious_rank5: 17.6
+    equibind_matched_rank1: 16.7
+    equibind_missed_rank1: 18.9
+    equibind_spurious_min: 12.0
+    equibind_spurious_max: 12.6
+
+# -----------------------------------------------------------------------------
+# Interaction pose-basis audit
+# -----------------------------------------------------------------------------
+# Appendix B's "Interaction Fingerprints" section quotes this audit verbatim.
+#
+# It joins the PandaMap fingerprint table to the per-pose table on
+# (method, protein, ligand, pose_name) and aborts on a partial join. The abort is
+# not a data fault: the PandaMap arm profiles 306 complexes while the analysed
+# cohort is 303, so the audit must be restricted with --ids-file. Running it
+# without one leaves nine EquiBind poses in three excluded complexes unjoined.
+# The 303-id file is derived from per_pose_metrics rather than written by hand.
+  audit:
+    source: 'body_appendix_short.tex, "Interaction Fingerprints"'
+    input: pandamap_results/benchmark_matched_equibind/report/interaction_pose_basis_audit.csv
+    ids_file: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/analysed_cohort_ids.txt
+    profiled_poses: 4253
+    profiled_complexes: 303
+    median_rmsd: 7.57
+    within_2a_pct: 21.3
+    crude_f1: {autodock: 0.565, diffdock: 0.529, equibind: 0.471}
+    standardised_f1: {autodock: 0.532, diffdock: 0.527, equibind: 0.513}
+    site_filtered_overlap: {autodock: 0.683, diffdock: 0.714, equibind: 0.629}
+    site_filtered_complexes: {autodock: 257, diffdock: 240, equibind: 155}
+    dropped_by_site_filter: {autodock: 44, diffdock: 60, equibind: 111}
+    metal_records: 6296
+    metal_complexes: 121

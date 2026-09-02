@@ -84,6 +84,7 @@ from pocket_comparison_report import (          # noqa: E402
     parse_fpocket, parse_p2rank, _load_ids, _label_panels,
 )
 import stats_utils as su                         # noqa: E402  (shared, unit-tested)
+import method_filter as mf                       # noqa: E402  (shared exclusion filter)
 
 from rdkit import Chem                            # noqa: E402
 from rdkit.Chem import rdMolAlign                 # noqa: E402
@@ -763,18 +764,71 @@ def resolve_autodock_variant(cat: pd.DataFrame, variant: Optional[str],
     return cand
 
 
+# The thesis draws its three headline slots as AutoDock*, DiffDock* and EquiBind*,
+# a convention defined once in the Results as AutoDock Vina + gnina, DiffDock +
+# smina and unguided EquiBind + gnina. A starred label therefore means exactly
+# that arm and nothing else; every other variant is spelled out so it can never be
+# read as the starred default. Before 2026-08-21 only the AutoDock slot was
+# relabelled here, which left it as the single spelled-out entry on axes where
+# DiffDock and EquiBind were equally optimised but drawn bare.
+_STARRED_VARIANT = {
+    # The dominant AutoDock arm as of 2026-08-29: ADFRsuite-prepared ligands,
+    # exhaustiveness 128, gnina-rescored. The Meeko arms it replaced are excluded
+    # from the Benchmark analyses entirely (see Scripts/Analysis/method_filter.py).
+    "autodock": "autodock_mgltools_exh128_gnina",
+    "diffdock": "diffdock_smina",
+    "equibind": "equibind_unguided_gnina",
+}
+
+
 def _autodock_display(ad_variant: str) -> str:
-    """Figure label for the AutoDock slot, e.g. ``autodock_gnina`` ->
-    'AutoDock Vina + gnina' — so a plot never claims plain Vina while showing
-    gnina-reranked poses."""
+    """Figure label for the AutoDock slot, e.g. ``autodock_gnina`` -> 'AutoDock*'
+    — so a plot never claims plain Vina while showing gnina-reranked poses."""
     name = str(ad_variant)
+    if name == _STARRED_VARIANT["autodock"]:
+        return "AutoDock*"
     base = "AutoDock Vinardo" if "vinardo" in name else "AutoDock Vina"
+    # A non-dominant MGLTools/ADFRsuite arm must not be drawn as plain "AutoDock
+    # Vina + gnina": that label belongs to the Meeko ligand prep, and the two are a
+    # controlled A/B. Carry the prep and the search effort into the label instead.
+    if name.startswith("autodock_mgltools"):
+        base += " MGLTools-lig"
+        for eff in ("18", "64", "92", "128"):
+            if f"_exh{eff}" in name:
+                base += f" exh{eff}"
+                break
+        else:
+            base += " exh32"
     if name.endswith("_gnina_refinement"):
         return f"{base} + gnina (refine)"
     for opt in ("gnina", "smina"):
         if name.endswith(f"_{opt}"):
             return f"{base} + {opt}"
     return base
+
+
+def _diffdock_display(dd_variant: str) -> str:
+    """Figure label for the DiffDock slot, mirroring ``_autodock_display``."""
+    name = str(dd_variant)
+    if name == _STARRED_VARIANT["diffdock"]:
+        return "DiffDock*"
+    for opt in ("gnina", "smina"):
+        if name.endswith(f"_{opt}"):
+            return f"DiffDock + {opt}"
+    return "DiffDock"
+
+
+def _equibind_display(eq_variant: str) -> str:
+    """Figure label for the EquiBind slot, mirroring ``_autodock_display``.
+
+    EquiBind folds pocket source, refiner and clamp into the method name, so a
+    non-starred arm is shown with that suffix rather than guessed at."""
+    name = str(eq_variant)
+    if name == _STARRED_VARIANT["equibind"]:
+        return "EquiBind*"
+    if name.startswith("equibind_"):
+        return f"EquiBind ({name[len('equibind_'):].replace('_', ' ')})"
+    return "EquiBind"
 
 
 def _map_tool(method: str, eq_variant: str, dd_variant: str = "diffdock",
@@ -3914,6 +3968,10 @@ def _analysis_signature(args, eq_variant: str, dd_variant: str,
         "benchmark_dir": str(args.benchmark_dir),
         "fpocket_dir": str(args.fpocket_dir),
         "p2rank_dir": str(args.p2rank_dir),
+        # Method exclusion changes which poses enter the analysis, so it MUST be
+        # part of the key. Without it a cached run silently returns the unfiltered
+        # analysis and the exclusion looks like it did nothing.
+        "exclude_methods": mf.resolve_patterns(args),
     }
 
 
@@ -4276,6 +4334,7 @@ def main(argv=None) -> int:
     ap.add_argument("--force", action="store_true",
                     help="Recompute the per-complex analysis even if a matching "
                          "cache (analysis_cache.pkl) exists for the current inputs.")
+    mf.add_method_filter_args(ap)
     args = ap.parse_args(argv)
 
     csv = Path(args.per_pose_csv)
@@ -4294,9 +4353,13 @@ def main(argv=None) -> int:
     dd_variant = resolve_diffdock_variant(cat, args.diffdock_variant, args.diffdock_refine)
     ad_variant = resolve_autodock_variant(cat, args.autodock_variant,
                                           args.autodock_scoring, args.autodock_optimize)
-    # Figures label the AutoDock slot by the variant actually clustered, so a plot
-    # never says "AutoDock Vina" while showing gnina-reranked poses.
+    # Figures label every slot by the variant actually clustered, so a plot never
+    # says "AutoDock Vina" while showing gnina-reranked poses — and never names one
+    # slot's refiner while leaving the other two bare, which is what made AutoDock
+    # look like the only optimised arm on the cluster axes.
     _TOOL_DISPLAY["autodock"] = _autodock_display(ad_variant)
+    _TOOL_DISPLAY["diffdock"] = _diffdock_display(dd_variant)
+    _TOOL_DISPLAY["equibind"] = _equibind_display(eq_variant)
 
     # ── reuse the cached per-complex analysis when the inputs are unchanged ──
     sig = _analysis_signature(args, eq_variant, dd_variant, ad_variant)
@@ -4309,6 +4372,8 @@ def main(argv=None) -> int:
               f"autodock={ad_variant} | equibind={eq_variant} | diffdock={dd_variant}")
     else:
         df = load_poses(csv, eq_variant, ids, args.pb_valid_only, dd_variant, ad_variant)
+        df = mf.apply_method_filter(df, "method", args, label="pose-cluster",
+                                    out_dir=out_dir)
         if df.empty:
             print("No poses after filtering (check --equibind-* / --diffdock-* / --ids-file).")
             return 1
@@ -4643,14 +4708,14 @@ def main(argv=None) -> int:
     print(f"  {'tool':<10}{'mean modal frac':>16}{'mean #clusters':>16}"
           f"{'closest-is-rank1':>18}")
     for t in TOOLS:
-        mf = pd.to_numeric(dc.get(f"{t}_top5_modal_frac"), errors="coerce").dropna() \
+        modal_frac = pd.to_numeric(dc.get(f"{t}_top5_modal_frac"), errors="coerce").dropna() \
             if f"{t}_top5_modal_frac" in dc else pd.Series(dtype=float)
         nc = pd.to_numeric(dc.get(f"{t}_top5_n_clusters"), errors="coerce").dropna() \
             if f"{t}_top5_n_clusters" in dc else pd.Series(dtype=float)
         br = pd.to_numeric(dc.get(f"{t}_top5_best_rank"), errors="coerce").dropna() \
             if f"{t}_top5_best_rank" in dc else pd.Series(dtype=float)
-        if len(mf):
-            print(f"  {t:<10}{mf.mean():>16.2f}{nc.mean():>16.2f}"
+        if len(modal_frac):
+            print(f"  {t:<10}{modal_frac.mean():>16.2f}{nc.mean():>16.2f}"
                   f"{(br == 1).mean():>17.0%}")
 
     # ── ranking ablation (precision@1 per rule) + ranking enrichment ─────

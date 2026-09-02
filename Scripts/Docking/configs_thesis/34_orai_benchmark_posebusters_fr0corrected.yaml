@@ -1,0 +1,82 @@
+# ============================================================================
+# THESIS REPRODUCTION CONFIG - PoseBusters Fr0 correction, AUTODOCK ROWS ONLY (control panel)
+#
+#   Thesis section  : App. B; the same receptor mismatch as config 24
+#   Supports        : Fr0 validity 73.9 -> 97.7 per cent; the AutoDock control yield
+#   Dataset         : Orai1 control panel, 308 benchmark ligands x 4 receptor frames = 1,232 units
+#   Driver          : Posebusters/run_posebusters.py -c <this>
+#   Writes          : posebusters_results/orai_benchmark_fr0corrected
+#   Analysis tree   : merged into _orai_matched_root/orai_benchmark for AutoDock rows only
+#
+#   Copied from     : Scripts/Docking/Posebusters/posebusters_orai_benchmark_config_fr0corrected.yaml
+#   Deviations      : none. AutoDock rows only, for the reason given in config 24.
+#
+#   Determinism     : bit-exact - deterministic post-processing of stored poses
+#
+#   This file is READ-ONLY to the pipeline. Thesis_Reproduction.ipynb loads it
+#   and never writes it back. Rationale in THESIS_REPRODUCTION.md.
+# ============================================================================
+# FR0-CORRECTED RE-BUST (2026-08-30). Identical to its parent config except:
+#   * receptors_dir -> _orai_benchmark_staging_fr0corrected, whose Orai1WT-START-Fr0.pdb is
+#     the heavy-atom form of the OpenMM-minimised structure the poses were ACTUALLY docked
+#     into (RMSD 0.000000 A / 10,368 of 10,368 atoms vs docking PDBQT 6b3ab996...). The
+#     parent config validates against the RAW PDB, which is a different conformer and
+#     produces 733 spurious minimum_distance_to_protein failures on that frame alone.
+#   * AutoDock ONLY. DiffDock and EquiBind never use a PDBQT - they dock against the raw
+#     Data/Receptors PDB - so the raw validation receptor is CORRECT for them and they are
+#     deliberately not re-busted.
+#   * new output_base_dir, so nothing published is overwritten.
+# PoseBusters config — Orai receptors × PoseBuster Benchmark Set ligands
+# Validates docked poses produced by AutoDock Vina, DiffDock, and EquiBind
+# against the four Orai1WT receptor variants (START-Fr0 + MD snapshots).
+
+work_dir: /home/manndo/master_dev
+
+# Staged folder containing only the 4 Orai receptor PDBs (created by the
+# Master_Docking notebook cell that drives this run).
+receptors_dir: posebusters_results/_orai_benchmark_staging_fr0corrected/receptors
+
+docking_directories:
+  autodock:        Dockings/Orai_Benchmark/docking
+
+# Variant restriction — validate only ONE variant per tool. Each DiffDock pose is
+# tagged with its optimizer (original / smina / gnina — rank*.sdf vs the
+# optimized_<tool>/ subfolders) and each EquiBind pose with its refine_variant
+# (raw / smina / gnina, from its SDF tags). List the variant(s) to KEEP per tool;
+# a tool left out keeps EVERY variant. This limits the busted set to
+# AutoDock(original+gnina) + DiffDock(smina) + EquiBind(gnina).
+# Comment the block out (or delete it) to bust every variant again.
+#
+# AutoDock is PINNED as of 2026-08-30. It no longer "has a single variant": the tree
+# this config points at now holds three — raw *_vina_out.pdbqt (1,232 containers),
+# optimized_gnina/ (12,256 SDF) and optimized_gnina_refinement/ (1,291 SDF). That last
+# one is an INTERRUPTED partial: its status JSON reads processed_complexes=129 of 1,232,
+# yet 128 of them carry a complete 10/10 rank set, which is exactly the shape that passes
+# run_posebusters' per-complex completeness gate. Leaving autodock unpinned means
+# _autodock_variant_ok() admits everything, so a regeneration would silently fold a
+# 10%-coverage arm into a PUBLISHED dataset — and orai_transmembrane_exclusion.py and
+# orai_pose_cluster_report.py both default --autodock-variant to "all", which would then
+# pool it with the two complete arms. The shipped CSV is clean today (zero
+# optimized_gnina_refinement rows); this pin keeps it that way.
+variant_filter:
+  autodock:        [original, gnina]   # PINNED: drop the interrupted gnina_refinement arm
+  diffdock:        smina    # keep only smina-optimised DiffDock poses (drop original + gnina)
+  equibind_guided: gnina    # keep only gnina-refined EquiBind poses (drop raw + smina)
+
+config_mode: dock          # use receptor-aware "dock" PoseBusters profile
+output_base_dir: posebusters_results/orai_benchmark_fr0corrected
+save_interval: 200
+overwrite: false            # re-bust ALL poses
+                           # (same filenames), so resume (overwrite:false) would skip them and
+                           # keep stale results. Revert to false for normal incremental runs.
+num_workers: 30          # null -> all available CPU cores
+make_plots: true
+copy_proved_poses: true
+
+# Bond-order template SDFs for AutoDock PDBQT->SDF conversion.
+# The staging dir provides per-ligand symlinks named to match the AutoDock
+# ligand label (e.g. "5S8I_2LY_ligand_start_conf_vina.sdf"); the benchmark
+# directory is included as a fallback.
+ligand_template_dirs:
+  - posebusters_results/_orai_benchmark_staging/ligand_templates
+  - Data/PoseBuster Benchmark Set

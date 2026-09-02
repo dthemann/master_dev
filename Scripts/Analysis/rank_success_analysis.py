@@ -42,14 +42,32 @@ import matplotlib.pyplot as plt
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 import stats_utils as su
+import method_filter as mf  # noqa: E402  (shared single-point method exclusion)
+import posebusters_pose_comparison as pc  # noqa: E402  (dominant-arm single source of truth)
 
 HIT = 2.0
-K_ATTR_TOOLS = ("autodock", "diffdock")     # the two with a clean confidence/score rank
+# Roles, not literal method keys. The AutoDock slot is resolved per frame by
+# _resolve_autodock_key: the Benchmark whole-protein campaign labels its arm
+# autodock_mgltools_exh128_gnina, while every Orai frame labels its arm plainly "autodock".
+K_ATTR_ROLES = ("autodock", "diffdock")     # the two with a clean confidence/score rank
+DOMINANT_AUTODOCK = getattr(pc, "_DOMINANT_AUTODOCK_OPT", "autodock_mgltools_exh128_gnina")
 ATTRS = {"mw": "MW", "rot_bonds": "Rotatable bonds", "tpsa": "TPSA", "qed": "QED"}
 
 
+def _resolve_autodock_key(met: pd.DataFrame) -> str:
+    """Which method key fills the AutoDock slot in *met*.
+
+    Presence-based rather than hard-coded, so the same script serves both campaigns: the
+    Benchmark whole-protein frame carries the dominant ADFRsuite arm and the literal
+    "autodock" key has been excluded from it, whereas the Orai frames carry only
+    "autodock" and must keep resolving to it.
+    """
+    present = set(met["method"].astype(str))
+    return DOMINANT_AUTODOCK if DOMINANT_AUTODOCK in present else "autodock"
+
+
 def pretty(m: str) -> str:
-    if m == "autodock":
+    if m in ("autodock", DOMINANT_AUTODOCK):
         return "AutoDock Vina"
     if m == "diffdock":
         return "DiffDock (raw)"
@@ -79,8 +97,9 @@ def pick_entities(met: pd.DataFrame) -> list[dict]:
     """AutoDock, raw DiffDock, the best-validity DiffDock variant, and the best-validity
     *rankable* (smina-refined) EquiBind variant — those actually present with a rank."""
     ents = []
-    if (met["method"] == "autodock").any():
-        ents.append(dict(method="autodock", source="rank"))
+    ad = _resolve_autodock_key(met)
+    if (met["method"] == ad).any():
+        ents.append(dict(method=ad, source="rank"))
     if (met["method"] == "diffdock").any():
         ents.append(dict(method="diffdock", source="rank"))
     dd = met[met["method"].astype(str).str.match(r"diffdock_(smina|gnina)$")]
@@ -230,21 +249,32 @@ def _annotate_mcnemar(ax, mcn: dict, depth_x: dict) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
+    # The whole-protein (blind) campaign, not the retired crystal-boxed one, whose only
+    # AutoDock arm is the excluded Meeko key.
     ap.add_argument("--per-pose-metrics", type=Path,
-                    default=Path("posebusters_results/benchmark/dock/"
+                    default=Path("posebusters_results/benchmark_full_protein_vina_scoring/dock/"
                                  "pose_comparison_report/per_pose_metrics.csv"))
     ap.add_argument("--features", type=Path,
                     default=Path("PoseBusters_Benchmark_Analysis/ligand_protein_features.csv"))
     ap.add_argument("--out-dir", type=Path,
                     default=Path("PoseBusters_Benchmark_Analysis/rank_success"))
     ap.add_argument("--max-rank", type=int, default=30)
+    mf.add_method_filter_args(ap)
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     K = args.max_rank
     ks = np.arange(1, K + 1)
 
     met = pd.read_csv(args.per_pose_metrics, low_memory=False)
+    # Before pick_entities, which chooses which arms to plot by inspecting this
+    # frame and would otherwise select an arm that is about to be removed.
+    met = mf.apply_method_filter(met, "method", args, label="rank-success",
+                                 out_dir=args.out_dir)
     met["pb_valid"] = met["pb_valid"].astype(bool)
+    # Bind the AutoDock role to whichever arm survived the filter above, so the
+    # attribute-dependence panels look up the same entity pick_entities selected.
+    K_ATTR_TOOLS = tuple(_resolve_autodock_key(met) if t == "autodock" else t
+                         for t in K_ATTR_ROLES)
     feat = pd.read_csv(args.features)[["entry"] + list(ATTRS)]
 
     ents = pick_entities(met)

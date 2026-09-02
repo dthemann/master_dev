@@ -46,6 +46,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import method_filter as mf  # noqa: E402  (shared single-point method exclusion)
 from stats_utils import (bh_fdr, fmt_p, holm, p_stars, paired_proportions,  # noqa: E402
                          wilson_ci)
 
@@ -340,7 +341,12 @@ def regenerate_annotated_figures(df: pd.DataFrame, a: pd.DataFrame, b: pd.DataFr
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    default_dir = Path("posebusters_results/benchmark/dock/pose_comparison_report")
+    # Whole-protein (blind) campaign — the run the Results chapter reports. The old
+    # crystal-boxed dir (posebusters_results/benchmark/dock/pose_comparison_report) was
+    # the default here and is a different campaign entirely, so a bare invocation used to
+    # annotate figures 15c/15d that no longer belong to the reported numbers.
+    default_dir = Path("posebusters_results/benchmark_full_protein_vina_scoring"
+                       "/dock/pose_comparison_report")
     ap.add_argument("--report-dir", type=Path, default=default_dir,
                     help="dir holding per_pose_metrics.csv (default: %(default)s)")
     ap.add_argument("--out-dir", type=Path, default=None,
@@ -353,6 +359,7 @@ def main() -> None:
                     help="re-draw 15c/15d from the existing *_stats CSVs; skip the "
                          "(slow) recomputation — use to restore annotations a plain "
                          "report run wiped")
+    mf.add_method_filter_args(ap)
     args = ap.parse_args()
     out_dir = args.out_dir or args.report_dir
     src = args.report_dir / "per_pose_metrics.csv"
@@ -360,6 +367,10 @@ def main() -> None:
         ap.error(f"missing {src}")
 
     df = pd.read_csv(src, low_memory=False)
+    # Feeds BOTH the --annotate-only redraw and the main path, so one call here
+    # covers every consumer.
+    df = mf.apply_method_filter(df, "method", args, label="optimization-benefit",
+                                out_dir=out_dir)
 
     if args.annotate_only:                              # reuse prior results, just re-draw
         ap_csv = out_dir / "optimization_benefit_stats_pairwise.csv"

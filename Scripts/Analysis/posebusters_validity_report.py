@@ -114,6 +114,8 @@ import seaborn as sns
 import os as _os, sys as _sys  # noqa: E402
 _sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
 import stats_utils as su  # noqa: E402
+# Shared single-point method exclusion (--exclude-methods / --exclude-preset).
+import method_filter as mf  # noqa: E402
 
 # Single source of truth: reuse the pipeline's canonical PoseBusters test set and
 # its bool-coercion so this report and run_posebusters.py agree exactly on what
@@ -508,7 +510,107 @@ def _apply_autodock_split(df: pd.DataFrame) -> pd.DataFrame:
         for base, opt in zip(bases, opts)
     ]
     df.loc[ad_idx, "ad_optimizer"] = opts
+    _warn_pooled_autodock_arms(df, ad_idx)
     return df
+
+
+def _autodock_pin_spec(spec: str) -> tuple[str, str, str]:
+    """Split a full AutoDock arm key into (tree_key, optimizer, folded_key).
+
+    ``--autodock-variant`` names an arm the way the docking trees and
+    posebusters_pose_comparison.py's ``--collapse-autodock-variant`` do —
+    ``autodock_mgltools_exh128_gnina`` — whereas this report's frame carries the tree
+    key in ``docking_method`` / ``method_raw`` and the optimizer on a separate axis
+    (the PoseBusters CSV's ``optimizer`` column). Splitting on the known optimizer
+    suffixes recovers both halves, plus the folded key ``_apply_autodock_split`` will
+    hand the surviving rows — which is what the star label and the family selectors
+    have to be keyed on, since they only ever see the folded name.
+    """
+    s = str(spec).strip().lower()
+    tree, opt = s, "original"
+    for suf in _AUTODOCK_OPTIMIZER_SUFFIXES:
+        if s.endswith(suf):
+            tree, opt = s[: -len(suf)], suf.lstrip("_")
+            break
+    base = _autodock_scoring_base(tree)
+    return tree, opt, (base if opt == "original" else f"{base}_{opt}")
+
+
+def _pin_autodock_arm(df: pd.DataFrame, spec: str) -> pd.DataFrame:
+    """Restrict ONE AutoDock scoring family to the single arm named by *spec*.
+
+    MUST run before _apply_autodock_split, for the same reason the method exclusion
+    does: that split folds every ``autodock_mgltools*`` tree onto plain ``autodock`` /
+    ``autodock_gnina``, so afterwards the tree key survives only in ``method_raw``, the
+    pooled row has already been built, and the selectors downstream have no key space
+    in which to name an ADFRsuite arm. Pinning here means the fold sees exactly one
+    source tree and the reported row IS the arm its label names.
+
+    Only the scoring family of *spec* is touched: pinning a Vina arm leaves every
+    ``autodock_vinardo*`` row alone, matching how the exclusion preset and the
+    per-family selectors already keep the two scoring functions apart. Non-AutoDock
+    methods are never touched.
+
+    A spec that matches no pose is fatal rather than a warning. The failure mode this
+    guards against is the one the audit found: a selector that prints "leaving
+    unchanged" and carries on reporting a pooled row under the pinned arm's name.
+    """
+    tree, want_opt, folded = _autodock_pin_spec(spec)
+    if not tree.startswith("autodock"):
+        raise SystemExit(f"--autodock-variant: '{spec}' is not an AutoDock method key.")
+    methods = df["docking_method"].astype(str)
+    base = _autodock_scoring_base(tree)
+    fam_bases = {m: _autodock_scoring_base(m) for m in methods.unique()
+                 if str(m).startswith("autodock")}
+    fam = methods.map(lambda m: fam_bases.get(m) == base).astype(bool)
+    if not fam.any():
+        raise SystemExit(
+            f"--autodock-variant: '{spec}' names the '{base}' scoring family, of which "
+            f"this CSV carries no pose (present: {sorted(methods.unique())}).")
+
+    # Classify only the rows of the named tree — every other row in the family is
+    # dropped whatever its optimizer, so their (row-wise, therefore slow) optimizer
+    # lookup is only needed on the error path below.
+    tree_idx = df.index[fam & (methods == tree)]
+    keep_idx = [i for i in tree_idx if _classify_autodock(df.loc[i]) == want_opt]
+    if not keep_idx:
+        present = sorted({t if o == "original" else f"{t}_{o}"
+                          for t, o in ((methods[i], _classify_autodock(df.loc[i]))
+                                       for i in df.index[fam])})
+        raise SystemExit(
+            f"--autodock-variant: no pose matches '{spec}' (tree '{tree}', optimizer "
+            f"'{want_opt}'). Arms present in the '{base}' family: {present}.")
+
+    keep = (~fam) | df.index.isin(keep_idx)
+    n_before = int(fam.sum())
+    out = df[keep].reset_index(drop=True)
+    print(f"[autodock-variant] pinned '{tree}' + optimizer '{want_opt}': "
+          f"{n_before:,} → {len(keep_idx):,} poses kept in the '{base}' scoring family; "
+          f"reported as '{folded}'. Other families and engines untouched.")
+    return out
+
+
+def _warn_pooled_autodock_arms(df: pd.DataFrame, ad_idx) -> None:
+    """Say so when the fold above collapses several distinct arms into one row.
+
+    ``_autodock_scoring_base`` maps every ``autodock_mgltools*`` key onto plain
+    ``autodock``, so a run carrying the ligand-prep / exhaustiveness arms silently
+    reports them pooled under a label that names only one of them. That pooling is
+    long-standing and is NOT changed here — changing it would move published
+    numbers — but it must not be invisible, especially after a method exclusion has
+    removed the arm the label actually refers to.
+    """
+    if "method_raw" not in df.columns:
+        return
+    sub = df.loc[ad_idx, ["docking_method", "method_raw"]].astype(str)
+    for folded, grp in sub.groupby("docking_method"):
+        sources = sorted(grp["method_raw"].unique())
+        if len(sources) > 1:
+            print(f"  WARNING: '{folded}' pools {len(sources)} distinct arms "
+                  f"({len(grp):,} poses): {sources}\n"
+                  f"           _autodock_scoring_base folds every autodock_mgltools* "
+                  f"key onto 'autodock', so this row is NOT the arm its label names.",
+                  file=sys.stderr)
 
 
 def _classify_diffdock(row) -> str | None:
@@ -584,7 +686,11 @@ def _resolve_check_schema(df: pd.DataFrame) -> tuple[list[str], str]:
     )
 
 
-def load_and_score(csv_path: Path, split_equibind: bool = True) -> pd.DataFrame:
+def load_and_score(csv_path: Path, split_equibind: bool = True,
+                   exclude_patterns=None, exclude_strict: bool = False,
+                   exclude_preset: str | None = None,
+                   exclude_out_dir: Path | None = None,
+                   autodock_variant: str | None = None) -> pd.DataFrame:
     _load_pb_constants()
     df = pd.read_csv(csv_path, low_memory=False)
     checks, _mode = _resolve_check_schema(df)
@@ -592,6 +698,21 @@ def load_and_score(csv_path: Path, split_equibind: bool = True) -> pd.DataFrame:
     df["pair"] = df["protein"].astype(str) + " / " + df["ligand"].astype(str)
     df["docking_method"] = df["docking_method"].astype(str).str.lower()
     df["method_raw"] = df["docking_method"]
+    # ── Single-point method exclusion ────────────────────────────────
+    # MUST run here, before the splits below. _apply_autodock_split rewrites every
+    # autodock_mgltools* key onto plain 'autodock' (see _autodock_scoring_base), so
+    # after that line the ADFRsuite arms are indistinguishable from the Meeko ones
+    # and no exclusion can separate them. At this point docking_method still holds
+    # the base tree key each row was actually docked in.
+    df = mf.apply_patterns(df, "docking_method", exclude_patterns,
+                           label="validity-report", out_dir=exclude_out_dir,
+                           strict=exclude_strict, preset=exclude_preset)
+    # ── Optional AutoDock arm pin (--autodock-variant) ───────────────
+    # Shares the exclusion's window for the same reason: this is the last point at
+    # which an ADFRsuite arm can still be named. Unset (every Orai invocation, and
+    # every command line committed before this flag existed) it is inert.
+    if autodock_variant:
+        df = _pin_autodock_arm(df, autodock_variant)
     if split_equibind:
         df = _apply_equibind_split(df)
     # AutoDock's post-optimization rows have a distinct geometry and, for gnina,
@@ -962,6 +1083,23 @@ def _engine_family(m: str) -> str:
     m = str(m)
     if m.startswith("autodock_vinardo"):
         return "autodock_vinardo"
+    # Independent AutoDock arms get their own engine bucket so they are drawn as
+    # their own headline bars instead of competing to represent plain AutoDock.
+    # Every exhaustiveness arm must be tested BEFORE the bare "autodock_mgltools"
+    # prefix, which startswith-matches all of them; otherwise 18/92 pool into the
+    # bucket reported as the unsuffixed arm, which is itself the exhaustiveness-32
+    # point. Keep this list in step with the arms in
+    # Scripts/Docking/autodock_vina_docking_config_*_mgltools_exh*.yaml.
+    # NOTE: this function is currently UNREACHABLE for these keys. load_and_score
+    # calls _apply_autodock_split first, and _autodock_scoring_base above rewrites
+    # every autodock_mgltools* method to plain "autodock", pooling five arms
+    # (9,043+8,991+8,986+8,996+8,984 = 45,000 poses) into one row. Fixing that base
+    # function is what makes the split below take effect.
+    for _exh in ("exh18", "exh64", "exh92"):
+        if m.startswith(f"autodock_mgltools_{_exh}"):
+            return f"autodock_mgltools_{_exh}"
+    if m.startswith("autodock_mgltools"):
+        return "autodock_mgltools"
     if m.startswith("autodock"):
         return "autodock"
     if m.startswith("diffdock"):
@@ -2209,6 +2347,18 @@ def main() -> None:
                          "'EquiBind*' when it resolves to one variant. Explicit, "
                          "crystal-free counterpart to --best-equibind-only. "
                          "AutoDock/DiffDock are unaffected.")
+    ap.add_argument("--autodock-variant", default=None, metavar="METHOD",
+                    help="Pin the AutoDock family to ONE arm, named by its FULL method "
+                         "key as the docking trees spell it, e.g. "
+                         "'autodock_mgltools_exh128_gnina' (tree + optimizer). Counterpart "
+                         "to posebusters_pose_comparison.py's --collapse-autodock-variant, "
+                         "and the only way to name an ADFRsuite arm here: the optimizer "
+                         "split folds every autodock_mgltools* key onto plain 'autodock', "
+                         "so without this flag those arms are reported POOLED under a label "
+                         "that names one of them. Applied to the whole frame (tables and "
+                         "plots) before the fold, and relabelled 'AutoDock*' like the other "
+                         "engines' selected variants. Touches only the named arm's scoring "
+                         "family (Vina or Vinardo). Unset, behaviour is unchanged.")
     ap.add_argument("--max-rmsd", type=float, default=None, metavar="A",
                     help="Keep only poses whose RMSD-to-crystal is ≤ this many Å "
                          "(e.g. 5.0) before scoring/plotting. Off by default. RMSD is "
@@ -2243,6 +2393,7 @@ def main() -> None:
     ap.add_argument("--rmsd-sweep-steps", type=int, default=60,
                     help="Number of cutoff samples in the --rmsd-sweep-max curve "
                          "(default: %(default)s).")
+    mf.add_method_filter_args(ap)
     args = ap.parse_args()
 
     # Conflicting per-tool selectors must fail loudly, not resolve by silent apply-order
@@ -2254,12 +2405,36 @@ def main() -> None:
         ap.error("--best-equibind-only and --equibind-variant are mutually exclusive; "
                  "choose one EquiBind selector.")
 
+    # Resolve the pinned AutoDock arm once, before anything reads the frame. The FOLDED
+    # key is what the frame carries after _apply_autodock_split, so it — not the full
+    # arm name on the command line — is what the star label and the selector gate below
+    # must be keyed on. The scoring base says which of the two AutoDock family selectors
+    # the pin supersedes.
+    ad_pin_folded = ad_pin_base = None
+    if args.autodock_variant:
+        _ad_pin_tree, _, ad_pin_folded = _autodock_pin_spec(args.autodock_variant)
+        ad_pin_base = _autodock_scoring_base(_ad_pin_tree)
+
     args.out_dir.mkdir(parents=True, exist_ok=True)
     # Reusing an output dir must not leave stale, conditionally-produced artifacts from a
     # different config (e.g. a prior --max-rmsd run's rmsd_filter_summary.csv, or a variant
     # figure that self-skips this run) masquerading as current output.
     _clear_stale_outputs(args.out_dir)
-    df = load_and_score(args.csv, split_equibind=args.split_equibind)
+    df = load_and_score(args.csv, split_equibind=args.split_equibind,
+                        exclude_patterns=mf.resolve_patterns(args),
+                        exclude_strict=args.exclude_strict,
+                        exclude_preset=args.exclude_preset,
+                        exclude_out_dir=args.out_dir,
+                        autodock_variant=args.autodock_variant)
+
+    if ad_pin_folded:
+        # Star the pinned arm the way --diffdock-variant / --equibind-variant star
+        # theirs, so a collapsed legend names all engines the same way instead of
+        # leaving AutoDock as the one unstarred (and therefore raw-looking) slot.
+        _LABEL_OVERRIDES[ad_pin_folded] = (
+            "AutoDock Vinardo*" if ad_pin_base == "autodock_vinardo" else "AutoDock*")
+        print(f"autodock-variant: '{args.autodock_variant}' pinned — reported as "
+              f"'{ad_pin_folded}' (shown as '{_LABEL_OVERRIDES[ad_pin_folded]}').")
 
     # Restrict to the official benchmark-set ids (the complex id is the 'protein'
     # column, which equals '<PDBID>_<LIG>' for the benchmark staging).
@@ -2342,8 +2517,14 @@ def main() -> None:
             for selector, star, on in (
                 (select_best_diffdock, "DiffDock*", not dd_selected),
                 (select_best_equibind, "EquiBind*", not eq_selected),
-                (select_best_autodock, "AutoDock*", True),
-                (select_best_autodock_vinardo, "AutoDock Vinardo*", True),
+                # An --autodock-variant pin supersedes the oracle ranking for ITS
+                # family only. Not gating it would leave the selector ranking a
+                # single already-chosen arm against an oracle whose index holds the
+                # unfolded tree names, i.e. printing "none of the present variants
+                # have a score" over a decision that was already made.
+                (select_best_autodock, "AutoDock*", ad_pin_base != "autodock"),
+                (select_best_autodock_vinardo, "AutoDock Vinardo*",
+                 ad_pin_base != "autodock_vinardo"),
             ):
                 if not on:
                     continue

@@ -87,6 +87,7 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 # Shared (A),(B),(C)… panel labeller for multi-panel figures.
 from pocket_comparison_report import _label_panels  # noqa: E402
+import method_filter as mf  # noqa: E402  (shared single-point method exclusion)
 
 # Shared, unit-tested statistical helpers (paired Friedman/Wilcoxon, Cochran's Q /
 # McNemar, G-test of independence, Spearman, Wilson/bootstrap CIs, Holm/BH). Never
@@ -107,6 +108,21 @@ INTERACTION_TYPES = [
     "salt_bridge", "covalent", "alkyl_pi", "attractive_charge", "pi_cation",
     "repulsion",
 ]
+
+# Sodium's element symbol is the literal string "NA", which pandas reads as a
+# missing value by default. That silently deletes every sodium coordination
+# contact from ``lig_atom_element`` before figure 08 ever sees it (fig 08 drops
+# null elements), so Na is the one coordinating metal missing from the panel.
+# Read the residue-level frames with the default token list off and only the
+# empty field treated as missing, so element symbols stay literal while a field
+# PandaMap could not fill still arrives as NaN.
+_CSV_NA_VALUES = [""]
+
+
+def read_pandamap_csv(path, **kwargs) -> pd.DataFrame:
+    """``read_csv`` that keeps element symbols literal (see ``_CSV_NA_VALUES``)."""
+    return pd.read_csv(path, keep_default_na=False, na_values=_CSV_NA_VALUES, **kwargs)
+
 
 # Readable axis labels for the interaction types (avoid raw snake_case on figures).
 INTERACTION_LABELS = {
@@ -171,6 +187,17 @@ def _eq_tokens(method: str):
 def pretty_method(m: str) -> str:
     if m in _LABEL_OVERRIDES:
         return _LABEL_OVERRIDES[m]
+    # ADFRsuite/MGLTools exhaustiveness ladder. Without this the raw method key reaches the
+    # axis of every figure, because the exact-match chain below only knows the Meeko keys.
+    if m.startswith("autodock_mgltools"):
+        base, opt = m, ""
+        for suf in ("_gnina", "_smina"):
+            if base.endswith(suf):
+                base, opt = base[: -len(suf)], f" ({suf[1:]}-opt)"
+                break
+        rest = base[len("autodock_mgltools"):].lstrip("_")
+        exh = rest[3:] if rest.startswith("exh") else "32"
+        return f"AutoDock Vina exh{exh}{opt}"
     if m == "autodock":
         return "AutoDock Vina"
     if m == "autodock_smina":
@@ -2518,14 +2545,11 @@ def main() -> None:
                     help="Restrict the report to the '<PDBID>_<LIG>' complex ids "
                          "listed in this file (one per line; '#' comments ok). "
                          "Overrides config 'ids_file'.")
-    ap.add_argument("--exclude-methods", default=None, metavar="M1,M2",
-                    help="Comma-separated method keys to drop from every chart and CSV "
-                         "(e.g. 'unidock2'). The fingerprints stay on disk — this only "
-                         "controls what the report presents.")
     ap.add_argument("--per-pose-metrics", type=Path, default=None,
                     help="per_pose_metrics.csv from posebusters_pose_comparison.py "
                          "(per-pose RMSD-to-crystal) for the geometry-vs-recovery figure. "
                          f"Default: sibling of --oracle-summary, else {DEFAULT_PER_POSE_METRICS}.")
+    mf.add_method_filter_args(ap)
     args = ap.parse_args()
 
     # Optional config (same YAML as run_pandamap.py); CLI flags override its values.
@@ -2561,27 +2585,33 @@ def main() -> None:
     out_dir = args.out_dir or (in_dir / "report")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    summary = pd.read_csv(in_dir / "pandamap_pose_summary.csv", low_memory=False)
-    inter = pd.read_csv(in_dir / "pandamap_interactions.csv", low_memory=False)
+    summary = read_pandamap_csv(in_dir / "pandamap_pose_summary.csv", low_memory=False)
+    inter = read_pandamap_csv(in_dir / "pandamap_interactions.csv", low_memory=False)
     crystal_path = in_dir / "crystal_interactions.csv"
-    crystal = pd.read_csv(crystal_path, low_memory=False) if crystal_path.exists() else pd.DataFrame()
+    crystal = (read_pandamap_csv(crystal_path, low_memory=False)
+               if crystal_path.exists() else pd.DataFrame())
 
     # Drop whole methods from every chart/CSV. The fingerprints stay on disk; this only
     # controls what is presented, so a tool can be generated once and then left out of a
     # particular report (e.g. an engine a supervisor asked to keep out of the write-up)
     # without discarding its data or re-running PandaMap.
-    if args.exclude_methods:
-        drop = {m.strip() for m in args.exclude_methods.split(",") if m.strip()}
-        def _drop(d):
-            return (d[~d["method"].astype(str).isin(drop)].copy()
-                    if not d.empty and "method" in d.columns else d)
-        before = sorted(summary["method"].astype(str).unique()) if not summary.empty else []
-        summary, inter, crystal = _drop(summary), _drop(inter), _drop(crystal)
-        after = sorted(summary["method"].astype(str).unique()) if not summary.empty else []
-        missing = drop - set(before)
-        if missing:
-            print(f"  [exclude-methods] not present, nothing dropped: {sorted(missing)}")
-        print(f"exclude-methods: {before} → {after}")
+    # Three frames share one exclusion. Only the summary reports it and writes the
+    # sidecar; the other two would repeat the same block for no new information.
+    # crystal_interactions.csv is optional and the interaction frames are empty for
+    # a run with no fingerprints, so each is filtered only when it can be.
+    summary = mf.apply_method_filter(summary, "method", args,
+                                     label="pandamap", out_dir=out_dir)
+    _pats = mf.resolve_patterns(args)
+
+    def _also_filter(frame, name):
+        """crystal_interactions.csv is optional and both frames are empty when a
+        run produced no fingerprints, so filter each only when it can be."""
+        if frame.empty or "method" not in frame.columns:
+            return frame
+        return mf.apply_patterns(frame, "method", _pats, label=f"pandamap/{name}")
+
+    inter = _also_filter(inter, "inter")
+    crystal = _also_filter(crystal, "crystal")
 
     # Restrict to the official benchmark-set ids (complex id == 'protein' column,
     # which equals '<PDBID>_<LIG>' for the benchmark staging).

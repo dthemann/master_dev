@@ -32,6 +32,7 @@ import sys
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import method_filter as mf  # noqa: E402  (shared single-point method exclusion)
 from stats_utils import (  # noqa: E402
     newcombe_paired_diff_ci, mcnemar_power, tost_paired_proportions, mcnemar_exact,
 )
@@ -43,8 +44,8 @@ FULL_BENCHMARK = 428
 DEPTHS = (1, 5, 15, 30)
 
 ARMS = [
-    ('AutoDock Vina (raw)', 'autodock', 'rank'),
-    ('AutoDock Vina + gnina', 'autodock_gnina', 'optimized_rank'),
+    ('AutoDock Vina (raw)', 'autodock_mgltools_exh128', 'rank'),
+    ('AutoDock Vina + gnina', 'autodock_mgltools_exh128_gnina', 'optimized_rank'),
     ('DiffDock (raw)', 'diffdock', 'rank'),
     ('DiffDock + smina', 'diffdock_smina', 'rank'),
     ('DiffDock + gnina', 'diffdock_gnina', 'rank'),
@@ -91,8 +92,13 @@ def gate_cost(df):
     return pd.DataFrame(rows)
 
 
-def bounded_claim(df, arm_a=('autodock_gnina', 'optimized_rank'),
+def bounded_claim(df, arm_a=('autodock_mgltools_exh128_gnina', 'optimized_rank'),
                   arm_b=('diffdock_smina', 'rank')):
+    # arm_a must track the dominant AutoDock arm. It was left at the superseded
+    # Meeko 'autodock_gnina' after the exh128 migration, which silently published
+    # the old arm's contrast into the appendix. Reported figures are AutoDock
+    # minus DiffDock, i.e. the NEGATION of this function's diff_pp/lo_pp/hi_pp,
+    # which are p_b - p_a.
     rows = []
     for d in DEPTHS:
         A = recovered(df, arm_a[0], d, arm_a[1], True)
@@ -123,9 +129,21 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--metrics', default=DEFAULT_METRICS)
     ap.add_argument('--csv', default=None, help='directory to write both tables into')
+    mf.add_method_filter_args(ap)
     args = ap.parse_args()
 
     df = load(args.metrics)
+    df = mf.apply_method_filter(df, 'method', args, label='endpoint-diagnostics',
+                                out_dir=args.csv)
+    # ARMS drives the pivot's row order via reindex; an arm excluded from the
+    # frame but left in the constant would print as a row of NaN rather than
+    # being absent.
+    global ARMS, HEADLINE
+    _present = set(df['method'].astype(str))
+    ARMS = [a for a in ARMS if a[1] in _present]
+    if not ARMS:
+        raise SystemExit('endpoint-diagnostics: every arm was excluded.')
+    HEADLINE = tuple(h for h in HEADLINE if h in {a[0] for a in ARMS})
 
     gc = gate_cost(df)
     print('=' * 78)

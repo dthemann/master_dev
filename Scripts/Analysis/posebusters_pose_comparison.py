@@ -100,7 +100,7 @@ Output plots (in --out-dir):
                                        segment = ceiling reached)
     09d_alt_dumbbell.png             — same data: per (variant, depth) validity●——○accuracy
                                        dumbbell; the segment is the accurate-but-invalid share
-    09f_pbvalid_yield_boxplot.png    — "Post-Hoc Optimization and PoseBuster Validity":
+    09f_pbvalid_yield_boxplot.png    — "Search Effort, Post-Hoc Optimization and PoseBusters Validity":
                                        box/whisker of the PoseBusters-valid YIELD of the
                                        PRODUCED poses per variant (raw beside its smina /
                                        gnina optimized variants, grouped by tool). Each
@@ -572,6 +572,8 @@ from pocket_comparison_report import _label_panels  # noqa: E402
 # Shared, unit-tested statistical helpers (Friedman/Kendall-W, paired-proportions
 # with Cochran's Q + exact McNemar, Wilson CIs, Holm — see STATISTICAL_VALIDATION_PLAN.md).
 import stats_utils as su  # noqa: E402
+# Shared single-point method exclusion (--exclude-methods / --exclude-preset).
+import method_filter as mf  # noqa: E402
 
 
 def _json_default(o):
@@ -747,6 +749,14 @@ RANKING_TOOLS = frozenset({
     # Vinardo-scored AutoDock is the same Vina engine, different scoring function.
     "autodock_vinardo", "autodock_vinardo_smina", "autodock_vinardo_gnina",
     "autodock_vinardo_gnina_refinement",
+    # MGLTools-ligand arm: same Vina engine + ranks (autodock_rank / optimized_rank).
+    "autodock_mgltools", "autodock_mgltools_smina", "autodock_mgltools_gnina",
+    "autodock_mgltools_gnina_refinement",
+    # Exhaustiveness sweep on that same arm (the unsuffixed key above is its 32 point).
+    "autodock_mgltools_exh18",
+    "autodock_mgltools_exh64", "autodock_mgltools_exh64_gnina",
+    "autodock_mgltools_exh92",
+    "autodock_mgltools_exh128", "autodock_mgltools_exh128_gnina",
     # Uni-Dock (tiled) and Uni-Dock2 emit affinity-ordered poses (rank = pose order).
     "unidock", "unidock2",
     "diffdock",
@@ -830,6 +840,27 @@ _AD_VARIANT_COLORS = {
     "autodock_gnina_refinement": "#08306b",
     "autodock_vinardo_smina": "#9edae5", "autodock_vinardo_gnina": "#0e7c86",
     "autodock_vinardo_gnina_refinement": "#005f69",
+    # MGLTools-ligand arm — OLIVE, ramped light→dark by search effort. Olive because
+    # every other family hue in this file is taken and 09f draws them in one axes:
+    # blue = AutoDock Vina, cyan = Vinardo, orange = DiffDock, purple = Uni-Dock,
+    # brown = Uni-Dock2, and GREEN is EquiBind's family (_EQ_PALETTE below, which
+    # _MethodColorMap cycles for any equibind* key). The previous greens here collided
+    # with it badly — "#00441b" was byte-identical to equibind_unguided_raw and
+    # "#78c679" was 5/255 from equibind_unguided_smina, both drawn in the same figure.
+    # Within the ramp, lightness encodes exhaustiveness (house rule: tiers ramp, they
+    # do not change hue); exh64's old orange is what made it read as its own engine.
+    "autodock_mgltools_exh18": "#efeeb8",
+    "autodock_mgltools": "#dcda6e",          # the exhaustiveness-32 point of the sweep
+    "autodock_mgltools_exh64": "#c6c72e",
+    "autodock_mgltools_exh92": "#a5a61f",
+    "autodock_mgltools_exh128": "#8f9019",
+    # Post-dock optimiser variants — darker tail of the same hue, so they read as
+    # derived from their exhaustiveness point rather than as further search effort.
+    "autodock_mgltools_smina": "#6b6c13",
+    "autodock_mgltools_gnina": "#4e4f0e",
+    "autodock_mgltools_gnina_refinement": "#33340a",
+    "autodock_mgltools_exh64_gnina": "#5c5d10",
+    "autodock_mgltools_exh128_gnina": "#787917",
 }
 # Green family for EquiBind variants (cycled if more than this many appear).
 _EQ_PALETTE = ["#2ca02c", "#74c476", "#1b7837", "#a6dba0",
@@ -909,6 +940,28 @@ def _pretty_method(m: str) -> str:
         return "AutoDock Vinardo (gnina-opt)"
     if m == "autodock_vinardo_gnina_refinement":
         return "AutoDock Vinardo (GNINA CNN-refinement)"
+    # The unsuffixed MGLTools key is the exhaustiveness-32 arm; name the setting so it
+    # cannot be read as an exhaustiveness-agnostic baseline.
+    if m == "autodock_mgltools":
+        return "AutoDock Vina MGL-lig exh32"
+    if m == "autodock_mgltools_smina":
+        return "AutoDock Vina MGL-lig exh32 (smina-opt)"
+    if m == "autodock_mgltools_gnina":
+        return "AutoDock Vina MGL-lig exh32 (gnina-opt)"
+    if m == "autodock_mgltools_gnina_refinement":
+        return "AutoDock Vina MGL-lig exh32 (GNINA CNN-refinement)"
+    if m == "autodock_mgltools_exh18":
+        return "AutoDock Vina MGL-lig exh18"
+    if m == "autodock_mgltools_exh64":
+        return "AutoDock Vina MGL-lig exh64"
+    if m == "autodock_mgltools_exh64_gnina":
+        return "AutoDock Vina MGL-lig exh64 (gnina-opt)"
+    if m == "autodock_mgltools_exh128_gnina":
+        return "AutoDock Vina MGL-lig exh128 (gnina-opt)"
+    if m == "autodock_mgltools_exh92":
+        return "AutoDock Vina MGL-lig exh92"
+    if m == "autodock_mgltools_exh128":
+        return "AutoDock Vina MGL-lig exh128"
     if m == "unidock":
         return "Uni-Dock"
     if m == "unidock2":
@@ -2170,6 +2223,31 @@ def _select_best_diffdock(df: pd.DataFrame, forced: str | None = None) -> tuple[
     return out, best_variant
 
 
+# Independent AutoDock arms. They ARE drawn in the headline, each as its own
+# engine, but must never be pinned into the canonical "autodock" slot: doing so
+# relabels them to "autodock" and silently redefines the reported AutoDock bar.
+_SEPARATE_AUTODOCK_ARMS = ("autodock_mgltools",)
+
+# The one MGLTools/ADFRsuite arm that IS allowed into the canonical "autodock"
+# slot, because it is the reported pipeline rather than a control. Kept as an
+# explicit allowlist rather than dropping the prefix above, so exh18/32/64/92 and
+# the non-dominant gnina arms stay barred from silently redefining the AutoDock bar.
+# The reported AutoDock pipeline, as a raw / optimised pair at ONE search effort so
+# every "did optimisation help?" contrast is measured within a fixed exhaustiveness.
+# Change these two names to move the dominant arm; the spec tables below and
+# _oracle_variant_specs all read them rather than repeating the keys.
+_DOMINANT_AUTODOCK_RAW = "autodock_mgltools_exh128"
+_DOMINANT_AUTODOCK_OPT = "autodock_mgltools_exh128_gnina"
+_PINNABLE_AUTODOCK_ARMS = (_DOMINANT_AUTODOCK_OPT,)
+
+
+def _is_separate_autodock_arm(name: str) -> bool:
+    """True for an AutoDock arm that renders as its own engine, not the Vina slot."""
+    if str(name) in _PINNABLE_AUTODOCK_ARMS:
+        return False
+    return str(name).startswith(_SEPARATE_AUTODOCK_ARMS)
+
+
 def _select_autodock_arm(df: pd.DataFrame,
                          forced: str | None = None) -> tuple[pd.DataFrame, str | None]:
     """Keep non-AutoDock methods plus a single pinned AutoDock Vina variant.
@@ -2195,11 +2273,21 @@ def _select_autodock_arm(df: pd.DataFrame,
     methods = df["method"].astype(str)
     # Vina-scored AutoDock only. autodock_vinardo* is a different scoring function
     # and the keep-set carries it as its own engine column.
-    ad_mask = methods.str.startswith("autodock") & ~methods.str.startswith("autodock_vinardo")
+    ad_mask = (methods.str.startswith("autodock")
+               & ~methods.str.startswith("autodock_vinardo")
+               & ~methods.map(_is_separate_autodock_arm))
     if not ad_mask.any():
         return df, None
 
     present = sorted(methods[ad_mask].unique())
+    if forced and _is_separate_autodock_arm(forced):
+        # Pinning a sidecar arm here would relabel it to the canonical "autodock"
+        # key and make it THE headline AutoDock bar. That arm is a converter /
+        # search-effort control, not the reported pipeline — refuse explicitly
+        # rather than silently redefining every collapsed figure.
+        print(f"  [collapse-autodock-variant] {forced!r} is an independent AutoDock arm "
+              "and cannot be pinned as the headline AutoDock slot — leaving it unchanged.")
+        return df, None
     if not forced:
         return df, None
     if forced not in present:
@@ -2229,7 +2317,24 @@ def _select_presentation_tools(
     variants (gnina, refinement, smina) stay collapsed away — they are compared in
     their own per-family figures, not the cross-engine headline.
     """
-    keep = {"autodock", "autodock_vinardo", "diffdock", "unidock", "unidock2"}
+    keep = {"autodock", "autodock_vinardo", "diffdock", "unidock", "unidock2",
+            # Independent AutoDock arms: their own headline bars. They are still
+            # barred from being pinned INTO the canonical "autodock" slot (see
+            # _select_autodock_arm), so they can never redefine the AutoDock bar.
+            # The MGLTools arm is represented here by its exhaustiveness-32 baseline
+            # (the unsuffixed key) plus the pre-existing exh64 entry. The 18/92 arms are
+            # deliberately NOT added: this frame feeds the cross-tool omnibus and the
+            # Holm-corrected pairwise family, where four sampling points of ONE arm are
+            # pseudoreplicates, not four engines — they would inflate the comparison
+            # count and depress Kendall's W. The full sweep is carried by
+            # oracle_summary_all_variants.csv and the 09f all-variants figure instead.
+            # The exhaustiveness controls are NOT carried here any more. With the
+            # dominant arm pinned into the "autodock" slot they would put three
+            # points of ONE ladder on the cross-tool axis, which is the
+            # pseudoreplication this comment already warned about. The sweep is
+            # carried by oracle_summary_all_variants.csv and the 09f all-variants
+            # figure instead.
+            }
     if equibind_variant:
         keep.add(str(equibind_variant))
     return df[df["method"].astype(str).isin(keep)].reset_index(drop=True)
@@ -3416,7 +3521,11 @@ def _oracle_variant_specs(df_full: pd.DataFrame, forced_dd: str | None = None):
         if key and key in present and key not in [s[0] for s in specs]:
             specs.append((key, label, kind))
 
-    _add("autodock", "AutoDock Vina", "native")
+    # AutoDock gets the same raw-beside-best treatment as the ML tools. The literal
+    # "autodock" key used to be the only AutoDock entry here, so once the Meeko arms
+    # were excluded the family vanished from 09b/09e entirely.
+    _add(_DOMINANT_AUTODOCK_RAW, "AutoDock Vina", "native")
+    _add(_DOMINANT_AUTODOCK_OPT, "AutoDock* (gnina-opt)", "native")
     _add("diffdock", "DiffDock (raw)", "native")
     if dd_best != "diffdock":
         _add(dd_best, f"DiffDock* ({_opt(dd_best)})", "native")
@@ -3783,9 +3892,12 @@ def aggregate_optimization_raw_vs_best(df: pd.DataFrame, thr: float = 2.0) -> pd
 
     # (tool, role_label, is_best, method_key, picker)
     specs = [
-        ("autodock", "raw\n(Vina rank-1)",       False, "autodock",                _rank1),
-        ("autodock", "CNN rescore\n(opt rank-1)", True, "autodock_gnina",          _rank1),
-        ("autodock", "CNN refine\n(opt rank-1)",  True, "autodock_gnina_refinement", _rank1),
+        # AutoDock rows follow the dominant arm (ADFRsuite ligands, exhaustiveness
+        # 128). Its ladder point has no smina or CNN-refine sibling, so the family
+        # contributes raw + gnina only; the Meeko arms that used to sit here are
+        # excluded from this report (see method_filter.json).
+        ("autodock", "raw\n(Vina rank-1)",       False, _DOMINANT_AUTODOCK_RAW, _rank1),
+        ("autodock", "CNN rescore\n(opt rank-1)", True, _DOMINANT_AUTODOCK_OPT, _rank1),
         ("diffdock", "raw\n(rank-1)",             False, "diffdock",                _rank1),
         ("diffdock", "gnina-opt\n(rank-1)",       True,  "diffdock_gnina",          _rank1),
         ("equibind", "raw\n(first pose)",         False, "equibind_unguided_raw",   _first_pose),
@@ -3895,7 +4007,8 @@ def plot_optimization_raw_vs_best(agg: pd.DataFrame, out: Path,
         lo, hi, xc = min(xs), max(xs), sum(xs) / len(xs)
         ax.plot([lo - bar_w / 2, hi + bar_w / 2], [-0.155, -0.155],
                 transform=trans, color="0.45", lw=1.0, clip_on=False, zorder=1)
-        ax.text(xc, -0.175, group_name[tool], transform=trans, ha="center",
+        ax.text(xc, -0.175, group_name.get(tool, str(tool)),
+                transform=trans, ha="center",
                 va="top", fontsize=10.5, fontweight="bold", clip_on=False)
 
     ax.set_ylabel("% of receptor-ligand complexes")
@@ -3927,10 +4040,10 @@ def plot_optimization_raw_vs_best(agg: pd.DataFrame, out: Path,
 # (tool, role, is_opt, method_key) — raw first, then the optimizer variants, so each
 # tool group reads raw → smina-opt → gnina-opt left to right.
 _PBVALID_YIELD_SPECS = [
-    ("autodock", "raw",       False, "autodock"),
-    ("autodock", "smina-opt", True,  "autodock_smina"),
-    ("autodock", "gnina-opt", True,  "autodock_gnina"),
-    ("autodock", "gnina CNN-refine", True, "autodock_gnina_refinement"),
+    # AutoDock = the dominant arm (ADFRsuite ligands, exhaustiveness 128). No smina
+    # or CNN-refine sibling exists at that ladder point, so the family is raw+gnina.
+    ("autodock", "raw",       False, _DOMINANT_AUTODOCK_RAW),
+    ("autodock", "gnina-opt", True,  _DOMINANT_AUTODOCK_OPT),
     ("diffdock", "raw",       False, "diffdock"),
     ("diffdock", "smina-opt", True,  "diffdock_smina"),
     ("diffdock", "gnina-opt", True,  "diffdock_gnina"),
@@ -3942,7 +4055,9 @@ _PBVALID_YIELD_SPECS = [
 # The raw variant each optimized variant of a tool is measured against (the paired
 # baseline for the "did optimization help" contrasts).
 _PBVALID_YIELD_RAW = {
-    "autodock": "autodock", "diffdock": "diffdock",
+    # AutoDock raw = the dominant arm's OWN raw counterpart (same ladder point),
+    # so the raw->gnina gain is measured within one search effort.
+    "autodock": _DOMINANT_AUTODOCK_RAW, "diffdock": "diffdock",
     "equibind": "equibind_unguided_raw",
 }
 
@@ -4070,8 +4185,16 @@ def aggregate_pbvalid_yield_by_variant(df_full: pd.DataFrame,
     med = dict(zip(out["method_key"], out["per_complex_median_%"]))
     def _gain(r):
         raw_key = _PBVALID_YIELD_RAW.get(r["tool"])
-        if not r["is_opt"] or raw_key is None or raw_key not in med:
+        if not r["is_opt"]:
             return 0.0
+        if raw_key is None or raw_key not in med:
+            # No baseline resolves for this tool — report "not computed", never 0.0.
+            # A hard 0.0 here is indistinguishable from a genuine no-change result and
+            # published exactly that for autodock_vinardo_gnina_refinement, whose real
+            # gain is -6.7 pp. The MGLTools sweep has no single baseline by design: the
+            # exh-32 optimiser box is measured against exh 32 and the exh-64 one against
+            # exh 64, so a per-tool map cannot express it.
+            return float("nan")
         return round(r["per_complex_median_%"] - med[raw_key], PCT_DECIMALS)
     out["median_gain_over_raw_pp"] = out.apply(_gain, axis=1)
     out["_order"] = out["method_key"].map(order)
@@ -4182,7 +4305,7 @@ def _write_pbvalid_yield_report(summary: "pd.DataFrame | None", stats: dict | No
     W = 84
     L: list[str] = []
     L.append("=" * W)
-    L.append("Post-Hoc Optimization and PoseBuster Validity")
+    L.append("Search Effort, Post-Hoc Optimization and PoseBusters Validity")
     L.append("Figure 09f — PoseBusters-valid yield of the produced poses (raw vs. optimized)")
     L.append("=" * W)
     L.append("")
@@ -4329,6 +4452,35 @@ def _all_variant_yield_specs(df_full: pd.DataFrame):
                        ("autodock_gnina_refinement", "gnina CNN-refine")):
         if mkey in present:
             specs.append(("autodock", role, mkey != "autodock", mkey))
+    # MGLTools-ligand arm — ONE group carrying the whole exhaustiveness sweep, with an
+    # independent box per setting. Two things this ordering fixes:
+    #   * the unsuffixed key IS the exhaustiveness-32 point (that tree docks at 32), so it
+    #     is labelled "exh 32", not "raw". Labelling it "raw" conflated the ligand-prep arm
+    #     with the sweep's baseline and left 18/92 with no place in the figure.
+    #   * giving each setting its own top-level group would draw four underlines and read
+    #     as four separate engines on the tool axis. It is one engine sampled at four
+    #     search efforts, so it gets one underline and four boxes.
+    # Post-dock optimiser variants stay attached to the exhaustiveness point they derive
+    # from; only exh 32 has any, since the 18/64/92/128 arms are raw-only by construction.
+    # Effort axis first and monotone (18 → 32 → 64 → 92 → 128), THEN the post-dock optimiser
+    # boxes. Interleaving an optimiser box between two exhaustiveness points breaks the
+    # only axis the group's underline claims, and does so where the optimiser's effect
+    # runs the opposite way to its neighbours (exh32 99.8 % → +gnina 99.0 %).
+    for mkey, role in (("autodock_mgltools_exh18", "exh 18"),
+                       ("autodock_mgltools", "exh 32"),
+                       ("autodock_mgltools_exh64", "exh 64"),
+                       ("autodock_mgltools_exh92", "exh 92"),
+                       ("autodock_mgltools_exh128", "exh 128"),
+                       ("autodock_mgltools_smina", "exh 32\nsmina-opt"),
+                       ("autodock_mgltools_gnina", "exh 32\ngnina-opt"),
+                       ("autodock_mgltools_gnina_refinement", "exh 32\ngnina CNN-refine"),
+                       ("autodock_mgltools_exh64_gnina", "exh 64\ngnina-opt"),
+                       ("autodock_mgltools_exh128_gnina", "exh 128\ngnina-opt")):
+        if mkey in present:
+            # is_opt marks POST-DOCK optimisation, so a higher-exhaustiveness sibling is
+            # not "opt" — it is still a raw Vina search, just a longer one.
+            specs.append(("autodock_mgltools", role,
+                          mkey.endswith(("_smina", "_gnina", "_gnina_refinement")), mkey))
     for mkey, role in (("autodock_vinardo", "raw"),
                        ("autodock_vinardo_smina", "smina-opt"),
                        ("autodock_vinardo_gnina", "gnina-opt"),
@@ -4371,6 +4523,27 @@ def _cascade_label(mkey: str) -> str:
         return "AutoDock Vina + gnina"
     if mkey == "autodock_gnina_refinement":
         return "AutoDock Vina + GNINA CNN-refinement"
+    # exh32 is the unsuffixed arm; state the setting so the sweep's baseline is explicit.
+    if mkey == "autodock_mgltools":
+        return "AutoDock Vina MGLTools-lig exh32 (raw)"
+    if mkey == "autodock_mgltools_smina":
+        return "AutoDock Vina MGLTools-lig exh32 + smina"
+    if mkey == "autodock_mgltools_gnina":
+        return "AutoDock Vina MGLTools-lig exh32 + gnina"
+    if mkey == "autodock_mgltools_gnina_refinement":
+        return "AutoDock Vina MGLTools-lig exh32 + GNINA CNN-refinement"
+    if mkey == "autodock_mgltools_exh18":
+        return "AutoDock Vina MGLTools-lig exh18 (raw)"
+    if mkey == "autodock_mgltools_exh64":
+        return "AutoDock Vina MGLTools-lig exh64 (raw)"
+    if mkey == "autodock_mgltools_exh64_gnina":
+        return "AutoDock Vina MGLTools-lig exh64 + gnina"
+    if mkey == "autodock_mgltools_exh128_gnina":
+        return "AutoDock Vina MGLTools-lig exh128 + gnina"
+    if mkey == "autodock_mgltools_exh92":
+        return "AutoDock Vina MGLTools-lig exh92 (raw)"
+    if mkey == "autodock_mgltools_exh128":
+        return "AutoDock Vina MGLTools-lig exh128 (raw)"
     if mkey == "autodock_vinardo":
         return "AutoDock Vinardo (raw)"
     if mkey == "autodock_vinardo_smina":
@@ -4531,7 +4704,10 @@ def _render_pose_validity_cascade_table(cascade: pd.DataFrame,
                                         kabsch_thr: float = FORM_OK_KABSCH_A) -> str:
     """Fixed-width, grouped-header rendering of the cascade DataFrame (a pose count and
     a complex count under each stage)."""
-    LBL_W, GAP, GGAP = 27, "  ", "   "
+    # Wide enough for the longest registered _cascade_label ("AutoDock Vina MGLTools-lig
+    # exh32 + GNINA CNN-refinement", 54 chars). The field pads but never truncates, so a
+    # label longer than this pushes every numeric column right of the header rule.
+    LBL_W, GAP, GGAP = 55, "  ", "   "
     groups = _cascade_groups(kabsch_thr)
 
     def _fmt(v, kind: str) -> str:
@@ -4716,7 +4892,7 @@ def plot_pbvalid_yield_boxplot(per: pd.DataFrame, out: Path,
         inside = data[data <= q3 + 1.5 * (q3 - q1)]
         whi = float(inside.max()) if inside.size else float(q3)
         color = (TOOL_COLORS.get(mkey, "#888888") if color_by_variant
-                 else TOOL_COLORS.get(tool_color_key[tool], "#888888"))
+                 else TOOL_COLORS.get(tool_color_key.get(tool, tool), "#888888"))
         boxes.append({"tool": tool, "role": role, "is_opt": is_opt, "mkey": mkey,
                       "data": data, "x": x, "n": int(data.size),
                       "median": float(np.median(data)), "whisker_hi": whi,
@@ -4805,7 +4981,11 @@ def plot_pbvalid_yield_boxplot(per: pd.DataFrame, out: Path,
         lo, hi, xc = min(xs), max(xs), sum(xs) / len(xs)
         ax.plot([lo - box_w / 2, hi + box_w / 2], [-0.205, -0.205],
                 transform=trans, color="0.45", lw=1.0, clip_on=False, zorder=1)
-        ax.text(xc, -0.225, group_name[tool], transform=trans, ha="center",
+        # .get, not [] — a group key added upstream must degrade to a readable label,
+        # never abort the whole figure run partway through (this is how the missing
+        # MGLTools entry took out 09f and every figure after it).
+        ax.text(xc, -0.225, group_name.get(tool, str(tool)),
+                transform=trans, ha="center",
                 va="top", fontsize=13.0, fontweight="bold", clip_on=False)
 
     ax.axhline(0, color="0.7", lw=0.8)
@@ -4854,11 +5034,11 @@ def plot_pbvalid_yield_boxplot(per: pd.DataFrame, out: Path,
         _leg_top = (_leg.get_window_extent(fig.canvas.get_renderer())
                     .transformed(fig.transFigure.inverted()).y1) if _leg else 0.90
         _title_y = min(0.995, _leg_top + 0.055)   # small gap above the legend
-        fig.suptitle(_vt(f"Post-Hoc Optimization and PoseBuster Validity   "
+        fig.suptitle(_vt(f"Search Effort, Post-Hoc Optimization and PoseBusters Validity   "
                          f"(n = {title_n} complexes)"),
                      fontsize=16.5, fontweight="bold", y=_title_y, va="top")
     else:
-        fig.suptitle(_vt(f"Post-Hoc Optimization and PoseBuster Validity   "
+        fig.suptitle(_vt(f"Search Effort, Post-Hoc Optimization and PoseBusters Validity   "
                          f"(n = {title_n} complexes)"),
                      fontsize=16.5, fontweight="bold", y=0.995)
         fig.tight_layout()
@@ -4918,10 +5098,10 @@ def _gnina_affinity_rank(sub: pd.DataFrame) -> pd.Series:
 # For DiffDock/EquiBind both the raw and the optimised run appear so raw vs. refined
 # can be read off directly; needs the FULL (un-collapsed) frame.
 _RANK1_TOPN_SPECS = [
-    ("autodock", "AutoDock Vina",        "autodock",                "confidence rank",     "native"),
-    ("autodock", "AutoDock (smina-opt)", "autodock_smina",          "optimized rank",      "native"),
-    ("autodock", "AutoDock (gnina-opt)", "autodock_gnina",          "optimized rank",      "native"),
-    ("autodock", "AutoDock (GNINA CNN-refine)", "autodock_gnina_refinement",
+    # AutoDock = the dominant arm (ADFRsuite ligands, exhaustiveness 128) and its own
+    # raw counterpart, so raw vs refined still reads off directly.
+    ("autodock", "AutoDock Vina",        _DOMINANT_AUTODOCK_RAW, "confidence rank",    "native"),
+    ("autodock", "AutoDock (gnina-opt)", _DOMINANT_AUTODOCK_OPT,
      "optimized rank", "native"),
     ("diffdock", "DiffDock (raw)",       "diffdock",                "confidence rank",     "native"),
     ("diffdock", "DiffDock (gnina-opt)", "diffdock_gnina",          "confidence rank",     "native"),
@@ -5094,6 +5274,9 @@ def plot_rank1_vs_topn(agg: pd.DataFrame, out: Path,
 # distinct shades of the tool colour to stay distinguishable.
 _RANK1_TOPN_COLORS = {
     "AutoDock Vina":        "#1f77b4",
+    # Without this entry the refined AutoDock series falls through to the "#888888"
+    # default and reads as an un-keyed grey line rather than as the blue tool family.
+    "AutoDock (gnina-opt)": "#08519c",
     "DiffDock (raw)":       "#ff7f0e",
     "DiffDock (gnina-opt)": "#d95f02",
     "EquiBind (raw)":       "#2ca02c",
@@ -9522,12 +9705,47 @@ def plot_oracle_rank_distribution(dist: pd.DataFrame, top_n: int, out: Path) -> 
 # validity-aware (dashed) line beside each variant's RMSD-only (solid) line. Fig 15
 # ignores PB-validity (it's purely rank-of-min-RMSD); this makes validity explicit.
 _TOPK_RECOVERY_SPECS = [
-    ("AutoDock Vina",        "autodock",                "native"),
+    # AutoDock = the dominant arm (ADFRsuite ligands, exhaustiveness 128) and its own
+    # gnina-rescored counterpart, matching 09b/09d/09f and the 21/22 ranking-quality
+    # table. The method keys here are the BENCHMARK ones; _topk_recovery_specs()
+    # resolves them against the frame so an Orai frame still reads its literal
+    # "autodock" key.
+    ("AutoDock Vina",        _DOMINANT_AUTODOCK_RAW,    "native"),
+    ("AutoDock (gnina-opt)", _DOMINANT_AUTODOCK_OPT,    "native"),
     ("DiffDock (raw)",       "diffdock",                "native"),
     ("DiffDock (gnina-opt)", "diffdock_gnina",          "native"),
     ("EquiBind (raw)",       "equibind_unguided_raw",   "generation"),
     ("EquiBind (gnina-opt)", "equibind_unguided_gnina", "gnina"),
 ]
+
+# The key the AutoDock RAW slot falls back to when the dominant arm is not in the
+# frame. This is the Meeko-ligand run, which is the reported AutoDock pipeline on the
+# Orai datasets (their panels cannot be re-docked) and is excluded on the Benchmark.
+_TOPK_AUTODOCK_FALLBACK = "autodock"
+
+
+def _topk_recovery_specs(present) -> list:
+    """:data:`_TOPK_RECOVERY_SPECS` with the AutoDock method key resolved against the
+    methods actually in the frame, so ONE module-level table serves both datasets.
+
+    The Benchmark whole-protein report drops every Meeko-ligand arm (method_filter
+    preset ``meeko``), so a table hard-coding the literal ``autodock`` key silently
+    loses the whole AutoDock family — no rows in topk_recovery_validity.csv, and the
+    three pre-specified AutoDock pairs quietly gone from the Holm family. The Orai
+    reports are the mirror image: ``autodock`` IS their reported arm and the dominant
+    exh128 keys are absent. Resolving on presence rather than hard-coding either key
+    keeps both right without a dataset flag.
+
+    Only the RAW slot falls back. There is deliberately no gnina-opt fallback: an Orai
+    frame can carry ``autodock_gnina``, and adopting it here would push a curve into
+    artefacts that never had one.
+    """
+    present = {str(m) for m in present}
+    if _DOMINANT_AUTODOCK_RAW in present or _TOPK_AUTODOCK_FALLBACK not in present:
+        return list(_TOPK_RECOVERY_SPECS)
+    return [(variant, _TOPK_AUTODOCK_FALLBACK if mkey == _DOMINANT_AUTODOCK_RAW else mkey,
+             kind) for variant, mkey, kind in _TOPK_RECOVERY_SPECS]
+
 
 # Pre-specified depths for the fig-15b significance tests. The 30 cumulative curve
 # points are nested (recovered by k ⟹ recovered by k+1) and so heavily auto-
@@ -9563,7 +9781,7 @@ def _topk_recovery_ranks(df: pd.DataFrame, thr: float = 2.0):
     """
     present = set(df["method"].astype(str))
     out = []
-    for variant, mkey, kind in _TOPK_RECOVERY_SPECS:
+    for variant, mkey, kind in _topk_recovery_specs(present):
         if mkey not in present:
             continue
         sub = df[df["method"].astype(str) == mkey].copy()
@@ -9824,11 +10042,12 @@ def plot_topk_recovery_validity(rec: pd.DataFrame, out: Path, thr: float = 2.0,
 # present.
 _RANK_QUALITY_SPECS = [
     # (colour key, display label, method key, ranking kind, ranking-axis label)
-    ("autodock", "AutoDock Vina",           "autodock",                "native", "confidence rank"),
-    ("autodock_smina", "AutoDock (smina-opt)", "autodock_smina",        "native", "optimized rank"),
-    ("autodock_gnina", "AutoDock (gnina-opt)", "autodock_gnina",        "native", "optimized rank"),
-    ("autodock_gnina_refinement", "AutoDock (GNINA CNN-refine)",
-     "autodock_gnina_refinement", "native", "optimized rank"),
+    # AutoDock = the dominant arm plus its raw counterpart. Keeping at least two
+    # AutoDock entries here also keeps the cross-tool Friedman omnibus feasible,
+    # which needs three or more tools.
+    ("autodock", "AutoDock Vina",           _DOMINANT_AUTODOCK_RAW, "native", "confidence rank"),
+    ("autodock_gnina", "AutoDock (gnina-opt)", _DOMINANT_AUTODOCK_OPT,
+     "native", "optimized rank"),
     ("diffdock", "DiffDock",                "diffdock",                "native", "confidence rank"),
     ("equibind", "EquiBind (gnina-ranked)", "equibind_unguided_gnina", "gnina",  "gnina-affinity rank"),
 ]
@@ -12768,7 +12987,13 @@ def _autodock_scoring_base(method: str) -> str:
         if mm.endswith(suf):
             mm = mm[: -len(suf)]
             break
-    return "autodock_vinardo" if mm.startswith("autodock_vinardo") else "autodock"
+    # Return the base VERBATIM rather than folding onto autodock/autodock_vinardo.
+    # Collapsing here silently merged the MGLTools-ligand and exhaustiveness-64
+    # trees into the plain "autodock" rows, so the cascade reported one
+    # "AutoDock Vina (raw)" row pooling three different preparations. Existing
+    # keys are unaffected: "autodock"/"autodock_gnina" still reduce to "autodock"
+    # and Vinardo is still never merged into Vina.
+    return mm
 
 
 def _apply_autodock_split(df: pd.DataFrame) -> pd.DataFrame:
@@ -13171,6 +13396,7 @@ def main() -> None:
                          "oracle_summary.csv is collapsed; explicitly named all-variant, "
                          "raw-vs-refined, and optimization figures remain diagnostic. "
                          "Like --best-variants-only but the full tables are also written.")
+    mf.add_method_filter_args(ap)
     args = ap.parse_args()
 
     # --best-variants-only is a convenience umbrella for the two per-family "best"
@@ -13263,6 +13489,19 @@ def main() -> None:
         df = pd.DataFrame(out_records)
         per_pose_csv = _write_per_pose_cache(args, df, sig)
         print(f"\nWrote per-pose metrics  → {per_pose_csv}  ({len(df):,} rows)")
+
+    # ── Single-point method exclusion ────────────────────────────────
+    # Both branches above converge here with a complete frame, and nothing has
+    # consumed it yet, so this is the only place an exclusion has to be applied
+    # to reach every downstream table, figure and statistic — including df_full,
+    # the *_all_variants tables and the 09f cascade, each of which enumerates
+    # variants independently and would otherwise need its own edit.
+    # Deliberately AFTER _write_per_pose_cache: the cache keeps every variant, so
+    # the exclusion is a presentation-time choice and a later --reuse-cache run is
+    # not silently poisoned by it. (The cache signature does not record these
+    # flags, exactly as it does not record the collapse flags.)
+    df = mf.apply_method_filter(df, "method", args, label="pose-comparison",
+                                out_dir=args.out_dir)
 
     # Summary of what we're analysing (works for cached & freshly scored df alike).
     methods_found = sorted(df["method"].astype(str).unique())
@@ -13380,10 +13619,16 @@ def main() -> None:
         # pinned optimizer variant outright.
         df, best_ad = _select_autodock_arm(df, forced=args.collapse_autodock_variant)
         if best_ad and best_ad != "autodock":
-            # Spell the pinned arm out rather than using a bare star, so the legend of
-            # every collapsed figure says which AutoDock arm it is drawn on.
+            # Star the pinned arm, matching the DiffDock*/EquiBind* convention that
+            # _select_best_diffdock and _select_best_equibind already apply, so a
+            # collapsed legend names all three engines the same way. (Before
+            # 2026-08-20 this spelled the arm out as "AutoDock Vina + gnina", which
+            # left the AutoDock slot as the only unstarred one in the legend.) The
+            # refinement arm keeps its explicit name, since it is never the reported
+            # pipeline and must not be mistaken for the starred default.
             _ad_label = {
-                "autodock_gnina": "AutoDock Vina + gnina",
+                "autodock_gnina": "AutoDock*",
+                "autodock_mgltools_exh128_gnina": "AutoDock*",
                 "autodock_gnina_refinement": "AutoDock Vina + gnina refine",
             }.get(best_ad, f"AutoDock ({best_ad})")
             _LABEL_OVERRIDES["autodock"] = _ad_label
@@ -13569,6 +13814,8 @@ def main() -> None:
                 figsize=(max(13.0, 1.15 * _n_variants + 3.0), 7.2),
                 group_labels={"autodock": "AutoDock Vina",
                               "autodock_vinardo": "AutoDock Vinardo",
+                              "autodock_mgltools":
+                                  "AutoDock Vina MGL-lig (exhaustiveness sweep)",
                               "diffdock": "DiffDock",
                               "unidock": "Uni-Dock",
                               "unidock2": "Uni-Dock2",

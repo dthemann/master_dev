@@ -1,0 +1,60 @@
+# PandaMap interaction-fingerprint config — PoseBuster Benchmark, WHOLE-PROTEIN run.
+#
+# Supersedes pandamap_config.yaml (output_dir pandamap_results/benchmark_best_equi),
+# whose AutoDock arm came from the crystal-ligand-boxed Vina search and is therefore
+# not comparable with the blind whole-protein recovery analysis.
+#
+# The three arms pinned below are the thesis headline variants: AutoDock Vina + gnina,
+# DiffDock + smina and unguided EquiBind + gnina. Pinning is what keeps the run
+# affordable — the source table carries six AutoDock variants (Vina x Vinardo crossed
+# with raw/gnina/gnina_refinement), three DiffDock and nine EquiBind.
+#
+# Run under the vina env (only env with pandamap):
+#   /home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/run_pandamap.py \
+#       --config Scripts/Analysis/pandamap_benchmark_full_protein_config.yaml
+#   /home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/pandamap_interaction_report.py \
+#       --in-dir pandamap_results/benchmark_full_protein
+
+work_dir: /home/manndo/master_dev
+
+# ── Input — Mode A (PoseBusters CSV from run_posebusters) ─────────────────
+pb_csv: posebusters_results/benchmark_full_protein_vina_scoring/dock/posebusters_filtered_results.csv
+pb_valid_only: true        # true → only poses that passed every PoseBusters test
+
+# ── Crystal reference (native interaction fingerprint) ────────────────────
+benchmark_dir: Data/PoseBuster Benchmark Set
+
+# ── Canonical receptor — REQUIRED for this run ────────────────────────────
+# Interaction fingerprints are keyed on (resname, resnum, chain), so they only
+# compare across methods if every method is profiled against one numbering scheme.
+# The whole-protein AutoDock/Uni-Dock receptors are not: the MGLTools receptor
+# renumbers residues sequentially from 1 and the Uni-Dock2 receptor carries no chain
+# IDs, so left alone their keys never match the author-numbered crystal reference and
+# their measured native recovery collapses to ~0. These cleaned receptors carry author
+# numbering and were verified heavy-atom coordinate-compatible with every tool's own
+# docking receptor (identical for AutoDock/DiffDock, a superset where a toolchain
+# dropped cofactors), so this only relabels residues, it does not move any atom.
+canonical_receptor_dir: posebusters_results/benchmark/dock/hetatm_cleaned
+
+# ── Output ────────────────────────────────────────────────────────────────
+output_dir: pandamap_results/benchmark_full_protein_mgltools
+
+# ── Behaviour ─────────────────────────────────────────────────────────────
+poses_per_combo: 5          # matches the superseded top-5 run the thesis figures use
+render_images: false        # fingerprints only; the thesis figures need no 2D maps
+split_equibind: true
+split_diffdock: true
+use_dssp: false
+num_workers: null           # null → (CPU count − 1)
+overwrite: false            # resume-safe (skip poses already in the summary CSV)
+
+# ── Variant pins — the thesis headline arms ───────────────────────────────
+autodock_variant: autodock_mgltools_exh128_gnina   # MGLTools/ADFRsuite end-to-end, exhaustiveness 128 + gnina rescoring
+diffdock_variant: smina             # diffdock_smina
+equibind_variant: unguided_gnina    # equibind_unguided_gnina
+best_equibind_only: false
+best_diffdock_only: false
+
+# gnina affinity source used to rank EquiBind's poses (pb_csv carries no gnina column).
+per_pose_metrics: posebusters_results/benchmark_full_protein_vina_scoring/dock/pose_comparison_report/per_pose_metrics.csv
+oracle_summary: posebusters_results/benchmark_full_protein_vina_scoring/dock/pose_comparison_report/oracle_summary.csv

@@ -2155,6 +2155,32 @@ def _validate_optimizer_config(cfg: dict) -> None:
         raise ValueError("optimize_autobox_add must be finite and > 0")
     if cpu < 1:
         raise ValueError("optimize_cpu must be >= 1")
+    try:
+        workers = int(cfg.get("optimize_workers", 1) or 1)
+        gpu_slots = int(cfg.get("gpu_max_concurrent", 1) or 1)
+    except (TypeError, ValueError) as e:
+        raise ValueError(
+            "optimize_workers and gpu_max_concurrent must be integers") from e
+    if workers < 1:
+        raise ValueError("optimize_workers must be >= 1")
+    if gpu_slots < 1:
+        raise ValueError("gpu_max_concurrent must be >= 1")
+    if workers > 1 and gpu_slots < workers and any(
+        _is_gnina_optimizer(tool) for tool in tools
+    ) and bool(cfg.get("gnina_use_gpu", False)):
+        # Threads beyond the slot count just queue on the semaphore, so the extra
+        # workers buy nothing and only make the CPU oversubscription harder to reason
+        # about. Fail loudly rather than silently throttling.
+        raise ValueError(
+            f"optimize_workers={workers} exceeds gpu_max_concurrent={gpu_slots}; "
+            "raise gpu_max_concurrent to match, or lower optimize_workers"
+        )
+    if workers * cpu > 2 * (os.cpu_count() or 1):
+        raise ValueError(
+            f"optimize_workers={workers} x optimize_cpu={cpu} = {workers * cpu} "
+            f"threads oversubscribes {os.cpu_count()} logical CPUs by more than 2x; "
+            "lower optimize_cpu when raising optimize_workers"
+        )
     if not math.isfinite(timeout_s) or timeout_s <= 0:
         raise ValueError("optimize_timeout must be finite and > 0")
 
@@ -2227,19 +2253,58 @@ def _gnina_subprocess_env(cfg: dict) -> dict:
     return env
 
 
+# Rotating start index for slot probing, so waiters do not all convoy onto slot 0.
+_GPU_SLOT_CURSOR: List[int] = [0]
+_GPU_SLOT_CURSOR_LOCK = threading.Lock()
+
+
 @contextlib.contextmanager
-def _interprocess_gpu_lock(lock_file: Path | str):
-    """Serialize GPU engine subprocesses with a kernel-released advisory lock."""
+def _interprocess_gpu_lock(lock_file: Path | str, slots: int = 1):
+    """Admit at most ``slots`` GPU engine subprocesses at once, across processes.
+
+    A counting semaphore built from ``slots`` advisory lock files: a caller holds one
+    slot for the duration of its subprocess, so the cap holds across concurrently
+    running campaigns and not merely within one Python process. ``slots=1`` locks the
+    caller-supplied path itself and is byte-for-byte the historical behaviour — the
+    published arms were produced under it, and their cost accounting assumes the
+    resulting strict seriality (no two optimiser intervals overlap).
+
+    Slots are probed non-blockingly and in a rotating order so waiters do not convoy
+    onto slot 0. The kernel releases the lock on normal exit, timeout, exception or
+    process death, so a crashed worker cannot strand a slot.
+    """
     if fcntl is None:  # pragma: no cover - benchmark host is Linux
         raise RuntimeError("gpu_lock_file requires fcntl/flock support")
     lock_path = Path(lock_file).expanduser().resolve()
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(lock_path, "a+") as lock_handle:
-        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-        try:
-            yield lock_path
-        finally:
-            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+    n = max(1, int(slots))
+    paths = ([lock_path] if n == 1
+             else [lock_path.with_name(f"{lock_path.name}.slot{i}") for i in range(n)])
+    handle = None
+    try:
+        with _GPU_SLOT_CURSOR_LOCK:
+            start = _GPU_SLOT_CURSOR[0]
+            _GPU_SLOT_CURSOR[0] = (start + 1) % n
+        while handle is None:
+            for k in range(n):
+                cand = paths[(start + k) % n]
+                fh = open(cand, "a+")
+                try:
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except OSError:
+                    fh.close()
+                    continue
+                handle = fh
+                break
+            if handle is None:
+                time.sleep(0.05)
+        yield lock_path
+    finally:
+        if handle is not None:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+            finally:
+                handle.close()
 
 
 def _probe_optimizer(tool: str, exe: str, cfg: dict) -> Tuple[bool, str]:
@@ -2718,6 +2783,12 @@ def _pdbqt_atom_elements(text: str) -> Dict[int, str]:
             if name_letters:
                 candidate = name_letters[0].upper() + name_letters[1:2].lower()
                 for sym in (candidate, name_letters[0].upper()):
+                    # MGLTools names ligand carbons PDB-style (CA, CB, CG, ...),
+                    # so a carbon-typed atom named "CA" is a carbon, not calcium.
+                    # Ca is the only untypeable element whose symbol starts with
+                    # C, so skipping those keeps B/Si/Se/Li/Be/Na/K/Al working.
+                    if sym.startswith("C"):
+                        continue
                     if sym in _AUTODOCK_UNTYPEABLE_ELEMENTS:
                         element = sym
                         break
@@ -3395,7 +3466,8 @@ def run_optimizer_tool(
     proc_env = _gnina_subprocess_env(cfg) if _is_gnina_optimizer(tool) else None
 
     gpu_lock = (
-        _interprocess_gpu_lock(cfg["gpu_lock_file"])
+        _interprocess_gpu_lock(cfg["gpu_lock_file"],
+                               slots=int(cfg.get("gpu_max_concurrent", 1) or 1))
         if _is_gnina_optimizer(tool) and settings["use_gpu"]
         else contextlib.nullcontext()
     )
@@ -3998,6 +4070,10 @@ def optimize_autodock_results(
     log_path = Path(summary.log_path)
     top_n = int(cfg.get("optimize_top_n", 0) or 0)
     rank_by = str(cfg.get("optimize_rank_by", "minimized_affinity")).strip().lower()
+    # Poses of one complex are optimised concurrently when asked. Default 1 keeps the
+    # historical strictly-serial behaviour, under which every published arm was
+    # produced and on which their cost accounting depends.
+    opt_workers = max(1, int(cfg.get("optimize_workers", 1) or 1))
 
     rows: List[dict] = []
     time_by_tool: Dict[str, float] = defaultdict(float)
@@ -4036,8 +4112,14 @@ def optimize_autodock_results(
                     tool_dir, pose_pdbqt.stem, tool, desired_outputs,
                 )
 
-                for rank, pose_file, vina_aff in split:
-                    summary.selected_poses += 1
+                # One pose = one independent unit of work: its own temp SDF, its own
+                # output file, its own provenance. Nothing here touches shared state —
+                # the counters are returned as deltas and applied in rank order after
+                # the join, so the log and the re-ranking are identical whatever order
+                # the workers finish in.
+                def _optimize_one_pose(item, *, tool=tool, tool_dir=tool_dir):
+                    rank, pose_file, vina_aff = item
+                    delta = {"attempted": 0, "reused": 0, "optimized": 0, "runs": 0}
                     out_sdf = tool_dir / f"{pose_pdbqt.stem}_rank{rank}_{tool}.sdf"
                     if overwrite:
                         _discard_optimizer_cache(out_sdf)
@@ -4115,11 +4197,11 @@ def optimize_autodock_results(
                                     )
                                 if cache_ok:
                                     ok = True
-                                    summary.reused += 1
+                                    delta["reused"] += 1
                                 else:
                                     _discard_optimizer_cache(out_sdf)
-                                    summary.attempted += 1
-                                    runs_by_tool[tool] += 1
+                                    delta["attempted"] += 1
+                                    delta["runs"] += 1
                                     executed = True
                                     execution_started = time.time()
                                     ok, scores, msg = run_optimizer_tool(
@@ -4137,21 +4219,41 @@ def optimize_autodock_results(
                                             ok, scores = False, {}
                                             msg = f"cannot commit provenance: {e}"
                                         else:
-                                            summary.optimized += 1
+                                            delta["optimized"] += 1
                     elapsed = time.time() - t0
-                    if executed:
-                        time_by_tool[tool] += execution_elapsed
-                    if not ok:
-                        summary.failed += 1
-                        summary.errors.append(f"{combo_name}/{tool}/rank{rank}: {msg}")
-                    pose_records.append({
+                    delta["executed_seconds"] = execution_elapsed if executed else 0.0
+                    return {
                         "rank": rank, "vina_aff": vina_aff, "ok": ok,
                         "scores": scores, "msg": msg, "elapsed": elapsed,
                         "out_sdf": out_sdf, "converter": converter,
                         "converter_version": converter_version,
                         "provenance": provenance,
                         "execution_elapsed": execution_elapsed,
-                    })
+                        "_delta": delta,
+                    }
+
+                if opt_workers > 1 and len(split) > 1:
+                    with ThreadPoolExecutor(max_workers=opt_workers) as pool:
+                        produced = list(pool.map(_optimize_one_pose, split))
+                else:
+                    produced = [_optimize_one_pose(item) for item in split]
+
+                # Merge in the ORIGINAL rank order, never in completion order, so the
+                # optimisation log and the re-ranking below are byte-identical to a
+                # serial run.
+                for rec in produced:
+                    d = rec.pop("_delta")
+                    summary.selected_poses += 1
+                    summary.attempted += d["attempted"]
+                    summary.reused += d["reused"]
+                    summary.optimized += d["optimized"]
+                    runs_by_tool[tool] += d["runs"]
+                    time_by_tool[tool] += d["executed_seconds"]
+                    if not rec["ok"]:
+                        summary.failed += 1
+                        summary.errors.append(
+                            f"{combo_name}/{tool}/rank{rec['rank']}: {rec['msg']}")
+                    pose_records.append(rec)
 
             # Re-rank on the chosen optimiser score (ties broken by the original
             # Vina rank for a stable order). smina has no CNN metrics, so a CNN

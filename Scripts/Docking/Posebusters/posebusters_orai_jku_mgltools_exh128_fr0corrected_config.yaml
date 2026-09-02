@@ -1,0 +1,39 @@
+# FR0-CORRECTED re-bust of the Orai x JKU MGLTools exh128 arm (2026-08-30).
+#
+# Identical to posebusters_orai_jku_mgltools_exh128_config.yaml except for receptors_dir
+# and output_base_dir.
+#
+# WHY. Same defect as the benchmark arm: the shipped run screened every frame against the
+# RAW deposited PDB while the START-Fr0 poses were docked into the OpenMM-MINIMISED
+# receptor. Fr0 came out at 85.83% (17 minimum_distance_to_protein failures) against
+# 100.00% on all three MDSnap frames.
+#
+# The corrected staging is SHARED with the benchmark arm. That is legitimate: the JKU and
+# benchmark stagings symlinked byte-identical raw receptors (same md5), and this tree's
+# own docking receptors were verified coordinate-identical to the staged validation
+# receptors on all four frames, symmetry-free:
+#     Fr300/Fr400/Fr499 10362/10362, START-Fr0 10368/10368 (RMSD 0.000000 A)
+#
+# AutoDock only, as for the benchmark arm.
+
+work_dir: /home/manndo/master_dev
+
+receptors_dir: posebusters_results/_orai_benchmark_staging_fr0corrected/receptors
+
+docking_directories:
+  autodock: Dockings/Orai_JKU_MGLTools_exh128/mgl_tools
+
+variant_filter:
+  autodock: gnina
+
+config_mode: dock
+output_base_dir: posebusters_results/orai_jku_mgltools_exh128_fr0corrected
+save_interval: 200
+overwrite: false           # fresh output dir; keeps the run resumable
+num_workers: 30
+make_plots: true
+copy_proved_poses: true
+
+ligand_template_dirs:
+  - Dockings/Orai_JKU_MGLTools_exh128/_staging/ligands/pdbqt
+  - posebusters_results/_orai_jku_staging/ligand_templates

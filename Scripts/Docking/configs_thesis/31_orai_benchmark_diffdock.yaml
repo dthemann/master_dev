@@ -1,0 +1,53 @@
+# ============================================================================
+# THESIS REPRODUCTION CONFIG - DiffDock-L (Orai1 control panel)
+#
+#   Thesis section  : App. B "Orai1 Panels"; 10 samples
+#   Supports        : Table 5; Figures 8-14
+#   Dataset         : Orai1 control panel, 308 benchmark ligands x 4 receptor frames = 1,232 units
+#   Driver          : run_diffdock.py -c <this>
+#   Writes          : Dockings/Orai_Benchmark_DiffDock
+#   Analysis tree   : posebusters_results/_orai_matched_root/orai_benchmark
+#
+#   Copied from     : Scripts/Docking/diffdock_docking_config.yaml
+#   Deviations      : output_dir, log_dir, batch_mode, overwrite_existing and optimization
+#                     baked in; the old notebook applied them in memory (cell 95).
+#                     num_samples 30 -> 10, which is the control-panel budget App. B
+#                     records and which the stored tree actually has.
+#                     inference_seed null, recording that this run was unseeded.
+#
+#   Determinism     : verify-only - the reported run was an UNSEEDED single draw; a re-run is a new sample.
+#                     0 stored run logs carry the seed marker. App. B names this as the one
+#                     remaining difference between the two Orai panels.
+#
+#   This file is READ-ONLY to the pipeline. Thesis_Reproduction.ipynb loads it
+#   and never writes it back. Rationale in THESIS_REPRODUCTION.md.
+# ============================================================================
+receptors_dir: Data/Receptors
+ligand_dirs:
+- Data/Ligands/JKU/pdbqt
+diffdock_dir: /home/manndo/docking_tools/DiffDock
+diffdock_python: /home/manndo/anaconda3/envs/diffdock/bin/python
+diffdock_conda_env: diffdock
+num_samples: 10
+inference_steps: 20
+device: cuda:0
+timeout_per_complex: 1800
+output_dir: Dockings/Orai_Benchmark_DiffDock
+log_dir: Dockings/Logs/orai_benchmark_diffdock_logs
+batch_mode: true
+batch_size: 2
+group_by_receptor: true
+max_workers: 1
+overwrite_existing: false
+overwrite_error_log: true
+optimization: gnina
+optimize_search: minimize
+optimize_autobox_add: 4.0
+optimize_cpu: 1
+optimize_seed: 0
+optimize_timeout: 300
+gnina_use_gpu: true
+smina_executable: /home/manndo/anaconda3/envs/diffdock/bin/smina
+gnina_executable: /home/manndo/docking_tools/gnina
+gnina_lib_dirs: []
+inference_seed: null

@@ -30,7 +30,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 import yaml
@@ -622,12 +622,55 @@ def print_summary(summary: Dict):
 # DiffDock inference engine
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def _build_diffdock_config(
+# Valid DiffDock inference arguments that its shipped YAML does not list, so an
+# override naming one is a deliberate setting rather than a typo. Path and IO
+# arguments are deliberately absent: this runner owns those.
+_DIFFDOCK_EXTRA_ARGS = {
+    "batch_size", "ckpt", "confidence_ckpt", "model_dir", "confidence_model_dir",
+    "old_confidence_model", "choose_residue", "save_visualisation",
+}
+
+# Keys DiffDock accepts but NEVER READS on the inference path. Its shipped YAML
+# lists most of them and its config merge injects anything without complaint, so
+# setting one looks like an experiment and silently changes nothing.
+#   sigma_schedule / inf_sched_alpha / inf_sched_beta — inference.py:230 calls
+#       get_t_schedule(sigma_schedule='expbeta') with the alpha/beta defaults
+#       hardcoded, so the schedule shape is not tunable at inference at all.
+#   gnina_*  — declared in inference.py but only consumed by evaluate.py.
+#   the rest — leftovers from the training/evaluation entry points.
+_DIFFDOCK_INERT_ARGS = {
+    "sigma_schedule", "inf_sched_alpha", "inf_sched_beta", "different_schedules",
+    "ode", "old_filtering_model", "resample_rdkit", "limit_failures",
+    "no_model", "no_random", "no_random_pocket",
+    "gnina_minimize", "gnina_full_dock", "gnina_autobox_add",
+    "gnina_poses_to_optimize", "gnina_path", "gnina_log_file",
+}
+
+
+def resolve_inference_args(
     samples: int,
     steps: int,
-    output_dir: Path,
     diffdock_dir: Path,
-) -> Path:
+    overrides: Optional[Dict[str, Any]] = None,
+) -> dict:
+    """Merge DiffDock's shipped inference defaults with this run's settings.
+
+    ``overrides`` is the parameter-sweep hook: it carries the project config's
+    ``inference_overrides`` block, letting an arm set any DiffDock inference
+    argument (the temp_* families, initial_noise_std_proportion, sigma_schedule,
+    the confidence checkpoint) that is otherwise pinned to upstream's tuned
+    defaults. A key DiffDock does not know raises here rather than being written
+    into the YAML and silently ignored.
+
+    Rejecting unknown keys is not politeness. DiffDock merges this YAML into its
+    argparse Namespace after parsing, assigning unconditionally, so a misspelt
+    key is accepted without complaint and does nothing — and a key present in
+    both the YAML and the command line is taken from the YAML. Every setting an
+    arm changes must therefore travel in here, not on the command line.
+
+    Overrides are applied last, so an arm may set actual_steps independently of
+    the inference_steps - 1 default.
+    """
     default_yaml = diffdock_dir / "default_inference_args.yaml"
     with open(default_yaml) as f:
         config = yaml.safe_load(f)
@@ -635,6 +678,30 @@ def _build_diffdock_config(
     config["samples_per_complex"] = samples
     config["inference_steps"] = steps
     config["actual_steps"] = steps - 1
+
+    for key, value in (overrides or {}).items():
+        if key in _DIFFDOCK_INERT_ARGS:
+            raise KeyError(
+                f"inference_overrides key {key!r} is accepted by DiffDock but never read on "
+                f"the inference path, so setting it would change nothing while looking like "
+                f"an experiment. Inert keys: {sorted(_DIFFDOCK_INERT_ARGS)}")
+        if key not in config and key not in _DIFFDOCK_EXTRA_ARGS:
+            raise KeyError(
+                f"inference_overrides key {key!r} is not a DiffDock inference argument. "
+                f"Known keys: {sorted((set(config) | _DIFFDOCK_EXTRA_ARGS) - _DIFFDOCK_INERT_ARGS)}")
+        config[key] = value
+
+    return config
+
+
+def _build_diffdock_config(
+    samples: int,
+    steps: int,
+    output_dir: Path,
+    diffdock_dir: Path,
+    overrides: Optional[Dict[str, Any]] = None,
+) -> Path:
+    config = resolve_inference_args(samples, steps, diffdock_dir, overrides)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     custom_yaml = (output_dir / "custom_inference_args.yaml").resolve()
@@ -679,6 +746,7 @@ def _run_diffdock_batch_subprocess(
     diffdock_python: str,
     diffdock_dir: Path,
     inference_seed: Optional[int] = None,
+    no_final_step_noise: bool = True,
 ) -> subprocess.CompletedProcess:
     cmd = [
         diffdock_python, "-m", "inference",
@@ -686,8 +754,11 @@ def _run_diffdock_batch_subprocess(
         "--protein_ligand_csv", str(Path(csv_path).resolve()),
         "--out_dir", str(Path(out_dir).resolve()),
         "--samples_per_complex", str(samples),
-        "--no_final_step_noise",
     ]
+    # A bare store_true flag cannot express "off", so pass it only when it is on
+    # and let the config YAML carry the setting otherwise.
+    if no_final_step_noise:
+        cmd.append("--no_final_step_noise")
 
     env = os.environ.copy()
     if device == "cpu":
@@ -733,8 +804,10 @@ def _run_diffdock_subprocess(
     timeout: int,
     diffdock_python: str,
     diffdock_dir: Path,
+    inference_seed: Optional[int] = None,
+    overrides: Optional[Dict[str, Any]] = None,
 ) -> Tuple[subprocess.CompletedProcess, List[Path]]:
-    config_yaml = _build_diffdock_config(samples, steps, output_base_dir, diffdock_dir)
+    config_yaml = _build_diffdock_config(samples, steps, output_base_dir, diffdock_dir, overrides)
 
     cmd = [
         diffdock_python, "-m", "inference",
@@ -743,12 +816,17 @@ def _run_diffdock_subprocess(
         "--ligand_description", str(ligand_path.resolve()),
         "--out_dir", str(output_dir.resolve()),
         "--samples_per_complex", str(samples),
-        "--no_final_step_noise",
     ]
+    if (overrides or {}).get("no_final_step_noise", True):
+        cmd.append("--no_final_step_noise")
 
     env = os.environ.copy()
     if device == "cpu":
         env["CUDA_VISIBLE_DEVICES"] = ""
+    # Seed this path too — without it a non-batch run silently re-samples on
+    # every invocation while the batch path stays reproducible.
+    if inference_seed is not None:
+        env["DIFFDOCK_SEED"] = str(int(inference_seed))
 
     effective_timeout = timeout if timeout > 0 else None
 
@@ -779,6 +857,8 @@ def run_diffdock_single(
     timeout = cfg.get("timeout_per_complex", 300)
     diffdock_python = cfg["diffdock_python"]
     diffdock_dir = Path(cfg["diffdock_dir"])
+    seed = cfg.get("inference_seed")
+    overrides = cfg.get("inference_overrides")
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -787,6 +867,7 @@ def run_diffdock_single(
             protein_path, ligand_path, output_dir, output_base_dir,
             samples, steps, device, timeout,
             diffdock_python, diffdock_dir,
+            inference_seed=seed, overrides=overrides,
         )
 
         if output_sdfs:
@@ -803,6 +884,7 @@ def run_diffdock_single(
                 protein_path, ligand_path, output_dir, output_base_dir,
                 samples, steps, "cpu", timeout,
                 diffdock_python, diffdock_dir,
+                inference_seed=seed, overrides=overrides,
             )
 
             if output_sdfs:
@@ -873,6 +955,8 @@ def _run_batch_csv_mode(
     group_by_receptor = cfg.get("group_by_receptor", False)
     diffdock_python = cfg["diffdock_python"]
     diffdock_dir = Path(cfg["diffdock_dir"])
+    overrides = cfg.get("inference_overrides")
+    final_step_noise_off = bool((overrides or {}).get("no_final_step_noise", True))
 
     if group_by_receptor:
         receptor_groups: Dict[Path, list] = defaultdict(list)
@@ -885,7 +969,7 @@ def _run_batch_csv_mode(
             )
     else:
         batches = [combos_to_dock[i:i + batch_size] for i in range(0, len(combos_to_dock), batch_size)]
-    config_yaml = _build_diffdock_config(samples, steps, output_dir, diffdock_dir)
+    config_yaml = _build_diffdock_config(samples, steps, output_dir, diffdock_dir, overrides)
 
     combos_completed = 0
     total_combos = len(combos_to_dock)
@@ -934,6 +1018,7 @@ def _run_batch_csv_mode(
                 diffdock_python=diffdock_python,
                 diffdock_dir=diffdock_dir,
                 inference_seed=cfg.get("inference_seed"),
+                no_final_step_noise=final_step_noise_off,
             )
 
             batch_elapsed = time.time() - batch_start
@@ -982,6 +1067,7 @@ def _run_batch_csv_mode(
                                 diffdock_python=diffdock_python,
                                 diffdock_dir=diffdock_dir,
                                 inference_seed=cfg.get("inference_seed"),
+                                no_final_step_noise=final_step_noise_off,
                             )
                             sub_stderr = proc.stderr or ""
                             if "OutOfMemoryError" in sub_stderr or "CUDA out of memory" in sub_stderr:
@@ -1013,6 +1099,7 @@ def _run_batch_csv_mode(
                                     diffdock_python=diffdock_python,
                                     diffdock_dir=diffdock_dir,
                                     inference_seed=cfg.get("inference_seed"),
+                                    no_final_step_noise=final_step_noise_off,
                                 )
                             finally:
                                 if sub_csv_path.exists():
@@ -1269,6 +1356,17 @@ def run_optimizer_tool(
     # --local_only and --minimize both keep the ligand near its input pose and
     # never run a global search, so the optimised pose stays in the same pocket.
     cmd.append("--minimize" if search == "minimize" else "--local_only")
+    # Minimising to convergence relieves the receptor clash that PoseBusters
+    # fails DiffDock on, but it also walks the ligand's internal geometry away
+    # from what the model produced, which costs Kabsch form fidelity. These two
+    # bound how far it may travel: minimize_iters caps the steepest-descent
+    # steps, force_cap limits the per-step force on clashing atoms.
+    minimize_iters = cfg.get("optimize_minimize_iters")
+    if minimize_iters is not None:
+        cmd += ["--minimize_iters", str(int(minimize_iters))]
+    force_cap = cfg.get("optimize_force_cap")
+    if force_cap is not None:
+        cmd += ["--force_cap", str(force_cap)]
     # gnina runs a CNN by default; keep it off the GPU unless asked (the GPU is
     # usually busy with DiffDock). smina has no --no_gpu flag.
     if tool == "gnina" and not cfg.get("gnina_use_gpu", False):

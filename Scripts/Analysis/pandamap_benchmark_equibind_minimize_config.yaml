@@ -1,0 +1,32 @@
+# PandaMap — EquiBind unguided gnina, MATCHED --minimize refiner arm.
+#
+# Only the EquiBind arm changed, so only the EquiBind fingerprints are recomputed.
+# The published AutoDock and DiffDock fingerprints in
+# pandamap_results/benchmark_full_protein_mgltools are reused unchanged, and the
+# cohort intersection is done afterwards. That keeps the comparison honest (the
+# other two arms are byte-identical to what the thesis reports) and avoids
+# re-fingerprinting ~3,000 poses that did not change.
+#
+# The source CSV contains equibind_guided rows only, so no method exclusion is
+# needed. Pose basis matches the published run: PB-valid poses, top-5 per combo.
+
+work_dir: /home/manndo/master_dev
+pb_csv: posebusters_results/benchmark_equibind_minimize/dock/posebusters_filtered_results.csv
+pb_valid_only: true
+benchmark_dir: Data/PoseBuster Benchmark Set
+canonical_receptor_dir: posebusters_results/benchmark/dock/hetatm_cleaned
+output_dir: pandamap_results/benchmark_equibind_minimize
+poses_per_combo: 5
+render_images: false
+split_equibind: true
+split_diffdock: true
+use_dssp: false
+num_workers: 8              # 24 cores are held by the Orai docking
+overwrite: false
+autodock_variant: autodock_mgltools_exh128_gnina
+diffdock_variant: smina
+equibind_variant: unguided_gnina
+best_equibind_only: false
+best_diffdock_only: false
+per_pose_metrics: posebusters_results/benchmark_equibind_minimize/dock/pose_comparison_report/per_pose_metrics.csv
+oracle_summary: posebusters_results/benchmark_equibind_minimize/dock/pose_comparison_report/oracle_summary.csv

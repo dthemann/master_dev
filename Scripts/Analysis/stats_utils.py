@@ -22,6 +22,9 @@ Design notes that callers must respect (from the validation plan):
   * Correct for multiplicity with ``holm`` (small pairwise families) or
     ``bh_fdr`` (large families: the 20 PB checks, 14 descriptors, per-residue).
   * Report an effect size + CI alongside every p-value.
+  * Every resampling helper here is seeded and ORDER-INVARIANT: the same multiset
+    of observations gives the same interval no matter what row order the caller's
+    dataframe happened to be in (see ``_canonical``).
 """
 from __future__ import annotations
 
@@ -46,6 +49,30 @@ __all__ = [
     "permutation_test_paired", "bootstrap_ci", "cluster_bootstrap_ci",
     "consensus_perm_test",
 ]
+
+
+# --------------------------------------------------------------------------- #
+# internals
+# --------------------------------------------------------------------------- #
+def _canonical(v):
+    """Pin one row order per multiset before any seeded resampling touches it.
+
+    A seeded draw such as ``rng.choice(v, v.size)`` or ``rng.random(n) < 0.5``
+    picks POSITIONS, not values: the RNG emits the same index/coin stream for a
+    given seed, so handing the identical numbers over in a different row order
+    lands a different replicate and shifts the published interval. Row order here
+    is an accident of upstream pandas (a groupby, a merge, the order complexes
+    happened to be written to CSV), not data, and it silently changed 95% CIs
+    between two runs that produced byte-identical inputs up to sorting.
+
+    Every helper that calls this treats ``v`` as an unordered sample -- the
+    resampling scheme is exchangeable, so choosing the sorted representative is
+    statistically free. PAIRED input must be collapsed to one value per unit (a
+    difference) or reordered as whole pairs BEFORE canonicalising, never
+    per-array: sorting x and y separately would break the pairing.
+    """
+    v = np.asarray(v, float)
+    return np.sort(v, kind="stable")
 
 
 # --------------------------------------------------------------------------- #
@@ -500,7 +527,12 @@ def paired_continuous(data, labels=None):
     df = df[labels].dropna()
     cols = [df[l].to_numpy(float) for l in labels]
     n, k = len(df), len(labels)
-    chi2, p, W, _, dfree = friedman_kendall_w(*cols) if n and k > 1 else (np.nan, np.nan, np.nan, n, k - 1)
+    # Friedman needs three or more paired conditions. With k == 2 there is no
+    # omnibus to run, but the pairwise Wilcoxon below is perfectly defined, so
+    # return a NaN omnibus rather than raising and costing the caller its whole
+    # payload. (A two-variant family is normal now that a tool's dominant arm may
+    # have only a raw and an optimised form.)
+    chi2, p, W, _, dfree = friedman_kendall_w(*cols) if n and k > 2 else (np.nan, np.nan, np.nan, n, k - 1)
     pairwise = []
     for i in range(k):
         for j in range(i + 1, k):
@@ -609,6 +641,9 @@ def cliffs_delta_ci(a, b, n_boot=2000, seed=0, alpha=0.05):
     if a.size == 0 or b.size == 0:
         return d, np.nan, np.nan
     rng = np.random.default_rng(seed)
+    # a and b are INDEPENDENT samples resampled separately, so each may be
+    # canonicalised on its own -- there is no pairing to break (see _canonical).
+    a, b = _canonical(a), _canonical(b)
     boots = np.empty(n_boot)
     for i in range(n_boot):
         aa = rng.choice(a, a.size, replace=True)
@@ -655,14 +690,16 @@ def median_diff_ci(x, y, n_boot=2000, seed=0, alpha=0.05, paired=True):
     x = np.asarray(x, float); y = np.asarray(y, float)
     rng = np.random.default_rng(seed)
     if paired:
-        d = x - y
-        d = d[~np.isnan(d)]
+        # x - y FIRST, canonicalise second: the subtraction has already collapsed
+        # each pair into a single unit, so sorting the differences moves whole
+        # pairs and cannot separate an x_i from its y_i.
+        d = _canonical((x - y)[~np.isnan(x - y)])
         est = hodges_lehmann(d)
         n = len(d)
         boots = np.array([hodges_lehmann(rng.choice(d, n, replace=True))
                           for _ in range(n_boot)])
     else:
-        xm = x[~np.isnan(x)]; ym = y[~np.isnan(y)]
+        xm = _canonical(x[~np.isnan(x)]); ym = _canonical(y[~np.isnan(y)])
         est = hodges_lehmann(xm, ym)
         boots = np.array([hodges_lehmann(rng.choice(xm, len(xm), replace=True),
                                          rng.choice(ym, len(ym), replace=True))
@@ -777,6 +814,12 @@ def permutation_test_paired(a, b, statistic=None, n_perm=10000, seed=0,
     a = np.asarray(a, float); b = np.asarray(b, float)
     m = ~(np.isnan(a) | np.isnan(b))
     a, b = a[m], b[m]
+    # The swap coins below are drawn POSITIONALLY, so the same pairs in a different
+    # row order get a different coin each and the p-value moves. Reorder as whole
+    # PAIRS (lexsort keeps a_i welded to b_i) rather than sorting a and b apart,
+    # which would destroy the pairing this test is built on.
+    order = np.lexsort((b, a))
+    a, b = a[order], b[order]
     n = len(a)
     if statistic is None:
         statistic = lambda x, y: float(np.mean(x) - np.mean(y))
@@ -803,6 +846,10 @@ def bootstrap_ci(values, statistic=np.mean, n_boot=2000, seed=0, alpha=0.05):
     v = np.asarray(values, float); v = v[~np.isnan(v)]
     if v.size == 0:
         return np.nan, np.nan, np.nan
+    # Canonicalise BEFORE est, not just before the loop: statistic=np.mean sums in
+    # array order, so an unsorted v leaves the point estimate differing in the last
+    # ULP even once the replicates agree.
+    v = _canonical(v)
     est = float(statistic(v))
     rng = np.random.default_rng(seed)
     boots = np.array([statistic(rng.choice(v, v.size, replace=True))
@@ -829,8 +876,13 @@ def cluster_bootstrap_ci(values, clusters, statistic=np.mean, n_boot=2000,
     uniq = np.unique(clusters)
     if uniq.size == 0:
         return np.nan, np.nan, np.nan
-    by = {c: values[clusters == c] for c in uniq}
-    est = float(statistic(values))
+    # The cluster draw is already order-invariant (np.unique returns uniq sorted, so
+    # `pick` depends on the cluster IDs and the seed, never on row order). What is
+    # left is float associativity: statistic() over a concatenation summed in a
+    # different order differs in the last ULP. Sorting within each cluster and
+    # rebuilding `values` from the same blocks makes the function bit-reproducible.
+    by = {c: _canonical(values[clusters == c]) for c in uniq}
+    est = float(statistic(np.concatenate([by[c] for c in uniq])))
     rng = np.random.default_rng(seed)
     boots = np.empty(n_boot)
     for i in range(n_boot):
@@ -858,7 +910,12 @@ def consensus_perm_test(R, n_perm=10000, seed=42):
         return np.array([np.sum(s == c) for c in range(k + 1)], float)
 
     obs = dist(R)
-    cols = [R[:, j].copy() for j in range(k)]
+    # obs is a row-count and so already order-free, but rng.permutation(c) shuffles
+    # POSITIONS: the same column handed over with its rows in a different order
+    # lands in a different arrangement and drifts the null. Under this independence
+    # null only each column's marginal survives, so sorting each column costs the
+    # test nothing and pins one null per input.
+    cols = [np.sort(R[:, j]) for j in range(k)]
     null = np.zeros((n_perm, k + 1))
     for t in range(n_perm):
         perm = np.column_stack([rng.permutation(c) for c in cols])
@@ -978,6 +1035,28 @@ if __name__ == "__main__":
     R = (rng.random((50, 3)) < 0.5).astype(int)
     cpt = consensus_perm_test(R, n_perm=1000)
     check("consensus perm returns k+1 bins", len(cpt["observed"]) == 4)
+
+    # Row order is not data: every seeded resampler must return the identical
+    # interval for the same multiset however the caller's dataframe was sorted.
+    # This regressed once and moved a published 95% CI by 1.7 percentage points.
+    ra = rng.normal(0, 1, 60); rb = rng.normal(0.4, 1, 60)
+    rc = _np.repeat(_np.arange(20), 3); rv = rng.normal(0, 1, 60)
+    RR = (rng.random((50, 3)) < 0.4).astype(int)
+    ok = True
+    for _ in range(5):
+        pi = rng.permutation(60); pj = rng.permutation(60)
+        pk = rng.permutation(60); pr = rng.permutation(50)
+        ok &= median_diff_ci(ra, rb) == median_diff_ci(ra[pi], rb[pi])
+        ok &= (median_diff_ci(ra, rb, paired=False)
+               == median_diff_ci(ra[pi], rb[pj], paired=False))
+        ok &= cliffs_delta_ci(ra, rb) == cliffs_delta_ci(ra[pi], rb[pj])
+        ok &= bootstrap_ci(ra, _np.median) == bootstrap_ci(ra[pi], _np.median)
+        ok &= (permutation_test_paired(ra, rb, n_perm=500)
+               == permutation_test_paired(ra[pi], rb[pi], n_perm=500))
+        ok &= (cluster_bootstrap_ci(rv, rc) == cluster_bootstrap_ci(rv[pk], rc[pk]))
+        ok &= (consensus_perm_test(RR, n_perm=500)["p_all_agree_two_sided"]
+               == consensus_perm_test(RR[pr], n_perm=500)["p_all_agree_two_sided"])
+    check("resamplers invariant to input row order", bool(ok))
 
     print(f"\n{'ALL PASS' if not fails else 'FAILURES: ' + ', '.join(fails)}")
     raise SystemExit(1 if fails else 0)

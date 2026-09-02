@@ -4,6 +4,11 @@
 # Master_Docking_AD_Full_Protein.ipynb across every engine/variant:
 #
 #   autodock          AutoDock Vina scoring   (+ gnina/smina optimized variants)
+#   autodock_mgltools       AutoDock Vina, MGLTools-prepared LIGANDS (+ gnina)
+#   autodock_mgltools_exh18 same MGLTools inputs at exhaustiveness 18, RAW poses only
+#   autodock_mgltools_exh64 same MGLTools inputs at exhaustiveness 64, RAW poses only
+#   autodock_mgltools_exh92 same MGLTools inputs at exhaustiveness 92, RAW poses only
+#   autodock_mgltools_exh128 same MGLTools inputs at exhaustiveness 128, RAW poses only
 #   autodock_vinardo  AutoDock Vinardo scoring(+ gnina/smina optimized variants)
 #   unidock           tiled Uni-Dock (GPU)    — reuses the Vina prepared receptor
 #   unidock2          single-shot Uni-Dock2   — retains its exact prepared receptor
@@ -32,6 +37,21 @@ receptors_dir: posebusters_results/_benchmark_staging/receptors
 docking_directories:
   autodock:          Dockings/vina_results_full_protein_vina_scoring
   autodock_vinardo:  Dockings/vina_results_full_protein_vinardo_scoring
+  # MGLTools-ligand converter arm and its exhaustiveness siblings (18/64/92; the
+  # base arm is 32). All are AutoDock Vina trees with the standard layout;
+  # _variant_base_method() folds them onto 'autodock' via startswith("autodock"),
+  # so the receptor resolver and variant axis need no change per arm.
+  # Together with the base arm these give a 5-point exhaustiveness curve
+  # (18/32/64/92/128) on sha256-identical staged ligands and receptors, seed 42,
+  # num_modes 30, energy_range 6 — exhaustiveness is the only variable. exh128 is
+  # staged with --prepared-inputs-from against the base arm: the driver hardcodes
+  # convert_ligands_with_meeko=True on the re-derive path, so a re-derived exh128
+  # would silently carry MEEKO ligands and would NOT be a point on this curve.
+  autodock_mgltools:        Dockings/vina_results_full_protein_vina_scoring_mgltools
+  autodock_mgltools_exh18:  Dockings/vina_results_full_protein_vina_scoring_mgltools_exh18
+  autodock_mgltools_exh64:  Dockings/vina_results_full_protein_vina_scoring_mgltools_exh64
+  autodock_mgltools_exh92:  Dockings/vina_results_full_protein_vina_scoring_mgltools_exh92
+  autodock_mgltools_exh128: Dockings/vina_results_full_protein_vina_scoring_mgltools_exh128
   unidock:           Dockings/unidock_results_full_protein_vina_scoring
   unidock2:          Dockings/unidock2_results_full_protein_vina_scoring
   diffdock:          posebusters_results/_benchmark_staging/diffdock
@@ -62,10 +82,28 @@ optional_methods:
   - autodock_vinardo
   - unidock
   - unidock2
+  # Kept optional on purpose: the MGLTools arms must never shrink the shared
+  # cohort that the published autodock/diffdock/equibind comparison rests on.
+  - autodock_mgltools
+  - autodock_mgltools_exh18
+  - autodock_mgltools_exh64
+  - autodock_mgltools_exh92
+  - autodock_mgltools_exh128
 
 validation_receptor_directories:
   autodock:          Dockings/vina_results_full_protein_vina_scoring
   autodock_vinardo:  Dockings/vina_results_full_protein_vinardo_scoring
+  # Each MGLTools arm carries its own staged receptor PDBQT + its .pdb twin, so
+  # every pose is busted against the exact receptor it was docked into. These are
+  # MANDATORY, not optional: load_config takes
+  # set(docking_directories) - set(validation_receptor_directories) under
+  # prepared_per_pose and RAISES if it is non-empty, so an arm added above
+  # without a matching entry here is a hard load-time failure, not a silent skip.
+  autodock_mgltools:        Dockings/vina_results_full_protein_vina_scoring_mgltools
+  autodock_mgltools_exh18:  Dockings/vina_results_full_protein_vina_scoring_mgltools_exh18
+  autodock_mgltools_exh64:  Dockings/vina_results_full_protein_vina_scoring_mgltools_exh64
+  autodock_mgltools_exh92:  Dockings/vina_results_full_protein_vina_scoring_mgltools_exh92
+  autodock_mgltools_exh128: Dockings/vina_results_full_protein_vina_scoring_mgltools_exh128
   # Uni-Dock reuses the exact prepared AutoDock receptor tree. Uni-Dock2 instead
   # validates against the engine-prepared PDB retained and hashed beside each
   # committed output; its schema-3 manifest is authoritative.
@@ -83,7 +121,7 @@ validation_receptor_directories:
 
 save_interval: 200
 overwrite: false
-num_workers: 12
+num_workers: 32
 
 # ---------------------------------------------------------------------------
 # Performance / stability (see posebusters_benchmark_config.yaml for the full

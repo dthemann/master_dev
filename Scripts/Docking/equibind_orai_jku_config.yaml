@@ -55,7 +55,7 @@ equibind_python: /home/manndo/anaconda3/envs/equibind/bin/python
 device: cuda
 
 # ── Outputs ──────────────────────────────────────────────────────────────────
-output_dir: Dockings/equibind_results
+output_dir: Dockings/equibind_results_uffoff   # REPOINTED 2026-08-30, see uff_minimize below
 log_dir: Dockings/Logs/equibind_logs
 
 # ── Pose counts ──────────────────────────────────────────────────────────────
@@ -155,12 +155,14 @@ uff_minimize: false       # CHANGED 2026-08-17. The reported Orai x JKU results 
                           # NOTE ON DATA. The re-run lives in
                           # Dockings/equibind_results_uffoff/ and is a drop-in
                           # replacement, namely the same 16 combos and 480 poses with
-                          # identical file naming. output_dir below still points at the
-                          # superseded UFF-on directory so that nothing silently
-                          # changes. Repoint it, and the equibind_guided entry in
-                          # Scripts/Docking/Posebusters/posebusters_orai_jku_config.yaml,
-                          # to adopt the re-run, then regenerate the Orai1 EquiBind
-                          # analyses.
+                          # identical file naming.
+                          # ADOPTED 2026-08-30. output_dir above and the equibind_guided
+                          # entry in
+                          # Scripts/Docking/Posebusters/posebusters_orai_jku_config.yaml
+                          # now both point at the re-run, and the Orai1 EquiBind analyses
+                          # were regenerated against it. The superseded UFF-on tree remains
+                          # at Dockings/equibind_results/ and its PoseBusters output is
+                          # archived at posebusters_results/orai_jku_UFFON_backup_20260830/.
 uff_max_iters: 200
 uff_energy_tol: 0.0001
 uff_force_tol: 0.001

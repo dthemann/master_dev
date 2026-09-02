@@ -108,25 +108,35 @@ vina --receptor rec.pdbqt --config rec.box.txt --ligand lig.pdbqt --out out.pdbq
 | timeout/complex | 600 s | 600 s | 600 s |
 
 Output: multi-model PDBQT, one `MODEL` per pose with `REMARK VINA RESULT: <affinity> <rmsd_lb> <rmsd_ub>`,
-≤10 poses/complex. No post-docking optimisation (Vina's own local optimiser is intrinsic).
+≤10 poses/complex in the original crystal-boxed run; the whole-protein campaign that the thesis reports uses
+`num_modes: 30`. Vina needs no *geometry* repair (its own local optimiser is intrinsic), but the AutoDock arm
+does carry a post-dock pass: `optimization: gnina` + `optimize_rank_by: minimized_affinity`
+(`run_autodock.py:1899-1903`) keeps `autodock_rank` (never reordered) alongside `optimized_rank` (the same
+poses re-sorted on the optimiser's minimised affinity). **AutoDock is therefore genuinely re-ranked**, which
+is exactly what DiffDock is not (§4.1).
 
 ### 3.2 DiffDock (DiffDock-L)
 ```
 envs/diffdock/bin/python -m inference --config custom_inference_args.yaml \
     --protein_ligand_csv batch.csv --out_dir <out> \
-    --samples_per_complex 10 --no_final_step_noise
+    --samples_per_complex 30 --no_final_step_noise
 ```
 - Blind (whole-protein) docking; **no user box**. Score model coarse-grained (receptor_radius 15 Å),
   ESM2 `esm2_t33_650M_UR50D` embeddings generated at inference from the PDB sequence.
 - Input: protein PDB (rewritten `*_prepared.pdb`, HIS names normalised); ligand SDF/MOL2 (the `.pdbqt` in the
   JKU folder is ignored — SDF/MOL2 used).
-- **samples_per_complex 10, inference_steps 20** (actual_steps 19), batch_size 15, group_by_receptor true,
+- **samples_per_complex 30, inference_steps 20** (actual_steps 19), batch_size 15, group_by_receptor true,
   device cuda:0 (OOM → CPU fallback). **No sampling seed passed** (stochastic per run).
 - Checkpoints: score `workdir/v1.1/score_model/best_ema_inference_epoch_model.pt`; confidence
-  `.../confidence_model/best_model_epoch75.pt`. Poses re-ranked by the **confidence model** →
-  `rank<k>_confidence<value>.sdf`, all 10 kept.
-- *(A working-tree edit set `default_inference_args.yaml` samples 10→30, but CLI + config override force the
-  effective value back to 10.)*
+  `.../confidence_model/best_model_epoch75.pt`. Poses ordered by the **confidence model** →
+  `rank<k>_confidence<value>.sdf`, all 30 kept. **This is the only ordering DiffDock poses ever receive** —
+  the refinement chain in §4.1 inherits it and never re-sorts.
+- *(Corrected 2026-08-23: this section previously said samples_per_complex 10 and "all 10 kept", with a
+  parenthetical claiming a config override forced the effective value back to 10. That is contradicted by the
+  pose files themselves — `rank30_*.sdf` exists in **both** campaigns (401 complexes in
+  `Dockings/Benchmark_DiffDock`, and `Dockings/diffdock_results` for JKU/Orai), `diffdock_docking_config.yaml`
+  commits `num_samples: 30`, and the optimiser logs average 29.8 poses/complex over 423 complexes. The
+  effective value was 30.)*
 
 ### 3.3 EquiBind (custom pipeline, `equibind_pipeline/`)
 Three phases: CPU prep → GPU EquiBind inference (in-process, batch 8) → CPU post-processing. Runs in the
@@ -162,17 +172,57 @@ energy** attached in refinement (§4).
 ## 4. Post-docking optimisation / refinement chain
 
 Both ML methods lack a physics/excluded-volume term, so poses are locally relaxed against the receptor
-(box around the pose, so it stays in the same pocket). Vina needs none.
+(box around the pose, so it stays in the same pocket). Vina needs no such geometry repair, but it does get a
+gnina pass of its own that re-ranks its poses — see §3.1.
 
-### 4.1 DiffDock — post-hoc gnina minimisation (non-destructive; writes `optimized_gnina/`)
+**Read this table before describing any arm's refiner**, because the three arms use the refined score
+differently and conflating them is the most common error in write-ups of this project:
+
+| arm | refiner does to geometry | refiner does to ORDER | rank actually used |
+|---|---|---|---|
+| AutoDock Vina + gnina | minimises | **re-sorts** on minimised affinity | `optimized_rank` |
+| DiffDock + smina | minimises | **nothing** | inherited DiffDock confidence rank |
+| EquiBind + gnina | minimises | **supplies the only order there is** | gnina affinity |
+
+### 4.1 DiffDock — post-hoc smina/gnina minimisation (non-destructive; writes `optimized_smina/`, `optimized_gnina/`)
 ```
-gnina --receptor <prot>_prepared.pdb --ligand rankK_confidence-X.sdf \
+<smina|gnina> --receptor <prot>_prepared.pdb --ligand rankK_confidence-X.sdf \
       --autobox_ligand rankK_confidence-X.sdf --autobox_add 4.0 \
-      --out optimized_gnina/rankK_..._gnina.sdf --cpu 1 --seed 0 --num_modes 1 --minimize
+      --out optimized_<tool>/rankK_..._<tool>.sdf --cpu 1 --seed 0 --num_modes 1 --minimize
 ```
-`optimization: gnina`, `optimize_search: minimize` → `--minimize`; `gnina_use_gpu: true` → `--no_gpu`
-**omitted** (CNN on GPU). Each of the 10 poses minimised individually; scores logged
+`optimization: smina` (committed benchmark config; the gnina arm was run identically),
+`optimize_search: minimize` → `--minimize`; `gnina_use_gpu: true` → `--no_gpu` **omitted** (CNN on GPU).
+`num_samples: 30`, so each of the **30** DiffDock poses is minimised individually; scores logged
 (`minimizedAffinity`, `CNNscore`, `CNNaffinity`) to `optimization_log.csv`. Original DiffDock SDFs untouched.
+Both arms carry the same coverage: 12,609 successful minimisations over 423 complexes, 61 failures each.
+
+**Minimisation only — this step never re-ranks DiffDock.** `--minimize --num_modes 1` relaxes each pose in
+place inside a 4 Å autobox around *itself*: one pose in, one pose out, no search and no pose set to order
+(`run_diffdock.py:1258-1271`). The refined copy keeps the parent's `rankK_confidence-X` filename
+(`run_diffdock.py:1386` copies the stem verbatim) and therefore inherits DiffDock's **confidence rank**; the
+log row even records `pose_rank` by parsing that parent filename (`:1414`). A score **is** computed —
+`minimized_affinity` is written for every pose (`:1417`) — but it is never propagated into
+`posebusters_filtered_results.csv` or `per_pose_metrics.csv` (0% populated on DiffDock rows), so no downstream
+analysis can sort on it even by accident. Every downstream analysis reads the inherited rank —
+`run_pandamap._pose_rank` consults the re-ranked `optimized_rank` column *only* when the method name starts
+with `autodock`, and DiffDock falls through to the filename token (`parse_rank`). Verified against
+`pandamap_results/benchmark_full_protein/pandamap_pose_summary.csv`: `pose_rank` equals the filename rank for
+**100.0%** of the 1,493 `diffdock_smina` poses, against **17.8%** for `autodock_gnina` (genuinely re-ranked by
+`optimized_rank`) and **0.0%** for `equibind_unguided_gnina` (re-ranked by gnina affinity, §4.2 / §6).
+Do not describe the DiffDock refinement as a **re-ranking**: the score it computes is never used to order
+poses. (The single exception is the deliberate counterfactual in §3.7 of `REGENERATE.md`, which re-orders on
+that score precisely to show it does not help.) Note also that the minimisation *does* move atoms, so every
+DiffDock RMSD, PoseBusters verdict and interaction fingerprint is computed on refined geometry — it is the
+ORDER that is untouched, not the poses.
+
+**Post-hoc check on that choice.** Sorting the same poses on smina affinity instead was tested with
+`diffdock_gnina_rerank_analysis.py --tool smina` (303 benchmark complexes with a crystal reference,
+hit = RMSD ≤ 2 Å). Re-ranking **alone** (same coordinates, different pick) selects a top-1 pose within 2 Å for
+**32.7%** of complexes against **33.7%** under DiffDock's own confidence order, i.e. marginally *worse*. What
+the refinement chain actually buys is the coordinate move, not the re-ordering: minimise-only 35.3%, full
+pipeline 38.3%. The re-ordering is nonetheless drastic — DiffDock's rank-1 pose remains the affinity rank-1 in
+only 14.7% of complexes (median |rank move| = 6), so it churns the list without paying for it. gnina arm for
+comparison: re-rank 32.3%, minimise-only 35.6%, full 37.6%.
 
 ### 4.2 EquiBind — inline refinement (Phase 3)
 ```
@@ -229,13 +279,18 @@ failure the pre-refine pose is copied through — **a pose is never lost**.
   — **Benchmark only**.
 - **PandaMap 4.1.0** (must run in `vina` env): residue-level protein–ligand interaction fingerprints, 16
   interaction types, top-N poses/complex. `benchmark_dir` set for Benchmark (native crystal fingerprint),
-  `null` for Orai. EquiBind re-ranked by gnina affinity before selection.
+  `null` for Orai. EquiBind re-ranked by gnina affinity before selection; **DiffDock is not re-ranked** — it
+  keeps its native confidence order through the smina/gnina step (§4.1), and AutoDock uses `optimized_rank`.
+  The three arms therefore reach a "rank k" by three different routes, which the by-rank figures must state.
 
 ---
 
 ## 7. Known config inconsistencies (report as-is)
 - `autogrid_bin: /usr/local/bin/autogrid4` is a **dead path** (real binary `/usr/bin/autogrid4`); harmless
   because vina scoring never calls AutoGrid.
+- `diffdock_docking_config.yaml` calls `optimization:` a **"re-scoring tool"** (line 53) and its header says
+  "re-scoring / minimisation" (line 5), but `optimize_search: minimize` makes it a pure local minimisation and
+  no DiffDock pose is ever re-ordered (§4.1). The comment is misleading; the literal behaviour wins.
 - EquiBind Orai×Benchmark config: `refine_tool: smina` while every comment says gnina; `skip_existing: true`
   while its comment says "force full re-dock". Literal values win (smina / skip). *(Orai × JKU is unaffected —
   it uses gnina, refine_mode both.)*

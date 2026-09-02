@@ -32,7 +32,7 @@ FAMILIES
       source: posebusters_results/orai_{jku,benchmark}/pose_clusters/per_pair.csv
   D1  PandaMap total interactions per pose    3 tools, Holm(3)
       source: pandamap_results/orai_interaction_compare/pandamap_pose_totals.csv
-  D2  PandaMap interaction-type profile       15 types, BH-FDR(15) WITHIN each tool
+  D2  PandaMap interaction-type profile       13 types, BH-FDR(13) WITHIN each tool
       source: NOT available as a per-unit table inside orai_interaction_compare/ --
               see the note in section D2; re-derived from the upstream per-pose
               PandaMap summaries through the compare script's own ``load_dataset``.
@@ -113,6 +113,11 @@ def _cliffs_delta_ci(a, b, n_boot: int = 2000, seed: int = 0, alpha: float = 0.0
     if a.size == 0 or b.size == 0 or n_boot <= 0:
         return d, float("nan"), float("nan")
     rng = np.random.default_rng(seed)
+    # Mirror su.cliffs_delta_ci's canonicalisation exactly: rng.choice draws
+    # POSITIONS, so a and b must be sorted before the loop or the same values in a
+    # different row order return a different CI. a and b are independent samples,
+    # so each sorts on its own. Drop this and _verify_against_stats_utils fails.
+    a = np.sort(a, kind="stable"); b = np.sort(b, kind="stable")
     boots = np.empty(n_boot)
     for i in range(n_boot):
         aa = rng.choice(a, a.size, replace=True)
@@ -355,7 +360,7 @@ def family_pandamap_types(exp_dir: Path, bench_dir: Path, exp_pb: Path, bench_pb
                           R: Rows, n_boot: int, autodock_variant: str,
                           diffdock_variant: str, equibind_variant: str,
                           top_n: int, top_n_poses: int) -> dict:
-    """D2 -- PandaMap interaction-type profile (15 types, BH-FDR WITHIN each tool).
+    """D2 -- PandaMap interaction-type profile (13 types, BH-FDR WITHIN each tool).
 
     ``pandamap_results/orai_interaction_compare/`` holds NO per-unit interaction-type
     table (``pandamap_type_profile.csv`` is already collapsed to a mean-per-pose per
@@ -379,6 +384,10 @@ def family_pandamap_types(exp_dir: Path, bench_dir: Path, exp_pb: Path, bench_pb
     types = [t for t in oc.INTERACTION_TYPES
              if sum(pd.to_numeric(ds[k]["summary"][t], errors="coerce").fillna(0).sum()
                     for k in ds if t in ds[k]["summary"].columns) > 0]
+    # The three charged aliases are bit-identical columns of one measurement. Entering
+    # all three inflates the BH family, which RAISES the threshold every lower-ranked
+    # hypothesis must clear, so it is anti-conservative rather than safe.
+    types = oc.collapse_charged_types(types) if hasattr(oc, "collapse_charged_types") else types
     tools = [t for t in ("autodock", "diffdock", "equibind")
              if all(t in set(ds[k]["summary"]["tool"]) for k in ds)]
     for tool in tools:
@@ -403,7 +412,8 @@ def family_pandamap_types(exp_dir: Path, bench_dir: Path, exp_pb: Path, bench_pb
                 R.add(family_id=f"D2:{tool}",
                       family=f"PandaMap interaction-type profile ({TOOL_PRETTY.get(tool, tool)})",
                       correction="BH-FDR", family_size=len(types),
-                      contrast=oc.INTERACTION_LABELS.get(itype, itype)
+                      contrast=oc.itype_label(itype) if hasattr(oc, "itype_label")
+                      else oc.INTERACTION_LABELS.get(itype, itype)
                       if hasattr(oc, "INTERACTION_LABELS") else itype,
                       metric=itype, tool=tool, unit=unit,
                       n_exp=len(a), n_bench=len(b),

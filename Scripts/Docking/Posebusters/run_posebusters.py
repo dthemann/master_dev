@@ -295,13 +295,16 @@ def _variant_base_method(key: str) -> str:
     to 'equibind'; every tiled Uni-Dock alias collapses to 'unidock'; Uni-Dock2
     stays 'unidock2'; every AutoDock scoring flavour (autodock / autodock_vinardo)
     collapses to 'autodock' so they share the receptor resolver + optimizer
-    variant axis; diffdock maps to itself.
+    variant axis; every DiffDock parameter-sweep arm (diffdock_ctrl /
+    diffdock_noise_hi / …) collapses to 'diffdock' for the same reason.
 
     Order matters: the unidock2 test precedes the unidock test because
     ``"unidock2".startswith("unidock")`` is also true."""
     k = str(key).strip().lower()
     if k.startswith("equibind"):
         return "equibind"
+    if k.startswith("diffdock"):
+        return "diffdock"
     if k.startswith("unidock2") or k in ("uni-dock2", "uni-dock-2"):
         return "unidock2"
     if k.startswith("unidock") or k == "uni-dock":
@@ -2064,6 +2067,19 @@ def _collect_equibind_rows(poses_dir: Path, keep_variants: set[str] | None = Non
 ROW_COLLECTORS = {
     "autodock": _collect_autodock_rows,
     "autodock_vinardo": _collect_autodock_rows,   # same Vina-output tree, Vinardo scoring
+    # Exhaustiveness-sweep arms (Exhaustiveness_32_vs_64.ipynb). Same Vina output
+    # tree and the same collector; the two keys exist only so both search-effort
+    # arms can be busted in ONE cohort-locked run under self-describing labels.
+    # _variant_base_method() already folds them onto "autodock", so the receptor
+    # resolver, variant axis and variant_filter need no change.
+    "autodock_exh32": _collect_autodock_rows,
+    "autodock_exh64": _collect_autodock_rows,
+    # MGLTools-ligand whole-protein arms (Master_Docking_AD_Full_Protein.ipynb).
+    # Same Vina output tree layout, same collector; separate keys so the
+    # converter A/B and the exhaustiveness 32-vs-64 contrast stay separable.
+    # _variant_base_method() folds both onto "autodock".
+    "autodock_mgltools": _collect_autodock_rows,
+    "autodock_mgltools_exh64": _collect_autodock_rows,
     "unidock": _collect_unidock_rows,
     "unidock_tiled": _collect_unidock_rows,
     "unidock2": _collect_unidock2_rows,
@@ -2581,6 +2597,10 @@ def _expand_equibind_poses(row: dict, _conv_dir: Path, _ctx: PipelineConfig) -> 
 POSE_EXPANDERS = {
     "autodock": _expand_autodock_poses,
     "autodock_vinardo": _expand_autodock_poses,   # same Vina-output tree, Vinardo scoring
+    "autodock_exh32": _expand_autodock_poses,     # see ROW_COLLECTORS
+    "autodock_exh64": _expand_autodock_poses,
+    "autodock_mgltools": _expand_autodock_poses,
+    "autodock_mgltools_exh64": _expand_autodock_poses,
     "unidock": _expand_unidock_poses,
     "unidock_tiled": _expand_unidock_poses,
     "unidock2": _expand_unidock2_poses,
@@ -3208,6 +3228,105 @@ def _find_template_mol(ligand_name: str, ctx: PipelineConfig):
     return None, None
 
 
+# ---------------------------------------------------------------------------
+# Authoritative MGLTools pose reconstruction (shared with run_autodock)
+# ---------------------------------------------------------------------------
+# MGLTools-prepared PDBQTs carry no embedded Meeko ``REMARK SMILES``, so bond
+# orders cannot be rebuilt from the pose file alone. The obabel fallbacks below
+# must therefore perceive bonds from coordinates, which fails on ~63% of the
+# benchmark: MGLTools keeps only polar hydrogens and writes no formal charges,
+# so obabel emits radical aromatic carbons and the template transfer double
+# counts hydrogens into N/O valence errors.
+#
+# run_autodock already solved this for the optimizer arm. It never perceives a
+# bond: the docked coordinates are copied onto the authoritative ligand SDF
+# graph through a strict, verified serial map (element-checked per atom, atom
+# signature equality against the prepared ligand, one-to-one, 0.002 A). Reusing
+# that exact machinery keeps validation and optimisation on the same chemistry
+# and preserves double-bond stereochemistry that a bond-perception path loses.
+
+
+@lru_cache(maxsize=1)
+def _mgl_template_map_api():
+    """Lazily import run_autodock's authoritative reconstruction helpers."""
+    try:
+        from Scripts.Docking.run_autodock import (
+            _load_mgl_pose_template, _reconstruct_template_pose_sdf,
+        )
+        return _load_mgl_pose_template, _reconstruct_template_pose_sdf
+    except Exception:  # pragma: no cover - optional dependency on repo layout
+        return None, None
+
+
+# The scoring-function suffix is the only part of the pose filename that is not
+# part of the prepared ligand's own name, so strip exactly that and nothing
+# else. ``_normalize_ligand`` is deliberately NOT used here: it collapses
+# ``5SAK_ZRY_ligand_start_conf_vina`` all the way down to the complex id, which
+# resolves to the crystal-pose SDF. The coordinate map needs the *prepared*
+# conformer whose coordinates match the prepared PDBQT.
+_SCORING_SUFFIXES = ("_vinardo", "_vina")
+
+
+def _prepared_ligand_stem(ligand_part: str) -> str:
+    for suffix in _SCORING_SUFFIXES:
+        if ligand_part.endswith(suffix) and len(ligand_part) > len(suffix):
+            return ligand_part[: -len(suffix)]
+    return ligand_part
+
+
+@lru_cache(maxsize=None)
+def _mgl_pose_template_cached(
+    ligand_stem: str, complex_id: str, prepared_pdbqt: str, template_dirs: tuple,
+):
+    """Build (and memoise) the authoritative template/serial map for a ligand.
+
+    Returns ``None`` when the authoritative pair cannot be resolved, so a
+    non-MGLTools tree simply falls through to the existing strategies.
+    """
+    loader, _ = _mgl_template_map_api()
+    if loader is None:
+        return None
+    prepared = Path(prepared_pdbqt)
+    if not prepared.is_file():
+        return None
+    for directory in template_dirs:
+        candidate = Path(directory) / complex_id / f"{ligand_stem}.sdf"
+        if not candidate.is_file():
+            continue
+        try:
+            return loader(ligand_stem, candidate, prepared)
+        except Exception as e:
+            # An authoritative pair that does not agree is a provenance problem,
+            # not something to paper over with a different template directory.
+            raise RuntimeError(
+                f"{ligand_stem}: authoritative MGLTools template pair rejected "
+                f"({candidate} + {prepared}): {e}"
+            ) from e
+    return None
+
+
+def _resolve_mgl_pose_template(pdbqt_path: Path, ligand_part: str, ctx: PipelineConfig):
+    """Resolve the authoritative reconstruction context for one pose file.
+
+    The prepared ligand PDBQT lives beside the docking tree that produced the
+    pose (``<complex>/_staging/ligands/pdbqt/<ligand>.pdbqt``), so the map is
+    always built against the very ligand this pose was docked from.
+    """
+    ligand_stem = _prepared_ligand_stem(ligand_part)
+    complex_id = _normalize_ligand(ligand_part)
+    try:
+        complex_dir = pdbqt_path.parents[2]
+    except IndexError:
+        return None
+    prepared = complex_dir / "_staging" / "ligands" / "pdbqt" / f"{ligand_stem}.pdbqt"
+    template_dirs = tuple(str(d) for d in ctx.ligand_template_dirs)
+    if not template_dirs:
+        return None
+    return _mgl_pose_template_cached(
+        ligand_stem, complex_id, str(prepared), template_dirs,
+    )
+
+
 @lru_cache(maxsize=1)
 def _conversion_tool_fingerprint() -> str:
     """Fingerprint conversion semantics and installed chemistry tool versions."""
@@ -3390,9 +3509,24 @@ def _convert_pdbqt_to_sdf(pdbqt_file: str, out_dir: Path, ctx: PipelineConfig) -
     stem_clean = base_name.replace("_vina_out", "")
     parts = stem_clean.split("__")
     needs_template = any("REMARK SMILES" not in model for model in models)
+
+    # Preferred for MGLTools-prepared poses: authoritative graph + serial map.
+    pose_template = (
+        _resolve_mgl_pose_template(pdbqt_path, parts[1], ctx)
+        if len(parts) == 2 and needs_template else None
+    )
+
+    # Only the obabel fallbacks need a bond-order template, and they are
+    # unreachable once Strategy 0b resolves. Resolving one anyway would record
+    # a template in the manifest that never touched the written bytes:
+    # _find_template_mol takes the first sorted glob hit, which is the CRYSTAL
+    # ``<id>_ligand.sdf``, whereas Strategy 0b uses the prepared
+    # ``<id>_ligand_start_conf.sdf``. It would also print a misleading
+    # "Using bond-order template" line naming the wrong file.
     template_mol, template_path = (
         _find_template_mol(_normalize_ligand(parts[1]), ctx)
-        if len(parts) == 2 and needs_template else (None, None)
+        if len(parts) == 2 and needs_template and pose_template is None
+        else (None, None)
     )
 
     source_sha = _sha256_file(pdbqt_path)
@@ -3411,6 +3545,18 @@ def _convert_pdbqt_to_sdf(pdbqt_file: str, out_dir: Path, ctx: PipelineConfig) -
         "source_sha256": source_sha,
         "template_path": str(template_path) if template_path else None,
         "template_sha256": template_sha,
+        # Binds the cache to the exact authoritative SDF, prepared ligand PDBQT
+        # and atom map used, so changing any of them invalidates the outputs.
+        #
+        # This key ALSO does the schema-bump's job, but precisely. A pre-existing
+        # manifest has no such key, so ``manifest.get`` yields None: it still
+        # matches for every pose that cannot reach Strategy 0b (None == None) and
+        # mismatches for every pose that can (None != dict). Bumping the schema
+        # instead would discard all 2,850 conversion manifests in the repo and
+        # re-convert ~93,000 SDFs, ~99% of them to byte-identical output.
+        "mgl_template_map": (
+            pose_template.converter_inputs() if pose_template is not None else None
+        ),
         "converter_fingerprint": _conversion_tool_fingerprint(),
         "model_count": len(models),
     }
@@ -3476,6 +3622,30 @@ def _convert_pdbqt_to_sdf(pdbqt_file: str, out_dir: Path, ctx: PipelineConfig) -
             raise RuntimeError(
                 "Meeko failed to reconstruct an embedded-SMILES Vina pose "
                 f"without changing its docked heavy coordinates: {pdbqt_path} model {i}"
+            )
+
+        # Strategy 0b (preferred for MGLTools): copy the docked serial
+        # coordinates onto the authoritative ligand SDF graph. No bond is ever
+        # perceived, so bond orders, formal charges and double-bond stereo come
+        # from the curated ligand rather than from obabel's geometry guess.
+        # Like the Meeko path this fails closed: if an authoritative pair was
+        # resolved but the pose does not match it, that is a provenance
+        # mismatch and must not be silently downgraded to a perception guess.
+        if pose_template is not None:
+            _, reconstruct = _mgl_template_map_api()
+            ok, message = reconstruct(temp_pdbqt, output_sdf, pose_template)
+            if ok:
+                converted.append(str(output_sdf))
+                temp_pdbqt.unlink(missing_ok=True)
+                continue
+            temp_pdbqt.unlink(missing_ok=True)
+            output_sdf.unlink(missing_ok=True)
+            manifest_path.unlink(missing_ok=True)
+            for partial_output in expected_outputs:
+                partial_output.unlink(missing_ok=True)
+            raise RuntimeError(
+                "Authoritative MGLTools template reconstruction failed for "
+                f"{pdbqt_path} model {i}: {message}"
             )
 
         # Strategy 1: obabel PDBQT -> PDB -> RDKit + template
@@ -3615,9 +3785,13 @@ def collect_all_pose_files(filtered_df: pd.DataFrame, ctx: PipelineConfig) -> li
     """Expand every row in *filtered_df* into individual pose-file dicts."""
     all_poses: list[dict] = []
     for _, row in filtered_df.iterrows():
-        expander = POSE_EXPANDERS.get(row["docking_tool"])
+        # Fall back to the folded base tool so a per-arm label (autodock_exh64,
+        # diffdock_noise_hi) reuses its tool's expander without needing an entry
+        # of its own. Registered keys still match first, so nothing changes for them.
+        tool = row["docking_tool"]
+        expander = POSE_EXPANDERS.get(tool) or POSE_EXPANDERS.get(_variant_base_method(tool))
         if expander is None:
-            print(f"  WARNING: No pose expander for '{row['docking_tool']}', skipping.")
+            print(f"  WARNING: No pose expander for '{tool}', skipping.")
             continue
         all_poses.extend(expander(row.to_dict(), ctx.converted_dir, ctx))
     if ctx.variant_filter:
@@ -4507,7 +4681,9 @@ def collect_pose_rows(ctx: PipelineConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
     collected_methods: set[str] = set()
 
     for method_key, poses_dir in ctx.docking_directories.items():
-        collector = ROW_COLLECTORS.get(method_key)
+        # Same base-tool fallback as the pose expanders above.
+        collector = (ROW_COLLECTORS.get(method_key)
+                     or ROW_COLLECTORS.get(_variant_base_method(method_key)))
         if collector is None:
             if ctx.require_all_methods:
                 raise KeyError(f"No row collector for required method {method_key!r}")
@@ -4789,9 +4965,21 @@ def resolve_protein_files(
 
 def _infer_method(filepath: str, docking_directories: dict[str, Path]) -> str:
     fp = str(filepath)
-    for mk, dp in docking_directories.items():
-        dp_str = str(dp)
-        if dp_str in fp or Path(dp_str).name in fp:
+    # Longest path first, in two passes. Result-tree names nest:
+    # ``…_vina_scoring`` is a prefix of ``…_vina_scoring_mgltools``, which is a
+    # prefix of ``…_mgltools_exh64``. A first-match-wins scan in config order
+    # therefore attributes every nested tree's poses to the SHORTEST key, which
+    # silently folds the MGLTools and exhaustiveness-64 arms into "autodock".
+    # Matching the most specific directory first is order-independent.
+    by_path = sorted(docking_directories.items(),
+                     key=lambda kv: len(str(kv[1])), reverse=True)
+    for mk, dp in by_path:
+        if str(dp) in fp:
+            return mk
+    by_name = sorted(docking_directories.items(),
+                     key=lambda kv: len(Path(str(kv[1])).name), reverse=True)
+    for mk, dp in by_name:
+        if Path(str(dp)).name in fp:
             return mk
     fl = fp.lower()
     if "unidock2" in fl or "uni-dock2" in fl:

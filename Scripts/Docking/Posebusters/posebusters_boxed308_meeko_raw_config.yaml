@@ -1,0 +1,75 @@
+# PoseBusters config — crystal-boxed AutoDock Vina, MEEKO receptor arm, RAW poses
+# ==============================================================================
+# Answers: how do PoseBusters validity, <=2 A RMSD and <=1 A Kabsch RMSD change
+# when the AutoDock poses are produced against a receptor prepared with Meeko
+# instead of MGLTools? The ligand side is Meeko in BOTH arms (the notebook sets
+# convert_ligands_with_meeko=True unconditionally), so this arm is the "Meeko for
+# receptor AND ligand" configuration and the sibling config
+# posebusters_boxed308_mgl_raw_config.yaml is the matched MGLTools control.
+#
+# Cohort: the 308 published PoseBusters benchmark entries listed in
+#   Data/PoseBuster Benchmark Set/posebusters_pdb_ccd_ids.txt
+# The Meeko arm covers 297 of them (11 produced no Vina output); the MGLTools
+# control covers all 308. Both arms are read through a symlink staging tree so
+# the two converters cannot collide: _normalize_protein() strips the
+# _meeko/_mgl_tools suffix (run_posebusters.py:800), so busting one tree that
+# holds both arms would emit two rows per pose sharing the same protein key.
+#
+# Poses are RAW: the crystal-boxed campaign was run without gnina/smina
+# post-processing, so no optimized_*/ subfolders exist and only the
+# optimizer=="original" family is collected.
+
+work_dir: /home/manndo/master_dev
+
+# Legacy schema field; ignored under receptor_policy: prepared_per_pose.
+receptors_dir: posebusters_results/_benchmark_staging/receptors
+
+# Staging tree built by build_boxed308_staging.py: hard-linked poses and prepared
+# receptors, so nothing is copied and Dockings/Benchmark is never written to.
+# Hard links rather than symlinks because _resolve_autodock_receptor() resolves
+# the pose path before deriving the complex directory from it, and a symlink
+# would send that back to Dockings/Benchmark and fail the root check.
+docking_directories:
+  autodock: posebusters_results/_boxed308_staging/meeko
+
+config_mode: dock
+receptor_policy: prepared_per_pose
+require_validation_receptors: true
+
+# Single-engine run: the cohort is whatever the Meeko arm covers.
+require_all_methods: false
+require_complete_results: false
+expected_common_combinations: null
+
+# Provenance root for _resolve_autodock_receptor(), which keys on the receptor
+# stem carried in the pose filename, so each pose is validated against its own
+# arm's receptor and heavy-atom parity with the docking PDBQT is asserted first.
+# The campaign as delivered cannot satisfy that assertion: the cofactor/metal
+# HETATM block was injected into the receptor PDBQT after the PDB was written,
+# and the 151 complexes docked against a _meeko_retry1 receptor have no matching
+# PDB at all. build_boxed308_staging.py rebuilds every receptor PDB from its own
+# PDBQT and refuses to write one that does not pass the parity assertion.
+validation_receptor_directories:
+  autodock: posebusters_results/_boxed308_staging/meeko
+
+save_interval: 200
+overwrite: false
+num_workers: 14
+
+quiet: true
+limit_worker_threads: true
+worker_maxtasks: 200
+pose_timeout: 600
+stall_timeout: 1800
+max_restarts: 5
+monitor: false
+monitor_interval: 30
+
+output_base_dir: posebusters_results/boxed308_meeko_raw
+
+# Bond-order templates for PDBQTs without embedded Meeko SMILES.
+ligand_template_dirs:
+  - Data/PoseBuster Benchmark Set
+
+copy_proved_poses: false
+make_plots: false

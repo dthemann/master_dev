@@ -75,6 +75,22 @@ INTERACTION_TYPES = [
     "repulsion",
 ]
 
+# Sodium's element symbol collides with pandas' default missing-value tokens: it
+# is the literal string "NA". Reading pandamap_interactions.csv back with the
+# defaults parses those cells as NaN, and the resume path below writes the merged
+# frame straight back out as empty fields, so every resumed run erased sodium
+# from its own fingerprints — 275 metal-coordination rows on the run that exposed
+# this, with nothing recomputed to replace them. Read the frames that carry
+# lig_atom_element with the default token list switched off and only the empty
+# field treated as missing: "NA" survives the round trip, while a field PandaMap
+# genuinely could not fill still arrives as NaN rather than "".
+_CSV_NA_VALUES = [""]
+
+
+def read_pandamap_csv(path, **kwargs) -> pd.DataFrame:
+    """``read_csv`` that keeps element symbols literal (see ``_CSV_NA_VALUES``)."""
+    return pd.read_csv(path, keep_default_na=False, na_values=_CSV_NA_VALUES, **kwargs)
+
 
 # ──────────────────────────────────────────────────────────────────────────
 # Config
@@ -274,20 +290,29 @@ def classify_autodock(row) -> str | None:
 
 
 def autodock_label(row) -> str:
-    """Stable AutoDock method key, preserving the scoring base (Vina vs Vinardo)
-    and appending the optimizer: ``autodock`` | ``autodock_gnina`` |
-    ``autodock_vinardo`` | ``autodock_vinardo_gnina`` | …
+    """Stable AutoDock method key, preserving the run tree and appending the
+    optimizer: ``autodock`` | ``autodock_gnina`` | ``autodock_vinardo`` |
+    ``autodock_mgltools_exh128`` | ``autodock_mgltools_exh128_gnina`` | …
 
     Raw and optimized poses MUST be separate methods — they are different
     geometries with different ranking axes, so pooling them under one 'autodock'
     key would let raw rank-1 and optimized rank-1 collide in select_top_n.
+
+    The tree base is kept verbatim rather than folded to 'autodock'/'autodock_vinardo'.
+    Folding was safe while the only AutoDock trees were the Meeko Vina and Vinardo
+    pair, but the whole-protein campaign now also carries the ADFRsuite/MGLTools
+    exhaustiveness ladder (``autodock_mgltools[_exh18|_exh64|_exh92|_exh128]``), which
+    differs in ligand preparation and search effort. Folding those onto 'autodock'
+    silently pools poses from up to six independent docking runs under one label and
+    lets select_top_n mix them, and it makes every ladder arm unpinnable by
+    ``autodock_variant``. Trees that were already 'autodock' / 'autodock_vinardo' keep
+    exactly the keys they had, so published runs are unaffected.
     """
     base = str(row.get("docking_method") or row.get("method") or "autodock").strip().lower()
     for suf in _AUTODOCK_OPTIMIZER_SUFFIXES:
         if base.endswith(suf):
             base = base[: -len(suf)]
             break
-    base = "autodock_vinardo" if base.startswith("autodock_vinardo") else "autodock"
     o = classify_autodock(row)
     return f"{base}_{o}" if o else base
 
@@ -1134,12 +1159,12 @@ def main() -> None:
     inter_csv = cfg.output_dir / "pandamap_interactions.csv"
     prev_summary = prev_inter = None
     if summary_csv.exists() and not cfg.overwrite:
-        prev_summary = pd.read_csv(summary_csv)
+        prev_summary = read_pandamap_csv(summary_csv)
         done = set(prev_summary["pose_file"].astype(str)) if "pose_file" in prev_summary else set()
         before = len(selected)
         selected = [p for p in selected if p["pose_file"] not in done]
         if inter_csv.exists():
-            prev_inter = pd.read_csv(inter_csv)
+            prev_inter = read_pandamap_csv(inter_csv)
         print(f"Resume: {before - len(selected)} already done, {len(selected)} to do")
 
     summaries, inter_rows, errors = ([], [], [])

@@ -1,19 +1,19 @@
 # LaTeX thesis project
 
-This project converts the consistency-reviewed Word thesis into the supplied
-FH Technikum Wien `twbook` template.
-
-Build in the project directory with:
+The short thesis is the working version. Build it in this directory with:
 
 ```bash
-latexmk -pdf -interaction=nonstopmode -halt-on-error -file-line-error Thesis.tex
+latexmk -f -pdf -interaction=nonstopmode -file-line-error Thesis_short.tex
 ```
 
-The main document is `Thesis.tex`; the generated content is split into
-`body_main.tex` and `body_appendix.tex`. The 91 reviewed source records are in
-`Literatur.bib`. 89 are substantively used and printed in the thesis bibliography.
-Extracted figures are under `media/media/`.
+`Thesis_short.tex` is the main document. Content is split into
+`body_main_short.tex` and `body_appendix_short.tex`. Sources are in
+`Literatur.bib`, the template is `twbook.cls`, and figures are under
+`media/media/`. The current build is 142 pages.
 
-The earlier source-data review queries have been resolved in the current sources.
-Mixed figure/table numbering from the Word document is handled through automatic LaTeX numbering and references.
-The original Pandoc conversion is retained as `body_raw.tex` for auditability.
+`make_contact_sheets.py` tiles rendered pages from `tmp/pdf_final/pages` into
+contact sheets for visual QA. Rasterise the PDF into that directory first.
+
+The full-thesis build, its editing backups, the review reports and the stale
+page renders were retired on 2026-09-02 into `obsolete/`, which is gitignored.
+See `obsolete/MANIFEST.md` for the inventory and how to restore a file.

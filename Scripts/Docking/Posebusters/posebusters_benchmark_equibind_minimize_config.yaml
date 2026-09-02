@@ -1,0 +1,105 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# PoseBusters — EquiBind --minimize refinement arm
+#
+# WHY THIS FILE EXISTS
+# The published EquiBind arm was refined with gnina/smina in local-search mode
+# (--local_only) while the AutoDock Vina and DiffDock arms used energy
+# minimisation (--minimize). RQ2 compares how the three arms respond to
+# post-docking optimisation, so the operation should be matched. This config
+# busts the matched --minimize EquiBind arm produced by
+# Scripts/Docking/rerun_equibind_refine.py, leaving the published arm untouched.
+#
+# PREREQUISITE
+# Run Scripts/Docking/Posebusters/stage_equibind_minimize.py first. It links the
+# published _prep_ receptors into the minimize tree, derives each combo's
+# guided_results.json from the published manifest, and builds the flattened
+# staging farm this file points at. Without it the run collects zero poses.
+#
+# COMPARABILITY
+# Receptors are symlinks to the published _prep_ artifacts, so receptor_sha256
+# matches the published arm exactly. The staged directory names reproduce the
+# published naming, so pose_name joins directly against the published CSV.
+# Restrict any comparison to the published 303-complex cohort: this single-method
+# run intersects with nothing and yields 308, whereas the published EquiBind
+# slice was already intersected with autodock and diffdock.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+work_dir: /home/manndo/master_dev
+
+# Legacy schema field; ignored under receptor_policy: prepared_per_pose.
+receptors_dir: posebusters_results/_benchmark_staging/receptors
+
+# The method key MUST stay 'equibind_guided'. ROW_COLLECTORS / POSE_EXPANDERS are
+# keyed by exact method name with no bare 'equibind' entry, so a key such as
+# 'equibind_minimize' folds to base 'equibind', finds no collector and is silently
+# skipped. Keeping this key also makes docking_method match the published CSV,
+# which matters because Scripts/Analysis/method_filter.py does exact-string
+# matching across 14 scripts.
+docking_directories:
+  equibind_guided: posebusters_results/_equibind_minimize_staging/equibind
+
+config_mode: dock
+receptor_policy: prepared_per_pose
+require_validation_receptors: true
+
+# Single-method run: fail loudly rather than silently produce an empty table.
+require_all_methods: true
+require_complete_results: false
+expected_common_combinations: null
+optional_methods: []
+
+# _resolve_equibind_receptor resolves the staging symlink back to the real file
+# and requires it to sit under <root>/<protein>, so this must be the minimize
+# tree itself. Its _prep_ entries are symlinks to the published receptors, which
+# is how the receptors stay byte-identical without violating that root check.
+validation_receptor_directories:
+  equibind_guided: Dockings/Benchmark_Equibind_minimize
+
+# Bust only the two variants this re-run actually changed. The refRAW poses are
+# byte-identical copies of the published ones and were already busted, so
+# re-busting all 27,150 of them would burn roughly a third of the run to
+# reproduce rows that already exist.
+#
+# They are safe to reuse here, unlike in the Orai arms. This tree was built by
+# re-refining the committed __refRAW files in place, so pose file names are
+# preserved exactly and `pose_name` joins straight onto the published CSV. The
+# Orai arms needed a full pipeline replay, which permutes pose numbering and
+# makes such a join invalid -- see the note in the Orai configs.
+#
+# Staging fidelity is checked separately and cheaply by
+# posebusters_benchmark_equibind_minimize_validation_config.yaml, which busts all
+# three variants for a few complexes and compares its raw rows against the
+# published ones. That is the same end-to-end check at ~2 % of the cost.
+variant_filter:
+  equibind_guided: [smina, gnina]
+
+save_interval: 200
+overwrite: false
+num_workers: 32
+
+quiet: true
+limit_worker_threads: true
+worker_maxtasks: 200
+pose_timeout: 600
+stall_timeout: 1800
+max_restarts: 5
+monitor: true
+monitor_interval: 30
+
+# Separate output root: the published benchmark CSV shares one runtime signature
+# across all its rows, so writing into it would invalidate the entire table
+# rather than just the EquiBind slice.
+output_base_dir: posebusters_results/benchmark_equibind_minimize
+
+ligand_template_dirs:
+  - Data/PoseBuster Benchmark Set
+
+# num_workers raised to the full core count on request. The surviving
+# full-cohort logs peak at 3.73 poses/s with 32 workers, the best of the four,
+# but that run also recorded swap pressure (5.6 GB) and 'peak load 43/32', so
+# this run is monitored rather than left unattended.
+
+# Off: copy_proved_poses re-reads the whole CSV and copies tens of thousands of
+# SDFs, and plots are not needed for a two-arm contrast.
+copy_proved_poses: false
+make_plots: false

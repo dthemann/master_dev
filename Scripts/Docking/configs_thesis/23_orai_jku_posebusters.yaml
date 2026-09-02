@@ -1,0 +1,97 @@
+# ============================================================================
+# THESIS REPRODUCTION CONFIG - PoseBusters validity screen (Orai1 experimental panel)
+#
+#   Thesis section  : App. B "PoseBusters Validity Checks"
+#   Supports        : Table 5; Figures 8-10
+#   Dataset         : Orai1 experimental panel, 3 modulators x 4 receptor frames
+#   Driver          : Posebusters/run_posebusters.py -c <this>
+#   Writes          : posebusters_results/orai_jku
+#   Analysis tree   : posebusters_results/_orai_matched_root/orai_jku
+#
+#   Copied from     : Scripts/Docking/Posebusters/posebusters_orai_jku_config.yaml
+#   Deviations      : none. variant_filter {autodock: gnina, diffdock: smina,
+#                     equibind_guided: gnina} is load-bearing: raw ADFRsuite PDBQT has no
+#                     REMARK SMILES, so an unfiltered run falls back to Open Babel and
+#                     fails silently on roughly 63 per cent of poses.
+#
+#   Determinism     : bit-exact - deterministic post-processing of stored poses
+#
+#   This file is READ-ONLY to the pipeline. Thesis_Reproduction.ipynb loads it
+#   and never writes it back. Rationale in THESIS_REPRODUCTION.md.
+# ============================================================================
+# PoseBusters config — Orai receptors × JKU ligands
+# Validates docked poses produced by AutoDock Vina, DiffDock and EquiBind against
+# the four Orai1WT receptor variants (START-Fr0 + MD snapshots).
+#
+# The driving notebook cell stages the receptors and per-ligand SDF bond-order
+# templates. AutoDock, DiffDock and EquiBind poses are read straight from their
+# source trees.
+#
+# AutoDock is NOT staged. run_posebusters never globs optimised SDFs: it finds
+# them through the optimizer commit chain (optimization_log.csv, then a
+# <sdf>.provenance.json whose source_pose must resolve to the raw PDBQT). A flat
+# symlink farm breaks that chain, because the log lookup walks up from the
+# RESOLVED pose path and immediately leaves the staging root. So the directory
+# below points at the real tree, one level ABOVE docking/, which is where
+# run_autodock writes optimization_log.csv. Since the 2026-08-30 move to the ADFRsuite
+# arm the pose stems carry NO converter tag at all (Orai1WT-MDSnap-Fr400__<ligand>_...),
+# so they match the staged receptor names directly and run_posebusters._normalize_protein
+# has nothing to strip. The old "_meeko"/"_meeko_retry1" tags went with that tree.
+
+work_dir: /home/manndo/master_dev
+
+# Staged folder containing only the 4 Orai receptor PDBs (created by the
+# Master_Docking notebook cell that drives this run).
+receptors_dir: posebusters_results/_orai_jku_staging/receptors
+
+# ── Pose sources ─────────────────────────────────────────────────────────────
+# REPOINTED 2026-08-30. The project no longer reports results derived from
+# Meeko-prepared receptors OR ligands.
+#   * Dockings/vina_results/JKU_meeko is Meeko on BOTH sides.
+#   * Dockings/vina_results/JKU_mgl_tools is Meeko on the LIGAND side: 16/16 of its
+#     pose files carry REMARK SMILES. The "_mgl_tools" tag names only the RECEPTOR
+#     converter, so that tree is disqualified too.
+#   * Orai_JKU_MGLTools_exh128 is the only clean JKU arm (0/16 carry REMARK SMILES).
+# Root at mgl_tools/ so the optimiser log resolves on the second hop; rooting at
+# docking/ returns None and silently drops every gnina pose.
+docking_directories:
+  autodock:        Dockings/Orai_JKU_MGLTools_exh128/mgl_tools
+  diffdock:        Dockings/diffdock_results/pdbqt
+  # REPOINTED 2026-08-30 to the uff_minimize:false re-run. The superseded UFF-on tree
+  # is Dockings/equibind_results/pdbqt, whose poses carry a median longest bond of
+  # 4.12 A (78.8% over 1.9 A, worst 377 A) because the in-protein UFF relaxation
+  # stretched buried ligands apart. The re-run measures 1.53 A median, 1.6 A max, and
+  # none over 1.9 A. Both trees hold the same 16 combos and 480 poses under identical
+  # file names. See equibind_orai_jku_config.yaml:139.
+  equibind_guided: Dockings/equibind_results_uffoff/pdbqt
+
+# ── Variant selection ────────────────────────────────────────────────────────
+# AutoDock is gnina ONLY, and that is load-bearing rather than cosmetic.
+# SUPERSEDED 2026-08-30: this arm previously busted BOTH the raw Vina and the gnina
+# poses. That was possible while the source tree was Meeko-prepared; it is not possible
+# now. The raw variant would be collected as *_vina_out.pdbqt and handed to
+# _convert_pdbqt_to_sdf, which cannot rebuild ADFRsuite ligands (no REMARK SMILES) and
+# cannot resolve the prepared-ligand template in this tree layout. It would fall back to
+# Open Babel bond perception, which fails on ~63% of poses and fails SILENTLY: rows are
+# still emitted, they are just wrong.
+variant_filter:
+  autodock:        gnina
+  diffdock:        smina    # keep only smina-optimised DiffDock poses (drop original + gnina)
+  equibind_guided: gnina    # keep only gnina-refined EquiBind poses (drop raw + smina)
+
+config_mode: dock          # use receptor-aware "dock" PoseBusters profile
+output_base_dir: posebusters_results/orai_jku
+save_interval: 200
+overwrite: true            # MUST be true: the gnina poses are new rows for existing
+                           # complexes, so a resume run (overwrite:false) would keep the
+                           # stale raw-Vina-only CSV. Revert to false for incremental runs.
+num_workers: 30          # null -> all available CPU cores
+make_plots: true
+copy_proved_poses: true
+
+# Bond-order template SDFs for AutoDock PDBQT->SDF conversion. The staging dir
+# provides per-ligand symlinks named to match the AutoDock ligand label
+# (e.g. "2abp-nh2-OPT_vina.sdf"); the raw JKU SDF dir is a fallback.
+ligand_template_dirs:
+  - posebusters_results/_orai_jku_staging/ligand_templates
+  - Data/Ligands/JKU/pdbqt

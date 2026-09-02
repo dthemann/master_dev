@@ -1,0 +1,140 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# AutoDock Vina — Orai receptors × PoseBuster benchmark ligands
+# ADFRsuite ("MGLTools") RECEPTORS **and** LIGANDS · exhaustiveness 128 · gnina rescore
+#
+# This is the missing cell of the Orai × Benchmark matrix:
+#   Dockings/Orai_Benchmark          ADFRsuite receptor + MEEKO     ligand · Vina    · exh 32
+#   Dockings/Orai_Benchmark_Vinardo  ADFRsuite receptor + ADFRsuite ligand · Vinardo · exh 32
+#   THIS ARM                         ADFRsuite receptor + ADFRsuite ligand · Vina    · exh 128
+#
+# DRIVEN BY: Scripts/Docking/run_orai_mgltools_arm.py  (NOT the notebook, NOT run_autodock.py CLI)
+#   - the notebook cell re-prepares receptors into shared staging and would produce a THIRD
+#     nondeterministic Orai1WT-START-Fr0; the CLI main() prepares ligands with Meeko regardless
+#     of prep_tool. The driver calls run_autodock_vina() + optimize_autodock_results() ONLY,
+#     over pre-staged inputs, and never invokes any converter.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Inputs — PRE-STAGED, never re-prepared ───────────────────────────────────
+# Ligands: 308 ADFRsuite PDBQTs copied from Dockings/Orai_Benchmark/_staging (2026-08-06 prep).
+# Receptors: the four JUN-22 PDBQTs copied from Dockings/Orai_Benchmark_old/_staging — these are
+#   the set the published control docked against. Orai1WT-START-Fr0 is NOT reproducible
+#   (unguarded OpenMM minimisation; all-atom RMSD 0.394 Å vs the Aug-06 re-prep), so it must be
+#   copied, never regenerated. Verified sha256 6b3ab996af727c806ca481e0f1f5ca7b0fe923df8dddf48d002e930e468206e9
+receptors_dir: Dockings/Orai_Benchmark_MGLTools_exh128/_staging/receptors
+ligand_dirs:
+  - Dockings/Orai_Benchmark_MGLTools_exh128/_staging/ligands
+
+# Documentation only — the driver bypasses preparation entirely. prep_tool selects the RECEPTOR
+# converter and is never consulted for ligands (the ligand branch hardcodes Meeko).
+prep_tool: mgltools
+skip_pdb_validation: false
+process_postfixes: false
+repair_terminals: false
+
+# ── Output ───────────────────────────────────────────────────────────────────
+# NESTED one level under the arm root. This is load-bearing, not cosmetic:
+# run_posebusters.py:3318 locates the prepared ligand via pdbqt_path.parents[2], so poses must sit
+# at <ROOT>/<X>/docking/ for <ROOT>/_staging/ligands/pdbqt/ to resolve. Validated 2026-08-28:
+# nested -> RESOLVED, flat -> None.
+# Both dirs are NEW. Pose basenames and Vina log names encode only the scoring function, so
+# reusing the control's output_dir or log_dir would collide byte-for-byte.
+output_dir: Dockings/Orai_Benchmark_MGLTools_exh128/mgl_tools
+log_dir:    Dockings/Logs/orai_benchmark_mgltools_exh128_logs
+
+# ── Vina executable & scoring ────────────────────────────────────────────────
+vina_bin:         /home/manndo/AutoDock-Vina/build/linux/release/vina
+scoring_function: vina
+autogrid_bin:     /usr/local/bin/autogrid4
+
+# ── Batch docking ────────────────────────────────────────────────────────────
+batch_mode:    true
+batch_size:    50
+batch_timeout: 14400        # RAISED 4x vs the exh32 arm's 3600 — exhaustiveness 128 is ~4x the search
+
+# ── Search parameters ────────────────────────────────────────────────────────
+exhaustiveness:      128    # THE SCIENTIFIC DELTA vs the exh32 control
+num_modes:           10     # HELD at the control's value — do not raise, or rank-depth
+                            # comparisons against Dockings/Orai_Benchmark stop being like-for-like
+energy_range:        6     # RAISED from the Orai control's 3 on 2026-08-29. This MATCHES the
+                           # whole-protein Benchmark arms (which all use 6) but DIVERGES from the
+                           # Orai control Dockings/Orai_Benchmark, which docked at 3. Poses within
+                           # 6 kcal/mol of best are now retained, so this arm can return up to the
+                           # full num_modes=10 where the control was truncated earlier. Any
+                           # rank-depth comparison against the control must account for it.
+seed:                42
+timeout_per_complex: 2400   # RAISED 4x vs 600
+
+# ── Parallelism ──────────────────────────────────────────────────────────────
+max_workers:     1          # batch mode runs receptors sequentially
+cpus_per_worker: 32
+
+# ── Overwrite / rerun control ────────────────────────────────────────────────
+# overwrite_existing MUST stay false AND output_dir must be new. If this arm is ever pointed at a
+# tree that already holds poses, every combo is marked "skipped" — and skipped results still enter
+# the optimiser, which would then gnina-rescore the OLD poses via mk_export, silently.
+overwrite_existing:  false
+overwrite_poses:     false
+overwrite_optimization: false
+overwrite_error_log: false
+failed_job_policy:   retry
+retain_hetatm_residues: true
+
+# ── Post-dock gnina rescore (Variant A: minimise + CNN rescore) ──────────────
+optimization:        gnina
+optimize_search:     minimize
+optimize_rank_by:    cnn_affinity   # CHANGED from the exh32 Orai config's minimized_affinity.
+                                    # The published control's gnina layer ranked by cnn_affinity
+                                    # (recovered from its rescore status JSON + per-pose provenance);
+                                    # leaving minimized_affinity yields a non-rank-comparable arm.
+optimize_scoring:    default
+optimize_autobox_add: 4.0
+optimize_top_n:      0              # 0 = all poses (10 per complex)
+optimize_cpu:        4              # 10 workers x 4 threads = 40 on 32 cores; do NOT copy the
+                                    # Benchmark's 8
+optimize_seed:       42
+optimize_timeout:    300            # measured per-pose max on this workload is 4.24 s (~70x headroom)
+
+# ── Parallel optimiser ───────────────────────────────────────────────────────
+# Parallelism is WITHIN one complex, so num_modes=10 caps useful workers at 10.
+# gpu_max_concurrent must be >= optimize_workers or preflight raises ValueError.
+optimize_workers:    10
+gpu_max_concurrent:  10
+# CAUTION: with gpu_max_concurrent > 1 the code locks <lock>.slot0..slotN and NEVER the base path,
+# while Uni-Dock2 locks the base path — so gnina/Uni-Dock2 mutual exclusion is OFF for this run.
+# Do not launch Uni-Dock2 concurrently.
+gnina_use_gpu:       true           # CHANGED from the exh32 Orai config's false, which was always
+                                    # overridden by the bespoke driver and never produced a pose
+gpu_lock_file:       /tmp/master_docking_gpu0.lock   # MANDATORY when gnina_use_gpu is true —
+                                                     # preflight raises without it
+gnina_gpu_preflight: true
+gnina_cnn_scoring:   rescore
+gnina_cnn_model:     crossdock_default2018_ensemble
+gnina_cnn_model_file: ''
+smina_executable:    ''
+gnina_executable:    /home/manndo/docking_tools/gnina
+gnina_lib_dirs:      []
+
+# ── Authoritative-template pose reconstruction (MANDATORY for ADFRsuite ligands) ─
+# ADFRsuite ligand PDBQTs carry no REMARK SMILES, so Meeko mk_export cannot rebuild them and the
+# optimiser would fail 100% of poses. _reconstruct_template_pose_sdf transfers docked coordinates
+# onto an authoritative RDKit molecule via an atom-serial map (converter id "rdkit_template_map").
+# _resolve_mgl_pose_template is CONFIG-DRIVEN with no path-depth assumption, unlike the
+# PoseBusters resolver.
+# ALL-OR-NOTHING: one unresolvable template aborts the whole optimisation before any pose is
+# minimised. Preflight verified 2026-08-28: 308/308 resolve in 1.7 s, and a real ADFRsuite pose
+# reconstructed 10/10 models via rdkit_template_map with the correct canonical SMILES.
+optimize_require_template_reconstruction: true
+optimize_ligand_template_root: Data/PoseBuster Benchmark Set   # <root>/<ID>/<ID>_ligand_start_conf.sdf
+optimize_prepared_ligand_pdbqt_dir: Dockings/Orai_Benchmark_MGLTools_exh128/_staging/ligands/pdbqt
+
+# mk_export stays required-but-waived: the preflight drops the requirement once template
+# reconstruction is required. It is still resolved so that any pose which DOES carry REMARK SMILES
+# takes the exact control-parity path — that must never happen in this arm, and a single
+# converter=mk_export row in optimization_log.csv means the wrong poses were optimised.
+mk_export_executable: /home/manndo/anaconda3/envs/vina/bin/mk_export.py
+optimize_require_mk_export: true
+obabel_executable: ''       # '' → PATH. Never reached: template reconstruction precedes it.
+
+# ── Search box ───────────────────────────────────────────────────────────────
+box_mode: whole_protein     # the four *.box.txt files ship beside the staged receptor PDBQTs
+box_padding: 10.0           # ignored in whole_protein mode

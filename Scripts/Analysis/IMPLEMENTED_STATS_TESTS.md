@@ -187,6 +187,53 @@ only in the JSON `unit` field; the TM per-unit companion above is the inference-
 
 ---
 
+## N. Exhaustiveness marginal return — `autodock_exhaustiveness_returns.py` (Benchmark, RAW AutoDock only)
+
+Search-effort ladder exh18 / exh32 / exh64 / exh92 / exh128 on 303 paired complexes, MGLTools-lig
+inputs verified sha256-identical across arms. Cost is measured Vina wall time over the same
+cohort; core-seconds are diagnostic only and feed no statistic. All four gates are carried
+(RMSD≤2 Å, PoseBusters-valid, Kabsch<1 Å, and the triple), at rank-1 and oracle depth.
+
+| Graph / table | Test added | What it implies |
+|---|---|---|
+| **exh_yield_vs_cost** (both panels) | Wilson CI per arm×gate×depth; Cochran's Q omnibus across the five rungs per gate×depth cell | Yield rises with search effort on placement but the curve flattens against cost: oracle triple-gate 32.3 → 54.1 % across a 2.2× wall-time range. |
+| **exh_marginal_return** | Paired complex-level bootstrap (5,000 resamples, numerator **and** denominator recomputed on the same resample) on complexes-recovered-per-wall-hour, per adjacent rung | Oracle triple gate: **+71.6 → +35.9 → +5.9 complexes/h** across exh18→32→64→92. The return falls ~12-fold along the ladder. |
+| **exh_marginal_return** (diminishing-returns contrast) | Bootstrap CI on (first segment's rate − last segment's rate), both segments on the **same** resamples; the shared middle rung makes it conservative | Diminishing returns **confirmed** in every headline cell: oracle triple **+65.6 cplx/h, 95 % CI [+32.1, +137.2]**. Pre-registered confirmatory cell = triple gate at oracle depth. |
+| **exh_depth_sweep** | McNemar exact + Newcombe CI for every rung at every depth 1…30 | The verdict on a rung is depth-dependent: exh64→exh92 is **−4 complexes at rank-1** but **+10 at oracle**, first positive at depth 2 and significant from depth 3. Extra sampling finds poses Vina's scorer will not promote. |
+| **exh_yield_contrasts** | Adjacent-rung McNemar; **Family A** (headline gates × headline depths) Holm-corrected, **Family B** (all other cells) BH-FDR, degenerate cells excluded from both before correction | `mcnemar_exact` returns p=1.0 (not NaN) on zero discordant pairs, so leaving PB-valid cells in would inflate the family size and deflate every real contrast. |
+| **exh_saturation_diagnostics** | Per gate×**depth** cell: observable range, discordance, design-fixed MDE from the largest discordance on the ladder, Cochran's Q, and TOST at 5 pp / 2.5 pp for flat cells | PB-valid is **DEGENERATE at oracle** (0 discordant, bounded ±0.89 pp) and **SATURATED at rank-1** (bounded [−1.46, +0.57] pp) — reported as equivalence bounds, never as "no effect" from a null test. Kabsch is INFORMATIVE across the sweep but no adjacent step survives correction. |
+
+**The rescored strand (added 2026-08-28).** Where a rung also has a gnina-rescored counterpart
+(`autodock_mgltools_gnina`, `..._exh64_gnina`, `..._exh128_gnina`) it is carried as a second
+**strand at the same exhaustiveness**, never as a further rung — it shares the raw arm's poses,
+so it can only reorder them. Every cost and marginal-return number stays raw-only.
+
+| Graph / table | Test added | What it implies |
+|---|---|---|
+| **exh_raw_vs_rescored** | McNemar exact + Newcombe CI per rung × gate × depth, Holm over the headline cells (degenerate cells excluded first) | **Re-ranking lifts rank-1; more search does not.** At rank-1, raw→gnina is **+15/+18/+18** complexes at exh32/64/128 (≤2 Å), but exh64+gnina and exh128+gnina land on **the same 113** — doubling the pool beneath the re-ranker buys nothing (0.00 pp, p=1.00). The ceiling is the scoring function, and gnina moves it from ~95 to ~113. |
+| same, oracle depth | same | **Confirms the mechanism.** At oracle the strands are near-identical (Δ = +1/+1/0 on ≤2 Å) because re-ranking cannot add hits to a fixed pool; the residual −4 on exh128's triple gate is the optimiser's minimisation nudging geometry, not ranking. |
+| **Cost of the pass** | reported in COMPUTE hours (8.27 / 10.14 / 10.47 h), never wall | `optimize_workers` differed (1 vs 16) across passes, so optimiser wall differs by >10× for reasons unrelated to the method. Compute is worker-invariant. It is **never** added to the search hours — those are 32-thread CPU wall, these are single-process GPU time. |
+
+None of the rank-1 raw→gnina contrasts survives Holm across the six headline cells (best raw
+p=0.022 → Holm 0.267), so the direction is solid and the magnitudes are indicative.
+
+**Deliberately refused, and stated in the output:** saturating/Michaelis-Menten/power-law fits
+and any ceiling or cost-to-90 %-of-ceiling (not estimable from this few rungs); Kneedle or any
+curvature elbow (returns the middle rung by construction); Page's L (insensitive to a reversal at
+the top of the ladder — it adds nothing over Cochran's Q); `jonckheere` (independent-groups test
+on a paired design); `observed_power` (a deterministic function of the p-value); a data-driven
+per-contrast MDE (circular — it certifies the design as most sensitive where it is blindest);
+core-second marginal costs (non-monotone on this ladder, first step negative). Cochran-Armitage is
+available behind `--trend-supplement`, labelled conservative, and excluded from every family.
+
+**A ratio is emitted only when its denominator cannot change sign.** Marginal return refuses when
+the measured cost delta is not positive (exh92→exh128 is −0.110 wall-h: the arms are single
+unreplicated batches and the between-day machine spread, 18.7 pp, exceeds the per-rung cost step);
+the reciprocal additionally refuses when the bootstrap yield delta crosses zero (every rank-1
+exh64→exh92 cell). Refused cells carry a typed reason, never a number.
+
+---
+
 ### Still descriptive (no test — by design)
 3-D scene figures, example-cluster panels, per-pair count heatmaps (validity 02/02b), failure
 waterfalls (validity 09; pose-comparison 17-series), the ~44 deferred pose-comparison figures,

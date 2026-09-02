@@ -124,6 +124,7 @@ import pandas as pd
 _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
+import method_filter as mf  # noqa: E402  (shared single-point method exclusion)
 _PROJECT_ROOT = _HERE.parents[1]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
@@ -312,14 +313,39 @@ DATASET_DEFAULTS = {
 }
 
 
+# Every arg whose default lives in DATASET_DEFAULTS rather than in the parser. Kept in one
+# place because _apply_dataset_defaults fills it and _clone_dataset_args clears it: two
+# hand-maintained copies of this tuple would drift, and a key present in the clear list but
+# missing from the fill list leaves a clone with a None path.
+PER_DATASET_ARGS = ("per_pose_csv", "autodock_dir", "unidock_dir", "unidock2_dir",
+                    "diffdock_dir", "equibind_dir",
+                    "out_dir", "ids_file", "autodock_refine", "diffdock_refine", "eq_refine")
+
+# Where _record_explicit_dataset_args stashes its snapshot on the args namespace.
+_EXPLICIT_KEYS_ATTR = "_explicit_dataset_args"
+_EXPLICIT_DS_ATTR = "_explicit_dataset"
+
+
 def _apply_dataset_defaults(args) -> None:
     """Fill any dataset-specific arg the user left unset (None) from DATASET_DEFAULTS."""
     d = DATASET_DEFAULTS[args.dataset]
-    for k in ("per_pose_csv", "autodock_dir", "unidock_dir", "unidock2_dir",
-              "diffdock_dir", "equibind_dir",
-              "out_dir", "ids_file", "autodock_refine", "diffdock_refine", "eq_refine"):
+    for k in PER_DATASET_ARGS:
         if getattr(args, k, None) is None:
             setattr(args, k, d[k])
+
+
+def _record_explicit_dataset_args(args) -> None:
+    """Snapshot which per-dataset flags the user actually typed, and for which campaign.
+
+    MUST run before _apply_dataset_defaults. These args all parse to None so the defaults
+    can be filled per --dataset; once filled, an explicitly passed path is indistinguishable
+    from a dataset default, and _clone_dataset_args can no longer tell which of its resets
+    would be discarding a user instruction. An empty string counts as explicit — the
+    ``--unidock-dir ""`` idiom that suppresses an engine is falsy, not unset."""
+    setattr(args, _EXPLICIT_DS_ATTR, args.dataset)
+    setattr(args, _EXPLICIT_KEYS_ATTR,
+            frozenset(k for k in PER_DATASET_ARGS + ("autodock_method",)
+                      if getattr(args, k, None) is not None))
 
 # ── Orai complex-id normalisation ─────────────────────────────────────────────
 # The Orai per-pose CSV keys a complex by (frame, ligand); the aggregated timing logs
@@ -399,6 +425,7 @@ def _autodock_effort(
     docking_cpu: int,
     optimizer_cpu: int,
     gnina_gpu: bool = False,
+    optimizer_workers: Optional[int] = None,
 ) -> Optional[tuple]:
     """Return ``(wall_s, gpu_s, cpu_core_s)`` for an AutoDock variant."""
     dock = _autodock_time(cid, root, prep)
@@ -410,9 +437,15 @@ def _autodock_effort(
     opt = _autodock_opt_time(cid, root, prep, refine)
     if opt is None:
         return None
+    # Σ per-pose optimizer elapsed IS the optimizer's wall clock only while the poses of a
+    # complex were minimised one at a time. Arms run with optimize_workers > 1 overlap those
+    # intervals, so the sum becomes compute time and the divisor recovers an approximate wall
+    # clock. Resource-seconds are deliberately left un-divided: sixteen concurrent gnina calls
+    # still bill sixteen calls' worth of GPU and CPU cores.
+    opt_wall = opt / max(int(optimizer_workers), 1) if optimizer_workers else opt
     if refine in _AUTODOCK_GNINA_REFINERS and gnina_gpu:
-        return dock + opt, opt, dock_cpu_s
-    return dock + opt, 0.0, dock_cpu_s + opt * max(int(optimizer_cpu), 1)
+        return dock + opt_wall, opt, dock_cpu_s
+    return dock + opt_wall, 0.0, dock_cpu_s + opt * max(int(optimizer_cpu), 1)
 
 
 def _json_dict(path: Path) -> Optional[dict]:
@@ -990,6 +1023,11 @@ def _per_pose_methods(args) -> Dict[str, str]:
     selected variant (EquiBind mode/refine, DiffDock refine)."""
     ad_refine = getattr(args, "autodock_refine", "raw") or "raw"
     ad = "autodock" if ad_refine == "raw" else f"autodock_{ad_refine}"
+    # The derivation above only ever spells the four Meeko labels, so the ADFRsuite
+    # ladder (autodock_mgltools_exh128_gnina and its rungs) is unreachable through
+    # --autodock-refine alone: --autodock-prep swaps the directory segment, not the
+    # per-pose method key. An explicit label overrides the derivation.
+    ad = getattr(args, "autodock_method", None) or ad
     dd = "diffdock" if args.diffdock_refine == "raw" else f"diffdock_{args.diffdock_refine}"
     return {
         "autodock": ad,
@@ -1156,6 +1194,7 @@ def _collect_rows_benchmark(args, counts) -> tuple:
                     getattr(args, "autodock_refine", "raw"), args.autodock_cpu,
                     getattr(args, "autodock_opt_cpu", 1),
                     getattr(args, "autodock_gnina_gpu", False),
+                    getattr(args, "autodock_optimizer_workers", None),
                 )
                 if effort is not None:
                     wall, gpu_s, cpu_core_s = effort
@@ -1281,6 +1320,11 @@ def build_table(args) -> tuple:
             "pipeline_summary.json — clamp_variant is None for clamp-off runs, so leave "
             "--eq-clamp unset (do NOT pass clampOFF).")
     pc = pd.DataFrame(rows)
+    # Inside build_table so BOTH call sites are covered — main() and the
+    # cross-dataset path, which re-enters with a cloned namespace. Note the
+    # method column here holds engine SLOT keys (METHODS), not per-pose variant
+    # keys, so only whole engines can be dropped at this level.
+    pc = mf.apply_method_filter(pc, "method", args, label="docking-effort")
 
     # Compare methods on the COMMON set of complexes that have usable timing for
     # ALL methods, so total effort / pose counts / validity are like-for-like
@@ -1348,9 +1392,57 @@ def build_table(args) -> tuple:
 
 _MIN_PAIRED = 3          # need at least this many paired complexes for a real test
 
+# ── cost basis ──────────────────────────────────────────────────────────────
+# Two ways to charge a pipeline for the time it spent, selected by --basis.
+#
+#   elapsed  wall_s as each reader built it. This is NOT one quantity across the
+#            three arms: AutoDock's is vina elapsed plus its gnina sum (divided by
+#            --autodock-optimizer-workers when that flag is given), DiffDock's is a
+#            measured elapsed time, and EquiBind's is best-config compute divided by
+#            the pipeline's own n_parallel_workers. Historical default; every
+#            committed effort directory reproduces byte-for-byte under it.
+#
+#   charged  cpu_core_s / cpu_threads + gpu_s, applied identically to every arm.
+#            Device occupancy: a processor stage that saturates all cpu_threads is
+#            charged at its elapsed-equivalent, a GPU stage at its device-occupancy
+#            time, and consecutive stages sum. This is a time, not a resource-second,
+#            so it does not violate the "CPU-core-s and GPU-s are never summed" rule
+#            that governs the resource panels.
+#
+# The charged numerator reads only cpu_core_s and gpu_s, and neither is ever divided
+# by --autodock-optimizer-workers (see _autodock_effort). The charged basis is
+# therefore invariant to that flag, while the elapsed basis is not.
+COST_BASES = ("elapsed", "charged")
+DEFAULT_COST_BASIS = "elapsed"
+DEFAULT_COST_CPU_THREADS = 32
+
+
+def _cost_numerator(m: pd.DataFrame, basis: str = DEFAULT_COST_BASIS,
+                    cpu_threads: int = DEFAULT_COST_CPU_THREADS) -> np.ndarray:
+    """Per-complex cost numerator in seconds for the rows of one method.
+
+    ``elapsed`` returns wall_s untouched, so the default path is bit-identical to the
+    pre-basis code. ``charged`` returns cpu_core_s / cpu_threads + gpu_s.
+    """
+    if basis == "charged":
+        thr = max(int(cpu_threads), 1)
+        cpu = pd.to_numeric(m["cpu_core_s"], errors="coerce").to_numpy(float)
+        gpu = pd.to_numeric(m["gpu_s"], errors="coerce").to_numpy(float)
+        return np.nan_to_num(cpu, nan=0.0) / thr + np.nan_to_num(gpu, nan=0.0)
+    if basis != "elapsed":
+        raise ValueError(f"unknown cost basis {basis!r}; expected one of {COST_BASES}")
+    return m["wall_s"].to_numpy(float)
+
+
+def _basis_label(basis: str) -> str:
+    """Axis-label fragment naming the currency, for figures and sidecar units."""
+    return ("Charged device-occupancy seconds" if basis == "charged"
+            else "Wall-clock seconds")
+
 
 def compute_effort_stats(pc: pd.DataFrame, summ: pd.DataFrame, meta: dict,
-                         seed: int = 0) -> dict:
+                         seed: int = 0, basis: str = DEFAULT_COST_BASIS,
+                         cpu_threads: int = DEFAULT_COST_CPU_THREADS) -> dict:
     """Paired stats over the COMMON timed set (one value per complex per method).
 
     All methods dock the SAME complexes, so ``pc`` (already restricted to the
@@ -1363,10 +1455,15 @@ def compute_effort_stats(pc: pd.DataFrame, summ: pd.DataFrame, meta: dict,
       unit, common_n, wall_distribution{omnibus, pairwise, medians, median_ratios},
       validity{omnibus, pairwise, rates_paired, rates_pooled}, notes[].
     """
+    _basis_unit = ("per-complex charged device-occupancy seconds "
+                   f"(cpu_core_s / {int(cpu_threads)} + gpu_s)" if basis == "charged"
+                   else "per-complex wall-clock")
     out = {
-        "unit": "per-complex wall-clock / per-complex 'produced >=1 pb_valid pose' "
+        "unit": f"{_basis_unit} / per-complex 'produced >=1 pb_valid pose' "
                 f"boolean; paired across methods on the common timed set ({DATASET_LABEL}). "
                 "Pooled per-pose validity rates are shown descriptively with Wilson CIs.",
+        "cost_basis": basis,
+        "cpu_threads": int(cpu_threads),
         "common_n": int(meta.get("common_n", 0)),
         "min_paired": _MIN_PAIRED,
         "notes": [],
@@ -1383,7 +1480,8 @@ def compute_effort_stats(pc: pd.DataFrame, summ: pd.DataFrame, meta: dict,
 
     # ── wall-clock distribution: Friedman + Wilcoxon/Holm + median-ratio CIs ──
     try:
-        wall = pc.pivot_table(index="cid", columns="method", values="wall_s")
+        _cost = pc.assign(_cost_s=_cost_numerator(pc, basis, cpu_threads))
+        wall = _cost.pivot_table(index="cid", columns="method", values="_cost_s")
         wall = wall[[k for k in order if k in wall.columns]].dropna()
         n_pair = int(len(wall))
         wd = {"n_paired": n_pair}
@@ -1468,7 +1566,9 @@ def _jsonable(o):
 
 
 def compute_effort_by_quality_stats(pc: pd.DataFrame, seed: int = 0,
-                                    endpoint: Optional[tuple] = None) -> dict:
+                                    endpoint: Optional[tuple] = None,
+                                    basis: str = DEFAULT_COST_BASIS,
+                                    cpu_threads: int = DEFAULT_COST_CPU_THREADS) -> dict:
     """Paired cross-tool stats on the amortised docking cost per quality tier.
 
     For each nested tier the per-complex cost is wall_s(complex) / (poses reaching the
@@ -1478,11 +1578,16 @@ def compute_effort_by_quality_stats(pc: pd.DataFrame, seed: int = 0,
     median/IQR over each tool's OWN qualifying complexes (what the boxes show). Degrades
     to descriptive-only when stats_utils is missing or too few complexes are paired.
     """
-    out = {"unit": "per-complex docking wall-clock seconds amortised over the poses "
-                   "reaching each quality tier (wall_s / poses-in-tier); paired across "
+    _num = (f"charged device-occupancy seconds (cpu_core_s / {int(cpu_threads)} + gpu_s)"
+            if basis == "charged" else "docking wall-clock seconds")
+    _expr = (f"(cpu_core_s / {int(cpu_threads)} + gpu_s) / poses-in-tier"
+             if basis == "charged" else "wall_s / poses-in-tier")
+    out = {"unit": f"per-complex {_num} amortised over the poses "
+                   f"reaching each quality tier ({_expr}); paired across "
                    f"tools on the common timed set ({DATASET_LABEL}). Descriptive per-tool "
                    "median/IQR are over each tool's own qualifying complexes; the paired "
                    "tests use only complexes every tool populates at that tier.",
+           "cost_basis": basis, "cpu_threads": int(cpu_threads),
            "min_paired": _MIN_PAIRED, "tiers": {}, "notes": []}
     # Self-document which per-pose endpoint the near2 / form1 tiers were scored on, so a
     # reader can tell at a glance whether this cost view matches the headline accuracy view.
@@ -1500,11 +1605,15 @@ def compute_effort_by_quality_stats(pc: pd.DataFrame, seed: int = 0,
     pretty = {k: METHODS[k][0] for k in order}
 
     def _tool_cost(k, tcol):
-        """Per-complex cost Series (wall_s / poses-in-tier) for tool k, count>0 only."""
+        """Per-complex cost Series (cost numerator / poses-in-tier), count>0 only.
+
+        Numerator is wall_s under the elapsed basis and cpu_core_s/threads + gpu_s
+        under the charged one; see _cost_numerator.
+        """
         m = pc[pc["method"] == k]
         cnt = m[tcol].to_numpy(float)
         keep = cnt > 0
-        return pd.Series(m["wall_s"].to_numpy(float)[keep] / cnt[keep],
+        return pd.Series(_cost_numerator(m, basis, cpu_threads)[keep] / cnt[keep],
                          index=m["cid"].to_numpy()[keep])
 
     for tkey, tcol, _lab, _c in QUALITY_TIERS:
@@ -1965,9 +2074,13 @@ def _fmt_secs(v):
     return f"{v:.2f}"
 
 
-def make_effort_by_quality_figure(pc, out_dir, stats=None):
-    """Box-and-whiskers of docking effort (wall-clock seconds) per pose reaching each
-    quality tier, per tool.
+def make_effort_by_quality_figure(pc, out_dir, stats=None,
+                                  basis=DEFAULT_COST_BASIS,
+                                  cpu_threads=DEFAULT_COST_CPU_THREADS):
+    """Box-and-whiskers of docking effort per pose reaching each quality tier, per tool.
+
+    The cost numerator follows --basis: measured wall_s (elapsed) or
+    cpu_core_s / cpu_threads + gpu_s (charged device occupancy).
 
     For every complex the tool's docking wall-clock is amortised over the poses that
     reach a tier (wall_s / poses-in-tier); each box is the distribution of that
@@ -1994,11 +2107,11 @@ def make_effort_by_quality_figure(pc, out_dir, stats=None):
     x = np.arange(len(order), dtype=float)
 
     def _costs(k, tcol):
-        """Per-complex cost array (wall_s / poses-in-tier) for tool k, count>0 only."""
+        """Per-complex cost array (cost numerator / poses-in-tier), count>0 only."""
         m = pc[pc["method"] == k]
         cnt = m[tcol].to_numpy(float)
         keep = cnt > 0
-        return m["wall_s"].to_numpy(float)[keep] / cnt[keep]
+        return _cost_numerator(m, basis, cpu_threads)[keep] / cnt[keep]
 
     # ── combined: grouped by tool, one box per tier ──────────────────────────
     # colour = tool (hue); quality tier = lightness ramp of that hue (light=loose→dark=strict)
@@ -2024,7 +2137,10 @@ def make_effort_by_quality_figure(pc, out_dir, stats=None):
     ax.set_yscale("log")
     ax.set_xticks(x); ax.set_xticklabels(names, fontsize=10)
     ax.set_xlim(-0.7, len(order) - 0.3)
-    ax.set_ylabel("Docking wall-clock seconds per pose reaching the tier (log scale)")
+    _combo_y = ("Charged device-occupancy seconds per pose reaching the tier (log scale)"
+                if basis == "charged"
+                else "Docking wall-clock seconds per pose reaching the tier (log scale)")
+    ax.set_ylabel(_combo_y)
     ax.grid(axis="y", which="both", alpha=0.2)
     trans = ax.get_xaxis_transform()
     for posx, med, nn in med_labels:
@@ -2037,12 +2153,22 @@ def make_effort_by_quality_figure(pc, out_dir, stats=None):
     # neutral-grey ramp shows the tier ordinal (hue itself = tool, read from the x-axis)
     handles = [Patch(facecolor=_tint("#3a3a3a", tint_fracs[j]), label=lab)
                for j, (_tk, _tc, lab, _c) in enumerate(QUALITY_TIERS)]
-    ax.set_title("Docking effort per pose by quality tier — wall-clock seconds to obtain "
-                 f"one pose of increasing quality, per tool ({DATASET_LABEL})\n"
-                 "per complex: docking wall-clock ÷ poses reaching the tier; box = spread "
-                 "over complexes yielding ≥1 such pose (n below). AutoDock = CPU "
-                 "(multi-thread), DiffDock/EquiBind = single GPU — comparable as elapsed "
-                 "time, not identical-hardware work.", fontsize=10, pad=46)
+    if basis == "charged":
+        _combo_title = (
+            "Docking effort per pose by quality tier — charged device-occupancy seconds "
+            f"to obtain one pose of increasing quality, per tool ({DATASET_LABEL})\n"
+            f"per complex: (CPU-core-s ÷ {int(cpu_threads)} + GPU-s) ÷ poses reaching the "
+            "tier; box = spread over complexes yielding ≥1 such pose (n below). One basis "
+            "for every arm, so the three columns are directly comparable.")
+    else:
+        _combo_title = (
+            "Docking effort per pose by quality tier — wall-clock seconds to obtain "
+            f"one pose of increasing quality, per tool ({DATASET_LABEL})\n"
+            "per complex: docking wall-clock ÷ poses reaching the tier; box = spread "
+            "over complexes yielding ≥1 such pose (n below). AutoDock = CPU "
+            "(multi-thread), DiffDock/EquiBind = single GPU — comparable as elapsed "
+            "time, not identical-hardware work.")
+    ax.set_title(_combo_title, fontsize=10, pad=46)
     ax.legend(handles=handles, title="quality tier — shade light→dark  (hue = tool)",
               fontsize=8, title_fontsize=8, loc="lower center", bbox_to_anchor=(0.5, 1.0),
               ncol=len(QUALITY_TIERS), framealpha=0.9)
@@ -2068,7 +2194,7 @@ def make_effort_by_quality_figure(pc, out_dir, stats=None):
             a.set_yscale("log")
             a.set_xticks(x); a.set_xticklabels(names, rotation=15, ha="right", fontsize=9)
             a.set_xlim(-0.6, len(order) - 0.4)
-            a.set_ylabel("Wall-clock seconds per qualifying pose (log)")
+            a.set_ylabel(f"{_basis_label(basis)} per qualifying pose (log)")
             a.grid(axis="y", which="both", alpha=0.2)
             tr = a.get_xaxis_transform()
             for i, d in drawn:
@@ -2078,6 +2204,11 @@ def make_effort_by_quality_figure(pc, out_dir, stats=None):
                        fontsize=7, color="0.4")
             ts = tier_stats.get(tkey, {}) or {}
             title = f"Docking effort per pose — {lab}"
+            if basis == "charged":
+                # Name the currency on the panel itself. Under the elapsed basis the
+                # title is left exactly as it was, so committed outputs reproduce.
+                title += (f"\ncharged device occupancy: CPU-core-s / {int(cpu_threads)}"
+                          " + GPU-s, one basis for every arm")
             note = _omnibus_note(ts.get("omnibus"), "friedman")
             if note:
                 title += "\n" + note + "  [paired Friedman; Wilcoxon/Holm]"
@@ -2150,13 +2281,32 @@ def _clone_dataset_args(base, dataset: str):
     """A fresh args Namespace for one dataset: keep the user's shared flags, but reset the
     per-dataset path/refiner fields to their DATASET_DEFAULTS so each campaign reads its own
     logs. The Orai EquiBind run used gnina (its smina variant has no timed poses), so force
-    the EquiBind refiner to gnina there — matching the benchmark default and the actual run."""
+    the EquiBind refiner to gnina there — matching the benchmark default and the actual run.
+
+    The reset is scoped to the campaign the user was NOT addressing. A blanket reset silently
+    discarded the --autodock-dir / --per-pose-csv / --autodock-method the caller typed for the
+    benchmark, so the cross-dataset figures costed the retired crystal-boxed Meeko campaign
+    (7,337 poses / 1.19 h) while the very same invocation's effort_summary.csv reported the
+    whole-protein exh128+gnina arm (8,976 poses / 5.37 h) — two AutoDock campaigns, one label,
+    eleven seconds apart. Flags typed for THIS dataset survive; the other campaign still gets
+    its own defaults, so an Orai clone can never inherit a benchmark-only path or method."""
     a = argparse.Namespace(**vars(base))
     a.dataset = dataset
-    for k in ("per_pose_csv", "autodock_dir", "unidock_dir", "unidock2_dir",
-              "diffdock_dir", "equibind_dir",
-              "out_dir", "ids_file", "autodock_refine", "diffdock_refine", "eq_refine"):
-        setattr(a, k, None)
+    # out_dir is deliberately never kept: it is an output location, not a data source, and
+    # a clone only ever reads. Keeping it would aim a clone at the primary run's directory.
+    keep = frozenset()
+    if getattr(base, _EXPLICIT_DS_ATTR, None) == dataset:
+        keep = frozenset(getattr(base, _EXPLICIT_KEYS_ATTR, ())) - {"out_dir"}
+    for k in PER_DATASET_ARGS:
+        if k not in keep:
+            setattr(a, k, None)
+    # Not in the loop above because DATASET_DEFAULTS carries no such key: it is cleared
+    # outright rather than refilled. The Orai per-pose CSV only ever spells docking_method
+    # 'autodock', so a benchmark-only label inherited from the base args would match nothing
+    # there and AutoDock would vanish from the batch / individual-vs-batch figures without a
+    # warning. That is exactly the case `keep` excludes it from.
+    if "autodock_method" not in keep:
+        a.autodock_method = None
     _apply_dataset_defaults(a)
     if dataset == "orai_benchmark":
         a.eq_refine = "gnina"
@@ -2529,6 +2679,26 @@ def main(argv=None) -> int:
     # an explicit flag still overrides. (autodock-prep/-cpu, eq-mode/-clamp, gnina-gpu flags are
     # shared across datasets, so they keep concrete defaults.)
     ap.add_argument("--per-pose-csv", default=None)
+    ap.add_argument("--basis", default=DEFAULT_COST_BASIS, choices=COST_BASES,
+                    help="Currency for every per-pose cost view (the by-quality panels, "
+                         "their stats sidecar, and the paired wall-clock block of "
+                         "effort_stats.json). 'elapsed' divides wall_s as each reader "
+                         "built it, which is NOT one quantity across arms: AutoDock's is "
+                         "vina elapsed plus its gnina sum, DiffDock's is measured, and "
+                         "EquiBind's is best-config compute over its own worker count. "
+                         "'charged' divides cpu_core_s / --cpu-threads + gpu_s for every "
+                         "arm alike — device occupancy, a time rather than a "
+                         "resource-second, so it does not break the rule that CPU-core-s "
+                         "and GPU-s are never summed. Neither cpu_core_s nor gpu_s is ever "
+                         "divided by --autodock-optimizer-workers, so 'charged' is "
+                         "invariant to that flag while 'elapsed' is not. Default "
+                         f"'{DEFAULT_COST_BASIS}', under which every committed effort "
+                         "directory reproduces unchanged.")
+    ap.add_argument("--cpu-threads", type=int, default=DEFAULT_COST_CPU_THREADS,
+                    help="Divisor turning CPU-core-seconds into an elapsed-equivalent for "
+                         "--basis charged: the number of hardware threads a saturating "
+                         f"processor stage occupies. Default {DEFAULT_COST_CPU_THREADS}, "
+                         "matching the workstation. Ignored under --basis elapsed.")
     ap.add_argument("--rmsd-column", default=DEFAULT_RMSD_COLUMN,
                     help="Per-pose column scored for the near-native tier (RMSD ≤ 2 Å). "
                          f"Default '{DEFAULT_RMSD_COLUMN}' — the SAME endpoint the headline "
@@ -2548,11 +2718,31 @@ def main(argv=None) -> int:
                          "Benchmark and Orai runs both used 32.")
     ap.add_argument("--autodock-refine", default=None,
                     choices=("raw", "smina", "gnina", "gnina_refinement"),
-                    help="AutoDock variant to time: raw Vina, or Vina plus the serial "
-                         "optimizer elapsed time from optimization_log.csv. Default: raw.")
+                    help="Which OPTIMIZER's elapsed time is added to the Vina search wall: "
+                         "raw = none, otherwise the matching optimization_log.csv rows. It also "
+                         "supplies the per-pose method label unless --autodock-method overrides "
+                         "it. Default: raw.")
+    ap.add_argument("--autodock-method", default=None,
+                    help="Exact per-pose 'method' label of the AutoDock arm to cost, e.g. "
+                         "autodock_mgltools_exh128_gnina. Unset, the label is derived from "
+                         "--autodock-refine, which only ever reaches the four Meeko arms "
+                         "(autodock, autodock_{smina,gnina,gnina_refinement}) — pairing an "
+                         "ADFRsuite tree with a derived Meeko label would join this arm's "
+                         "timings to another arm's pose counts. Campaign-scoped: the "
+                         "cross-dataset figures keep it on the campaign it was typed for and "
+                         "clear it on the other (see _clone_dataset_args).")
     ap.add_argument("--autodock-opt-cpu", type=int, default=1,
                     help="CPU threads used by each AutoDock smina/CPU-gnina optimization "
                          "(for optimizer CPU-core-seconds).")
+    ap.add_argument("--autodock-optimizer-workers", type=int, default=None,
+                    help="Concurrency divisor for the AutoDock optimizer term: the arm's "
+                         "optimize_workers. Σ per-pose elapsed equals wall clock only for a "
+                         "serial optimizer; at optimize_workers=16 (the exh128 gnina arm) that "
+                         "sum is compute time and overstates the wall by roughly N×, so the "
+                         "wall term is divided by N. An approximation, not a measurement — real "
+                         "speed-up is sublinear. Unset = today's serial accounting, so every "
+                         "committed effort directory reproduces unchanged. Resource-seconds are "
+                         "never divided. Benchmark-only; Orai timing takes a different path.")
     ap.add_argument("--autodock-gnina-gpu", action=argparse.BooleanOptionalAction,
                     default=False,
                     help="AutoDock gnina/gnina_refinement used the GPU. By default elapsed "
@@ -2624,7 +2814,9 @@ def main(argv=None) -> int:
     ap.add_argument("--load-equibind", type=float, default=None,
                     help="Fixed per-run load L (s) for EquiBind. Default: measured from the "
                          "benchmark pipeline phase timing (~4.7 s); pass a value to override.")
+    mf.add_method_filter_args(ap)
     args = ap.parse_args(argv)
+    _record_explicit_dataset_args(args)      # before the fill, while None still means "unset"
     _apply_dataset_defaults(args)
 
     # Dataset-wide title + quality-tier ladder (crystal-free Orai loses the RMSD/Kabsch tiers).
@@ -2666,7 +2858,8 @@ def main(argv=None) -> int:
     # ── paired stats over the common timed set (degrades gracefully) ─────────
     stats = {}
     try:
-        stats = compute_effort_stats(pc, summ, meta)
+        stats = compute_effort_stats(pc, summ, meta, basis=args.basis,
+                                     cpu_threads=args.cpu_threads)
         (out_dir / "effort_stats.json").write_text(
             json.dumps(_jsonable(stats), indent=2))
         print(f"  Stats sidecar:       {out_dir / 'effort_stats.json'}")
@@ -2677,7 +2870,9 @@ def main(argv=None) -> int:
     # ── effort-by-quality-tier paired stats (degrades gracefully) ────────────
     q_stats = {}
     try:
-        q_stats = compute_effort_by_quality_stats(pc, endpoint=_endpoint_cols(args))
+        q_stats = compute_effort_by_quality_stats(pc, endpoint=_endpoint_cols(args),
+                                                  basis=args.basis,
+                                                  cpu_threads=args.cpu_threads)
         (out_dir / "effort_by_quality_stats.json").write_text(
             json.dumps(_jsonable(q_stats), indent=2))
         print(f"  Stats sidecar:       {out_dir / 'effort_by_quality_stats.json'}")
@@ -2713,8 +2908,11 @@ def main(argv=None) -> int:
         _ad_opt_dev = ("GPU" if args.autodock_refine in _AUTODOCK_GNINA_REFINERS
                        and args.autodock_gnina_gpu
                        else f"CPU × {args.autodock_opt_cpu} threads")
+        _ad_opt_workers = getattr(args, "autodock_optimizer_workers", None)
+        _ad_opt_conc = ("serial" if not _ad_opt_workers
+                        else f"÷{int(_ad_opt_workers)} for optimize_workers concurrency")
         print(f"  AutoDock timing = Vina wall + {args.autodock_refine} optimization "
-              f"(optimization_log.csv, serial; {_ad_opt_dev}).")
+              f"(optimization_log.csv, {_ad_opt_conc}; {_ad_opt_dev}).")
     if "unidock" in set(summ["method"]):
         print("  Tiled Uni-Dock timing = committed summary elapsed_s; reported as GPU "
               "occupancy because planning/merge phase timing is not split out.")
@@ -2745,7 +2943,9 @@ def main(argv=None) -> int:
         wall_files = make_wall_figure(pc, summ, out_dir, stats)
         res_files = make_resource_figure(summ, out_dir)
         time_fig = make_time_per_pose_figure(summ, out_dir)
-        quality_files = make_effort_by_quality_figure(pc, out_dir, q_stats)
+        quality_files = make_effort_by_quality_figure(pc, out_dir, q_stats,
+                                                      basis=args.basis,
+                                                      cpu_threads=args.cpu_threads)
         print(f"  Figure (wall-clock): {wall_files[0]}")
         print(f"  Figure (resources):  {res_files[0]}")
         print(f"  Figure (time/pose):  {time_fig}")

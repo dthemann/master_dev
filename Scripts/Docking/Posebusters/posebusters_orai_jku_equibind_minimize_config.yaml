@@ -1,0 +1,35 @@
+# PoseBusters — Orai x JKU EquiBind, minimize refinement leg.
+#
+# One of a matched pair. Both legs refine the SAME regenerated raw poses, so the
+# only difference between them is the gnina search flag. Pose file names are
+# shared between the two trees, which makes a pose-level paired comparison valid.
+#
+# Do NOT join either of these against posebusters_results/orai_jku. That published
+# table reproduces the same pose SET, but EquiBind pose numbering is not stable
+# across runs, so unguided_NNN there refers to a different pose.
+#
+# Receptors come from the same staged Orai PDBs the published run used, and this
+# arm inherits that config's simple receptors_dir policy (no prepared_per_pose).
+
+work_dir: /home/manndo/master_dev
+receptors_dir: posebusters_results/_orai_jku_staging/receptors
+
+docking_directories:
+  equibind_guided: Dockings/equibind_results_uffoff_minimize/pdbqt
+
+# No variant_filter: keep refRAW beside refGNINA so the unrefined baseline is in
+# the same table. refRAW is byte-identical across the two legs.
+
+config_mode: dock
+require_all_methods: true
+require_complete_results: false
+expected_common_combinations: null
+optional_methods: []
+
+output_base_dir: posebusters_results/orai_jku_equibind_minimize
+save_interval: 200
+overwrite: false
+num_workers: 10
+quiet: true
+make_plots: false
+copy_proved_poses: false

@@ -1,0 +1,50 @@
+# ============================================================================
+# THESIS REPRODUCTION CONFIG - DiffDock-L (Orai1 experimental panel)
+#
+#   Thesis section  : App. B "Orai1 Panels"; 30 samples
+#   Supports        : Table 5; Figures 8-14
+#   Dataset         : Orai1 experimental panel, 3 modulators x 4 receptor frames
+#   Driver          : run_diffdock.py -c <this>
+#   Writes          : Dockings/diffdock_results
+#   Analysis tree   : posebusters_results/_orai_matched_root/orai_jku
+#
+#   Copied from     : Scripts/Docking/diffdock_docking_config.yaml
+#   Deviations      : inference_seed pinned to 42, which is what the stored run logs show.
+#                     Requires the local seed patch in docking_tools/DiffDock/inference.py.
+#
+#   Determinism     : bit-exact - seeded, a re-run must reproduce the stored tree.
+#                     This is the ONE DiffDock arm that is reproducible: 24 stored run logs
+#                     carry the '[repro] seeded' marker. App. B records the same asymmetry.
+#
+#   This file is READ-ONLY to the pipeline. Thesis_Reproduction.ipynb loads it
+#   and never writes it back. Rationale in THESIS_REPRODUCTION.md.
+# ============================================================================
+receptors_dir: Data/Receptors
+ligand_dirs:
+- Data/Ligands/JKU/pdbqt
+diffdock_dir: /home/manndo/docking_tools/DiffDock
+diffdock_python: /home/manndo/anaconda3/envs/diffdock/bin/python
+diffdock_conda_env: diffdock
+num_samples: 30
+inference_steps: 20
+device: cuda:0
+timeout_per_complex: 1800
+output_dir: Dockings/diffdock_results
+log_dir: Dockings/Logs/diffdock_logs
+batch_mode: true
+batch_size: 2
+group_by_receptor: true
+max_workers: 1
+overwrite_existing: true
+overwrite_error_log: true
+optimization: smina
+optimize_search: minimize
+optimize_autobox_add: 4.0
+optimize_cpu: 1
+optimize_seed: 0
+optimize_timeout: 300
+gnina_use_gpu: true
+smina_executable: /home/manndo/anaconda3/envs/diffdock/bin/smina
+gnina_executable: /home/manndo/docking_tools/gnina
+gnina_lib_dirs: []
+inference_seed: 42

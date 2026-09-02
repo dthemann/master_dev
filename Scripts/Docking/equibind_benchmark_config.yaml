@@ -74,11 +74,18 @@ smina_executable: ''      # autodetect
 gnina_executable: ''      # NOT LOGGED. '' here, but the launcher substitutes
                           # /home/manndo/docking_tools/gnina when this is empty,
                           # so that wrapper is what ran.
-gnina_use_gpu: true       # NOT LOGGED by the runner. Value taken from the shared
-                          # config as it stood; the launcher reads this key, so
-                          # true is what it passed. Scripts/Analysis/
-                          # docking_effort_comparison.py assumes the opposite for
-                          # its device attribution — see the note in that script.
+gnina_use_gpu: false      # RUN VALUE, established by replay 2026-08-20 (this key is
+                          # NOT logged by the runner, so it was previously carried
+                          # over from the shared config as true — that was wrong).
+                          # Re-docking control complex 7W06_ITN under both settings
+                          # reproduces its recorded July wall of 110.7 s only on CPU:
+                          # CPU gives 103.7 s (phase 3 92.5 s vs the recorded 100.1 s),
+                          # GPU gives 35.2 s (phase 3 24.6 s), i.e. 3.1x too fast.
+                          # 7WDT_NGS agrees (recorded 137.0 s, CPU replay 117.9 s).
+                          # Scripts/Analysis/docking_effort_comparison.py already
+                          # attributes this refinement to the CPU (--eq-gnina-gpu
+                          # defaults false), so the published device split is correct
+                          # and it was this file that misstated the run.
 
 # ── Protein cropping ─────────────────────────────────────────────────────────
 use_protein_cropping: true

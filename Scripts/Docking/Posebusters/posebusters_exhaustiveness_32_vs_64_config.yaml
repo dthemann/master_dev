@@ -1,0 +1,55 @@
+# PoseBusters — AutoDock Vina whole-protein docking, exhaustiveness 32 vs 64.
+# RAW (unrefined) poses only. Written by Exhaustiveness_32_vs_64.ipynb.
+#
+# Both arms are busted in ONE run so they share a single posebusters_runtime_signature;
+# a two-run design would compare rows validated under two different signatures.
+# require_all_methods makes the cohort the intersection of the arms, which is the
+# 50 sampled complexes — the 308-complex control tree is not busted in full.
+work_dir: /home/manndo/master_dev
+
+# Mandatory key, but dead under receptor_policy: prepared_per_pose.
+receptors_dir: posebusters_results/_benchmark_staging/receptors
+
+docking_directories:
+  autodock_exh32: Dockings/vina_results_full_protein_vina_scoring
+  autodock_exh64: Dockings/vina_results_full_protein_vina_scoring_exh64
+
+config_mode: dock
+receptor_policy: prepared_per_pose
+require_validation_receptors: true
+
+# Fail loudly on any shortfall rather than silently answering on 47 complexes.
+require_all_methods: true
+require_complete_results: false
+expected_common_combinations: null
+
+# Each pose is validated against the receptor its own docking stage produced.
+validation_receptor_directories:
+  autodock_exh32: Dockings/vina_results_full_protein_vina_scoring
+  autodock_exh64: Dockings/vina_results_full_protein_vina_scoring_exh64
+
+# RAW POSES ONLY. Both arms fold to the base "autodock" family, so this single
+# entry filters both identically. The 32-arm tree also holds gnina and
+# gnina_refinement variants from the published campaign; excluding them here
+# keeps refinement out of the comparison at the source.
+variant_filter:
+  autodock: original
+
+save_interval: 200
+overwrite: false
+num_workers: 12
+quiet: true
+limit_worker_threads: true
+worker_maxtasks: 200
+pose_timeout: 600
+stall_timeout: 1800
+max_restarts: 5
+monitor: false
+
+# A NEW output_base_dir. Sharing the published one would merge these rows into the
+# 303-complex benchmark CSV and the reconciler would discard the published arm.
+output_base_dir: posebusters_results/exhaustiveness_32_vs_64
+ligand_template_dirs:
+  - Data/PoseBuster Benchmark Set
+copy_proved_poses: false
+make_plots: false

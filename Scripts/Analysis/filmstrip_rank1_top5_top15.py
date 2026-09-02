@@ -40,11 +40,6 @@ DEFAULT_REPORT = Path(
 DEPTHS = (1, 5, 15)
 AXIS_MAX = 5.0                       # x/y axes clipped to this square (Å) for legibility
 FORCED_DIFFDOCK = "diffdock_smina"   # matches --collapse-diffdock-variant in cell 21
-# The whole-protein cache carries six autodock* variants and ``P._fam_key`` maps every
-# one of them to the "autodock" family, so they would be pooled into a single scatter.
-# The chapter reports AutoDock Vina + gnina, so that arm is pinned here and relabelled
-# to "autodock", exactly as _select_best_diffdock relabels its chosen variant.
-FORCED_AUTODOCK = "autodock_gnina"
 FAM_LABEL = {"autodock": "AutoDock", "diffdock": "DiffDock", "equibind": "EquiBind"}
 
 REPORT = DEFAULT_REPORT
@@ -53,6 +48,15 @@ CACHE = REPORT / "per_pose_metrics.csv"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pandas as pd  # noqa: E402
 import posebusters_pose_comparison as P  # noqa: E402
+import method_filter as mf  # noqa: E402  (shared single-point method exclusion)
+
+# The whole-protein cache carries fourteen autodock* variants and ``P._fam_key`` maps
+# every one of them to the "autodock" family, so they would be pooled into a single
+# scatter. The dominant arm is pinned here and relabelled to "autodock", exactly as
+# _select_best_diffdock relabels its chosen variant. It is read from
+# posebusters_pose_comparison so this file cannot drift from the arm the rest of the
+# suite reports; the literal is only a fallback for an older sibling module.
+FORCED_AUTODOCK = getattr(P, "_DOMINANT_AUTODOCK_OPT", "autodock_mgltools_exh128_gnina")
 
 
 def collapse_like_cell21(df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, str]]:
@@ -288,10 +292,29 @@ def write_stats_txt(path: Path, summ: pd.DataFrame, stats: dict,
     path.write_text("\n".join(L) + "\n", encoding="utf-8")
 
 
-def main() -> None:
+def main(argv=None) -> None:
+    global REPORT, CACHE
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__)
+    # Added 2026-09-02. The module constant DEFAULT_REPORT names the pre-matched
+    # whole-protein run. Thesis Figure 4 actually ships from
+    # posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report,
+    # so the path had to be editable without editing the source. The default is
+    # unchanged, so every existing invocation behaves exactly as before.
+    ap.add_argument("--report-dir", type=Path, default=DEFAULT_REPORT,
+                    help="pose_comparison_report directory holding per_pose_metrics.csv "
+                         f"(default: {DEFAULT_REPORT})")
+    mf.add_method_filter_args(ap)
+    args = ap.parse_args(argv)
+    REPORT = Path(args.report_dir)
+    CACHE = REPORT / "per_pose_metrics.csv"
     if not CACHE.exists():
         sys.exit(f"per-pose cache not found: {CACHE}")
     df = P._read_cached_per_pose(CACHE)
+    # Before collapse_like_cell21, whose _select_autodock_arm step overwrites the
+    # pinned arm's key with 'autodock' and hard-exits if FORCED_AUTODOCK is gone.
+    df = mf.apply_method_filter(df, "method", args, label="filmstrip",
+                                out_dir=REPORT)
     df, src = collapse_like_cell21(df)
 
     stem = "20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15"

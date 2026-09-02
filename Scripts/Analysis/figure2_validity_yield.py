@@ -28,9 +28,24 @@ comparisons drawn on the panel.
 
 Usage
 -----
+The Benchmark panel needs a DOUBLE exclusion, not the `meeko` preset alone.
+`load_and_score` folds every surviving `autodock_mgltools*` key onto plain
+`autodock`, so the preset — which only removes the Meeko-ligand arms — still
+leaves five ladder rungs to be pooled into one box that no label describes. Name
+the other rungs explicitly and the fold sees exactly one raw arm and one
+gnina-rescored arm, both `autodock_mgltools_exh128`:
+
     python Scripts/Analysis/figure2_validity_yield.py \
         --csv posebusters_results/benchmark_full_protein_vina_scoring/dock/posebusters_filtered_results.csv \
-        --out thesis_latex/media/media/image2.png
+        --out posebusters_results/benchmark_full_protein_vina_scoring/dock/validity_report_mgltools/00_figure2_validity_yield.png \
+        --exclude-preset meeko \
+        --exclude-methods autodock_mgltools,autodock_mgltools_gnina,autodock_mgltools_exh18,autodock_mgltools_exh64,autodock_mgltools_exh64_gnina,autodock_mgltools_exh92
+
+`validity_report_mgltools/` is this figure's home, deliberately NOT the
+`validity_report/` directory `posebusters_validity_report.py` writes: the panel
+this script draws is a different keep-set on a pinned arm, and a copy sitting
+among that report's twelve outputs was mistaken for one of them once already.
+`thesis_latex/media/media/image2.png` is copied from here.
 """
 from __future__ import annotations
 
@@ -49,6 +64,7 @@ from scipy.stats import wilcoxon
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import posebusters_validity_report as V  # noqa: E402
+import method_filter as mf  # noqa: E402
 
 # Family colours follow the thesis house style, one hue per engine family. Raw
 # arms are the same hue at reduced alpha and hatched, so "before optimisation"
@@ -104,6 +120,32 @@ def per_complex_yield(df: pd.DataFrame, method: str) -> pd.Series:
     if sub.empty:
         raise SystemExit(f"series '{method}' is absent from the CSV")
     return sub.groupby("protein")["pb_valid"].mean() * 100.0
+
+
+def _prune_families(families: list, df: pd.DataFrame) -> list:
+    """Drop members (and then empty families) the exclusion removed from ``df``.
+
+    Without this, excluding a family's arms turns the "series absent from the CSV"
+    guard in :func:`per_complex_yield` from a useful error about a mis-typed key
+    into a crash on a deliberate exclusion. A family that loses its raw arm is
+    dropped whole, because the raw member is the baseline every bracket in
+    :func:`build` is measured against.
+    """
+    present = set(df["docking_method"].astype(str).unique())
+    out = []
+    for fam, colour, members in families:
+        kept = [(k, tick) for k, tick in members if k in present]
+        if not kept or kept[0][0] != members[0][0]:
+            print(f"  figure2: family {fam!r} dropped — "
+                  f"{'no members remain' if not kept else 'its raw baseline was excluded'}")
+            continue
+        if len(kept) != len(members):
+            gone = [k for k, _ in members if k not in present]
+            print(f"  figure2: family {fam!r} lost excluded members {gone}")
+        out.append((fam, colour, kept))
+    if not out:
+        raise SystemExit("figure2: every family was excluded — nothing to draw.")
+    return out
 
 
 def build(df: pd.DataFrame, families: list) -> tuple[list[dict], list[dict]]:
@@ -195,9 +237,9 @@ def draw(series: list[dict], brackets: list[dict], out: Path, n_complexes: int,
 
     handles = [
         Patch(facecolor="0.75", edgecolor="black", hatch="///",
-              label="raw / reference (before optimization)"),
+              label="raw / reference (before optimisation)"),
         Patch(facecolor="0.75", edgecolor="black",
-              label="post-hoc optimized (smina / gnina)"),
+              label="post-hoc optimised (smina / gnina)"),
         Line2D([], [], marker="D", linestyle="none", markersize=8,
                markerfacecolor="white", markeredgecolor="black", label="mean"),
     ]
@@ -241,7 +283,8 @@ def main() -> None:
     ap.add_argument("--series", default=None,
                     help="engine keep-set override, semicolon-separated families as "
                          "'Label:colour:key=tick,key=tick,...'. Omit for the published nine.")
-    ap.add_argument("--title", default="Post-Hoc Optimization and PoseBuster Validity")
+    ap.add_argument("--title", default="Post-Hoc Optimisation and PoseBusters Validity")
+    mf.add_method_filter_args(ap)
     args = ap.parse_args()
 
     families = FAMILIES
@@ -252,7 +295,17 @@ def main() -> None:
             families.append((label, colour,
                              [tuple(m.split("=", 1)) for m in members.split(",")]))
 
-    df = V.load_and_score(args.csv)
+    # Exclusion is pushed INTO the loader rather than applied to its result: the
+    # loader folds every autodock_mgltools* key onto plain 'autodock', so a filter
+    # applied out here could no longer tell the ligand-prep arms apart.
+    df = V.load_and_score(args.csv,
+                          exclude_patterns=mf.resolve_patterns(args),
+                          exclude_strict=args.exclude_strict,
+                          exclude_preset=args.exclude_preset,
+                          exclude_out_dir=args.out.parent)
+    # A family whose members were all excluded must not be drawn as an empty slot,
+    # and must not trip the "series absent from the CSV" exit in build().
+    families = _prune_families(families, df)
     n_complexes = int(df["protein"].nunique())
     series, brackets = build(df, families)
     draw(series, brackets, args.out, n_complexes, args.title)

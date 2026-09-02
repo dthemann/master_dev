@@ -1,0 +1,70 @@
+# Orai x Benchmark, MATCHED --minimize EquiBind arm.
+# Receptors = _orai_benchmark_staging (RAW), because EquiBind DOCKED INTO the raw
+# receptor: its _prep_ Fr0 protein is md5-identical (9e352bfc3a) to Data/Receptors.
+# The Fr0-corrected staging is AutoDock-only; using it here creates a mismatch
+# (EquiBind Fr0 58.2%% -> 15.8%%). See posebusters_results/README_fr0_receptor_finding.txt
+
+# PoseBusters config — Orai receptors × PoseBuster Benchmark Set ligands
+# Validates docked poses produced by AutoDock Vina, DiffDock, and EquiBind
+# against the four Orai1WT receptor variants (START-Fr0 + MD snapshots).
+
+work_dir: /home/manndo/master_dev
+
+# Staged folder containing only the 4 Orai receptor PDBs (created by the
+# Master_Docking notebook cell that drives this run).
+receptors_dir: posebusters_results/_orai_benchmark_staging/receptors
+
+# ── Pose sources ─────────────────────────────────────────────────────────────
+# REPOINTED 2026-08-30, same reason as the JKU panel: the project no longer reports
+# results derived from Meeko-prepared receptors OR ligands. The former tree
+# Dockings/Orai_Benchmark/docking is Meeko on the LIGAND side (400/400 sampled poses
+# carry REMARK SMILES). Orai_Benchmark_MGLTools_exh128 is clean (0/400) and is the
+# ADFRsuite receptor + ADFRsuite ligand arm. Root at mgl_tools/ so the optimiser log
+# resolves on the second hop.
+docking_directories:
+# autodock omitted: unchanged, and its Fr0 correction does not apply here
+# diffdock omitted: unchanged
+  equibind_guided: Dockings/Orai_Benchmark_Equibind_minimize
+
+# ── Variant selection ────────────────────────────────────────────────────────
+# Validate only ONE variant per tool. Each DiffDock pose is tagged with its optimizer
+# (original / smina / gnina — rank*.sdf vs the optimized_<tool>/ subfolders) and each
+# EquiBind pose with its refine_variant (raw / smina / gnina, from its SDF tags). List
+# the variant(s) to KEEP per tool; a tool left out keeps EVERY variant. This limits the
+# busted set to AutoDock(gnina) + DiffDock(smina) + EquiBind(gnina).
+#
+# AutoDock is gnina ONLY, and that is load-bearing rather than cosmetic. The raw variant
+# would be collected as *_vina_out.pdbqt (1,232 containers are present) and handed to
+# _convert_pdbqt_to_sdf, which cannot rebuild ADFRsuite ligands (no REMARK SMILES) and
+# cannot resolve the prepared-ligand template in this tree layout. It would fall back to
+# Open Babel bond perception, which fails on ~63% of poses and fails SILENTLY: rows are
+# still emitted, they are just wrong.
+#
+# HISTORICAL: while this config pointed at Dockings/Orai_Benchmark/docking the pin also
+# guarded against optimized_gnina_refinement/, an INTERRUPTED partial arm (129 of 1,232
+# complexes, 128 with a complete 10/10 rank set, which passes run_posebusters'
+# per-complex completeness gate). That directory does not exist in the MGLTools tree,
+# which holds only optimized_gnina/ (12,315 SDF), so the hazard went with the old tree.
+# The pin still matters for the ADFRsuite-raw reason above.
+variant_filter:
+# autodock omitted: unchanged, and its Fr0 correction does not apply here
+#
+  equibind_guided: gnina    # keep only gnina-refined EquiBind poses (drop raw + smina)
+
+config_mode: dock          # use receptor-aware "dock" PoseBusters profile
+output_base_dir: posebusters_results/orai_benchmark_equibind_minimize
+save_interval: 200
+overwrite: false            # re-bust ALL poses
+                           # (same filenames), so resume (overwrite:false) would skip them and
+                           # keep stale results. Revert to false for normal incremental runs.
+num_workers: 24
+make_plots: true
+copy_proved_poses: true
+
+# Bond-order template SDFs for AutoDock PDBQT->SDF conversion.
+# The staging dir provides per-ligand symlinks named to match the AutoDock
+# ligand label (e.g. "5S8I_2LY_ligand_start_conf_vina.sdf"); the benchmark
+# directory is included as a fallback.
+ligand_template_dirs:
+  - posebusters_results/_orai_benchmark_staging/ligand_templates
+  - Data/PoseBuster Benchmark Set

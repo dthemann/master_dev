@@ -1,0 +1,80 @@
+# ============================================================================
+# THESIS REPRODUCTION CONFIG - PoseBusters Fr0 correction, gnina variant (control panel)
+#
+#   Thesis section  : App. B; companion pass to config 34 for the gnina-rescored poses
+#   Supports        : the AutoDock* rows of Table 5
+#   Dataset         : Orai1 control panel, 308 benchmark ligands x 4 receptor frames = 1,232 units
+#   Driver          : Posebusters/run_posebusters.py -c <this>
+#   Writes          : posebusters_results/orai_benchmark_gnina_fr0corrected
+#   Analysis tree   : merged into _orai_matched_root/orai_benchmark
+#
+#   Copied from     : Scripts/Docking/Posebusters/posebusters_orai_benchmark_gnina_config_fr0corrected.yaml
+#   Deviations      : none - byte-identical body
+#
+#   Determinism     : bit-exact - deterministic post-processing of stored poses
+#
+#   This file is READ-ONLY to the pipeline. Thesis_Reproduction.ipynb loads it
+#   and never writes it back. Rationale in THESIS_REPRODUCTION.md.
+# ============================================================================
+# FR0-CORRECTED RE-BUST (2026-08-30). Identical to its parent config except:
+#   * receptors_dir -> _orai_benchmark_staging_fr0corrected, whose Orai1WT-START-Fr0.pdb is
+#     the heavy-atom form of the OpenMM-minimised structure the poses were ACTUALLY docked
+#     into (RMSD 0.000000 A / 10,368 of 10,368 atoms vs docking PDBQT 6b3ab996...). The
+#     parent config validates against the RAW PDB, which is a different conformer and
+#     produces 733 spurious minimum_distance_to_protein failures on that frame alone.
+#   * AutoDock ONLY. DiffDock and EquiBind never use a PDBQT - they dock against the raw
+#     Data/Receptors PDB - so the raw validation receptor is CORRECT for them and they are
+#     deliberately not re-busted.
+#   * new output_base_dir, so nothing published is overwritten.
+# PoseBusters config — Orai receptors × PoseBuster Benchmark ligands, gnina-RESCORED
+# AutoDock arm.
+#
+# Companion to posebusters_orai_benchmark_config.yaml, which validates the RAW Vina
+# arm. That run stays where it is: this one writes to its own output_base_dir so the
+# raw results currently feeding the thesis are never overwritten and the two arms can
+# be compared directly.
+#
+# Why this exists: the Orai x JKU experimental panel and the whole-protein benchmark
+# both use gnina RESCORING (tool=gnina, cnn_scoring=rescore), but the Orai x Benchmark
+# control panel only ever had raw Vina, so cross-panel comparisons had to be pinned to
+# raw. The rescoring run (2026-08-15, 12,256 poses over 1,232 complexes) closes that gap.
+#
+# Run under the vina env:
+#   python Scripts/Docking/Posebusters/run_posebusters.py \
+#       --config Scripts/Docking/Posebusters/posebusters_orai_benchmark_gnina_config.yaml
+
+work_dir: /home/manndo/master_dev
+
+receptors_dir: posebusters_results/_orai_benchmark_staging_fr0corrected/receptors
+
+# NOTE the autodock path. It points at the AutoDock tree ROOT, not at its docking/
+# subfolder as the raw-arm config does. run_posebusters discovers optimised poses by
+# walking UP from each *_vina_out.pdbqt to the nearest optimization_log.csv *within the
+# configured root* (_find_autodock_optimization_log). The Orai log sits at
+# Dockings/Orai_Benchmark/optimization_log.csv, one level above docking/, so rooting
+# this at docking/ makes the finder return None and every gnina pose is silently
+# skipped — the run would quietly revalidate the raw arm instead. Rooting one level up
+# matches the benchmark config, which points at the tree root for the same reason.
+# The recursive glob only matches '*_vina_out.pdbqt', so the _staging/ ligand and
+# receptor PDBQTs under this root are not picked up as poses.
+docking_directories:
+  autodock:        Dockings/Orai_Benchmark
+
+# One variant per tool, matching the whole-protein benchmark arms exactly:
+# AutoDock Vina + gnina (rescore), DiffDock + smina, EquiBind + gnina.
+variant_filter:
+  autodock:        gnina    # keep ONLY the gnina-rescored poses (drop original + gnina_refinement)
+  diffdock:        smina
+  equibind_guided: gnina
+
+config_mode: dock
+output_base_dir: posebusters_results/orai_benchmark_gnina_fr0corrected
+save_interval: 200
+overwrite: false           # fresh output dir, so nothing to skip; keeps the run resumable
+num_workers: 30
+make_plots: true
+copy_proved_poses: true
+
+ligand_template_dirs:
+  - posebusters_results/_orai_benchmark_staging/ligand_templates
+  - Data/PoseBuster Benchmark Set

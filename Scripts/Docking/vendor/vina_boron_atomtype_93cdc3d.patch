@@ -1,0 +1,151 @@
+# AutoDock Vina local patch — boron AutoDock atom type (AD_TYPE_B)
+#
+# WHY THIS FILE EXISTS: the vina binary used for every AutoDock pose in this project is
+# a PATCHED build. Without this patch the binary rejects ADFRsuite-prepared 2abp-nh2-OPT,
+# whose boron is emitted as AutoDock type 'B' (the Meeko path maps B->C instead, via
+# sanitize_pdbqt_atom_types, which is never called on the ADFRsuite ligand path).
+# The patch was uncommitted and unpushed in /home/manndo/AutoDock-Vina, so nobody could
+# rebuild the binary that produced the poses. Archived here 2026-08-30.
+#
+# Upstream base commit : 93cdc3d (Merge pull request #405 from joanimato/pip-win-macos)
+# Built binary version : AutoDock Vina v1.2.7-20-g93cdc3d-mod
+# Built binary sha256  : 2a84f93dd612e9fc95dceb3202233d5c7f044313cf531191eb6c02a5b1c8004b
+#
+# To reproduce:  git clone <vina>; git checkout 93cdc3d; git apply <this file>; make
+#
+diff --git a/src/lib/ad4cache.cpp b/src/lib/ad4cache.cpp
+index 28e7844..e612d8c 100755
+--- a/src/lib/ad4cache.cpp
++++ b/src/lib/ad4cache.cpp
+@@ -49,6 +49,7 @@ std::string get_adtype_str(sz& t) {
+ 		case AD_TYPE_Br: return "Br";
+ 		case AD_TYPE_Si: return "Si";
+ 		case AD_TYPE_At: return "At";
++		case AD_TYPE_B : return "B";
+ 		case AD_TYPE_W : return "W";
+ 		default: VINA_CHECK(false);
+ 	}
+diff --git a/src/lib/atom_constants.h b/src/lib/atom_constants.h
+index 901d003..c006212 100755
+--- a/src/lib/atom_constants.h
++++ b/src/lib/atom_constants.h
+@@ -38,9 +38,10 @@ const sz EL_TYPE_Br   =  8;
+ const sz EL_TYPE_I    =  9;
+ const sz EL_TYPE_Si   = 10; // Silicon
+ const sz EL_TYPE_At   = 11; // Astatine
+-const sz EL_TYPE_Met  = 12;
+-const sz EL_TYPE_Dummy= 13;
+-const sz EL_TYPE_SIZE = 14;
++const sz EL_TYPE_B    = 12; // Boron
++const sz EL_TYPE_Met  = 13;
++const sz EL_TYPE_Dummy= 14;
++const sz EL_TYPE_SIZE = 15;
+ 
+ // AutoDock4
+ const sz AD_TYPE_C    =  0;
+@@ -74,7 +75,8 @@ const sz AD_TYPE_CG1  = 27;
+ const sz AD_TYPE_CG2  = 28;
+ const sz AD_TYPE_CG3  = 29;
+ const sz AD_TYPE_W    = 30; // hydrated ligand
+-const sz AD_TYPE_SIZE = 31;
++const sz AD_TYPE_B    = 31; // Boron
++const sz AD_TYPE_SIZE = 32;
+ 
+ // X-Score
+ const sz XS_TYPE_C_H   =  0;
+@@ -95,21 +97,22 @@ const sz XS_TYPE_Br_H  = 14;
+ const sz XS_TYPE_I_H   = 15;
+ const sz XS_TYPE_Si    = 16; // Silicon
+ const sz XS_TYPE_At    = 17; // Astatine
+-const sz XS_TYPE_Met_D = 18;
+-const sz XS_TYPE_C_H_CG0 = 19; // closure of cyclic molecules
+-const sz XS_TYPE_C_P_CG0 = 20;
+-const sz XS_TYPE_G0      = 21;
+-const sz XS_TYPE_C_H_CG1 = 22;
+-const sz XS_TYPE_C_P_CG1 = 23;
+-const sz XS_TYPE_G1      = 24;
+-const sz XS_TYPE_C_H_CG2 = 25;
+-const sz XS_TYPE_C_P_CG2 = 26;
+-const sz XS_TYPE_G2      = 27;
+-const sz XS_TYPE_C_H_CG3 = 28;
+-const sz XS_TYPE_C_P_CG3 = 29;
+-const sz XS_TYPE_G3      = 30;
+-const sz XS_TYPE_W       = 31; // hydrated ligand
+-const sz XS_TYPE_SIZE    = 32;
++const sz XS_TYPE_B_P   = 18; // Boron
++const sz XS_TYPE_Met_D = 19;
++const sz XS_TYPE_C_H_CG0 = 20; // closure of cyclic molecules
++const sz XS_TYPE_C_P_CG0 = 21;
++const sz XS_TYPE_G0      = 22;
++const sz XS_TYPE_C_H_CG1 = 23;
++const sz XS_TYPE_C_P_CG1 = 24;
++const sz XS_TYPE_G1      = 25;
++const sz XS_TYPE_C_H_CG2 = 26;
++const sz XS_TYPE_C_P_CG2 = 27;
++const sz XS_TYPE_G2      = 28;
++const sz XS_TYPE_C_H_CG3 = 29;
++const sz XS_TYPE_C_P_CG3 = 30;
++const sz XS_TYPE_G3      = 31;
++const sz XS_TYPE_W       = 32; // hydrated ligand
++const sz XS_TYPE_SIZE    = 33;
+ 
+ // DrugScore-CSD
+ const sz SY_TYPE_C_3   =  0;
+@@ -177,7 +180,8 @@ const atom_kind atom_kind_data[] = {
+ 	{"CG1",2.00000, 0.15000, 0.0, 0.0,   -0.00143,   33.51030,   0.77}, // 27
+ 	{"CG2",2.00000, 0.15000, 0.0, 0.0,   -0.00143,   33.51030,   0.77}, // 28
+ 	{"CG3",2.00000, 0.15000, 0.0, 0.0,   -0.00143,   33.51030,   0.77}, // 29
+-	{"W",  0.00000, 0.00000, 0.0, 0.0,    0.00000,    0.00000,   0.00}  // 30
++	{"W",  0.00000, 0.00000, 0.0, 0.0,    0.00000,    0.00000,   0.00}, // 30
++	{"B",  1.92000, 0.29773, 0.0, 0.0,   -0.00143,   29.66600,   0.84}  // 31 Boron: r=1.92Å (192 pm), depth from user; solvation approx. as carbon
+ };
+ 
+ const fl metal_solvation_parameter = -0.00110;
+@@ -254,6 +258,7 @@ inline sz ad_type_to_el_type(sz t) {
+ 		case AD_TYPE_G2   : return EL_TYPE_Dummy;
+ 		case AD_TYPE_G3   : return EL_TYPE_Dummy;
+ 		case AD_TYPE_W    : return EL_TYPE_Dummy;
++		case AD_TYPE_B    : return EL_TYPE_B;
+ 		case AD_TYPE_SIZE : return EL_TYPE_SIZE;
+ 		default: VINA_CHECK(false);
+ 	}
+@@ -279,6 +284,7 @@ const fl xs_vdw_radii[] = {
+ 	2.2, // I_H
+     2.2, // Si
+     2.3, // At
++    1.87, // B_P  (Boron vdW radius ~192 pm, XS-adjusted)
+ 	1.2, // Met_D
+     1.9, // C_H_CG0
+     1.9, // C_P_CG0
+@@ -314,6 +320,7 @@ const fl xs_vinardo_vdw_radii[] = {
+ 	2.2, // I_H
+ 	2.2, // Si
+ 	2.3, // At
++	1.87, // B_P  (Boron vdW radius ~192 pm, Vinardo-adjusted)
+ 	1.2, // Met_D
+ 	2.0, // C_H_CG0
+ 	2.0, // C_P_CG0
+diff --git a/src/lib/cache.cpp b/src/lib/cache.cpp
+index ba9f3ee..b672c70 100755
+--- a/src/lib/cache.cpp
++++ b/src/lib/cache.cpp
+@@ -47,6 +47,7 @@ std::string convert_XS_to_string(sz t) {
+ 		case XS_TYPE_I_H     : return "I_H";
+ 		case XS_TYPE_Si      : return "Si";
+ 		case XS_TYPE_At      : return "At";
++		case XS_TYPE_B_P     : return "B_P";
+ 		case XS_TYPE_Met_D   : return "Met_D";
+ 		case XS_TYPE_W       : return "W";
+ 		default: VINA_CHECK(false);
+diff --git a/src/lib/model.cpp b/src/lib/model.cpp
+index 6421645..8087b93 100755
+--- a/src/lib/model.cpp
++++ b/src/lib/model.cpp
+@@ -436,6 +436,7 @@ void model::assign_types() {
+ 			case EL_TYPE_I    : x = XS_TYPE_I_H; break;
+ 			case EL_TYPE_Si   : x = XS_TYPE_Si; break;
+ 			case EL_TYPE_At   : x = XS_TYPE_At; break;
++			case EL_TYPE_B    : x = XS_TYPE_B_P; break;
+ 			case EL_TYPE_Met  : x = XS_TYPE_Met_D; break;
+             case EL_TYPE_Dummy: {
+                 if      (a.ad == AD_TYPE_G0) x = XS_TYPE_G0;

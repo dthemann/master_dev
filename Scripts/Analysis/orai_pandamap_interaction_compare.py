@@ -94,6 +94,31 @@ except Exception:                                   # pragma: no cover
     def pretty_itype(t: str) -> str:
         return INTERACTION_LABELS.get(t, t.replace("_", " ").capitalize())
 
+# ── charged-class aliasing ──────────────────────────────────────────────────────
+# PandaMap writes every charged contact three times, once as an ionic contact, once
+# as a salt bridge and once as an attractive-charge contact, with identical atoms and
+# distance. The three columns are bit-identical for any input, so entering all three
+# triple-counts one measurement: it over-represents the charged family 3:1 in the
+# type-profile figure, and it inflates the BH family. The inflation is NOT
+# conservative. A duplicated low p-value raises the step-up threshold that every
+# lower-ranked hypothesis must clear, so the fifteen-entry family was the more
+# lenient one. Collapsing to one representative leaves thirteen distinct hypotheses.
+CHARGED_ALIASES = ("ionic", "salt_bridge", "attractive_charge")
+CHARGED_CANONICAL = "ionic"
+CHARGED_LABEL = "Charged classes"
+
+
+def collapse_charged_types(types: List[str]) -> List[str]:
+    """Drop the duplicate charged aliases, keeping one representative in place."""
+    drop = {a for a in CHARGED_ALIASES if a != CHARGED_CANONICAL}
+    return [t for t in types if t not in drop]
+
+
+def itype_label(t: str) -> str:
+    """Display label, with the collapsed charged representative renamed."""
+    return CHARGED_LABEL if t == CHARGED_CANONICAL else pretty_itype(t)
+
+
 try:                                                # shared, unit-tested stats helpers
     import stats_utils as su
     _HAVE_SU = True
@@ -435,7 +460,7 @@ def _present_types(datasets: Dict[str, dict]) -> List[str]:
                 tot += pd.to_numeric(ds["summary"][t], errors="coerce").fillna(0).sum()
         if tot > 0:
             present.append(t)
-    return present
+    return collapse_charged_types(present)
 
 
 def fig_type_profile(datasets: Dict[str, dict], tools: List[str], out: Path):
@@ -478,7 +503,7 @@ def fig_type_profile(datasets: Dict[str, dict], tools: List[str], out: Path):
                      fontsize=10)
         ax.set_xlabel("Mean count per pose")
         ax.set_yticks(y)
-        ax.set_yticklabels([pretty_itype(t) for t in types], fontsize=9)
+        ax.set_yticklabels([itype_label(t) for t in types], fontsize=9)
         ax.set_ylabel("Interaction type")
         ax.grid(axis="x", alpha=0.3); ax.set_axisbelow(True)
     _label_panels(axes)
@@ -889,6 +914,9 @@ def write_stats(datasets: Dict[str, dict], tools: List[str], types: List[str],
     A("=" * 90)
     A("   Per (tool, type): Mann–Whitney U + Cliff's δ on the per-complex mean count per pose,")
     A("   BH-FDR across the interaction-type family within each tool. Only types present shown.")
+    A("   The profiler writes each charged contact three times, as an ionic contact, a salt bridge")
+    A("   and an attractive-charge contact, with bit-identical columns. They are collapsed to one")
+    A("   'Charged classes' hypothesis, so the family holds 13 distinct types per tool, not 15.")
     for tool in tools:
         A(f"   ── {TOOL_LABEL[tool]} ──")
         rows, praw2 = [], []
@@ -906,7 +934,7 @@ def write_stats(datasets: Dict[str, dict], tools: List[str], types: List[str],
             if res is None:
                 continue
             q = qs[qi]; qi += 1
-            A(f"       {pretty_itype(t):<18} mean/pose Bench {np.mean(b):.2f} vs Exp {np.mean(e):.2f}"
+            A(f"       {itype_label(t):<18} mean/pose Bench {np.mean(b):.2f} vs Exp {np.mean(e):.2f}"
               f"   {_fmt_p(res['p'])} (BH {_fmt_p(q)}) Cliff δ={res['cliffs_delta']:+.2f}")
     A("")
 
