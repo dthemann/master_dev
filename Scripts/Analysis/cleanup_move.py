@@ -35,8 +35,14 @@ STAGES = {
     "posebusters": lambda p: p.startswith("posebusters_results/"),
     "pocket": lambda p: p.startswith("pocket_results/"),
     "notebooks": lambda p: p.endswith(".ipynb") or ".ipynb.bak" in p or ".ipynb.snapshot" in p,
+    # The unmodified FH Technikum Wien LaTeX template at the repo root, plus its
+    # build artefacts. The thesis was developed from a copy in thesis_latex/;
+    # this one still carries the placeholder title and inputs no body file.
+    "roottex": lambda p: ("/" not in p and (p.startswith("Thesis.") or p.startswith("texput.")
+                                            or p in {"Literatur.bib", "twbook.cls"}))
+                         or p.startswith("PICs/"),
 }
-ORDER = ["pandamap", "standalone", "dockings", "posebusters", "pocket", "notebooks"]
+ORDER = ["pandamap", "standalone", "dockings", "posebusters", "pocket", "notebooks", "roottex"]
 
 
 def load() -> list[tuple[str, int, str]]:
