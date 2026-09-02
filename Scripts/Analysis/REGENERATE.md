@@ -14,7 +14,7 @@
 > been retired and its paths predated the matched-EquiBind migration. That
 > drift is what this generator exists to prevent. See [`FINDINGS_2026-09-02.md`](FINDINGS_2026-09-02.md).
 
-Generated 2026-09-02 16:24 from 60 registered stages.
+Generated 2026-09-02 16:51 from 60 registered stages.
 
 Float numbers are the SHORT build's, read from the figure environments of
 `body_main_short.tex` and `body_appendix_short.tex` in document order.

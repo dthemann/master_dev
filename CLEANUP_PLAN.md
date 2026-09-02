@@ -1,6 +1,9 @@
 # master_dev cleanup: proposed plan
 
-**Status: proposal. Nothing has been moved.** Written 2026-09-02.
+**Status: EXECUTED 2026-09-02.** Outcome at the end of this document.
+
+The plan below is kept as written, including the estimate it got wrong, because
+the correction is the most useful part of the record.
 
 ---
 
@@ -192,3 +195,69 @@ before going further. That is why the stages are separate.
 
 The 81 GB stays on disk until you decide to delete it. Nothing is lost, and
 everything moved is one `mv` from coming back.
+
+---
+
+# Outcome
+
+| | Before | After |
+| --- | --- | --- |
+| Live tree, excluding `.git` | 104 GB | **15 GB** |
+| Parked in `obsolete/` | — | 88 GB |
+| `pandamap_results/` | 55 GB | 690 MB |
+| `posebusters_results/` | 14 GB | 4.7 GB |
+| `Dockings/` | 13 GB | 7.5 GB, every reported docked pose intact |
+| Tracked by git | 175 MB, 3,283 files | 45 MB, 3,030 files |
+| Pipeline | 58 stages | **60 stages**, all satisfied |
+
+Verified after every stage: 257 of 257 asserted thesis numbers, 19 of 19 symlinks,
+20 of 20 figures regenerating byte-identically, and the thesis rebuilding at 142
+pages with zero undefined references.
+
+## What the safety review changed
+
+Six adversarial lenses attacked the move list before anything moved. They found a
+class of dependency the keep rule missed completely: **paths referenced by data
+rather than by code**. A canonical CSV stores absolute paths to the pose and
+receptor files behind each row, so a tree can be load-bearing without any script
+or config naming it.
+
+Four entries were pulled back off the list after direct measurement:
+
+| Entry | Evidence |
+| --- | --- |
+| `…/dock/converted_pdbqt` | 144,792 `pose_file` references from the canonical benchmark tables |
+| `…/dock/validation_receptors` | 4,128 `protein_file_used` references from the same |
+| `Dockings/Orai_Benchmark_Equibind_minimize` | 24,640 references from the canonical control table |
+| `Dockings/equibind_results_uffoff_minimize` | 1,440 references from the canonical experimental table |
+
+Moving any of them would have broken a canonical tree silently. The keep rule now
+includes a data scan, in `scratchpad/data_refs.py`.
+
+## A pipeline defect the review also found
+
+The two Orai matched-EquiBind PoseBusters screens had **no stage**, so the
+canonical `_orai_matched_root` trees could not be rebuilt from the declared
+stages. Configs 23 and 33 screen the pre-matched EquiBind trees, while the
+canonical tables cite poses from the `--minimize` re-refinement. Both screens are
+needed and are not alternatives. Fixed by adding configs 37 and 38 and their two
+stages, taking the pipeline from 58 to 60.
+
+## The largest single reclamation was not in the plan
+
+`maps/` under each PandaMap tree holds rendered 2D interaction PNGs. 35 GB across
+five trees. `run_pandamap.py:909` writes them and **no line in the repository
+reads them**; every consumer opens the root-level `pandamap_*.csv` files. This
+was surfaced by the keep-list audit, not by the original plan.
+
+## Still available, not taken
+
+The audit identified roughly 6 GB more with good evidence, each needing its own
+verification: `Dockings/Benchmark` at 775 MB, the non-canonical bulk of
+`posebusters_results/orai_benchmark/dock` at 676 MB, `Dockings/Orai_Benchmark_Vinardo`
+at 214 MB, and about a dozen smaller trees kept only by an argparse default that
+no stage ever lets fire. The evidence is in the workflow transcript. Marginal
+return is small against the risk, so they were left in place.
+
+`.git` is still 1.6 GB. Only a history rewrite changes that, and it was explicitly
+declined.
