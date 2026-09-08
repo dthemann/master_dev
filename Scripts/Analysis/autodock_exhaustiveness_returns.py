@@ -1366,7 +1366,11 @@ def main(argv=None) -> int:
                   f"convention and no --cascade-pins-from given; the cascade self-check "
                   f"CSV will be written but NOT asserted, so this run is not pinned "
                   f"to any published cascade")
-    announce_conv = conv_declared or args.cascade_pins_from is not None
+    # Provenance lines are gated on the CONVENTION, not on the presence of the column:
+    # every hub table now carries reference_convention (instance included), and an
+    # instance table must stay byte-identical to the shipped stage output.
+    announce_conv = (convention != DEFAULT_REFERENCE_CONVENTION
+                     or args.cascade_pins_from is not None)
     if args.write_pins is not None:
         wp = args.write_pins if args.write_pins.is_absolute() else root / args.write_pins
         wp.parent.mkdir(parents=True, exist_ok=True)

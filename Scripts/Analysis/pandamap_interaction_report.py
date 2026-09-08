@@ -2724,6 +2724,11 @@ def main() -> None:
                     help="Restrict the report to the '<PDBID>_<LIG>' complex ids "
                          "listed in this file (one per line; '#' comments ok). "
                          "Overrides config 'ids_file'.")
+    ap.add_argument("--allow-mixed-convention", action="store_true",
+                    help="Proceed when the per-pose metrics table is a nearest-copy table but "
+                         "crystal_interactions.csv carries no copy_index (default: abort, because "
+                         "F1/Jaccard would be scored against the single instance while the RMSD "
+                         "bands use the nearest copy).")
     ap.add_argument("--per-pose-metrics", type=Path, default=None,
                     help="per_pose_metrics.csv from posebusters_pose_comparison.py "
                          "(per-pose RMSD-to-crystal) for the geometry-vs-recovery figure. "
@@ -2774,6 +2779,18 @@ def main() -> None:
     # (nearest_copy_index). A per-copy crystal file read against an instance-convention
     # table is reduced to its reference copy, which is exactly the canonical file.
     copy_sel = None
+    if (not crystal.empty and "copy_index" not in crystal.columns and per_pose_metrics
+            and Path(per_pose_metrics).exists()
+            and "nearest_copy_index" in pd.read_csv(per_pose_metrics, nrows=0).columns):
+        msg = (f"MIXED CONVENTION: {per_pose_metrics} is a nearest-copy table (nearest_copy_index) "
+               f"but {crystal_path} carries no copy_index, so every F1 / Jaccard would be scored "
+               "against the single reference instance while the RMSD bands use the nearest copy. "
+               "Run run_pandamap.py with crystal_copies: all (--refresh-crystal) into this in-dir, "
+               "or pass --allow-mixed-convention to proceed anyway.")
+        if not getattr(args, "allow_mixed_convention", False):
+            print("ERROR: " + msg)
+            raise SystemExit(2)
+        print("WARNING: " + msg)
     if not crystal.empty and "copy_index" in crystal.columns:
         copy_sel = CrystalCopySelector.build(crystal, per_pose_metrics)
         if copy_sel is None:

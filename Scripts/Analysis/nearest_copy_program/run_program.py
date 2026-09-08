@@ -152,6 +152,9 @@ INPUT_PATH_FLAGS = {"--per-pose-csv", "--per-pose-metrics", "--metrics", "--ids-
 # ---------------------------------------------------------------------------
 # REGENERATE.md parsing
 # ---------------------------------------------------------------------------
+EMPTY_VALUE_OPTIONS = {"--unidock2-dir", "--unidock-dir"}
+
+
 def parse_regenerate(text: str) -> tuple[dict, list[str], list[str]]:
     """Return ({stage: {"cmd": tokens, "writes": [paths]}}, all canonical writes, canonical trees)."""
     stages: dict[str, dict] = {}
@@ -250,6 +253,16 @@ def build_command(stage: dict, regen: dict, canon_writes: list[str], canon_trees
     else:
         base = list(stage["cmd"])
     cmd = [rewrite_token(t) for t in base] + list(stage.get("extra", []))
+    # REGENERATE.md renders empty-string option values (builder EFFORT_COMMON passes
+    # "--unidock2-dir", "" and "--unidock-dir", "") as bare flags; re-insert the empty
+    # value whenever one of these value-taking options is followed by another option
+    # or ends the command, otherwise argparse rejects the stage.
+    repaired = []
+    for i, tok in enumerate(cmd):
+        repaired.append(tok)
+        if tok in EMPTY_VALUE_OPTIONS and (i + 1 == len(cmd) or cmd[i + 1].startswith("-")):
+            repaired.append("")
+    cmd = repaired
 
     # (1) every value of an output flag must carry _nearest and must not be canonical
     for i, tok in enumerate(cmd[:-1]):

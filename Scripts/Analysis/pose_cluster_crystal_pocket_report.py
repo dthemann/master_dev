@@ -136,6 +136,7 @@ TOOL_MARKERS = {
 #                falls through to the exact reference arithmetic for a 1-D one.
 _CRYSTAL_COPIES_CHOICES = ("reference", "any")
 _CRYSTAL_COPIES = "reference"          # set once in main() from --crystal-copies
+_TABLE_CONVENTION = None               # reference_convention of the per-pose table, if it carries one
 _CRYSTAL_ANY_RULE = (
     "crystal site: any deposited copy (every record of <ID>_ligands.sdf, record 0 = "
     "reference instance; every crystal distance is the minimum over copies; a "
@@ -150,7 +151,10 @@ def _crystal_site_lines() -> List[str]:
     Empty under ``reference`` so that every existing header stays byte-identical
     (the absence of the line IS the reference-instance wording); one explicit
     rule line under ``any`` so the two conventions can never be confused."""
-    return [_CRYSTAL_ANY_RULE] if _CRYSTAL_COPIES == "any" else []
+    if _CRYSTAL_COPIES != "any":
+        return []
+    return [_CRYSTAL_ANY_RULE,
+            f"per-pose table reference convention: {_TABLE_CONVENTION or 'not recorded (pre-schema-6 table)'}"]
 
 
 def _crystal_site_header(sep: str = "\n") -> str:
@@ -4514,6 +4518,10 @@ def main(argv=None) -> int:
                     help="(Deprecated; the old centroid+shape blend was replaced by "
                          "the placement-aware mode analysis. Unused.)")
     ap.add_argument("--match-thr", type=float, default=4.0)
+    ap.add_argument("--allow-mixed-convention", action="store_true",
+                    help="Proceed when --crystal-copies and the per-pose table's reference_convention "
+                         "disagree (default: abort, because centroid distances and the RMSD column "
+                         "would then refer to different copies).")
     ap.add_argument("--crystal-copies", choices=_CRYSTAL_COPIES_CHOICES, default="reference",
                     help="Crystal-site convention (plan v2 D5). 'reference' (default) "
                          "measures every crystal distance to the single <ID>_ligand.sdf "
@@ -4565,7 +4573,7 @@ def main(argv=None) -> int:
                          "cache (analysis_cache.pkl) exists for the current inputs.")
     mf.add_method_filter_args(ap)
     args = ap.parse_args(argv)
-    global _CRYSTAL_COPIES
+    global _CRYSTAL_COPIES, _TABLE_CONVENTION
     _CRYSTAL_COPIES = args.crystal_copies      # read by the stats-sidecar headers
     if _CRYSTAL_COPIES == "any":
         print(_CRYSTAL_ANY_RULE)
@@ -4574,6 +4582,27 @@ def main(argv=None) -> int:
     if not csv.exists():
         print(f"per-pose CSV not found: {csv}")
         return 1
+    # The RMSD-derived quantities of this report read the hub's ``rmsd`` column as is,
+    # so the crystal-site convention chosen here must match the convention that
+    # table was scored under; otherwise centroid distances and RMSDs refer to
+    # different copies. Tables written before hub schema 6 carry no column and are
+    # single-instance by construction.
+    _hdr = pd.read_csv(csv, nrows=0).columns
+    if "reference_convention" in _hdr:
+        _vals = pd.read_csv(csv, usecols=["reference_convention"], low_memory=False)["reference_convention"].dropna().unique().tolist()
+        _TABLE_CONVENTION = _vals[0] if len(_vals) == 1 else ",".join(map(str, sorted(_vals)))
+    else:
+        _TABLE_CONVENTION = None
+    _table_is_nearest = _TABLE_CONVENTION == "nearest"
+    if (_CRYSTAL_COPIES == "any") != _table_is_nearest:
+        msg = (f"MIXED CONVENTION: --crystal-copies {_CRYSTAL_COPIES} but the per-pose table's "
+               f"reference_convention is {_TABLE_CONVENTION or 'absent (single instance)'}; centroid "
+               "distances and the RMSD column would refer to different copies. Use the matching "
+               "table or pass --allow-mixed-convention.")
+        if not args.allow_mixed_convention:
+            print("ERROR: " + msg)
+            return 2
+        print("WARNING: " + msg)
     ids = _load_ids(Path(args.ids_file)) if args.ids_file else None
     out_dir = Path(args.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -5082,6 +5111,7 @@ def main(argv=None) -> int:
         # the reference convention so that summary.json stays byte-identical there).
         summary["crystal_copies"] = "any"
         summary["crystal_copies_rule"] = _CRYSTAL_ANY_RULE
+        summary["per_pose_table_convention"] = _TABLE_CONVENTION
         summary["n_multi_copy_complexes"] = (
             int((pd.to_numeric(df_complex.get("crystal_n_copies"), errors="coerce") > 1).sum())
             if "crystal_n_copies" in df_complex else None)

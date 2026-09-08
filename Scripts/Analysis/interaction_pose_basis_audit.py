@@ -218,6 +218,9 @@ def main(argv=None) -> int:
                     help="pandamap config; supplies output_dir and pb_csv")
     ap.add_argument("--in-dir", type=Path, default=None,
                     help="override the config's output_dir")
+    ap.add_argument("--allow-mixed-convention", action="store_true",
+                    help="Proceed when the metrics table is a nearest-copy table but "
+                         "crystal_interactions.csv carries no copy_index (default: abort).")
     ap.add_argument("--metrics", type=Path, default=None,
                     help="per_pose_metrics.csv; default derived from the config's pb_csv")
     ap.add_argument("--out-dir", type=Path, default=None,
@@ -268,6 +271,16 @@ def main(argv=None) -> int:
     # Nearest-copy crystal reference (opt-in; see module docstring). Decided BEFORE the
     # metrics frame is reduced to its RMSD columns.
     copy_sel = build_copy_selector(crystal, metrics)
+    if (copy_sel is None and "copy_index" not in crystal.columns
+            and "nearest_copy_index" in metrics.columns):
+        msg = ("MIXED CONVENTION: the metrics table is a nearest-copy table (nearest_copy_index) "
+               "but crystal_interactions.csv carries no copy_index; F1 would be scored against the "
+               "single reference instance while the RMSD bands use the nearest copy. Refresh the "
+               "crystal fingerprints with crystal_copies: all, or pass --allow-mixed-convention.")
+        if not getattr(args, "allow_mixed_convention", False):
+            print("ERROR: " + msg)
+            raise SystemExit(2)
+        print("WARNING: " + msg)
     if copy_sel is None and "copy_index" in crystal.columns:
         crystal = crystal[crystal["copy_index"].fillna(0).astype(int) == 0].drop(columns=["copy_index"])
         print("crystal_interactions.csv carries copy_index but the metrics table has no "
