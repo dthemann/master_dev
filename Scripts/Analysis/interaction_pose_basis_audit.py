@@ -34,6 +34,14 @@ Run under the vina env (pandas/scipy), from the repo root:
         --exclude-methods unidock2,autodock_gnina
 
 Writes ``<in-dir>/report/interaction_pose_basis_audit.{txt,csv}``.
+
+Nearest-copy convention (opt-in, nearest-copy endpoint program): when
+``crystal_interactions.csv`` carries ``copy_index`` (run_pandamap ``crystal_copies:
+all``) AND the metrics table carries ``nearest_copy_index`` (hub
+``--reference-convention nearest``), every top-5 union is scored against the union
+of the fingerprints of the copies its poses are nearest to (plan v2 §1.8), joined on
+POSE_KEY. With either column absent the audit is byte-identical to the historical
+run (a per-copy crystal file against an instance table reduces to its reference copy).
 """
 from __future__ import annotations
 
@@ -101,12 +109,62 @@ def jaccard(a: set, b: set) -> float:
     return len(a & b) / u if u else np.nan
 
 
+class CopySelector:
+    """Nearest-copy crystal reference: per-copy crystal rows + per-pose nearest copy.
+
+    Mirrors pandamap_interaction_report.CrystalCopySelector for the audit's two
+    call sites. ``None`` (see :func:`build_copy_selector`) keeps the per-pair reference.
+    """
+
+    def __init__(self, crystal: pd.DataFrame, nearest: dict, ref_index: dict):
+        ck = crystal["copy_index"].fillna(0).astype(int)
+        self.copies = {(p, l, k): g for (p, l, k), g in
+                       crystal.assign(_k=ck).groupby(["protein", "ligand", "_k"])}
+        self.pairs = {(p, l) for (p, l, _k) in self.copies}
+        self.nearest = nearest
+        self.ref_index = ref_index
+        self.fallback: set = set()
+
+    def copy_of(self, m, p, l, pose_name) -> int:
+        k = self.nearest.get((m, p, l, pose_name))
+        if k is None:
+            self.fallback.add((m, p, l, pose_name))
+            return self.ref_index.get((p, l), 0)
+        return k
+
+    def union_fp(self, m, p, l, pose_names, **fp_kw) -> set:
+        """Union of the (optionally repaired) fingerprints of every selected copy."""
+        out: set = set()
+        for k in sorted({self.copy_of(m, p, l, n) for n in pose_names}):
+            g = self.copies.get((p, l, k))
+            if g is not None:
+                out |= typed_fp(g, **fp_kw)
+        return out
+
+
+def build_copy_selector(crystal: pd.DataFrame, metrics: pd.DataFrame) -> "CopySelector | None":
+    """CopySelector when BOTH ``copy_index`` and ``nearest_copy_index`` exist, else None."""
+    if "copy_index" not in crystal.columns or "nearest_copy_index" not in metrics.columns:
+        return None
+    mt = metrics.dropna(subset=["nearest_copy_index"]).drop_duplicates(POSE_KEY)
+    nearest = {tuple(k): int(v) for *k, v in
+               mt[POSE_KEY + ["nearest_copy_index"]].itertuples(index=False, name=None)}
+    ref_index = {}
+    if "ref_copy_index" in mt.columns:
+        r = mt.dropna(subset=["ref_copy_index"]).drop_duplicates(["protein", "ligand"])
+        ref_index = {(p, l): int(v) for p, l, v in
+                     r[["protein", "ligand", "ref_copy_index"]].itertuples(index=False, name=None)}
+    return CopySelector(crystal, nearest, ref_index)
+
+
 def union_jaccard(inter: pd.DataFrame, crystal_fp: dict, depth: int,
-                  **fp_kw) -> dict[str, dict]:
+                  copy_sel: "CopySelector | None" = None, **fp_kw) -> dict[str, dict]:
     """Mean Jaccard of each method's top-`depth` union against the crystal.
 
     Returns {method: {(protein, ligand): jaccard}}. Selection mirrors
     plot_fingerprint_similarity: rank-order, head(depth), union the rows.
+    ``copy_sel`` (nearest-copy convention) replaces ``crystal_fp[(p, l)]`` by the union
+    of the selected copies' fingerprints, repaired with the same ``fp_kw``.
     """
     keep = (inter[POSE_KEY + ["pose_rank"]].drop_duplicates()
             .sort_values("pose_rank")
@@ -115,7 +173,11 @@ def union_jaccard(inter: pd.DataFrame, crystal_fp: dict, depth: int,
     sel = inter.merge(keep[POSE_KEY], on=POSE_KEY, how="inner")
     out: dict[str, dict] = {}
     for (m, p, l), g in sel.groupby(["method", "protein", "ligand"], sort=False):
-        ref = crystal_fp.get((p, l))
+        if copy_sel is not None:
+            ref = copy_sel.union_fp(m, p, l, g["pose_name"].unique(), **fp_kw) \
+                if (p, l) in copy_sel.pairs else None
+        else:
+            ref = crystal_fp.get((p, l))
         if ref:
             out.setdefault(m, {})[(p, l)] = jaccard(typed_fp(g, **fp_kw), ref)
     return out
@@ -203,6 +265,14 @@ def main(argv=None) -> int:
         inter = mf.apply_patterns(inter, "method", patterns, label="interactions")
         recov = mf.apply_patterns(recov, "method", patterns, label="recovery")
 
+    # Nearest-copy crystal reference (opt-in; see module docstring). Decided BEFORE the
+    # metrics frame is reduced to its RMSD columns.
+    copy_sel = build_copy_selector(crystal, metrics)
+    if copy_sel is None and "copy_index" in crystal.columns:
+        crystal = crystal[crystal["copy_index"].fillna(0).astype(int) == 0].drop(columns=["copy_index"])
+        print("crystal_interactions.csv carries copy_index but the metrics table has no "
+              "nearest_copy_index — using the reference copy only (single-instance convention).")
+
     rm = metrics[POSE_KEY + ["rmsd", "bestfit_rmsd"]].drop_duplicates(POSE_KEY)
     inter = inter.merge(rm, on=POSE_KEY, how="left")
     recov = recov.merge(rm, on=POSE_KEY, how="left")
@@ -239,6 +309,13 @@ def main(argv=None) -> int:
         emit(f"excluded: {', '.join(patterns)}")
     emit(f"metrics : {metrics_csv}")
     emit(f"join    : {n_join}/{len(poses)} poses carry an RMSD")
+    if copy_sel is not None:
+        n_multi = len({(p, l) for (p, l, k) in copy_sel.copies if k != copy_sel.ref_index.get((p, l), 0)})
+        emit(f"crystal : nearest-copy convention — each top-5 union is scored against the union of "
+             f"the crystal copies its poses are nearest to ({n_multi} of {len(copy_sel.pairs)} pairs "
+             f"carry >1 fingerprinted copy)")
+        record("crystal_reference_convention", "nearest")
+        record("crystal_pairs_multi_copy", n_multi)
     emit()
 
     # ── A. composition of the profiled pool ────────────────────────────────
@@ -322,7 +399,7 @@ def main(argv=None) -> int:
     results = {}
     for label, sub in [("published (all poses)", inter),
                        (f"rmsd < {SITE_FILTER_A:g} A", inter[inter["rmsd"] < SITE_FILTER_A])]:
-        per = union_jaccard(sub, crystal_fp, depth=5)
+        per = union_jaccard(sub, crystal_fp, depth=5, copy_sel=copy_sel)
         results[label] = per
         common, p_com, pair, p_pair = dd_vs_ad(per, methods)
         cells = "".join(f"{np.mean(list(per.get(m, {}).values())):>10.4f} ({len(per.get(m, {})):>3})"
@@ -350,7 +427,7 @@ def main(argv=None) -> int:
     record("site_filter_within_2A_pct", round(enrich, 1))
     emit("   threshold sweep (the 10 A cut must not be load-bearing):")
     for thr in SITE_FILTER_SWEEP:
-        per = union_jaccard(inter[inter["rmsd"] < thr], crystal_fp, depth=5)
+        per = union_jaccard(inter[inter["rmsd"] < thr], crystal_fp, depth=5, copy_sel=copy_sel)
         common, p_com, _, _ = dd_vs_ad(per, methods)
         cells = "  ".join(f"{np.mean(list(per.get(m, {}).values())):.4f}" for m in methods)
         emit(f"     < {thr:>4.0f} A   {cells}   common n={len(common):>4}   p={p_com:.2e}")
@@ -404,7 +481,7 @@ def main(argv=None) -> int:
             # The repairs apply to BOTH sides of the comparison. Repairing only the pose
             # fingerprint would inflate the union and understate every similarity.
             fp_ref = {(p, l): typed_fp(g, **kw) for (p, l), g in crystal.groupby(["protein", "ligand"])}
-            per = union_jaccard(inter, fp_ref, depth=5, **kw)
+            per = union_jaccard(inter, fp_ref, depth=5, copy_sel=copy_sel, **kw)
             common, p_com, pair, p_pair = dd_vs_ad(per, methods)
             cells = "  ".join(f"{np.mean(list(per.get(m, {}).values())):.4f}" for m in methods)
             emit(f"     {label:<28}{cells}   p(DD vs AD) = {p_com:.4f} on the common "
@@ -415,6 +492,11 @@ def main(argv=None) -> int:
             for m in methods:
                 record(f"defect_{label.replace(' ', '_')}_{m}",
                        round(float(np.mean(list(per.get(m, {}).values()))), 4))
+
+    if copy_sel is not None and copy_sel.fallback:
+        emit(f"   note: {len(copy_sel.fallback)} profiled poses carry no nearest_copy_index and were "
+             "scored against the reference copy")
+        record("crystal_poses_without_nearest_index", len(copy_sel.fallback))
 
     txt = out_dir / "interaction_pose_basis_audit.txt"
     csv = out_dir / "interaction_pose_basis_audit.csv"

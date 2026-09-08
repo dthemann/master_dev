@@ -632,6 +632,109 @@ def jaccard(a: set, b: set) -> float:
     return len(a & b) / u if u else np.nan
 
 
+# ── nearest-copy crystal reference (opt-in; nearest-copy endpoint program) ──
+# The canonical crystal_interactions.csv fingerprints only the reference copy (record 0
+# of <ID>_ligands.sdf) and the per-pose metrics table carries no copy index, so every
+# function below falls back to today's ``crystal.groupby(["protein", "ligand"])`` and the
+# report is byte-identical. When run_pandamap ran with ``crystal_copies: all`` (crystal
+# rows carry ``copy_index``) AND the per-pose metrics table was built under
+# ``--reference-convention nearest`` (rows carry ``nearest_copy_index``), each pose is
+# scored against the crystal fingerprint of the deposited copy it is nearest to (plan
+# v2 D2), joined on (method, protein, ligand, pose_name). A top-k UNION fingerprint is
+# scored against the union of the fingerprints of the copies its poses selected (plan
+# v2 §1.8). A pose absent from the metrics table falls back to the reference copy and
+# is counted.
+
+class CrystalCopySelector:
+    """Per-pose crystal reference under the nearest-copy convention."""
+
+    KEY = ["method", "protein", "ligand", "pose_name"]
+
+    def __init__(self, crystal: pd.DataFrame, nearest: dict, ref_index: dict):
+        ci = crystal["copy_index"].fillna(0).astype(int)
+        self.copies = {(p, l, k): g for (p, l, k), g in
+                       crystal.assign(_k=ci).groupby(["protein", "ligand", "_k"])}
+        self.pairs = {(p, l) for (p, l, _k) in self.copies}
+        self.nearest = nearest            # (method, protein, ligand, pose_name) -> copy k
+        self.ref_index = ref_index        # (protein, ligand) -> reference copy index (0)
+        self.fallback: set = set()        # pose keys that had no nearest_copy_index
+        self._fp: dict = {}
+
+    @classmethod
+    def build(cls, crystal: pd.DataFrame, metrics_csv) -> "CrystalCopySelector | None":
+        """None unless BOTH ``copy_index`` (crystal) and ``nearest_copy_index`` (metrics)."""
+        if crystal.empty or "copy_index" not in crystal.columns:
+            return None
+        if not metrics_csv or not Path(metrics_csv).exists():
+            return None
+        head = pd.read_csv(metrics_csv, nrows=0)
+        if "nearest_copy_index" not in head.columns:
+            return None
+        cols = cls.KEY + ["nearest_copy_index"] + (["ref_copy_index"] if "ref_copy_index" in head.columns else [])
+        mt = pd.read_csv(metrics_csv, usecols=cols, low_memory=False).dropna(subset=["nearest_copy_index"])
+        mt = mt.drop_duplicates(cls.KEY)
+        nearest = {tuple(k): int(v) for *k, v in
+                   mt[cls.KEY + ["nearest_copy_index"]].itertuples(index=False, name=None)}
+        ref_index = {}
+        if "ref_copy_index" in mt.columns:
+            r = mt.dropna(subset=["ref_copy_index"]).drop_duplicates(["protein", "ligand"])
+            ref_index = {(p, l): int(v) for p, l, v in
+                         r[["protein", "ligand", "ref_copy_index"]].itertuples(index=False, name=None)}
+        return cls(crystal, nearest, ref_index)
+
+    # ----- copy resolution -------------------------------------------------
+    def ref_copy(self, p, l) -> int:
+        return self.ref_index.get((p, l), 0)
+
+    def copy_of(self, method, p, l, pose_name) -> int:
+        k = self.nearest.get((method, p, l, pose_name))
+        if k is None:
+            self.fallback.add((method, p, l, pose_name))
+            return self.ref_copy(p, l)
+        return k
+
+    def frame(self, p, l, k) -> pd.DataFrame:
+        """Crystal rows of copy k (empty frame when that copy has no interaction rows)."""
+        g = self.copies.get((p, l, k))
+        if g is None:
+            return pd.DataFrame(columns=["interaction_type", "resname", "resnum", "chain"])
+        return g
+
+    def fp(self, p, l, k, mode="typed") -> set:
+        key = (p, l, k, mode)
+        if key not in self._fp:
+            self._fp[key] = pose_fingerprint(self.frame(p, l, k), mode)
+        return self._fp[key]
+
+    def has_pair(self, p, l) -> bool:
+        return (p, l) in self.pairs
+
+    # ----- per-pose / per-pose-set references -------------------------------
+    def pose_fp(self, method, p, l, pose_name, mode="typed") -> set:
+        return self.fp(p, l, self.copy_of(method, p, l, pose_name), mode)
+
+    def copies_for(self, method, p, l, pose_names) -> list[int]:
+        """Distinct copy indices (sorted) the given poses of one method × pair select."""
+        return sorted({self.copy_of(method, p, l, n) for n in pose_names})
+
+    def union_fp(self, method, p, l, pose_names, mode="typed") -> set:
+        """Union of the fingerprints of every copy the pose set selects (plan v2 §1.8)."""
+        out: set = set()
+        for k in self.copies_for(method, p, l, pose_names):
+            out |= self.fp(p, l, k, mode)
+        return out
+
+    def report(self) -> str:
+        n_multi = sum(1 for (p, l) in self.pairs
+                      if len({k for (pp, ll, k) in self.copies if (pp, ll) == (p, l)}) > 1)
+        alt = sum(1 for (m, p, l, n), k in self.nearest.items() if k != self.ref_copy(p, l))
+        return (f"nearest-copy crystal reference: {len(self.pairs)} pairs, {n_multi} with >1 copy "
+                f"fingerprinted; {len(self.nearest)} poses carry a nearest_copy_index "
+                f"({alt} point at an alternate copy); {len(self.fallback)} profiled poses without "
+                f"an index fell back to the reference copy "
+                f"(in {len({(p, l) for (_m, p, l, _n) in self.fallback})} pairs)")
+
+
 # ── shared figure finalisation + per-figure text sidecar ────────────────────
 # run_pandamap keeps only each method's top-N ranked poses per complex
 # (poses_per_combo / select_top_n), so the whole interaction analysis is built
@@ -1179,15 +1282,23 @@ def plot_residue_hotspots(inter: pd.DataFrame, summary: pd.DataFrame, order,
 # ── 04/05: native recovery + fingerprint similarity ─────────────────────────
 
 def native_recovery(inter: pd.DataFrame, crystal: pd.DataFrame, order,
-                    out_dir: Path) -> pd.DataFrame:
-    """Per-pose precision/recall/F1 of interactions vs the crystal fingerprint."""
+                    out_dir: Path, copy_sel: "CrystalCopySelector | None" = None) -> pd.DataFrame:
+    """Per-pose precision/recall/F1 of interactions vs the crystal fingerprint.
+
+    ``copy_sel`` (nearest-copy convention) scores each pose against the crystal copy it
+    is nearest to; ``None`` keeps the per-pair reference fingerprint.
+    """
     cryst_fp = {}
-    for (p, l), g in crystal.groupby(["protein", "ligand"]):
-        cryst_fp[(p, l)] = pose_fingerprint(g, "typed")
+    if copy_sel is None:
+        for (p, l), g in crystal.groupby(["protein", "ligand"]):
+            cryst_fp[(p, l)] = pose_fingerprint(g, "typed")
 
     recs = []
     for (method, p, l, pose), g in inter.groupby(["method", "protein", "ligand", "pose_name"]):
-        ref = cryst_fp.get((p, l))
+        if copy_sel is not None:
+            ref = copy_sel.pose_fp(method, p, l, pose) if copy_sel.has_pair(p, l) else None
+        else:
+            ref = cryst_fp.get((p, l))
         if not ref:
             continue
         fp = pose_fingerprint(g, "typed")
@@ -1473,15 +1584,24 @@ def plot_native_recovery_by_rank(per_pose: pd.DataFrame, order, out: Path,
 
 
 def plot_fingerprint_similarity(inter: pd.DataFrame, crystal: pd.DataFrame, order, out: Path,
-                                depth: int = 1, show_caption: bool = True) -> None:
+                                depth: int = 1, show_caption: bool = True,
+                                copy_sel: "CrystalCopySelector | None" = None) -> None:
     """Mean cross-method Jaccard of the top-`depth` pose(s) per pair, + vs crystal.
 
     ``depth=1`` uses each method's single best (lowest pose_rank) pose. ``depth>1`` uses
     the UNION of that method's top-`depth` poses' typed fingerprints per complex — the
     interaction repertoire the tool covers across its top ranked poses — so the matrix
     compares interaction coverage rather than a single pose.
+
+    ``copy_sel`` (nearest-copy convention): the crystal fingerprint a method's top-`depth`
+    union is compared with is the UNION of the fingerprints of the copies those poses are
+    nearest to (plan v2 §1.8); crystal-vs-crystal stays the reference copy. ``None`` keeps
+    the per-pair reference fingerprint.
     """
-    cryst_fp = {(p, l): pose_fingerprint(g, "typed") for (p, l), g in crystal.groupby(["protein", "ligand"])}
+    if copy_sel is None:
+        cryst_fp = {(p, l): pose_fingerprint(g, "typed") for (p, l), g in crystal.groupby(["protein", "ligand"])}
+    else:
+        cryst_fp = {(p, l): copy_sel.fp(p, l, copy_sel.ref_copy(p, l)) for (p, l) in copy_sel.pairs}
     # keep the top-`depth` poses per (method, pair) by pose_rank; the union of their
     # interaction rows (pose_fingerprint builds a set over all rows) is the depth-`depth`
     # coverage fingerprint. depth=1 → the single best pose (original behaviour).
@@ -1493,18 +1613,28 @@ def plot_fingerprint_similarity(inter: pd.DataFrame, crystal: pd.DataFrame, orde
     sel = inter.merge(keep[["method", "protein", "ligand", "pose_name"]],
                       on=["method", "protein", "ligand", "pose_name"], how="inner")
     fp_by = {}
+    cryst_for = {}      # nearest-copy: (method, p, l) -> union fp of the copies its poses selected
     for (method, p, l), g in sel.groupby(["method", "protein", "ligand"], sort=False):
         fp_by[(method, p, l)] = pose_fingerprint(g, "typed")   # union over the top-depth poses
+        if copy_sel is not None and copy_sel.has_pair(p, l):
+            cryst_for[(method, p, l)] = copy_sel.union_fp(method, p, l, g["pose_name"].unique())
     methods = ordered_methods({m for (m, _, _) in fp_by})
     labels = methods + (["crystal"] if cryst_fp else [])
     mat = np.full((len(labels), len(labels)), np.nan)
     pairs = {(p, l) for (_, p, l) in fp_by}
+
+    def _cryst(other, p, l):
+        # the crystal fingerprint paired with method `other` at (p, l)
+        if copy_sel is not None and other != "crystal":
+            return cryst_for.get((other, p, l))
+        return cryst_fp.get((p, l))
+
     for i, a in enumerate(labels):
         for j, b in enumerate(labels):
             vals = []
             for (p, l) in pairs:
-                fa = cryst_fp.get((p, l)) if a == "crystal" else fp_by.get((a, p, l))
-                fb = cryst_fp.get((p, l)) if b == "crystal" else fp_by.get((b, p, l))
+                fa = _cryst(b, p, l) if a == "crystal" else fp_by.get((a, p, l))
+                fb = _cryst(a, p, l) if b == "crystal" else fp_by.get((b, p, l))
                 if fa is not None and fb is not None:
                     vals.append(jaccard(fa, fb))
             mat[i, j] = np.nanmean(vals) if vals else np.nan
@@ -1713,8 +1843,12 @@ def _method_colors(order) -> dict:
     return {m: TOOL_COLORS.get(m) for m in order}
 
 
-def build_recovery_detail(inter: pd.DataFrame, crystal: pd.DataFrame):
+def build_recovery_detail(inter: pd.DataFrame, crystal: pd.DataFrame,
+                          copy_sel: "CrystalCopySelector | None" = None):
     """Per-pose typed & residue-contact recovery detail vs the crystal fingerprint.
+
+    ``copy_sel`` (nearest-copy convention) scores each pose against the crystal copy it
+    is nearest to; the extra ``crystal_copy`` column records that copy index.
 
     Returns ``(per_pose, per_type)``:
       * ``per_pose``  — one row per (method, protein, ligand, pose_name, pose_rank):
@@ -1726,14 +1860,19 @@ def build_recovery_detail(inter: pd.DataFrame, crystal: pd.DataFrame):
         the interaction-type-resolved recall/precision (fig 09).
     """
     cryst_typed, cryst_contact, cryst_by_type = {}, {}, {}
-    for (p, l), g in crystal.groupby(["protein", "ligand"]):
-        t = pose_fingerprint(g, "typed")
-        cryst_typed[(p, l)] = t
-        cryst_contact[(p, l)] = pose_fingerprint(g, "contact")
+
+    def _by_type(t):
         by = {}
         for (it, rn, rnum, ch) in t:
             by.setdefault(it, set()).add((rn, rnum, ch))
-        cryst_by_type[(p, l)] = by
+        return by
+
+    if copy_sel is None:
+        for (p, l), g in crystal.groupby(["protein", "ligand"]):
+            t = pose_fingerprint(g, "typed")
+            cryst_typed[(p, l)] = t
+            cryst_contact[(p, l)] = pose_fingerprint(g, "contact")
+            cryst_by_type[(p, l)] = _by_type(t)
 
     has_rank = "pose_rank" in inter.columns
     keys = ["method", "protein", "ligand", "pose_name"] + (["pose_rank"] if has_rank else [])
@@ -1743,12 +1882,22 @@ def build_recovery_detail(inter: pd.DataFrame, crystal: pd.DataFrame):
             method, p, l, pose, rank = k
         else:
             (method, p, l, pose), rank = k, np.nan
-        ref = cryst_typed.get((p, l))
-        if ref is None:
-            continue
+        if copy_sel is not None:
+            if not copy_sel.has_pair(p, l):
+                continue
+            kcopy = copy_sel.copy_of(method, p, l, pose)
+            ref = copy_sel.fp(p, l, kcopy, "typed")
+            ref_c = copy_sel.fp(p, l, kcopy, "contact")
+            ref_by_type = cryst_by_type.setdefault((p, l, kcopy), _by_type(ref))
+        else:
+            kcopy = None
+            ref = cryst_typed.get((p, l))
+            if ref is None:
+                continue
+            ref_c = cryst_contact.get((p, l), set())
+            ref_by_type = cryst_by_type.get((p, l), {})
         fp = pose_fingerprint(g, "typed")
         fp_c = pose_fingerprint(g, "contact")
-        ref_c = cryst_contact.get((p, l), set())
         tp, fp_n, fn = len(fp & ref), len(fp - ref), len(ref - fp)
         prec = tp / len(fp) if fp else np.nan
         rec = tp / len(ref) if ref else np.nan
@@ -1761,11 +1910,11 @@ def build_recovery_detail(inter: pd.DataFrame, crystal: pd.DataFrame):
             "f1": f1, "jaccard_vs_crystal": jaccard(fp, ref),
             "n_native_res": len(ref_c), "tp_res": tp_c,
             "recall_contact": (tp_c / len(ref_c) if ref_c else np.nan),
+            **({"crystal_copy": kcopy} if copy_sel is not None else {}),
         })
         pose_by_type: dict[str, set] = {}
         for (it, rn, rnum, ch) in fp:
             pose_by_type.setdefault(it, set()).add((rn, rnum, ch))
-        ref_by_type = cryst_by_type.get((p, l), {})
         for it in set(pose_by_type) | set(ref_by_type):
             ps, rs = pose_by_type.get(it, set()), ref_by_type.get(it, set())
             type_rows.append({
@@ -2029,7 +2178,8 @@ def plot_contact_decomposition_by_rank(per_pose: pd.DataFrame, order, out: Path,
 
 
 def plot_residue_confusion(inter: pd.DataFrame, crystal: pd.DataFrame, order,
-                           out: Path, top_n: int = 20) -> None:
+                           out: Path, top_n: int = 20,
+                           copy_sel: "CrystalCopySelector | None" = None) -> None:
     """11 — per-residue recovery of native contacts and per-residue spurious contacts.
 
     Residues are pooled by resname+resnum across complexes (as in fig 03). Left panel:
@@ -2040,19 +2190,36 @@ def plot_residue_confusion(inter: pd.DataFrame, crystal: pd.DataFrame, order,
     """
     def _res(df):
         return df["resname"].astype(str) + df["resnum"].astype(str)
-    cryst = crystal.copy(); cryst["res"] = _res(cryst)
-    native_by_pair = cryst.groupby(["protein", "ligand"])["res"].apply(set).to_dict()
-    native_freq = cryst.drop_duplicates(["protein", "ligand", "res"])["res"].value_counts()
-
     pc = inter.copy(); pc["res"] = _res(pc)
     pose_res = (pc.groupby(["method", "protein", "ligand", "pose_name"])["res"]
                 .apply(set).reset_index())
+    cryst = crystal.copy(); cryst["res"] = _res(cryst)
+    if copy_sel is None:
+        native_by_pair = cryst.groupby(["protein", "ligand"])["res"].apply(set).to_dict()
+        native_freq = cryst.drop_duplicates(["protein", "ligand", "res"])["res"].value_counts()
+        native_by_copy = None
+    else:
+        # nearest-copy: a pose's native residue set is that of the copy it is nearest to;
+        # the hot-spot ranking pools, per complex, the residues native in ANY copy some
+        # profiled pose selected (a residue counts once per complex).
+        ck = cryst["copy_index"].fillna(0).astype(int)
+        native_by_copy = cryst.assign(_k=ck).groupby(["protein", "ligand", "_k"])["res"].apply(set).to_dict()
+        pose_res["_k"] = [copy_sel.copy_of(m, p, l, n) for m, p, l, n in
+                          pose_res[["method", "protein", "ligand", "pose_name"]].itertuples(index=False, name=None)]
+        used = pose_res[["protein", "ligand", "_k"]].drop_duplicates()
+        used = used[[copy_sel.has_pair(p, l) for p, l in zip(used["protein"], used["ligand"])]]
+        cu = cryst.assign(_k=ck).merge(used, on=["protein", "ligand", "_k"], how="inner")
+        native_freq = cu.drop_duplicates(["protein", "ligand", "res"])["res"].value_counts()
     methods = [m for m in order if m in set(pose_res["method"])]
     poses_per_method = pose_res.groupby("method").size()
 
     recov_num: dict = {}; recov_den: dict = {}; spur_num: dict = {}
     for _, r in pose_res.iterrows():
-        m = r["method"]; nat = native_by_pair.get((r["protein"], r["ligand"]), set())
+        m = r["method"]
+        if native_by_copy is not None:
+            nat = native_by_copy.get((r["protein"], r["ligand"], r["_k"]), set())
+        else:
+            nat = native_by_pair.get((r["protein"], r["ligand"]), set())
         contacted = r["res"]
         for res in nat:                       # recovery denominator = poses whose pair has res native
             recov_den[(m, res)] = recov_den.get((m, res), 0) + 1
@@ -2409,7 +2576,8 @@ def plot_rmsd_vs_recovery(per_pose: pd.DataFrame, metrics_csv: Path, order, out:
 
 
 def plot_pair_overlays(inter: pd.DataFrame, crystal: pd.DataFrame, per_pose: pd.DataFrame,
-                       order, out: Path, n_pairs: int = 4, max_rows: int = 26) -> None:
+                       order, out: Path, n_pairs: int = 4, max_rows: int = 26,
+                       copy_sel: "CrystalCopySelector | None" = None) -> None:
     """15 — per-complex crystal-vs-pose typed-contact overlays (case studies).
 
     Picks a spread of complexes (best / worst / most-divergent mean native-F1 across
@@ -2432,7 +2600,10 @@ def plot_pair_overlays(inter: pd.DataFrame, crystal: pd.DataFrame, per_pose: pd.
         if len(picks) >= n_pairs:
             break
 
-    cryst_typed = {(p, l): pose_fingerprint(g, "typed") for (p, l), g in crystal.groupby(["protein", "ligand"])}
+    if copy_sel is None:
+        cryst_typed = {(p, l): pose_fingerprint(g, "typed") for (p, l), g in crystal.groupby(["protein", "ligand"])}
+    else:
+        cryst_typed = {}   # nearest-copy: filled per picked pair from the shown poses' copies
     best_pose = (inter.sort_values(["pose_rank", "pose_name"])
                  .drop_duplicates(["method", "protein", "ligand"]))  # top-ranked pose id per (method,pair)
 
@@ -2441,8 +2612,7 @@ def plot_pair_overlays(inter: pd.DataFrame, crystal: pd.DataFrame, per_pose: pd.
     fig, axes = plt.subplots(1, len(picks), figsize=(max(4.5 * len(picks), 9), max(6, 0.28 * max_rows + 2)))
     axes = np.atleast_1d(axes)
     for ax, (p, l) in zip(axes, picks):
-        ref = cryst_typed.get((p, l), set())
-        cols, fps = ["crystal"], [ref]
+        cols, fps, refs = ["crystal"], [None], [None]
         for m in methods:
             row = best_pose[(best_pose["method"] == m) & (best_pose["protein"] == p) & (best_pose["ligand"] == l)]
             if row.empty:
@@ -2451,16 +2621,25 @@ def plot_pair_overlays(inter: pd.DataFrame, crystal: pd.DataFrame, per_pose: pd.
             g = inter[(inter["method"] == m) & (inter["protein"] == p) &
                       (inter["ligand"] == l) & (inter["pose_name"] == pose)]
             cols.append(m); fps.append(pose_fingerprint(g, "typed"))
+            # nearest-copy: each shown pose is judged against the copy it is nearest to
+            refs.append(copy_sel.pose_fp(m, p, l, pose) if copy_sel is not None else None)
+        if copy_sel is None:
+            ref = cryst_typed.get((p, l), set())
+        else:
+            # the crystal column shows the union of the copies the shown poses selected
+            ref = set().union(*[r for r in refs if r is not None]) if any(r is not None for r in refs) else set()
+        fps[0] = ref
+        refs = [ref if r is None else r for r in refs]
         contacts = sorted(set().union(*fps), key=lambda c: (c[0] not in {t for (t, *_ ) in ref}, str(c)))
         contacts = contacts[:max_rows]
         M = np.zeros((len(contacts), len(cols)))
-        for j, (cn, fp) in enumerate(zip(cols, fps)):
+        for j, (cn, fp, ref_j) in enumerate(zip(cols, fps, refs)):
             for i, c in enumerate(contacts):
                 if c not in fp:
                     M[i, j] = 0
                 elif cn == "crystal":
                     M[i, j] = 1                       # native (shown in crystal column)
-                elif c in ref:
+                elif c in ref_j:
                     M[i, j] = 2                       # recovered native
                 else:
                     M[i, j] = 3                       # spurious
@@ -2590,6 +2769,22 @@ def main() -> None:
     crystal_path = in_dir / "crystal_interactions.csv"
     crystal = (read_pandamap_csv(crystal_path, low_memory=False)
                if crystal_path.exists() else pd.DataFrame())
+    # Nearest-copy crystal reference (opt-in, see CrystalCopySelector). Needs BOTH a
+    # per-copy crystal file (copy_index) and a nearest-convention metrics table
+    # (nearest_copy_index). A per-copy crystal file read against an instance-convention
+    # table is reduced to its reference copy, which is exactly the canonical file.
+    copy_sel = None
+    if not crystal.empty and "copy_index" in crystal.columns:
+        copy_sel = CrystalCopySelector.build(crystal, per_pose_metrics)
+        if copy_sel is None:
+            _ck = crystal["copy_index"].fillna(0).astype(int)
+            crystal = crystal[_ck == 0].drop(columns=["copy_index"]).reset_index(drop=True)
+            print(f"crystal_interactions.csv carries copy_index but {per_pose_metrics} has no "
+                  "nearest_copy_index — using the reference copy only (single-instance convention).")
+        else:
+            print(f"crystal_interactions.csv carries copy_index and {per_pose_metrics} carries "
+                  "nearest_copy_index — every pose is scored against its nearest deposited copy; "
+                  "top-k unions against the union of the selected copies (nearest-copy convention).")
 
     # Drop whole methods from every chart/CSV. The fingerprints stay on disk; this only
     # controls what is presented, so a tool can be generated once and then left out of a
@@ -2691,20 +2886,25 @@ def main() -> None:
                           out_dir / "02_type_heatmap.png", out_dir / "02b_total_boxplot.png")
     plot_residue_hotspots(inter, summary, order, out_dir / "03_residue_hotspots.png", args.top_residues)
     if not crystal.empty:
-        rec = native_recovery(inter, crystal, order, out_dir)
+        if copy_sel is not None:
+            # the selector was built on the unfiltered crystal frame; rebuild it on the
+            # method-filtered / id-restricted one so its pair set matches the report's
+            copy_sel = CrystalCopySelector(crystal, copy_sel.nearest, copy_sel.ref_index)
+        rec = native_recovery(inter, crystal, order, out_dir, copy_sel=copy_sel)
         if not rec.empty:
             print("\nNative-interaction recovery (mean per method):")
             print(rec.round(3).to_string())
         # top-1 pose (base name, kept) and top-5 union bucket
         plot_fingerprint_similarity(inter, crystal, order,
-                                    out_dir / "05_fingerprint_similarity.png", depth=1)
+                                    out_dir / "05_fingerprint_similarity.png", depth=1,
+                                    copy_sel=copy_sel)
         plot_fingerprint_similarity(inter, crystal, order,
                                     out_dir / "05_fingerprint_similarity_top5.png",
-                                    depth=depth_pool, show_caption=False)
+                                    depth=depth_pool, show_caption=False, copy_sel=copy_sel)
 
         # Deeper crystal-vs-pose comparison (figs 09-15). One residue-level detail
         # pass feeds the type-resolved, decomposition, gap and oracle figures.
-        per_pose, per_type = build_recovery_detail(inter, crystal)
+        per_pose, per_type = build_recovery_detail(inter, crystal, copy_sel=copy_sel)
         if not per_pose.empty:
             per_pose.round(4).to_csv(out_dir / "recovery_detail_per_pose.csv", index=False)
         plot_native_recovery_by_rank(per_pose, order,
@@ -2724,13 +2924,18 @@ def main() -> None:
                                            out_dir / "10b_contact_decomposition_by_rank.png",
                                            top_n=depth_pool)
         plot_residue_confusion(inter, crystal, order,
-                               out_dir / "11_residue_confusion.png", args.top_residues)
+                               out_dir / "11_residue_confusion.png", args.top_residues,
+                               copy_sel=copy_sel)
         plot_typed_vs_loose(per_pose, order, out_dir / "12_typed_vs_loose_gap.png")
         plot_native_f1_oracle(per_pose, order, out_dir / "13_native_f1_oracle.png")
         plot_rmsd_vs_recovery(per_pose, per_pose_metrics, order,
                               out_dir / "14_rmsd_vs_recovery.png")
         plot_pair_overlays(inter, crystal, per_pose, order,
-                           out_dir / "15_pair_overlays.png")
+                           out_dir / "15_pair_overlays.png", copy_sel=copy_sel)
+        if copy_sel is not None:
+            msg = copy_sel.report()
+            print("  " + msg)
+            (out_dir / "crystal_copy_selection.txt").write_text(msg + "\n")
     else:
         print("  [skip] native recovery / similarity + figs 09-15 — no crystal_interactions.csv")
 

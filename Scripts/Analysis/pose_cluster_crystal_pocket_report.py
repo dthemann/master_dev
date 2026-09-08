@@ -51,6 +51,23 @@ do NOT rely on sklearn_extra, it is broken under NumPy 2.x):
     # gnina-reranked AutoDock Vina (best AutoDock variant on the full-protein run)
     python Scripts/Analysis/pose_cluster_crystal_pocket_report.py \
         --autodock-variant autodock_gnina --diffdock-refine smina
+
+Crystal-site convention (``--crystal-copies``, plan v2 decision D5):
+  * ``reference`` (default, today's behaviour byte for byte): the crystal site is
+    the heavy-atom centroid of the single ``<ID>_ligand.sdf`` reference instance.
+  * ``any``: the crystal site is EVERY deposited copy of the ligand of interest
+    (each record of ``<ID>_ligands.sdf``, record 0 = the reference instance, loaded
+    on the same heavy-atom basis as the poses). Every crystal distance in the
+    report becomes the minimum over copies; a cluster is correct through ANY
+    copy — for every copy the cluster nearest to it counts when its centre lies
+    within ``--match-thr`` of that copy (today's single-copy rule applied copy by
+    copy); the crystal-closest cluster is the one nearest to the nearest copy. A
+    cluster that is the nearest to two copies (six ids carry an adjacent copy
+    4.9-7.8 A from the reference, inside the 8 A clustering radius) counts
+    once: correctness is a SET of cluster labels, never a per-copy tally. The
+    convention is part of the analysis-cache signature and, under ``any``, is
+    printed in every stats ``*.txt`` header and in ``summary.json``; the
+    reference outputs carry no such line and stay byte-identical.
 """
 from __future__ import annotations
 
@@ -109,6 +126,37 @@ TOOL_MARKERS = {
     "autodock": "o", "diffdock": "^", "equibind": "s",
     "autodock_vinardo": "D", "unidock": "P", "unidock2": "X",
 }
+
+
+# ── crystal-site convention (D5) ─────────────────────────────────────────
+# ``reference``: one crystal centroid (<ID>_ligand.sdf), a 1-D (3,) array.
+# ``any``      : one centroid per deposited copy (<ID>_ligands.sdf), a 2-D (n, 3)
+#                array whose row 0 is the reference instance. Every helper below
+#                takes the minimum over rows when it meets a 2-D crystal, and
+#                falls through to the exact reference arithmetic for a 1-D one.
+_CRYSTAL_COPIES_CHOICES = ("reference", "any")
+_CRYSTAL_COPIES = "reference"          # set once in main() from --crystal-copies
+_CRYSTAL_ANY_RULE = (
+    "crystal site: any deposited copy (every record of <ID>_ligands.sdf, record 0 = "
+    "reference instance; every crystal distance is the minimum over copies; a "
+    "cluster is correct when it is the cluster nearest to ANY copy and lies within "
+    "the threshold of it; the crystal-closest cluster is the one nearest to the "
+    "nearest copy; a cluster that is nearest to two copies counts once)")
+
+
+def _crystal_site_lines() -> List[str]:
+    """Header line(s) naming the crystal-site convention for the stats sidecars.
+
+    Empty under ``reference`` so that every existing header stays byte-identical
+    (the absence of the line IS the reference-instance wording); one explicit
+    rule line under ``any`` so the two conventions can never be confused."""
+    return [_CRYSTAL_ANY_RULE] if _CRYSTAL_COPIES == "any" else []
+
+
+def _crystal_site_header(sep: str = "\n") -> str:
+    """``_crystal_site_lines`` joined for f-string headers ('' under reference)."""
+    lines = _crystal_site_lines()
+    return (sep.join(lines) + sep) if lines else ""
 
 
 def _equibind_rank_note(eq_variant: Optional[str]) -> str:
@@ -176,6 +224,28 @@ def load_heavy_atom_mol(sdf_path: str) -> Optional[Chem.Mol]:
         return mol
     except Exception:
         return None
+
+
+def load_heavy_atom_mols_all(sdf_path: str) -> List[Chem.Mol]:
+    """Every record of a multi-record SDF on the SAME heavy-atom basis as
+    ``load_heavy_atom_mol`` (which reads only the first record). Used for the
+    deposited copies in ``<ID>_ligands.sdf`` under ``--crystal-copies any``; record
+    order is preserved (record 0 = the reference instance). Unreadable or
+    conformer-less records are skipped."""
+    out: List[Chem.Mol] = []
+    try:
+        sup = Chem.SDMolSupplier(sdf_path, removeHs=False, sanitize=False)
+    except Exception:
+        return out
+    for mol in sup:
+        if mol is None or mol.GetNumConformers() == 0:
+            continue
+        if any(a.GetAtomicNum() == 1 for a in mol.GetAtoms()):
+            mol = _strip_all_hs(mol)
+            if mol is None or mol.GetNumConformers() == 0:
+                continue
+        out.append(mol)
+    return out
 
 
 def heavy_atom_coords(mol: Chem.Mol) -> np.ndarray:
@@ -586,7 +656,7 @@ def _cluster_purity(cp: dict, C: np.ndarray, crystal: np.ndarray,
     correct cluster scores high; a diffuse one that only averages near the site
     scores low."""
     idx = cp["members"]
-    d = np.linalg.norm(C[idx] - crystal, axis=1)
+    d = _pose_cdists(C[idx], crystal)
     purity_centroid = round(float(np.mean(d <= thr)), 3)
     rmsds = [rmsd_map.get(files[i]) for i in idx]
     rmsds = [float(x) for x in rmsds if x is not None and np.isfinite(x)]
@@ -612,12 +682,12 @@ def _precision_at_1(pockets: List[dict], crystal: np.ndarray, thr: float) -> dic
         "confidence": pick(_POCKET_SORT_KEYS["confidence"]),
     }
     for name, p in picks.items():
-        dd = _dist(p["center"], crystal)
+        dd = _cdist(p["center"], crystal)
         out[f"p1_{name}_dist"] = round(dd, 3)
         out[f"p1_{name}_hit"] = bool(dd <= thr)
     # medoid-centered: the consensus pick but measured from its robust medoid center
     pm = picks["ntools"]
-    dmd = _dist(pm.get("medoid_center", pm["center"]), crystal)
+    dmd = _cdist(pm.get("medoid_center", pm["center"]), crystal)
     out["p1_medoid_dist"] = round(dmd, 3)
     out["p1_medoid_hit"] = bool(dmd <= thr)
     return out
@@ -647,7 +717,7 @@ def _ensemble_stats(C: np.ndarray, tools: List[str], crystal: Optional[np.ndarra
                     top1_dist=np.nan, top1_hit=np.nan, n_clusters=np.nan)
     sc = C[idx]
     st = [tools[i] for i in idx]
-    pose_d = np.linalg.norm(sc - crystal, axis=1)
+    pose_d = _pose_cdists(sc, crystal)
     oracle = float(pose_d.min())
     if len(sc) < 2:
         top1_center = sc.mean(axis=0)
@@ -657,7 +727,7 @@ def _ensemble_stats(C: np.ndarray, tools: List[str], crystal: Optional[np.ndarra
         pk = pockets_from_labels(sc, lab, st, rank_by="consensus")
         top1_center = pk[0]["center"]
         n_clusters = len(pk)
-    top1 = _dist(top1_center, crystal)
+    top1 = _cdist(top1_center, crystal)
     return dict(n_poses=len(idx), oracle_dist=round(oracle, 3),
                 oracle_hit=bool(oracle <= thr), top1_dist=round(top1, 3),
                 top1_hit=bool(top1 <= thr), n_clusters=int(n_clusters))
@@ -953,8 +1023,30 @@ def _extract_centroid(path: str):
     return path, float(c[0]), float(c[1]), float(c[2]), mol.GetNumAtoms()
 
 
-def crystal_centroid(benchmark_dir: Path, cid: str) -> Optional[np.ndarray]:
+def crystal_centroid(benchmark_dir: Path, cid: str,
+                     copies: str = "reference") -> Optional[np.ndarray]:
+    """Crystal site(s) of ``cid`` on the heavy-atom basis of the poses.
+
+    ``copies="reference"``: the centroid of the single ``<ID>_ligand.sdf``
+    reference instance as a 1-D (3,) array (today's behaviour, unchanged).
+    ``copies="any"`` (D5): one centroid per record of ``<ID>_ligands.sdf`` as a
+    2-D (n, 3) array, row 0 = the reference instance. Falls back to the single
+    reference file (as a (1, 3) array) when the multi-record file is absent or
+    unreadable, so a complex never silently changes basis inside one run.
+    """
     sdf = benchmark_dir / cid / f"{cid}_ligand.sdf"
+    if copies == "any":
+        sdfs = benchmark_dir / cid / f"{cid}_ligands.sdf"
+        if sdfs.exists():
+            mols = load_heavy_atom_mols_all(str(sdfs))
+            if mols:
+                return np.asarray([centroid_from_mol(m) for m in mols], dtype=float)
+        if not sdf.exists():
+            return None
+        mol = load_heavy_atom_mol(str(sdf))
+        if mol is None:
+            return None
+        return np.asarray([centroid_from_mol(mol)], dtype=float)
     if not sdf.exists():
         return None
     mol = load_heavy_atom_mol(str(sdf))
@@ -971,13 +1063,38 @@ def _dist(a, b) -> float:
     return float(np.linalg.norm(np.asarray(a) - np.asarray(b)))
 
 
+def _cdist(a, crystal) -> float:
+    """Distance from a point to the crystal site: the plain distance for a 1-D
+    (reference) crystal, the MINIMUM over copies for a 2-D (any-copy) one."""
+    crystal = np.asarray(crystal)
+    if crystal.ndim == 1:
+        return _dist(a, crystal)
+    return float(np.linalg.norm(crystal - np.asarray(a, dtype=float), axis=1).min())
+
+
+def _pose_cdists(P: np.ndarray, crystal) -> np.ndarray:
+    """Vectorised ``_cdist`` for an (m, 3) block of pose centroids -> (m,)."""
+    crystal = np.asarray(crystal)
+    if crystal.ndim == 1:
+        return np.linalg.norm(P - crystal, axis=1)
+    return np.linalg.norm(P[:, None, :] - crystal[None, :, :], axis=2).min(axis=1)
+
+
+def _nearest_copy_index(a, crystal) -> int:
+    """Row of the copy nearest to ``a`` (0 for a 1-D reference crystal)."""
+    crystal = np.asarray(crystal)
+    if crystal.ndim == 1:
+        return 0
+    return int(np.argmin(np.linalg.norm(crystal - np.asarray(a, dtype=float), axis=1)))
+
+
 def _pocket_crystal_stats(pockets: List[dict], crystal: np.ndarray,
                           thr: float, key="center") -> dict:
     """top1 (rank-1) and oracle (best) center-to-crystal stats for an ordered list."""
     if not pockets or crystal is None:
         return dict(top1_dist=np.nan, top1_hit=np.nan,
                     oracle_dist=np.nan, oracle_rank=np.nan, oracle_hit=np.nan)
-    dists = [_dist(p[key], crystal) for p in pockets]
+    dists = [_cdist(p[key], crystal) for p in pockets]
     top1 = dists[0]
     o_i = int(np.argmin(dists))
     return dict(
@@ -995,11 +1112,12 @@ def _tool_pose_stats(sub: pd.DataFrame, crystal: Optional[np.ndarray],
     if sub.empty:
         return {}
     sub = sub.sort_values("rank", na_position="last")
-    # centroid distance to crystal from our own centroids (fallback to CSV col)
+    # centroid distance to crystal from our own centroids (fallback to CSV col;
+    # the CSV column follows the hub's own reference convention)
     def cdist(row):
         c = cents.get(row["pose_file"])
         if c is not None and crystal is not None:
-            return _dist(c, crystal)
+            return _cdist(c, crystal)
         return float(row.get("centroid_dist", np.nan))
     cd = sub.apply(cdist, axis=1).to_numpy(dtype=float)
     rm = pd.to_numeric(sub.get("rmsd"), errors="coerce").to_numpy(dtype=float) \
@@ -1025,7 +1143,7 @@ _RANK_PROFILE_MAX = 15
 
 def _top5_analysis(sub: pd.DataFrame, eff_rank: Dict[str, int],
                    file_idx: Dict[str, int], labels: np.ndarray, C: np.ndarray,
-                   crystal: Optional[np.ndarray], correct_label: Optional[int] = None,
+                   crystal: Optional[np.ndarray], correct_labels=None,
                    max_rank: int = 5, per_rank_max: int = _RANK_PROFILE_MAX):
     """Per-tool profile of the top ranked poses.
 
@@ -1033,8 +1151,9 @@ def _top5_analysis(sub: pd.DataFrame, eff_rank: Dict[str, int],
       * per_rank_rows: (tool, rank_pos, centroid_dist, rmsd, in_correct_cluster) for
         the k-th best pose of each tool, up to ``per_rank_max`` ranks — the "how far
         is the rank-k pose from crystal" profile, plus whether that pose landed in
-        the crystal-closest cluster (``correct_label``; NaN when no crystal / cluster
-        is defined).
+        a correct cluster (``correct_labels``: the SET of correct cluster labels —
+        exactly one under the reference convention, possibly several under D5
+        ``--crystal-copies any``; NaN when no crystal / cluster is defined).
       * tool_summary[tool]: how concentrated the top-``max_rank`` (5) poses are (n
         distinct clusters, modal-cluster fraction) and which of them is closest to
         the crystal (top5_best_rank, top5_best_dist). This summary is INDEPENDENT of
@@ -1052,11 +1171,11 @@ def _top5_analysis(sub: pd.DataFrame, eff_rank: Dict[str, int],
         rows = []                                       # (centroid_dist, cluster|None)
         for pos, (_rnk, f) in enumerate(top, 1):
             idx = file_idx.get(f)
-            cd = _dist(C[idx], crystal) if (idx is not None and crystal is not None) else np.nan
+            cd = _cdist(C[idx], crystal) if (idx is not None and crystal is not None) else np.nan
             rm = float(file_rmsd.get(f, np.nan))
             clab = int(labels[idx]) if idx is not None else None
-            in_correct = (bool(clab == correct_label)
-                          if (idx is not None and correct_label is not None) else np.nan)
+            in_correct = (bool(clab in correct_labels)
+                          if (idx is not None and correct_labels) else np.nan)
             per_rank.append((tool, pos, cd, rm, in_correct, clab))
             rows.append((cd, clab))
         # ── top-5 concentration summary: first ``max_rank`` positions only ──
@@ -1132,37 +1251,66 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
     # is what gates this, and it is the same threshold the oracle ceiling uses.
     # For each tool we report the best (lowest) rank it assigns to a pose that
     # landed in that cluster — i.e. does the tool prioritize its near-native pose?
+    #
+    # D5 (``--crystal-copies any``, 2-D ``crystal`` of copy centroids): every
+    # distance here is the minimum over copies (``_cdist``). The crystal-closest
+    # cluster ``cp`` is the one nearest to the NEAREST copy, and the correct SET
+    # holds, for every copy, the cluster nearest to that copy when it lies within
+    # `thr` of it (a cluster is correct through ANY copy). Correctness is a set of
+    # cluster LABELS, so a cluster that is the nearest to two copies (the six ids
+    # whose adjacent copy sits 4.9-7.8 A from the reference, inside the 8 A
+    # clustering radius) enters the set once and every pose in it is counted once
+    # — never a per-copy tally. Under the reference convention the set is exactly
+    # {cp}, so every quantity below reduces to today's arithmetic.
     correct_dist = correct_is_hit = np.nan
     pur_centroid = pur_rmsd = best_rmsd_in_correct = np.nan
     p1 = {}
-    correct_label: Optional[int] = None
+    correct_labels: Optional[set] = None
+    correct_pockets: List[dict] = []
     rank_in_correct: Dict[str, Optional[int]] = {}
     n_in_correct: Dict[str, int] = {}
     correct_members: List[Tuple[str, Optional[int]]] = []
     if crystal is not None and pockets:
-        cp = min(pockets, key=lambda p: _dist(p["center"], crystal))
-        correct_dist = round(_dist(cp["center"], crystal), 3)
+        cp = min(pockets, key=lambda p: _cdist(p["center"], crystal))
+        correct_dist = round(_cdist(cp["center"], crystal), 3)
         correct_is_hit = bool(correct_dist <= thr)
         p1 = _precision_at_1(pockets, crystal, thr)
     if correct_is_hit is True:
-        correct_label = int(cp["label"])
+        # Today's rule per copy: for EVERY copy the cluster nearest to it is correct
+        # when its centre lies within thr of that copy (any other cluster that also
+        # happens to sit within thr is NOT promoted — exactly today's single-copy
+        # rule, applied copy by copy). The labels form a SET, so a cluster that is
+        # the nearest to two copies enters once. With one copy (the reference
+        # convention, or a single-copy complex under ``any``) the per-copy nearest
+        # cluster is cp itself and the set is {cp}: identical to today's arithmetic.
+        copies = np.atleast_2d(np.asarray(crystal, dtype=float))
+        correct_labels = set()
+        for j in range(copies.shape[0]):
+            pj = min(pockets, key=lambda p: _dist(p["center"], copies[j]))
+            # rounded to 3 dp before the threshold test, exactly like correct_dist
+            if (round(_dist(pj["center"], copies[j]), 3) <= thr
+                    and int(pj["label"]) not in correct_labels):
+                correct_labels.add(int(pj["label"]))
+                correct_pockets.append(pj)
+        correct_pockets.sort(key=lambda p: p["rank"])       # deterministic member order
+        correct_idx = [i for p in correct_pockets for i in p["members"]]
         pur_centroid, pur_rmsd, best_rmsd_in_correct = _cluster_purity(
             cp, C, crystal, files, rmsd_map, thr)
         for t in TOOLS:
-            rk = [eff_rank.get(files[i]) for i in cp["members"]
+            rk = [eff_rank.get(files[i]) for i in correct_idx
                   if tools[i] == t and eff_rank.get(files[i]) is not None]
             rank_in_correct[t] = int(min(rk)) if rk else None
             n_in_correct[t] = len(rk)
-        # Every member pose of the crystal-closest cluster as (tool, effective rank),
+        # Every member pose of the correct cluster(s) as (tool, effective rank),
         # for the near-native-cluster composition figure (rank make-up + tool consensus).
         correct_members = [(tools[i],
                             (int(eff_rank[files[i]]) if eff_rank.get(files[i]) is not None else None))
-                           for i in cp["members"]]
+                           for i in correct_idx]
 
     # ── top-5 ranked poses: per-rank distance + cluster consistency ──────
     file_idx = {f: i for i, f in enumerate(files)}
     per_rank_rows, top5 = _top5_analysis(sub, eff_rank, file_idx, labels, C, crystal,
-                                         correct_label=correct_label)
+                                         correct_labels=correct_labels)
 
     # ── tool-combination ensemble exploration (which tools to combine) ───
     ensembles = {name: _ensemble_stats(C, tools, crystal, subset, thr,
@@ -1311,6 +1459,13 @@ def analyze_complex(cid: str, sub: pd.DataFrame,
         **{f"ens[{name}]_top1_hit": s["top1_hit"] for name, s in ensembles.items()},
         # top-5 ranked-pose consistency per tool
         **{f"{t}_{k2}": v for t in TOOLS for k2, v in (top5.get(t) or {}).items()},
+        # D5 bookkeeping — present ONLY under --crystal-copies any (2-D crystal),
+        # so the reference per_complex_summary.csv keeps its exact column set
+        **({"crystal_n_copies": int(np.asarray(crystal).shape[0]),
+            "correct_cluster_copy_index": (_nearest_copy_index(cp["center"], crystal)
+                                           if correct_is_hit is True else np.nan),
+            "n_correct_clusters": len(correct_labels) if correct_labels else 0}
+           if (crystal is not None and np.asarray(crystal).ndim == 2) else {}),
         "_pockets": pockets, "_centroids": C, "_labels": labels, "_tools": tools,
         "_fp": fp_pockets, "_pr": pr_pockets, "_crystal": crystal,
         "_rank_in_correct": rank_in_correct, "_correct_is_hit": correct_is_hit,
@@ -1347,8 +1502,16 @@ def _fig_examples(results, thr, out_dir):
             ax.scatter(*C[j], color=cmap(clusters.index(labels[j])),
                        marker=TOOL_MARKERS.get(tools[j], "o"), s=34,
                        edgecolors="k", linewidths=0.2, alpha=0.85)
-        cr = r["_crystal"]
-        ax.scatter(*cr, marker="X", s=240, color="black", label="crystal", zorder=10)
+        cr = np.asarray(r["_crystal"])
+        if cr.ndim == 2:
+            # D5: draw every deposited copy — the reference instance (row 0) as
+            # today's black X, every alternate copy as a grey X.
+            ax.scatter(*cr[0], marker="X", s=240, color="black", label="crystal", zorder=10)
+            for alt in cr[1:]:
+                ax.scatter(*alt, marker="X", s=200, color="0.45", label="alt. copy",
+                           zorder=10)
+        else:
+            ax.scatter(*cr, marker="X", s=240, color="black", label="crystal", zorder=10)
         for p in r["_fp"][:3]:
             ax.scatter(*p["center"], marker="D", s=70, facecolors="none",
                        edgecolors="magenta", linewidths=1.6)
@@ -2485,6 +2648,7 @@ def _fig_topN_crystal_matrix(df_rank, out_dir, eq_variant=None):
     cap = ("topN_crystal_cluster_matrix.png / topN_crystal_cluster_matrix_stats.png"
            " — figure captions\n"
            f"n={n_total} complexes; {_equibind_rank_note(eq_variant)}\n"
+           + _crystal_site_header()
            + "=" * 72 + "\n\n"
            "topN_crystal_cluster_matrix.png:\n" + _TOPN_MATRIX_CAPTION + "\n")
     if tbl_path:
@@ -2594,6 +2758,7 @@ def _fig_topN_crystal_matrix_stats_table(matrix_stats, buckets, n_total, out_dir
     lines = ["Top-N crystal-cluster reach — inferential statistics",
              "(companion to topN_crystal_cluster_matrix.png)",
              f"n={n_total} complexes; {_equibind_rank_note(eq_variant)}",
+             *_crystal_site_lines(),
              "=" * (sum(widths) + 2 * (len(widths) - 1)),
              _line(col_labels),
              "-" * (sum(widths) + 2 * (len(widths) - 1))]
@@ -2938,6 +3103,7 @@ def _format_ablation_stats(st, ranking_rho, match_thr, n_total):
     nm = _ABLATION_RULE_NAME
     out = ["cluster_quality_metrics.png — precision@1 ranking-ablation statistics",
            f"n={n_total} complexes; rank-1 pocket within {match_thr:g} Å of crystal",
+           *_crystal_site_lines(),
            "stars: * p<.05  ** p<.01  *** p<.001 (Holm-adjusted McNemar)",
            "=" * 72]
     if ranking_rho is not None:
@@ -3353,7 +3519,7 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None,
         cr = r.get("_crystal"); pk = r.get("_pockets")
         if cr is None or not pk:
             continue
-        cp = min(pk, key=lambda p: _dist(p["center"], cr))
+        cp = min(pk, key=lambda p: _cdist(p["center"], cr))   # nearest to the nearest copy
         radius[r["protein"]] = float(cp.get("radius", np.nan))
         cluster_size[r["protein"]] = int(cp.get("size", 0))
     rad_by_n = {k: [] for k in (1, 2, 3)}
@@ -3469,7 +3635,8 @@ def _fig_crystal_cluster_homogeneity(ok, df_rank, out_dir, eq_variant=None,
         header = ("crystal_cluster_homogeneity.png — statistical tests\n"
                   f"n={n_total} complexes; top-15 poses per tool; "
                   f"{_equibind_rank_note(eq_variant)}\n"
-                  "stars: * p<.05  ** p<.01  *** p<.001 (Holm-adjusted)\n"
+                  + _crystal_site_header()
+                  + "stars: * p<.05  ** p<.01  *** p<.001 (Holm-adjusted)\n"
                   + "=" * 72 + "\n")
         txt_path = out_dir / "crystal_cluster_homogeneity_stats.txt"
         txt_path.write_text(header + _format_homogeneity_stats(stats_rep) + "\n")
@@ -4015,6 +4182,11 @@ def _analysis_signature(args, eq_variant: str, dd_variant: str,
         # part of the key. Without it a cached run silently returns the unfiltered
         # analysis and the exclusion looks like it did nothing.
         "exclude_methods": mf.resolve_patterns(args),
+        # D5 crystal-site convention. Keyed ONLY when it departs from the reference
+        # so every existing reference cache keeps its exact signature; an any-copy
+        # cache can therefore never be mistaken for a reference one or vice versa.
+        **({"crystal_copies": args.crystal_copies}
+           if getattr(args, "crystal_copies", "reference") != "reference" else {}),
     }
 
 
@@ -4104,7 +4276,8 @@ def _compute_ok_lite(csv, eq_variant, ids, pb_valid_only, dd_variant, args,
         sub = df[df["protein"] == cid]
         if sub.empty:
             continue
-        crystal = crystal_centroid(Path(args.benchmark_dir), cid)
+        crystal = crystal_centroid(Path(args.benchmark_dir), cid,
+                                   getattr(args, "crystal_copies", "reference"))
         stem = f"{cid}_protein"
         fp_out = Path(args.fpocket_dir) / f"{stem}_out"
         pr_csv = Path(args.p2rank_dir) / f"{stem}.pdb_predictions.csv"
@@ -4249,6 +4422,7 @@ def _rank1_quality_crosstabs(csv, eq_variant, ids, dd_variant, args, out_dir,
         "Rank-1 pose quality — near-native (RMSD < 2 Å) × crystal-closest cluster, per tool",
         f"Benchmark; {_equibind_rank_note(eq_variant)}; DiffDock variant = {dd_variant}; "
         f"AutoDock variant = {ad_variant}.",
+        *_crystal_site_lines(),
         "Both flavours are written on EVERY run, independent of --pb-valid-only:",
         "  • all_poses — rank-1 = each tool's native top pick (AutoDock mode 1, i.e. the",
         "    optimizer's re-ranked mode 1 for the gnina/smina variants / DiffDock",
@@ -4340,6 +4514,18 @@ def main(argv=None) -> int:
                     help="(Deprecated; the old centroid+shape blend was replaced by "
                          "the placement-aware mode analysis. Unused.)")
     ap.add_argument("--match-thr", type=float, default=4.0)
+    ap.add_argument("--crystal-copies", choices=_CRYSTAL_COPIES_CHOICES, default="reference",
+                    help="Crystal-site convention (plan v2 D5). 'reference' (default) "
+                         "measures every crystal distance to the single <ID>_ligand.sdf "
+                         "instance — today's outputs byte for byte. 'any' loads every "
+                         "record of <ID>_ligands.sdf (record 0 = reference) on the same "
+                         "heavy-atom basis as the poses; every crystal distance becomes "
+                         "the minimum over copies, a cluster is correct through ANY copy "
+                         "(the cluster nearest to a copy counts when within --match-thr "
+                         "of it), the crystal-closest cluster is the one nearest to the "
+                         "nearest copy, and a cluster nearest to two copies counts once. "
+                         "Part of the cache signature; stated "
+                         "in every stats *.txt header and in summary.json under 'any'.")
     ap.add_argument("--site-cluster", choices=("threshold", "gap", "silhouette"),
                     default="threshold",
                     help="Primary site clustering. 'threshold' (default): complete-"
@@ -4379,6 +4565,10 @@ def main(argv=None) -> int:
                          "cache (analysis_cache.pkl) exists for the current inputs.")
     mf.add_method_filter_args(ap)
     args = ap.parse_args(argv)
+    global _CRYSTAL_COPIES
+    _CRYSTAL_COPIES = args.crystal_copies      # read by the stats-sidecar headers
+    if _CRYSTAL_COPIES == "any":
+        print(_CRYSTAL_ANY_RULE)
 
     csv = Path(args.per_pose_csv)
     if not csv.exists():
@@ -4458,7 +4648,7 @@ def main(argv=None) -> int:
             sub = df[df["protein"] == cid]
             if sub.empty:
                 continue
-            crystal = crystal_centroid(Path(args.benchmark_dir), cid)
+            crystal = crystal_centroid(Path(args.benchmark_dir), cid, args.crystal_copies)
             stem = f"{cid}_protein"
             fp_out = Path(args.fpocket_dir) / f"{stem}_out"
             pr_csv = Path(args.p2rank_dir) / f"{stem}.pdb_predictions.csv"
@@ -4497,8 +4687,8 @@ def main(argv=None) -> int:
                 "center_x": round(float(p["center"][0]), 3),
                 "center_y": round(float(p["center"][1]), 3),
                 "center_z": round(float(p["center"][2]), 3),
-                "dist_to_crystal": round(_dist(p["center"], cr), 3) if cr is not None else np.nan,
-                "medoid_dist_to_crystal": (round(_dist(p.get("medoid_center", p["center"]), cr), 3)
+                "dist_to_crystal": round(_cdist(p["center"], cr), 3) if cr is not None else np.nan,
+                "medoid_dist_to_crystal": (round(_cdist(p.get("medoid_center", p["center"]), cr), 3)
                                            if cr is not None else np.nan),
             })
     pd.DataFrame(crows).to_csv(out_dir / "per_cluster.csv", index=False)
@@ -4792,7 +4982,7 @@ def main(argv=None) -> int:
         if cr is None:
             continue
         for p in r["_pockets"]:
-            rr.append(p["rank"]); ddc.append(_dist(p["center"], cr))
+            rr.append(p["rank"]); ddc.append(_cdist(p["center"], cr))
     ranking_rho = None
     if len(rr) > 10 and len(set(rr)) > 1:
         ranking_rho = float(spearmanr(rr, ddc)[0])
@@ -4887,6 +5077,17 @@ def main(argv=None) -> int:
         },
         "n_true_site_complexes": int(len(hit)),
     }
+    if _CRYSTAL_COPIES == "any":
+        # D5: name the convention in the machine-readable summary too (absent under
+        # the reference convention so that summary.json stays byte-identical there).
+        summary["crystal_copies"] = "any"
+        summary["crystal_copies_rule"] = _CRYSTAL_ANY_RULE
+        summary["n_multi_copy_complexes"] = (
+            int((pd.to_numeric(df_complex.get("crystal_n_copies"), errors="coerce") > 1).sum())
+            if "crystal_n_copies" in df_complex else None)
+        summary["n_complexes_no_correct_cluster"] = (
+            int((dcx["correct_cluster_is_hit"].map(_TRUTH_MAP) == False).sum())   # noqa: E712
+            if "correct_cluster_is_hit" in dcx else None)
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2, default=str))
     print(f"\n  CSVs + summary written to: {out_dir}/")
 

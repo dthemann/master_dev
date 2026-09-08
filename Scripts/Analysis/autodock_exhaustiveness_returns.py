@@ -210,14 +210,37 @@ BOOT_SEED = 20260828
 KNEE_CELL = ("triple", 0)           # 0 == oracle depth
 
 # The published cascade rows this script must reproduce, or it has drifted from the
-# thesis. Keyed by exhaustiveness; values are the 15 cascade columns in table order.
+# thesis. Keyed FIRST by the reference convention the per-pose table was scored under
+# (`reference_convention` column of per_pose_metrics.csv; a table that predates the
+# column is `instance`), THEN by exhaustiveness; values are the 15 cascade columns in
+# table order (CASCADE_PIN_ORDER). The `instance` rows are the published ones. Under
+# `nearest` (every RMSD-derived gate evaluated against the closest deposited copy of the
+# ligand, plan v2 D1/D2) there is no published table yet, so the entry is None: the
+# self-check CSV is still written but the regression abort is skipped with a WARNING
+# unless pins are supplied with --cascade-pins-from (plan step 3.1a).
 CASCADE_PINS = {
-    18: (303, 8986, 303, 8974, 99.9, 126, 160, 1.8, 209, 2774, 30.9, 98, 112, 70.0, 1.2),
-    92: (303, 8984, 303, 8954, 99.7, 194, 290, 3.2, 221, 2828, 31.5, 159, 212, 73.1, 2.4),
+    "instance": {
+        18: (303, 8986, 303, 8974, 99.9, 126, 160, 1.8, 209, 2774, 30.9, 98, 112, 70.0, 1.2),
+        92: (303, 8984, 303, 8954, 99.7, 194, 290, 3.2, 221, 2828, 31.5, 159, 212, 73.1, 2.4),
+    },
+    "nearest": None,
 }
+DEFAULT_REFERENCE_CONVENTION = "instance"
+# The rungs a pin set covers, and the hub method keys they are read from when pins are
+# loaded from a pose_validity_cascade.csv (`<method_prefix>_exh<E>`).
+PINNED_EXHAUSTIVENESS = (18, 92)
+# Cascade columns in pin order. The hub's CSV spells the percentage columns `*_%`.
+CASCADE_PIN_ORDER = [
+    "n_complexes", "n_poses", "pb_valid_complexes", "pb_valid_poses",
+    "pb_valid_pct", "rmsd2_complexes", "rmsd2_poses", "rmsd2_pct",
+    "kabsch1_complexes", "kabsch1_poses", "kabsch1_pct",
+    "triple_complexes", "triple_poses", "triple_of_rmsd2_pct",
+    "triple_of_all_pct"]
 
 DEFAULT_PB_CONFIG = ("Scripts/Docking/Posebusters/"
                      "posebusters_benchmark_full_protein_config.yaml")
+# TRAP: this default is the full-protein tree, NOT the canonical matched_equibind tree
+# the REGENERATE.md stage command passes explicitly. Never invoke the script bare.
 DEFAULT_PER_POSE = ("posebusters_results/benchmark_full_protein_vina_scoring/dock/"
                     "pose_comparison_report/per_pose_metrics.csv")
 DEFAULT_OUT = "posebusters_results/autodock_exhaustiveness_returns"
@@ -616,19 +639,71 @@ def cascade_rows(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values("exhaustiveness").reset_index(drop=True)
 
 
-def assert_cascade(casc: pd.DataFrame) -> list[str]:
-    """Hard regression check against the published cascade table.
+def detect_reference_convention(per_pose: pd.DataFrame) -> tuple[str, bool]:
+    """(convention, declared): the reference convention the per-pose table was scored
+    under, and whether the table itself declares it.
+
+    A table written by the hub under --reference-convention carries one constant
+    `reference_convention` column; a table that predates that column is by definition
+    the single-instance convention. A mixed column is refused: the gates would then
+    compare poses scored against different references inside one ladder.
+    """
+    if "reference_convention" not in per_pose.columns:
+        return DEFAULT_REFERENCE_CONVENTION, False
+    vals = sorted(set(per_pose["reference_convention"].dropna().astype(str).str.strip()))
+    if len(vals) != 1:
+        raise SystemExit(f"per_pose_metrics.csv carries a mixed reference_convention "
+                         f"column {vals}; the ladder needs one convention throughout")
+    conv = vals[0]
+    if conv not in CASCADE_PINS:
+        raise SystemExit(f"unknown reference_convention {conv!r}; this script knows "
+                         f"{sorted(CASCADE_PINS)}")
+    return conv, True
+
+
+def load_cascade_pins(path: Path, method_prefix: str) -> dict[int, tuple]:
+    """Read the pinned rungs out of a hub `pose_validity_cascade.csv`.
+
+    Rows are matched on `method_key` == `<method_prefix>_exh<E>` for every rung in
+    PINNED_EXHAUSTIVENESS, and the values are rounded exactly as assert_cascade rounds
+    (percentages to one decimal, counts to int), so a pin set read from the canonical
+    hub table reproduces CASCADE_PINS["instance"] to the digit.
+    """
+    if not path.is_file():
+        raise SystemExit(f"--cascade-pins-from {path}: file not found. Under the nearest "
+                         "convention the pins come from the hub's rebuilt "
+                         "pose_validity_cascade.csv (plan 3.1a); omit the flag to run "
+                         "unpinned with a WARNING.")
+    tbl = pd.read_csv(path)
+    if "method_key" not in tbl.columns:
+        raise SystemExit(f"--cascade-pins-from {path}: no method_key column; expected a "
+                         "hub pose_validity_cascade.csv")
+    hub_cols = [c.replace("_pct", "_%") for c in CASCADE_PIN_ORDER]
+    missing = [c for c in hub_cols if c not in tbl.columns]
+    if missing:
+        raise SystemExit(f"--cascade-pins-from {path}: missing columns {missing}")
+    pins = {}
+    for e in PINNED_EXHAUSTIVENESS:
+        key = f"{method_prefix}_exh{e}"
+        row = tbl[tbl["method_key"].astype(str) == key]
+        if row.empty:
+            raise SystemExit(f"--cascade-pins-from {path}: no row with method_key "
+                             f"{key!r}; the pinned rungs are {PINNED_EXHAUSTIVENESS}")
+        row = row.iloc[0]
+        pins[e] = tuple(round(float(row[c]), 1) if c.endswith("_%") else int(row[c])
+                        for c in hub_cols)
+    return pins
+
+
+def assert_cascade(casc: pd.DataFrame, pins_by_exh: dict[int, tuple]) -> list[str]:
+    """Hard regression check against the pinned cascade table.
 
     Percentages are rounded once, at comparison time, exactly as the cascade rounds
     once at display time — comparing rounded intermediates can drift a digit.
     """
     problems = []
-    order = ["n_complexes", "n_poses", "pb_valid_complexes", "pb_valid_poses",
-             "pb_valid_pct", "rmsd2_complexes", "rmsd2_poses", "rmsd2_pct",
-             "kabsch1_complexes", "kabsch1_poses", "kabsch1_pct",
-             "triple_complexes", "triple_poses", "triple_of_rmsd2_pct",
-             "triple_of_all_pct"]
-    for exh, pins in CASCADE_PINS.items():
+    order = CASCADE_PIN_ORDER
+    for exh, pins in pins_by_exh.items():
         row = casc[casc.exhaustiveness == exh]
         if row.empty:
             continue
@@ -1229,6 +1304,15 @@ def main(argv=None) -> int:
                          "exhaustiveness is the only variable. Add --full-parity to "
                          "hash the receptors too.")
     ap.add_argument("--full-parity", action="store_true")
+    ap.add_argument("--cascade-pins-from", type=Path, default=None,
+                    help="A hub pose_validity_cascade.csv whose <method-prefix>_exh18 "
+                         "and _exh92 rows become the cascade pins for this run's "
+                         "reference convention, replacing the built-in CASCADE_PINS "
+                         "entry. Required for a hard self-check under the nearest "
+                         "convention, which has no published rows yet (plan 3.1a).")
+    ap.add_argument("--write-pins", type=Path, default=None,
+                    help="Write the pins this run compared against (and where they came "
+                         "from) to this JSON path.")
     mf.add_method_filter_args(ap)
     args = ap.parse_args(argv)
 
@@ -1252,10 +1336,50 @@ def main(argv=None) -> int:
     print(f"reading {per_pose_path}")
     head = pd.read_csv(per_pose_path, nrows=0)
     want = ["method", "protein", "ligand", "rank", "rmsd", "pb_valid", "bestfit_rmsd",
-            "pb_kabsch_rmsd", "autodock_rank", "optimized_rank", "autodock_affinity", "optimizer"]
+            "pb_kabsch_rmsd", "autodock_rank", "optimized_rank", "autodock_affinity", "optimizer",
+            "reference_convention"]
     per_pose = pd.read_csv(per_pose_path,
                            usecols=[c for c in want if c in head.columns],
                            low_memory=False)
+
+    # Which deposited ligand copy the RMSD-derived gate columns were scored against.
+    # Only a table that declares the convention (or a run that supplies pins) says so in
+    # its outputs: a table from before the column exists is instance by definition and
+    # its outputs stay byte-identical to the published run.
+    convention, conv_declared = detect_reference_convention(per_pose)
+    conv_note = (f"{convention} (per_pose_metrics.csv column reference_convention)"
+                 if conv_declared else
+                 f"{convention} (table predates the reference_convention column)")
+    if conv_declared:
+        print(f"reference convention: {conv_note}")
+    if args.cascade_pins_from is not None:
+        pins_path = (args.cascade_pins_from if args.cascade_pins_from.is_absolute()
+                     else root / args.cascade_pins_from)
+        cascade_pins = load_cascade_pins(pins_path, args.method_prefix)
+        pins_source = str(pins_path)
+        print(f"cascade pins: {convention} convention, read from {pins_path}")
+    else:
+        cascade_pins = CASCADE_PINS[convention]
+        pins_source = "built-in CASCADE_PINS[%r]" % convention if cascade_pins else None
+        if cascade_pins is None:
+            print(f"  WARNING: no built-in cascade pins for the {convention!r} "
+                  f"convention and no --cascade-pins-from given; the cascade self-check "
+                  f"CSV will be written but NOT asserted, so this run is not pinned "
+                  f"to any published cascade")
+    announce_conv = conv_declared or args.cascade_pins_from is not None
+    if args.write_pins is not None:
+        wp = args.write_pins if args.write_pins.is_absolute() else root / args.write_pins
+        wp.parent.mkdir(parents=True, exist_ok=True)
+        wp.write_text(json.dumps({
+            "reference_convention": convention,
+            "convention_declared_by_table": conv_declared,
+            "per_pose_csv": str(per_pose_path),
+            "pins_source": pins_source,
+            "pin_order": CASCADE_PIN_ORDER,
+            "pins": ({str(e): list(v) for e, v in cascade_pins.items()}
+                     if cascade_pins else None),
+        }, indent=2) + "\n")
+        print(f"wrote pins to {wp}")
 
     # Before discover_arms: the ladder registry is built by enumerating method
     # keys off this frame, so filtering later would leave excluded rungs in the
@@ -1362,6 +1486,13 @@ def main(argv=None) -> int:
         audit.append({"check": "rescored arm has the same pose count as its raw rung",
                       "ok": bool(shared.all()), "strand": OPTIMIZER_STRAND,
                       "detail": f"per-rung equality: {shared.to_dict()}"})
+    if announce_conv:
+        # Which copy of the deposited ligand the gate columns were scored against. Not a
+        # pass/fail check; it records the convention beside the invariants it governs.
+        audit.append({"check": "reference convention of the gate columns", "ok": True,
+                      "strand": RAW_STRAND,
+                      "detail": f"{conv_note}; rmsd / bestfit_rmsd / pb_valid are "
+                                f"evaluated against the {convention} deposited copy"})
     for c in audit:
         if not c["ok"]:
             print(f"  WARNING [{c['strand']}/{c['check']}]: {c['detail']}")
@@ -1370,25 +1501,31 @@ def main(argv=None) -> int:
     # ── cascade regression assertion ────────────────────────────────────────────
     casc = cascade_rows(raw_df)
     casc.to_csv(out_dir / "exh_cascade_selfcheck.csv", index=False)
-    problems = assert_cascade(casc)
-    if problems:
-        raise SystemExit("CASCADE REGRESSION — this script no longer reproduces the "
-                         "published pose_validity_cascade table, so every number below "
-                         "it would be unmoored from the thesis:\n  "
-                         + "\n  ".join(problems))
-    # Name only the pins that were actually compared. assert_cascade skips a pin whose
-    # arm is absent, so announcing the whole pin list would claim a regression check
-    # that did not run.
-    checked = sorted(e for e in CASCADE_PINS if (casc.exhaustiveness == e).any())
-    skipped = sorted(set(CASCADE_PINS) - set(checked))
-    if checked:
-        print("cascade self-check: reproduces the published rows for "
-              + ", ".join("exh%d" % e for e in checked))
-    if skipped:
-        print("  WARNING: pinned arm(s) "
-              + ", ".join("exh%d" % e for e in skipped)
-              + " are absent from this ladder, so their pins were NOT evaluated — this "
-                "run is not pinned to the published cascade")
+    checked: list[int] = []
+    skipped: list[int] = []
+    if cascade_pins is None:
+        print(f"  WARNING: cascade self-check written to exh_cascade_selfcheck.csv but "
+              f"NOT asserted — no pins for the {convention!r} convention")
+    else:
+        problems = assert_cascade(casc, cascade_pins)
+        if problems:
+            raise SystemExit("CASCADE REGRESSION — this script no longer reproduces the "
+                             "published pose_validity_cascade table, so every number below "
+                             "it would be unmoored from the thesis:\n  "
+                             + "\n  ".join(problems))
+        # Name only the pins that were actually compared. assert_cascade skips a pin
+        # whose arm is absent, so announcing the whole pin list would claim a
+        # regression check that did not run.
+        checked = sorted(e for e in cascade_pins if (casc.exhaustiveness == e).any())
+        skipped = sorted(set(cascade_pins) - set(checked))
+        if checked:
+            print("cascade self-check: reproduces the published rows for "
+                  + ", ".join("exh%d" % e for e in checked))
+        if skipped:
+            print("  WARNING: pinned arm(s) "
+                  + ", ".join("exh%d" % e for e in skipped)
+                  + " are absent from this ladder, so their pins were NOT evaluated — "
+                    "this run is not pinned to the published cascade")
 
     # depths: oracle is derived, never assumed to be 30
     max_rank = int(raw_df["rank"].max())
@@ -1687,6 +1824,9 @@ def main(argv=None) -> int:
     A("")
     A("SOURCES")
     A(f"  per-pose metrics   {per_pose_path}")
+    if announce_conv:
+        A(f"  reference conv.    {conv_note}")
+        A(f"  cascade pins       {pins_source or 'NONE — self-check not asserted'}")
     A(f"  arm registry       {pb_config}")
     for a in arms:
         A(f"  exh{a['exhaustiveness']:<4d} timing     {a['tree']}/*/*/docking_log_*.csv")
@@ -1732,7 +1872,15 @@ def main(argv=None) -> int:
             A(f"  input parity ({kind}): {msg}")
     A("")
 
-    A("1. CASCADE SELF-CHECK — reproduces pose_validity_cascade_report.txt")
+    if cascade_pins is None:
+        A(f"1. CASCADE SELF-CHECK — NOT ASSERTED: no cascade pins for the {convention!r} "
+          f"convention")
+        A("   (pass --cascade-pins-from <pose_validity_cascade.csv> of the matching "
+          "hub run to pin it)")
+    elif args.cascade_pins_from is not None:
+        A(f"1. CASCADE SELF-CHECK — reproduces {pins_source}")
+    else:
+        A("1. CASCADE SELF-CHECK — reproduces pose_validity_cascade_report.txt")
     A("")
     rows = []
     for r in casc.itertuples():
@@ -2250,8 +2398,10 @@ def main(argv=None) -> int:
             continue
         blocks = [f"{fig_name}.png — statistics sidecar", "#" * 78,
                   f"generated by Scripts/Analysis/{Path(__file__).name}",
-                  f"source: {per_pose_path}",
-                  "",
+                  f"source: {per_pose_path}"]
+        if announce_conv:
+            blocks.append(f"reference convention: {conv_note}")
+        blocks += ["",
                   "Depths are nested and monotone — a complex passing at depth 1 passes "
                   "at every deeper",
                   "depth — so the exploratory family's members are strongly positively "
@@ -2288,6 +2438,11 @@ def main(argv=None) -> int:
         "knee_cell_justification": args.knee_cell_justification,
         "input_parity": parity, "n_boot": args.n_boot, "seed": args.seed,
     }
+    if announce_conv:
+        manifest["reference_convention"] = convention
+        manifest["reference_convention_declared_by_table"] = conv_declared
+        manifest["cascade_pins_source"] = pins_source
+        manifest["cascade_pins_checked"] = checked
     (out_dir / "exh_run_manifest.json").write_text(
         json.dumps(manifest, indent=2, default=str) + "\n")
 

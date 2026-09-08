@@ -37,6 +37,18 @@ Must run under the **vina** conda env (the only one with ``pandamap``):
         --config Scripts/Analysis/pandamap_config.yaml
 Helpful flags: ``--limit-pairs N`` (debug), ``--workers K``, ``--poses-per-combo N``,
 ``--render/--no-render``, ``--overwrite``, ``--out-dir DIR``.
+
+Crystal copies (nearest-copy endpoint program, opt-in). ``crystal_copies: all``
+(config, or ``--crystal-copies all``) fingerprints EVERY deposited copy of the
+ligand in ``<ID>_ligands.sdf`` — one crystal task per file record *k*, named
+``<protein>__<ligand>/crystal_k`` with ``method = "crystal"`` and a ``copy_index``
+column in both crystal CSVs. Record 0 is the reference and keeps the existing task
+name ``<protein>__<ligand>/crystal`` (and ``<ID>_ligand.sdf`` as its pose_file) so
+reference-only consumers keep working. The default ``reference`` is byte-identical
+to the historical output (no ``copy_index`` column). ``--refresh-crystal``
+recomputes ONLY the crystal fingerprints, leaving ``pandamap_pose_summary.csv`` /
+``pandamap_interactions.csv`` untouched, so the ``overwrite: false`` resume gate can
+be bypassed for the crystals alone without re-profiling any docked pose.
 """
 from __future__ import annotations
 
@@ -108,6 +120,11 @@ class PandaMapConfig:
     receptors_dir: Path | None = None
     # crystal reference (benchmark only)
     benchmark_dir: Path | None = None
+    # which deposited ligand copies to fingerprint as the crystal reference:
+    # 'reference' → record 0 of <ID>_ligands.sdf only (== <ID>_ligand.sdf; historical,
+    # byte-identical output); 'all' → every record k, task '<pair>/crystal_k', with a
+    # copy_index column (nearest-copy endpoint program).
+    crystal_copies: str = "reference"
     # behaviour
     poses_per_combo: int = 3
     render_images: bool = True
@@ -140,6 +157,16 @@ class PandaMapConfig:
     canonical_receptor_dir: Path | None = None
 
 
+CRYSTAL_COPIES_CHOICES = ("reference", "all")
+
+
+def _check_crystal_copies(value) -> str:
+    v = str(value or "reference").strip().lower()
+    if v not in CRYSTAL_COPIES_CHOICES:
+        raise ValueError(f"crystal_copies must be one of {CRYSTAL_COPIES_CHOICES}, got {value!r}")
+    return v
+
+
 def load_config(path: str | Path) -> PandaMapConfig:
     path = Path(path)
     if not path.exists():
@@ -166,6 +193,7 @@ def load_config(path: str | Path) -> PandaMapConfig:
         docking_directories=docking,
         receptors_dir=_resolve(raw["receptors_dir"]) if raw.get("receptors_dir") else None,
         benchmark_dir=_resolve(raw["benchmark_dir"]) if raw.get("benchmark_dir") else None,
+        crystal_copies=_check_crystal_copies(raw.get("crystal_copies", "reference")),
         poses_per_combo=int(raw.get("poses_per_combo", 3)),
         render_images=bool(raw.get("render_images", True)),
         split_equibind=bool(raw.get("split_equibind", True)),
@@ -793,13 +821,18 @@ def apply_gnina_ranks(poses: list[dict], per_pose_csv: Path | None,
 # Complex assembly + PandaMap worker
 # ──────────────────────────────────────────────────────────────────────────
 
-def combine_protein_ligand_to_pdb(protein_pdb, ligand_file, out_pdb, resname="LIG") -> bool:
+def combine_protein_ligand_to_pdb(protein_pdb, ligand_file, out_pdb, resname="LIG",
+                                  record: int | None = None) -> bool:
     """Write protein + docked ligand into one PDB for PandaMap.
 
     The ligand is forced to ``HETATM`` records with residue name *resname* and
     chain ``X`` (PandaMap identifies the ligand by HETATM + resname). Crystal
     waters are dropped; other receptor HETATMs (kept cofactors/metals) pass
     through. Ported and hardened from panda_maps.ipynb cell 6.
+
+    ``record`` (SDF only) selects file record *record* of a multi-record SDF such as
+    ``<ID>_ligands.sdf`` (every deposited copy of the ligand). ``None`` keeps the
+    historical first-record read.
     """
     from rdkit import Chem
     try:
@@ -811,7 +844,10 @@ def combine_protein_ligand_to_pdb(protein_pdb, ligand_file, out_pdb, resname="LI
                 prot_lines.append(ln)
 
         ext = Path(ligand_file).suffix.lower()
-        if ext == ".sdf":
+        if ext == ".sdf" and record is not None:
+            suppl = Chem.SDMolSupplier(str(ligand_file), removeHs=False, sanitize=False)
+            mol = suppl[int(record)] if 0 <= int(record) < len(suppl) else None
+        elif ext == ".sdf":
             mol = Chem.MolFromMolFile(str(ligand_file), removeHs=False, sanitize=False)
         elif ext in (".pdb", ".pdbqt"):
             mol = Chem.MolFromPDBFile(str(ligand_file), removeHs=False, sanitize=False)
@@ -892,6 +928,11 @@ def _process_pose(pose: dict):
     for c in _PROVENANCE:
         if c in pose:
             base[c] = pose[c]
+    # crystal_copies: all — which deposited copy of <ID>_ligands.sdf this task is
+    # (file record index; 0 = the reference). Absent from every docked-pose task and
+    # from reference-only crystal tasks, so those rows keep their historical columns.
+    if "copy_index" in pose:
+        base["copy_index"] = pose["copy_index"]
 
     if not protein_file or not Path(protein_file).exists():
         return None, [], {**base, "error": f"protein file not found: {protein_file}"}
@@ -901,7 +942,8 @@ def _process_pose(pose: dict):
     safe = re.sub(r"[^A-Za-z0-9._-]", "_", pose_name)
     tmp_pdb = Path(tempfile.gettempdir()) / f"pm_{os.getpid()}_{safe[:60]}.pdb"
     try:
-        if not combine_protein_ligand_to_pdb(protein_file, pose_file, str(tmp_pdb)):
+        if not combine_protein_ligand_to_pdb(protein_file, pose_file, str(tmp_pdb),
+                                             record=pose.get("sdf_record")):
             return None, [], {**base, "error": "combine_protein_ligand_to_pdb failed"}
 
         png = None
@@ -945,10 +987,32 @@ def _process_pose(pose: dict):
 # Crystal reference tasks
 # ──────────────────────────────────────────────────────────────────────────
 
+def _count_sdf_records(sdf_path: Path) -> list[int]:
+    """File record indices of *sdf_path* that RDKit can read (sanitize=False)."""
+    from rdkit import Chem
+    suppl = Chem.SDMolSupplier(str(sdf_path), removeHs=False, sanitize=False)
+    idx = []
+    for k in range(len(suppl)):
+        if suppl[k] is None:
+            print(f"  WARNING: {sdf_path.name} record {k} could not be read; no crystal_{k} task.")
+            continue
+        idx.append(k)
+    return idx
+
+
 def build_crystal_tasks(selected: list[dict], cfg: PandaMapConfig) -> list[dict]:
-    """One crystal-ligand task per (protein, ligand) pair (benchmark only)."""
+    """One crystal-ligand task per (protein, ligand) pair (benchmark only).
+
+    Under ``cfg.crystal_copies == "all"`` one task per file record *k* of
+    ``<ID>_ligands.sdf`` (every deposited copy of the ligand): record 0 is the
+    reference and keeps the historical task (``.../crystal``, pose_file
+    ``<ID>_ligand.sdf``, whose coordinates equal record 0); records k >= 1 are
+    ``.../crystal_k`` read from ``<ID>_ligands.sdf``. Every task then carries
+    ``copy_index`` (= k). The default ``reference`` emits exactly the historical task.
+    """
     if not cfg.benchmark_dir:
         return []
+    all_copies = getattr(cfg, "crystal_copies", "reference") == "all"
     # protein_file per pair: borrow the receptor used by any docked pose of the pair.
     prot_for_pair, seen = {}, set()
     for p in selected:
@@ -965,11 +1029,26 @@ def build_crystal_tasks(selected: list[dict], cfg: PandaMapConfig) -> list[dict]
         if not pfile:
             pfile = str(cfg.benchmark_dir / protein / f"{protein}_protein.pdb")
         if crystal.exists() and Path(pfile).exists():
-            tasks.append({
+            ref_task = {
                 "method": "crystal", "protein": protein, "ligand": ligand,
                 "pose_file": str(crystal), "pose_name": f"{protein}__{ligand}/crystal",
                 "pose_rank": 0, "protein_file": pfile,
-            })
+            }
+            if not all_copies:
+                tasks.append(ref_task)
+                continue
+            copies = cfg.benchmark_dir / protein / f"{protein}_ligands.sdf"
+            records = _count_sdf_records(copies) if copies.exists() else [0]
+            for k in records:
+                if k == 0:
+                    tasks.append({**ref_task, "copy_index": 0})
+                else:
+                    tasks.append({
+                        "method": "crystal", "protein": protein, "ligand": ligand,
+                        "pose_file": str(copies), "sdf_record": k,
+                        "pose_name": f"{protein}__{ligand}/crystal_{k}",
+                        "pose_rank": 0, "protein_file": pfile, "copy_index": k,
+                    })
     return tasks
 
 
@@ -1044,6 +1123,17 @@ def main() -> None:
                     help="Restrict analysis to the '<PDBID>_<LIG>' complex ids "
                          "listed in this file (one per line; '#' comments ok). "
                          "Overrides config 'ids_file'.")
+    ap.add_argument("--crystal-copies", choices=CRYSTAL_COPIES_CHOICES, default=None,
+                    help="Which deposited copies of the crystal ligand to fingerprint: "
+                         "'reference' (record 0 of <ID>_ligands.sdf == <ID>_ligand.sdf; "
+                         "historical, byte-identical output) or 'all' (one task per record k, "
+                         "'<pair>/crystal_k', with a copy_index column). Overrides config "
+                         "'crystal_copies' (default reference).")
+    ap.add_argument("--refresh-crystal", action="store_true", default=False,
+                    help="Recompute ONLY crystal_interactions.csv / crystal_pose_summary.csv "
+                         "(bypasses the resume gate for the crystals alone). No docked pose is "
+                         "profiled and pandamap_pose_summary.csv / pandamap_interactions.csv are "
+                         "not touched.")
     args = ap.parse_args()
 
     try:
@@ -1079,6 +1169,8 @@ def main() -> None:
         cfg.oracle_summary = args.oracle_summary.resolve()
     if args.ids_file is not None:
         cfg.ids_file = args.ids_file.resolve()
+    if args.crystal_copies is not None:
+        cfg.crystal_copies = _check_crystal_copies(args.crystal_copies)
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
 
     print("=" * 70)
@@ -1087,6 +1179,9 @@ def main() -> None:
     print(f"  output  : {cfg.output_dir}")
     print(f"  top-N   : {cfg.poses_per_combo} per method×pair   pb_valid_only={cfg.pb_valid_only}")
     print(f"  crystal : {cfg.benchmark_dir or '(none)'}")
+    if cfg.benchmark_dir and (cfg.crystal_copies != "reference" or args.refresh_crystal):
+        print(f"  crystal copies: {cfg.crystal_copies}"
+              f"{'   (--refresh-crystal: crystal fingerprints only)' if args.refresh_crystal else ''}")
     print("=" * 70)
 
     poses = load_poses_from_csv(cfg) if cfg.pb_csv else load_poses_from_dirs(cfg)
@@ -1158,7 +1253,11 @@ def main() -> None:
     summary_csv = cfg.output_dir / "pandamap_pose_summary.csv"
     inter_csv = cfg.output_dir / "pandamap_interactions.csv"
     prev_summary = prev_inter = None
-    if summary_csv.exists() and not cfg.overwrite:
+    if args.refresh_crystal:
+        print("--refresh-crystal: docked-pose fingerprints are left untouched "
+              f"({summary_csv.name} / {inter_csv.name} not read or written).")
+        selected = []
+    elif summary_csv.exists() and not cfg.overwrite:
         prev_summary = read_pandamap_csv(summary_csv)
         done = set(prev_summary["pose_file"].astype(str)) if "pose_file" in prev_summary else set()
         before = len(selected)
@@ -1171,9 +1270,9 @@ def main() -> None:
     if selected:
         summaries, inter_rows, errors = _run_pool(selected, cfg, "Docked poses")
 
-    # crystal references (always recomputed fresh unless present)
+    # crystal references (always recomputed fresh unless present; --refresh-crystal forces it)
     crystal_csv = cfg.output_dir / "crystal_interactions.csv"
-    if cfg.benchmark_dir and (cfg.overwrite or not crystal_csv.exists()):
+    if cfg.benchmark_dir and (cfg.overwrite or args.refresh_crystal or not crystal_csv.exists()):
         ctasks = build_crystal_tasks(
             poses if not args.limit_pairs else selected + [p for p in poses
                 if (p["protein"], p["ligand"]) in {(s["protein"], s["ligand"]) for s in summaries}],
@@ -1186,6 +1285,15 @@ def main() -> None:
             pd.DataFrame(crows).to_csv(crystal_csv, index=False)
             pd.DataFrame(csum).to_csv(cfg.output_dir / "crystal_pose_summary.csv", index=False)
             print(f"  crystal: {len(csum)} mapped, {len(cerr)} failed → {crystal_csv.name}")
+            if cerr and (cfg.crystal_copies == "all" or args.refresh_crystal):
+                # opt-in paths only: the historical command line writes no extra file
+                pd.DataFrame(cerr).to_csv(cfg.output_dir / "crystal_errors.csv", index=False)
+
+    if args.refresh_crystal:
+        print("\n" + "=" * 70)
+        print(f"DONE (--refresh-crystal)  {crystal_csv}")
+        print("=" * 70)
+        return
 
     # write docked outputs (merge with resume data)
     sum_df = pd.DataFrame(summaries)
