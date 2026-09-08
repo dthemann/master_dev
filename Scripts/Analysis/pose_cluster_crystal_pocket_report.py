@@ -128,15 +128,44 @@ def _equibind_rank_note(eq_variant: Optional[str]) -> str:
 # Ported pose_clustering_v3 helpers (notebook isn't importable)
 # ════════════════════════════════════════════════════════════════════════
 
+def _strip_all_hs(mol: Chem.Mol) -> Optional[Chem.Mol]:
+    """Return ``mol`` with EVERY hydrogen removed, or None if RDKit cannot.
+
+    Sanitising first is preferred (it also fixes up implicit-H counts), but the
+    refined pose files carry geometries RDKit occasionally refuses to sanitise
+    (boron ligands, odd valences from the refiner), so a ``sanitize=False``
+    strip is the fallback. ``RemoveAllHs`` rather than ``RemoveHs`` because the
+    latter keeps isotopic / stereo-defining / wedged hydrogens by default and the
+    crystal ``<ID>_ligand.sdf`` is strictly heavy-atom only.
+    """
+    try:
+        return Chem.RemoveAllHs(mol)
+    except Exception:
+        try:
+            return Chem.RemoveAllHs(mol, sanitize=False)
+        except Exception:
+            return None
+
+
 def load_heavy_atom_mol(sdf_path: str) -> Optional[Chem.Mol]:
+    # INVARIANT: every Mol returned here is heavy-atom only. The crystal ligand
+    # (<ID>_ligand.sdf) carries no hydrogens while the refined docking poses do,
+    # and every centroid / RMSD / atom-count comparison downstream assumes both
+    # sides are on the same heavy-atom basis. NOTE ``removeHs=True`` on
+    # MolFromMolFile is a NO-OP when ``sanitize=False`` (RDKit only strips Hs as
+    # part of sanitisation), so the explicit strip below is what enforces it —
+    # relying on the reader flag alone left 28-30 of 30 sampled refined poses
+    # with their hydrogens (Phase 0.3 defect, plan v2 Section 1.7).
     try:
         mol = Chem.MolFromMolFile(sdf_path, removeHs=True, sanitize=False)
         if mol is None:
             mol = Chem.MolFromMolFile(sdf_path, removeHs=False, sanitize=False)
-            if mol is not None:
-                mol = Chem.RemoveHs(mol)
         if mol is None or mol.GetNumConformers() == 0:
             return None
+        if any(a.GetAtomicNum() == 1 for a in mol.GetAtoms()):
+            mol = _strip_all_hs(mol)
+            if mol is None or mol.GetNumConformers() == 0:
+                return None
         return mol
     except Exception:
         return None
@@ -2850,6 +2879,11 @@ def _ablation_paired_stats(df):
         "n_omnibus": int(len(m_omni)), "k": len(rules),
         "cochran_q": round(float(Q), 3), "df": int(dfQ), "p_omnibus": float(pQ),
         "precision_at_1": {r: round(prec[r], 4) for r in rules},
+        # unrounded twin for the text formatter: printing ``:.1%`` from the 4-dp
+        # value double-rounds (168/303 = 0.55446 -> 0.5545 -> "55.5%"; correct is
+        # 55.4%). Underscore-prefixed so the summary.json writer can drop it and
+        # the JSON keeps exactly the 4-dp field it always had.
+        "_precision_at_1_exact": {r: float(prec[r]) for r in rules},
         "pairwise_mcnemar_holm": pairs,
         "consensus_vs_size_mcnemar": cons_vs_size,
     }
@@ -2908,7 +2942,9 @@ def _format_ablation_stats(st, ranking_rho, match_thr, n_total):
     out.append(f"omnibus (paired): Cochran Q={st['cochran_q']} df={st['df']} "
                f"p={_fmt_p(st['p_omnibus'])} {_p_stars(st['p_omnibus'])} "
                f"(k={st['k']} rules, n={st['n_omnibus']} complexes)")
-    prec = st.get("precision_at_1", {})
+    # print from the unrounded fraction (the 4-dp ``precision_at_1`` field is
+    # what the JSON carries; formatting it with ``:.1%`` double-rounds).
+    prec = st.get("_precision_at_1_exact") or st.get("precision_at_1", {})
     out.append("")
     out.append("precision@1 by ranking rule (best first):")
     for r in sorted(prec, key=lambda k: prec[k], reverse=True):
@@ -3924,7 +3960,7 @@ def _fig_descriptor_quality(df_complex, features_csv, out_dir,
 # pickle the analysed complexes keyed by a fingerprint of the inputs, so a re-run
 # with unchanged inputs skips straight to (re)writing CSVs + figures.
 # ════════════════════════════════════════════════════════════════════════
-_CACHE_SCHEMA = 5
+_CACHE_SCHEMA = 6   # 6: load_heavy_atom_mol now strips explicit Hs (Phase 0.3); schema-5 caches carry H-inclusive centroids
 
 
 def _file_fp(path) -> Optional[dict]:
@@ -4794,7 +4830,10 @@ def main(argv=None) -> int:
             "mean_ari_primary_vs_kmedoids": _mean(df_complex, "ari_primary_vs_kmedoids"),
         },
         "ranking_ablation": ablation,
-        "ranking_ablation_significance": ablation_sig,
+        # drop the underscore-prefixed formatter-only twin so the JSON schema is unchanged
+        "ranking_ablation_significance": ({k: v for k, v in ablation_sig.items()
+                                           if not str(k).startswith("_")}
+                                          if ablation_sig is not None else None),
         "ranking_enrichment_spearman": ranking_rho,
         "crystal_closest_cluster_purity": {
             "mean_purity_centroid": _mean(dc, "correct_cluster_purity_centroid"),

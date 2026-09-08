@@ -491,6 +491,40 @@ reg.add(Stage(
     cmd=[VINA_PY, ANA / "thesis_endpoint_diagnostics.py",
          "--metrics", f"{BENCH_REPORT}/per_pose_metrics.csv",
          "--csv", str(BENCH_REPORT), "--exclude-preset", "meeko"]))
+
+reg.add(Stage(
+    name="bench_metal_stratum", section="3. Benchmark analysis",
+    title="Metal-adjacent stratum: membership, cofactor/ion split and stratum contrasts",
+    determinism=BITEXACT, cost=CHEAP,
+    needs=["bench_pose_comparison"],
+    outputs=["posebusters_results/metal_stratum/metal_stratum_summary.json"],
+    thesis="App. C metal-adjacent stratum (78 of 303) and body_main_short.tex:88/:868",
+    cmd=[VINA_PY, ANA / "metal_stratum.py",
+         "--benchmark-dir", "Data/PoseBuster Benchmark Set",
+         "--ids-file", f"{BENCH_REPORT}/analysed_cohort_ids.txt",
+         "--per-pose-csv", f"{BENCH_REPORT}/per_pose_metrics.csv",
+         "--out-dir", "posebusters_results/metal_stratum",
+         "--arms", "autodock_mgltools_exh128_gnina", "diffdock_smina", "equibind_unguided_gnina",
+         "--cutoffs", "4", "5", "6", "--overwrite"],
+    notes="ADDED 2026-09-08 (plan D4 / Phase 0.4). No generator existed before this date: "
+          "the 78-complex list behind App. C :165 and the 73 / 81 sensitivity counts were "
+          "never registered and could not be asserted. The rule that reproduces the printed "
+          "73 / 78 / 81 at 4 / 5 / 6 A is the RESIDUE-level one: minimum heavy-atom distance "
+          "from the reference ligand instance (record 0 of <ID>_ligands.sdf == <ID>_ligand.sdf) "
+          "to ANY atom of a residue containing at least one metal element (alkali, "
+          "alkaline-earth, transition, post-transition), measured on the PoseBusters-shipped "
+          "<ID>_protein.pdb, not on the docked receptor. The atom-level rule (distance to the "
+          "metal atom itself) gives 65 / 77 / 80 and does NOT reproduce the print; the single "
+          "complex separating 77 from 78 is 7TSF_H4B (haem ring at 2.78 A, Fe at 9.25 A). "
+          "Membership is a complex-level property of the reference instance and does not "
+          "follow the scored copy; it differs across deposited copies for exactly two "
+          "complexes (7JHQ_VAJ in by the reference only, 7TB0_UD1 in by copy 1 only), which "
+          "the summary JSON lists. The rule yields 16 cofactor / 62 free-ion, where :165 "
+          "prints 15 / 63. The reference-convention contrasts reproduce :165 verbatim "
+          "(37.8 / 39.6 / 33.3 / 17.9 % rank-1; 134 vs 149 of 225 p 0.142; 33 vs 49 of 78 "
+          "p 0.020; Fisher 0.256). Pass --nearest-csv <per-pose CSV with rmsd_nearest_copy> "
+          "to add the nearest-copy convention block. --overwrite only permits replacing this "
+          "script's own three output files; any other content in --out-dir is refused."))
 print(f"{len(reg)} stages registered")
 ''')
 

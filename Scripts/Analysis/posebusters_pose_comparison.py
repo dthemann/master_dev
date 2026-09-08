@@ -43,9 +43,23 @@ Best-variant filters (--best-equibind-only / --best-diffdock-only / --best-varia
     EquiBind* winners. Explicit variant/optimization diagnostics retain the full
     frame, and per_pose_metrics.csv always carries every variant for drill-down.
 
+Reference-ligand convention (--reference-convention {instance,nearest})
+    Every crystal-referenced metric below is measured against ONE deposited copy
+    of the ligand per pose. Under ``instance`` (the default, reproduces the frozen
+    tables bit-for-bit) that copy is always the reference instance, record 0 of
+    <ID>_ligands.sdf (== <ID>_ligand.sdf). Under ``nearest`` — the PoseBusters
+    paper / ``check_rmsd`` convention — it is the copy of <ID>_ligands.sdf with the
+    smallest symmetry-corrected in-place RMSD to the pose (NaN counts as +inf,
+    record 0 breaks ties), and that SAME copy j* drives centroid, PoseBusters
+    RMSD/Kabsch, best-fit, torsions, contact and PLIF recovery for the pose. The
+    primary columns keep their names; ``*_ref_instance`` twins, ``n_copies``,
+    ``ref_copy_index``, ``nearest_copy_index``, ``nearest_copy_is_ref`` and
+    ``reference_convention`` are appended to per_pose_metrics.csv.
+
 Metrics computed per pose:
-    * Symmetry-corrected heavy-atom RMSD vs. crystal ligand (no superposition)
-    * Centroid distance to crystal ligand (translation — how far it "moved")
+    * Symmetry-corrected heavy-atom RMSD vs. the reference copy of the crystal
+      ligand (no superposition; see the convention above)
+    * Centroid distance to that copy (translation — how far it "moved")
     * Rigid-body rotation angle of the best-fit onto crystal (how it "turned")
     * Best-fit (superposed) RMSD — PoseBusters' kabsch RMSD; self-computed fallback
     * TFD + per-rotatable-bond torsion deviations & #flipped (how it "twisted")
@@ -503,10 +517,14 @@ Output CSVs:
 Per-pose cache (so re-runs that only change --top-n stay cheap)
     The heavy per-pose scoring is written to per_pose_metrics.csv alongside a
     per_pose_metrics.manifest.json fingerprint of the inputs it depends on (PB CSV
-    signature, --ids-file, --split-equibind, --limit-pairs — NOT --top-n, which only
-    drives the cheap ranking aggregation). On the next run, if that fingerprint still
-    matches, the cached metrics are reused and the per-pose scoring is skipped; pass
-    --force to recompute regardless. Changing --top-n alone therefore reuses the cache.
+    signature, --ids-file, --split-equibind, --limit-pairs, --reference-convention —
+    NOT --top-n, which only drives the cheap ranking aggregation). On the next run, if
+    that fingerprint still matches, the cached metrics are reused and the per-pose
+    scoring is skipped; pass --force to recompute regardless. Changing --top-n alone
+    therefore reuses the cache. The manifest also records the reference convention
+    at top level: --reuse-cache REFUSES a cache built under the other convention, and
+    a plain run whose fingerprint differs ONLY in the convention refuses too (instead
+    of silently recomputing) unless --force is given.
 
 ----------------------------------------------------------------------
 Quick usage
@@ -520,6 +538,11 @@ Quick usage
 
     # Force a full recompute of the per-pose metrics:
     python Scripts/Analysis/posebusters_pose_comparison.py --force
+
+    # Score every pose against its nearest deposited ligand copy (PoseBusters
+    # convention) instead of the single reference instance (the default):
+    python Scripts/Analysis/posebusters_pose_comparison.py \\
+        --reference-convention nearest --force --out-dir <new dir>
 
     python Scripts/Analysis/posebusters_pose_comparison.py \\
         --pb-csv  posebusters_results/benchmark/dock/posebusters_filtered_results.csv \\
@@ -658,9 +681,65 @@ RMSD_THRESHOLDS = (1.0, 2.0, 5.0)
 # via --fine-rmsd-thresholds; the Kabsch grid always tracks it at half.
 FINE_RMSD_THRESHOLDS = tuple(round(0.25 * i, 2) for i in range(21))    # 0, 0.25, … 5 Å
 FINE_KABSCH_THRESHOLDS = tuple(round(t / 2.0, 4) for t in FINE_RMSD_THRESHOLDS)  # 0 … 2.5 Å
-# Canonical docking-success line (Å): the in-place RMSD-to-crystal below which a
-# pose is "near-native". Matches the 2 Å the paper and the rest of this report use.
+# Canonical docking-success line (Å): the in-place RMSD to the reference copy of
+# the crystal ligand (see REFERENCE_CONVENTION) below which a pose is
+# "near-native". Matches the 2 Å the paper and the rest of this report use.
 NEAR_NATIVE_RMSD_A = 2.0
+
+# ── Reference-ligand convention ───────────────────────────────────────────────
+# Which deposited copy of the crystal ligand every crystal-referenced metric is
+# measured against (module docstring, "Reference-ligand convention"):
+#   instance — record 0 of <ID>_ligands.sdf (== <ID>_ligand.sdf), always. Default;
+#              reproduces the frozen per-pose table exactly.
+#   nearest  — per pose, the copy with the smallest symmetry-corrected in-place
+#              RMSD (PoseBusters check_rmsd / paper convention); that one copy j*
+#              drives every metric of the pose.
+# ``REFERENCE_CONVENTION`` is set once from --reference-convention in main() and
+# read by the text/label helpers below; process_pair receives the value through
+# its work tuple, so forked workers never depend on this global.
+REFERENCE_CONVENTIONS = ("instance", "nearest")
+REFERENCE_CONVENTION = "instance"
+
+
+def _set_reference_convention(conv: str) -> str:
+    global REFERENCE_CONVENTION
+    conv = str(conv or "instance")
+    if conv not in REFERENCE_CONVENTIONS:
+        raise ValueError(f"unknown reference convention {conv!r}; "
+                         f"expected one of {REFERENCE_CONVENTIONS}")
+    REFERENCE_CONVENTION = conv
+    return conv
+
+
+def _ref_noun() -> str:
+    """Short noun for the reference ligand in labels: 'crystal' (instance) or
+    'nearest deposited copy' (nearest). Under instance every label is unchanged."""
+    return "crystal" if REFERENCE_CONVENTION == "instance" else "nearest deposited copy"
+
+
+def _ref_ligand_phrase() -> str:
+    """Longer noun phrase for prose: 'crystal ligand' or
+    'nearest deposited copy of the crystal ligand'."""
+    return ("crystal ligand" if REFERENCE_CONVENTION == "instance"
+            else "nearest deposited copy of the crystal ligand")
+
+
+def _ref_copy_label() -> str:
+    """Label of the reference ligand in the mechanism-exemplar PDBs / legends."""
+    return ("crystal (original)" if REFERENCE_CONVENTION == "instance"
+            else "nearest deposited copy")
+
+
+def _ref_convention_note() -> str:
+    """One-line statement of the active convention for sidecar text files."""
+    if REFERENCE_CONVENTION == "instance":
+        return ("Reference convention: instance — every crystal-referenced metric is "
+                "measured against the single reference instance (<ID>_ligand.sdf, "
+                "record 0 of <ID>_ligands.sdf).")
+    return ("Reference convention: nearest — every crystal-referenced metric is "
+            "measured against the deposited copy of <ID>_ligands.sdf nearest to the "
+            "pose (argmin symmetry-corrected in-place RMSD; PoseBusters check_rmsd "
+            "convention), one copy per pose.")
 
 # ── CSV numeric precision ────────────────────────────────────────────────────
 # Percentage / percentage-point columns are written to the machine-readable CSVs
@@ -720,16 +799,21 @@ def _write_csv(df, path, pct=PCT_DECIMALS, **kwargs):
             df[c] = df[c].map(lambda v: "" if pd.isna(v) else fmt % v)
     df.to_csv(path, **kwargs)
 # A near-native, PB-valid pose has the "correct form" when its best-fit (Kabsch)
-# RMSD to the crystal ligand — heavy-atom RMSD AFTER optimal superposition, so
-# translation and rotation are removed and only the internal conformation is
-# compared — is within this many Å. Overridable via --form-ok-kabsch.
+# RMSD to the reference copy of the crystal ligand (the instance, or the pose's
+# nearest copy j* under --reference-convention nearest) — heavy-atom RMSD AFTER
+# optimal superposition, so translation and rotation are removed and only the
+# internal conformation is compared — is within this many Å. Overridable via
+# --form-ok-kabsch.
 FORM_OK_KABSCH_A = 1.0
 CENTROID_THRESHOLD = 4.0
 # A pose counts as being in the experimentally validated pocket if its centroid is
-# within this distance (Å) of the crystal ligand centroid. Looser than
-# CENTROID_THRESHOLD (which marks a near-correct PLACEMENT): a pocket spans ~10 Å,
-# so a centroid within ~6 Å of the crystal sits in the same site, while anything
-# farther is treated as a different (decoy) pocket. Overridable via --pocket-cutoff.
+# within this distance (Å) of the reference-copy centroid (``centroid_dist``, which
+# under --reference-convention nearest is measured at the pose's nearest copy j*,
+# so an alternate deposited site counts as validated for the poses nearest to it).
+# Looser than CENTROID_THRESHOLD (which marks a near-correct PLACEMENT): a pocket
+# spans ~10 Å, so a centroid within ~6 Å of the crystal sits in the same site, while
+# anything farther is treated as a different (decoy) pocket. Overridable via
+# --pocket-cutoff.
 POCKET_CENTROID_CUTOFF = 6.0
 
 # AutoDock-specific optimizer identities.  DiffDock and EquiBind deliberately
@@ -1162,6 +1246,28 @@ def load_first_mol(sdf_path: Path) -> Chem.Mol | None:
     return None
 
 
+def load_all_mols(sdf_path: Path) -> list[Chem.Mol]:
+    """Every record of an SDF (e.g. all deposited copies in <ID>_ligands.sdf), with
+    the same per-record sanitize fallback as :func:`load_first_mol`. Records that
+    fail both sanitization and the ring-perception fallback are skipped, so the
+    returned index is NOT guaranteed to equal the file record index in that case."""
+    suppl = Chem.SDMolSupplier(str(sdf_path), removeHs=True, sanitize=False)
+    mols: list[Chem.Mol] = []
+    for m in suppl:
+        if m is None:
+            continue
+        try:
+            Chem.SanitizeMol(m)
+        except Exception:
+            try:
+                m.UpdatePropertyCache(strict=False)
+                Chem.GetSymmSSSR(m)
+            except Exception:
+                continue
+        mols.append(m)
+    return mols
+
+
 def reassign_template(pose: Chem.Mol, template: Chem.Mol) -> Chem.Mol | None:
     """Reassign bond orders from crystal template (handles PDBQT round-trips)."""
     try:
@@ -1380,38 +1486,65 @@ def _ligand_for_plif(mol: Chem.Mol) -> "plf.Molecule | None":
         return None
 
 
-def compute_plif_recovery(crystal_mol: Chem.Mol,
+def compute_plif_recovery(crystal_mol,
                           pose_mols: list[Chem.Mol],
-                          prot_mol: "plf.Molecule | None") -> list[float]:
-    """Tanimoto similarity of pose IFP vs crystal IFP (single ProLIF run)."""
-    n = len(pose_mols)
-    if not _HAS_PROLIF or prot_mol is None:
-        return [float("nan")] * n
+                          prot_mol: "plf.Molecule | None"):
+    """Tanimoto similarity of pose IFP vs crystal IFP (single ProLIF run).
 
-    crystal_lig = _ligand_for_plif(crystal_mol)
-    if crystal_lig is None:
-        return [float("nan")] * n
+    ``crystal_mol`` is either ONE reference mol (legacy call: returns a flat list
+    of length n_poses) or a LIST of deposited copies (returns an n_poses × n_copies
+    nested list ``out[i][j]``; the caller selects column j* per pose). All copies
+    are passed as the leading ligands of the same ProLIF run as the poses, so the
+    pose fingerprints are computed once. A copy that ``_ligand_for_plif`` cannot
+    convert — or a ``None`` placeholder, used by the instance convention to skip
+    the copies it never scores — gets a NaN column instead of NaN-ing the whole
+    pair; the run happens only if at least one copy converts.
+    """
+    single = not isinstance(crystal_mol, (list, tuple))
+    ref_mols = [crystal_mol] if single else list(crystal_mol)
+    n = len(pose_mols)
+    n_ref = len(ref_mols)
+    nan = float("nan")
+
+    def _nan_out():
+        if single:
+            return [nan] * n
+        return [[nan] * n_ref for _ in range(n)]
+
+    if not _HAS_PROLIF or prot_mol is None:
+        return _nan_out()
+
+    ref_ligs = [_ligand_for_plif(m) if m is not None else None for m in ref_mols]
+    ref_valid = [j for j, x in enumerate(ref_ligs) if x is not None]
+    if not ref_valid:
+        return _nan_out()
 
     pose_ligs = [_ligand_for_plif(m) for m in pose_mols]
     valid_idx = [i for i, x in enumerate(pose_ligs) if x is not None]
-    valid_ligs = [crystal_lig] + [pose_ligs[i] for i in valid_idx]
+    valid_ligs = [ref_ligs[j] for j in ref_valid] + [pose_ligs[i] for i in valid_idx]
 
     try:
         fp = plf.Fingerprint(interactions=PLIF_INTERACTIONS)
         fp.run_from_iterable(valid_ligs, prot_mol, n_jobs=1, progress=False)
         bvs = fp.to_bitvectors()
     except Exception:
-        return [float("nan")] * n
+        return _nan_out()
 
     if not bvs:
-        return [float("nan")] * n
-    crystal_bv = bvs[0]
-    out = [float("nan")] * n
-    for k, i in enumerate(valid_idx, start=1):
-        try:
-            out[i] = float(DataStructs.TanimotoSimilarity(crystal_bv, bvs[k]))
-        except Exception:
-            out[i] = float("nan")
+        return _nan_out()
+    n_lead = len(ref_valid)
+    ref_bvs = {j: bvs[k] for k, j in enumerate(ref_valid)}
+    out = _nan_out()
+    for k, i in enumerate(valid_idx, start=n_lead):
+        for j, ref_bv in ref_bvs.items():
+            try:
+                val = float(DataStructs.TanimotoSimilarity(ref_bv, bvs[k]))
+            except Exception:
+                val = nan
+            if single:
+                out[i] = val
+            else:
+                out[i][j] = val
     return out
 
 
@@ -1508,16 +1641,73 @@ class PoseRecord:
     unidock_affinity: float | None = None
     unidock2_rank: int | None = None
     unidock2_affinity: float | None = None
+    # Reference-ligand convention provenance (module docstring, "Reference-ligand
+    # convention"). ``n_copies`` deposited copies were found in <ID>_ligands.sdf;
+    # ``ref_copy_index`` is the one whose coordinates match <ID>_ligand.sdf;
+    # ``nearest_copy_index`` is the copy j* every primary metric above was
+    # measured against (== ref_copy_index under ``instance``). The
+    # ``*_ref_instance`` twins always hold the reference-instance value, so they
+    # equal the primary columns under ``instance`` and give the sensitivity arm
+    # under ``nearest``.
+    reference_convention: str = "instance"
+    n_copies: int = 1
+    ref_copy_index: int = 0
+    nearest_copy_index: int = 0
+    nearest_copy_is_ref: bool = True
+    rmsd_ref_instance: float = float("nan")
+    centroid_dist_ref_instance: float = float("nan")
+    pb_rmsd_ref_instance: float = float("nan")
+    bestfit_rmsd_ref_instance: float = float("nan")
+
+
+def _reference_copy_index(copies_h: list[Chem.Mol], crystal_h: Chem.Mol,
+                          tol: float = 1e-3) -> int | None:
+    """Index of the copy whose heavy-atom coordinates coincide with ``crystal_h``
+    (symmetry-aware in-place RMSD ≤ ``tol`` Å); ``None`` if no copy matches."""
+    for j, c in enumerate(copies_h):
+        try:
+            if c.GetNumAtoms() != crystal_h.GetNumAtoms():
+                continue
+            r = symmetry_rmsd(c, crystal_h)
+        except Exception:
+            continue
+        if not math.isnan(r) and r <= tol:
+            return j
+    return None
+
+
+def _nearest_copy_index(rmsds: list[float], ref_copy_index: int) -> int:
+    """argmin over the per-copy RMSDs with NaN as +inf. Ties: the reference
+    instance if it attains the minimum, else the lowest record index (np.argmin);
+    all-NaN falls back to the reference instance."""
+    arr = np.nan_to_num(np.asarray(rmsds, dtype=float), nan=np.inf)
+    if not np.isfinite(arr).any():
+        return int(ref_copy_index)
+    j = int(np.argmin(arr))
+    if arr[ref_copy_index] == arr[j]:
+        return int(ref_copy_index)
+    return j
 
 
 def process_pair(args) -> list[dict]:
-    pair_key, group_records, benchmark_dir, root = args
+    # Work tuple: (pair_key, records, benchmark_dir, root[, reference_convention]).
+    # The 4-tuple form is accepted for backwards compatibility and means "instance".
+    if len(args) >= 5:
+        pair_key, group_records, benchmark_dir, root, reference_convention = args[:5]
+    else:
+        pair_key, group_records, benchmark_dir, root = args
+        reference_convention = "instance"
+    reference_convention = str(reference_convention or "instance")
+    if reference_convention not in REFERENCE_CONVENTIONS:
+        raise ValueError(f"unknown reference convention {reference_convention!r}")
+    nearest = reference_convention == "nearest"
     protein, ligand = pair_key
     out: list[dict] = []
 
     pdb_id = protein
     cdir = Path(benchmark_dir) / pdb_id
     crystal_sdf = cdir / f"{pdb_id}_ligand.sdf"
+    copies_sdf = cdir / f"{pdb_id}_ligands.sdf"
     protein_pdb = cdir / f"{pdb_id}_protein.pdb"
     if not crystal_sdf.exists() or not protein_pdb.exists():
         return out
@@ -1527,9 +1717,40 @@ def process_pair(args) -> list[dict]:
         return out
     crystal_h = Chem.RemoveHs(crystal)
 
+    # Every deposited copy of the ligand (<ID>_ligands.sdf; the single file if
+    # absent), bond orders re-assigned from the reference so the substructure
+    # matching in symmetry_rmsd / rigid_body_fit sees one topology. The copy that
+    # coincides with <ID>_ligand.sdf is the reference instance; it is REPLACED by
+    # ``crystal_h`` itself so the instance convention (and the *_ref_instance
+    # twins) are evaluated on exactly the mol the frozen table used, not on a
+    # re-read of the same coordinates. If no copy matches (not the case on this
+    # dataset) the reference is prepended as record 0.
+    copies_raw = load_all_mols(copies_sdf) if copies_sdf.exists() else []
+    if not copies_raw:
+        copies_raw = [crystal]
+    copies_h = [Chem.RemoveHs(reassign_template(m, crystal_h) or m) for m in copies_raw]
+    ref_copy_index = _reference_copy_index(copies_h, crystal_h)
+    if ref_copy_index is None:
+        print(f"  [{pdb_id}] WARNING: no record of {copies_sdf.name} matches "
+              f"{crystal_sdf.name}; prepending the reference instance as copy 0.")
+        copies_h = [crystal_h] + copies_h
+        ref_copy_index = 0
+    else:
+        copies_h[ref_copy_index] = crystal_h
+    n_copies = len(copies_h)
+
     prot_xyz, prot_elem, prot_resid = load_protein_heavy_atoms(protein_pdb)
-    _, native_contacts = clash_and_contacts(crystal_h, prot_xyz, prot_elem, prot_resid)
-    n_native = len(native_contacts) or 1
+    # Native contacts per copy (contact recovery is evaluated at the pose's copy
+    # j*). The receptor is the PoseBusters-shipped <ID>_protein.pdb with every
+    # chain, so alternate copies are always covered.
+    native_contacts: list[set] = []
+    n_native: list[int] = []
+    for j, c in enumerate(copies_h):
+        if not nearest and j != ref_copy_index:
+            native_contacts.append(set()); n_native.append(1)
+            continue
+        _, nc = clash_and_contacts(c, prot_xyz, prot_elem, prot_resid)
+        native_contacts.append(nc); n_native.append(len(nc) or 1)
 
     prot_plif = _load_prolif_protein(protein_pdb)
 
@@ -1557,37 +1778,70 @@ def process_pair(args) -> list[dict]:
         pose = reassign_template(pose, crystal_h) or pose
         loaded.append((rec, pose, pose_path))
 
-    plif_vals = compute_plif_recovery(crystal_h,
-                                      [p for _, p, _ in loaded],
-                                      prot_plif)
+    # One ProLIF run: every copy this convention scores leads the pose list and
+    # yields one column; column j* is selected per pose below. Under ``instance``
+    # only the reference copy is passed (None placeholders keep the column
+    # layout), which is exactly the legacy single-reference run.
+    plif_refs = (copies_h if nearest
+                 else [c if j == ref_copy_index else None for j, c in enumerate(copies_h)])
+    plif_mat = compute_plif_recovery(plif_refs,
+                                     [p for _, p, _ in loaded],
+                                     prot_plif)
 
-    for (rec, pose, pose_path), plif_val in zip(loaded, plif_vals):
-        try:
-            rmsd = symmetry_rmsd(pose, crystal_h)
-            cdist = centroid_distance(pose, crystal_h)
-        except Exception:
-            rmsd, cdist = float("nan"), float("nan")
-
-        # PoseBusters' canonical RMSD vs the experimental crystal ligand.
-        pb_rmsd, pb_kabsch, pb_within = posebusters_rmsd(pose, crystal_h)
-
-        strain = uff_strain(pose)
-        # "Twisted & turned" vs the crystal conformation. For the best-fit
+    def _bestfit_at(pose, ref, pb_kabsch):
+        # "Twisted & turned" vs the reference conformation. For the best-fit
         # "twist" RMSD prefer PoseBusters' symmetry-corrected superposed RMSD
         # (pb_kabsch_rmsd); fall back to our own Kabsch fit only when PoseBusters
         # is unavailable. The rotation angle ("turn") is always ours — PoseBusters
         # does not expose it.
         try:
-            rot_angle, self_bestfit = rigid_body_fit(pose, crystal_h)
+            rot_angle, self_bestfit = rigid_body_fit(pose, ref)
         except Exception:
             rot_angle, self_bestfit = float("nan"), float("nan")
-        bestfit = pb_kabsch if not math.isnan(pb_kabsch) else self_bestfit
-        tfd, max_td, mean_td, n_flip, n_rot = torsion_metrics(pose, crystal_h)
+        return rot_angle, (pb_kabsch if not math.isnan(pb_kabsch) else self_bestfit)
+
+    for (rec, pose, pose_path), plif_row in zip(loaded, plif_mat):
+        # Reference copy for this pose: j* = argmin in-place RMSD over the copies
+        # (D1/D2 of the nearest-copy plan) or the reference instance (default).
+        try:
+            if nearest:
+                r_all = [symmetry_rmsd(pose, c) for c in copies_h]
+                j_star = _nearest_copy_index(r_all, ref_copy_index)
+                rmsd = r_all[j_star]
+                rmsd_ref = r_all[ref_copy_index]
+            else:
+                j_star = ref_copy_index
+                rmsd = symmetry_rmsd(pose, crystal_h)
+                rmsd_ref = rmsd
+            ref_j = copies_h[j_star]
+            cdist = centroid_distance(pose, ref_j)
+            cdist_ref = cdist if j_star == ref_copy_index else centroid_distance(pose, crystal_h)
+        except Exception:
+            j_star = ref_copy_index
+            ref_j = crystal_h
+            rmsd, cdist = float("nan"), float("nan")
+            rmsd_ref, cdist_ref = float("nan"), float("nan")
+
+        # PoseBusters' canonical RMSD vs the reference copy j* of the crystal ligand.
+        pb_rmsd, pb_kabsch, pb_within = posebusters_rmsd(pose, ref_j)
+
+        strain = uff_strain(pose)
+        rot_angle, bestfit = _bestfit_at(pose, ref_j, pb_kabsch)
+        if j_star == ref_copy_index:
+            pb_rmsd_ref, bestfit_ref = pb_rmsd, bestfit
+        else:
+            pb_rmsd_ref, pb_kabsch_ref, _ = posebusters_rmsd(pose, crystal_h)
+            _, bestfit_ref = _bestfit_at(pose, crystal_h, pb_kabsch_ref)
+        tfd, max_td, mean_td, n_flip, n_rot = torsion_metrics(pose, ref_j)
         try:
             n_clash, contacts = clash_and_contacts(pose, prot_xyz, prot_elem, prot_resid)
-            recov = len(native_contacts & contacts) / n_native
+            recov = len(native_contacts[j_star] & contacts) / n_native[j_star]
         except Exception:
             n_clash, recov = 0, float("nan")
+        try:
+            plif_val = plif_row[j_star]
+        except Exception:
+            plif_val = float("nan")
 
         out.append(asdict(PoseRecord(
             method=rec["docking_method"],
@@ -1630,6 +1884,15 @@ def process_pair(args) -> list[dict]:
             unidock_affinity=_finite_number(rec.get("unidock_affinity")),
             unidock2_rank=_positive_rank(rec.get("unidock2_rank")),
             unidock2_affinity=_finite_number(rec.get("unidock2_affinity")),
+            reference_convention=reference_convention,
+            n_copies=int(n_copies),
+            ref_copy_index=int(ref_copy_index),
+            nearest_copy_index=int(j_star),
+            nearest_copy_is_ref=bool(j_star == ref_copy_index),
+            rmsd_ref_instance=float(rmsd_ref),
+            centroid_dist_ref_instance=float(cdist_ref),
+            pb_rmsd_ref_instance=float(pb_rmsd_ref),
+            bestfit_rmsd_ref_instance=float(bestfit_ref),
         )))
     return out
 
@@ -4770,7 +5033,7 @@ def _write_pose_validity_cascade_report(cascade: pd.DataFrame, out_path: Path,
     L.append("Produced          = every pose the variant generated (the denominator).")
     L.append("PoseBusters-valid = poses passing ALL canonical PoseBusters checks;")
     L.append("                    %   = PB-valid poses / produced poses.")
-    L.append("RMSD <= 2 A       = poses within 2 A crystal RMSD (near-native placement);")
+    L.append(f"RMSD <= 2 A       = poses within 2 A {_ref_noun()} RMSD (near-native placement);")
     L.append("                    %   = <=2 A poses / produced poses.")
     L.append(f"Kabsch RMSD < {kv} A   = poses whose best-fit / SUPERPOSED heavy-atom RMSD is")
     L.append("                    < the threshold — the ligand's internal CONFORMATION is")
@@ -4787,8 +5050,10 @@ def _write_pose_validity_cascade_report(cascade: pd.DataFrame, out_path: Path,
     L.append("  * Pose counts are POOLED across complexes (pseudoreplicated) — they are a")
     L.append("    sampling-volume view, not a per-complex success rate. The complex counts")
     L.append("    say how many of the targets each stage actually reaches.")
-    L.append("  * RMSD is crystal (as-placed) RMSD; Kabsch is the placement-free best-fit")
+    L.append(f"  * RMSD is {_ref_noun()} (as-placed) RMSD; Kabsch is the placement-free best-fit")
     L.append("    RMSD. A pose with no computable value never satisfies that threshold.")
+    if REFERENCE_CONVENTION != "instance":
+        L.append("  * " + _ref_convention_note())
     L.append("  * The pure '<= 2 A & PB-valid' counts (paper headline, before the Kabsch")
     L.append("    form filter) are retained in pose_validity_cascade.csv as the")
     L.append("    rmsd2_pbvalid_* columns for reference.")
@@ -6234,7 +6499,7 @@ def aggregate_within_thresholds_by_depth(
 def plot_within_thresholds_by_depth(
         within_df: pd.DataFrame, depths, thresholds, out: Path,
         pb_valid_only: bool = False,
-        x_label: str = "RMSD threshold vs crystal ligand (Å)",
+        x_label: "str | None" = None,
         metric_note: str = "RMSD = symmetry-corrected heavy-atom, no superposition.",
         success_line: float = 2.0, csv_name: "str | None" = None,
         report_path: "Path | None" = None, stats: "dict | None" = None,
@@ -6250,6 +6515,8 @@ def plot_within_thresholds_by_depth(
     < 1 Å) is drawn beneath the plot, so either figure carries both graphs' numbers."""
     if within_df is None or within_df.empty:
         return
+    if x_label is None:
+        x_label = f"RMSD threshold vs {_ref_ligand_phrase()} (Å)"
     from matplotlib.lines import Line2D
     present = set(within_df["method"].unique())
     methods = [m for m in ("autodock", "diffdock", "equibind") if m in present]
@@ -7179,7 +7446,7 @@ def plot_form_fidelity(df: pd.DataFrame, out: Path,
              va="bottom", ha="right", fontsize=8, transform=axA.get_yaxis_transform())
     axA.set_xticks(list(posA))
     axA.set_xticklabels(labelsA, rotation=25, ha="right", rotation_mode="anchor", fontsize=8)
-    axA.set_ylabel("Form error — best-fit (Kabsch) RMSD to crystal (Å)")
+    axA.set_ylabel(f"Form error — best-fit (Kabsch) RMSD to {_ref_noun()} (Å)")
     axA.set_title("How far is the form of each near-native, valid pose?", fontsize=11)
     axA.grid(axis="y", alpha=0.3)
 
@@ -7248,7 +7515,7 @@ def plot_form_fidelity(df: pd.DataFrame, out: Path,
     axD.axhline(form_ok, ls="--", color="crimson", lw=1)
     axD.axvline(rmsd_thr, ls=":", color="black", lw=0.8)
     axD.set_xlim(0, lim); axD.set_ylim(0, lim)
-    axD.set_xlabel("In-place RMSD to crystal (Å)")
+    axD.set_xlabel(f"In-place RMSD to {_ref_noun()} (Å)")
     axD.set_ylabel("Form error — best-fit (Kabsch) RMSD (Å)")
     axD.set_title("Placement- vs form-limited, pose by pose", fontsize=11)
     axD.grid(alpha=0.3)
@@ -7529,7 +7796,7 @@ def plot_form_fidelity_by_depth(df: pd.DataFrame, out: Path,
              va="bottom", ha="right", fontsize=8, transform=axE.get_yaxis_transform())
     axE.set_xticks(xg); axE.set_xticklabels(method_labels, fontsize=9)
     axE.set_xlim(-0.5, n_m - 0.5); axE.set_ylim(bottom=0)
-    axE.set_ylabel("Form error — best-fit (Kabsch) RMSD to crystal (Å)")
+    axE.set_ylabel(f"Form error — best-fit (Kabsch) RMSD to {_ref_noun()} (Å)")
     axE.set_title(f"How far is the form of the {noun}, by ranking depth?", fontsize=11)
     axE.grid(axis="y", alpha=0.3)
     axE.legend(handles=depth_legend, title="ranking depth", fontsize=8,
@@ -7740,7 +8007,7 @@ def plot_form_fidelity_depth_gate_impact(df: pd.DataFrame, out: Path,
     top = np.nanmax([_get(agg_v, m, d, "form_bestfit_median")
                      for m in methods for d in depths] + [form_ok])
     axE.set_ylim(0, top * 1.2)
-    axE.set_ylabel("Form error — median best-fit (Kabsch) RMSD to crystal (Å)")
+    axE.set_ylabel(f"Form error — median best-fit (Kabsch) RMSD to {_ref_noun()} (Å)")
     axE.set_title("Median form error at each rank (value = Å)", fontsize=10.5)
     _frame(axE)
     _save(figE, "__form_error")
@@ -8215,7 +8482,7 @@ def _draw_form_placement_axes(ax, sub: pd.DataFrame, form_ok: float,
     ax.axhline(form_ok, ls="--", color="crimson", lw=0.9)
     ax.axvline(rmsd_thr, ls=":", color="black", lw=0.6)
     ax.set_xlim(0, lim); ax.set_ylim(0, lim)
-    ax.set_xlabel("In-place RMSD to crystal (Å)", fontsize=axis_fontsize)
+    ax.set_xlabel(f"In-place RMSD to {_ref_noun()} (Å)", fontsize=axis_fontsize)
     ax.set_ylabel("Form error — best-fit (Kabsch) RMSD (Å)", fontsize=axis_fontsize)
     if tick_fontsize is not None:
         ax.tick_params(axis="both", labelsize=tick_fontsize)
@@ -8439,7 +8706,7 @@ def plot_form_vs_placement_depth_filmstrip(
         for ax in axes.ravel():
             if ax.get_visible():
                 ax.set_xlabel(""); ax.set_ylabel("")
-        fig.supxlabel("In-place RMSD to crystal (Å)", fontsize=_lab_fs)
+        fig.supxlabel(f"In-place RMSD to {_ref_noun()} (Å)", fontsize=_lab_fs)
         fig.supylabel("Form error — best-fit (Kabsch) RMSD (Å)", fontsize=_lab_fs)
     if rmsd_gate is not None:
         sel_line = ("cumulative PB-valid poses within each method's top-d "
@@ -8807,7 +9074,7 @@ def plot_filmstrip_statistics(stats: dict, out: Path,
         axB.scatter(xs[-1], ys[-1], s=130, marker="X", color=colors[lab],
                     edgecolors="white", linewidths=1.0, zorder=6, label=lab)
     axB.set_xlim(0, lim); axB.set_ylim(0, lim)
-    axB.set_xlabel("In-place RMSD to crystal — median (Å)")
+    axB.set_xlabel(f"In-place RMSD to {_ref_noun()} — median (Å)")
     axB.set_ylabel("Form error — best-fit (Kabsch) RMSD, median (Å)")
     axB.set_title(f"(B) Depth drift of each tool's centroid (top-{d0} → top-{dmax})\n"
                   "rightward = placement degrades · upward = form degrades", fontsize=10.5)
@@ -9320,7 +9587,7 @@ def _select_real_mechanism_examples(metrics: pd.DataFrame, benchmark_dir, root,
         pf = Path(str(row["pose_file"]))
         if not pf.is_absolute():
             pf = Path(root) / pf
-        cry = bdir / str(row["protein"]) / f"{row['protein']}_ligand.sdf"
+        cry, _idx = _reference_copy_source(bdir, row)
         return pf.exists() and cry.exists()
 
     picks = {}
@@ -9339,17 +9606,52 @@ def _select_real_mechanism_examples(metrics: pd.DataFrame, benchmark_dir, root,
     return picks
 
 
+def _reference_copy_source(bdir: Path, row) -> tuple[Path, int]:
+    """(sdf path, record index) of the reference ligand copy a per-pose row was
+    scored against. Rows carrying ``nearest_copy_index`` that differs from
+    ``ref_copy_index`` (nearest-copy convention, alternate copy chosen) point at
+    that record of <ID>_ligands.sdf; every other row — including every row of an
+    ``instance`` table — keeps <ID>_ligand.sdf, record 0, exactly as before."""
+    prot = str(row["protein"])
+    single = Path(bdir) / prot / f"{prot}_ligand.sdf"
+    try:
+        j = row["nearest_copy_index"] if "nearest_copy_index" in row else None
+        j = int(j) if j is not None and not pd.isna(j) else None
+        ref_j = row["ref_copy_index"] if "ref_copy_index" in row else 0
+        ref_j = int(ref_j) if ref_j is not None and not pd.isna(ref_j) else 0
+    except (TypeError, ValueError, KeyError):
+        j, ref_j = None, 0
+    if j is None or j == ref_j:
+        return single, 0
+    copies = Path(bdir) / prot / f"{prot}_ligands.sdf"
+    if copies.exists():
+        return copies, j
+    return single, 0
+
+
+def _load_reference_copy(sdf_path: Path, index: int) -> Chem.Mol | None:
+    """Record ``index`` of ``sdf_path`` (all deposited copies) or, for index 0, the
+    first record — the same loader the scoring used."""
+    if int(index) <= 0:
+        return load_first_mol(sdf_path)
+    mols = load_all_mols(sdf_path)
+    if int(index) < len(mols):
+        return mols[int(index)]
+    return None
+
+
 def _example_geometry(exemplar: dict, benchmark_dir, root) -> dict | None:
-    """Load the crystal + docked heavy-atom mols for one exemplar and best-fit the
-    pose onto the crystal. Returns dict of coords / bonds / elements (as docked and
-    superimposed), or None on any load/align failure."""
+    """Load the reference copy of the crystal ligand (the one the exemplar row was
+    scored against, see :func:`_reference_copy_source`) + docked heavy-atom mols for
+    one exemplar and best-fit the pose onto it. Returns dict of coords / bonds /
+    elements (as docked and superimposed), or None on any load/align failure."""
     from rdkit.Chem import rdMolAlign
     prot = exemplar["protein"]
     pf = Path(str(exemplar["pose_file"]))
     if not pf.is_absolute():
         pf = Path(root) / pf
-    cpath = Path(benchmark_dir) / str(prot) / f"{prot}_ligand.sdf"
-    pose, crystal = load_first_mol(pf), load_first_mol(cpath)
+    cpath, cidx = _reference_copy_source(Path(benchmark_dir), exemplar)
+    pose, crystal = load_first_mol(pf), _load_reference_copy(cpath, cidx)
     if pose is None or crystal is None:
         return None
     try:
@@ -9387,10 +9689,12 @@ def _emit_mol_pdb(lines, conect, serial0, coords, elems, bonds, chain, resi,
 
 
 def _write_real_example_pdbs(geoms: dict, out_dir: Path) -> list:
-    """Write one PDB per region — chain A = crystal (original) ligand, chain B =
-    docked pose (as docked, real receptor frame), chain C = docked pose after
-    best-fit superposition onto the crystal (shape-only) — plus a master .pml with
-    two toggleable scenes (as-docked / aligned) and a manifest CSV. Returns paths."""
+    """Write one PDB per region — chain A = reference ligand copy ("crystal
+    (original)" under the instance convention, "nearest deposited copy" under
+    nearest), chain B = docked pose (as docked, real receptor frame), chain C =
+    docked pose after best-fit superposition onto that reference (shape-only) —
+    plus a master .pml with two toggleable scenes (as-docked / aligned) and a
+    manifest CSV. Returns paths."""
     written = []
     for region, g in geoms.items():
         lines, conect, s = [], [], 0
@@ -9403,7 +9707,7 @@ def _write_real_example_pdbs(geoms: dict, out_dir: Path) -> list:
             f"PB-valid={g['valid']})",
             f"REMARK   in-place RMSD={g['inplace']:.2f} A  form(Kabsch)={g['form']:.2f} A  "
             f"r={g['r']:.2f}",
-            "REMARK   chain A = crystal (original) ligand",
+            f"REMARK   chain A = {_ref_copy_label()} ligand",
             "REMARK   chain B = docked pose, as docked (position + shape error)",
             "REMARK   chain C = docked pose after best-fit superposition (shape error only)",
         ]
@@ -9415,7 +9719,7 @@ def _write_real_example_pdbs(geoms: dict, out_dir: Path) -> list:
     objs = [(r, f"mechanism_real_{r.replace('-', '_')}") for r in geoms]
     col = {"placement-limited": "marine", "mixed": "orange", "form-limited": "purple"}
     pml = ["# Real docked mechanism examples",
-           "# chain A = crystal (original) · chain B = docked as-docked · "
+           f"# chain A = {_ref_copy_label()} · chain B = docked as-docked · "
            "chain C = docked best-fit aligned",
            "# crystal and pose OVERLAP → bond only via CONECT (connect_mode 1).",
            "set connect_mode, 1"]
@@ -9468,7 +9772,8 @@ def _emit_het_pdb(lines, conect, serial0, coords, elems, bonds, chain, resi,
 
 
 def _write_receptor_context_pdbs(geoms: dict, benchmark_dir, out_dir: Path) -> list:
-    """Per region, write receptor + crystal (original) ligand + docked pose in one
+    """Per region, write receptor + reference ligand copy ("crystal (original)" or,
+    under the nearest convention, the "nearest deposited copy") + docked pose in one
     PDB: the protein records verbatim, then the two ligands as HETATM (resn CRY /
     DOK) with serials continuing past the protein and chain IDs that don't collide
     with the protein's. Plus a master .pml (cartoon + sticks). Returns file paths."""
@@ -9510,7 +9815,7 @@ def _write_receptor_context_pdbs(geoms: dict, benchmark_dir, out_dir: Path) -> l
             f"REMARK   in-place RMSD={g['inplace']:.2f} A  form(Kabsch)={g['form']:.2f} A  "
             f"r={g['r']:.2f}",
             f"REMARK   protein = original PDB chains {''.join(sorted(used_chains))} | "
-            f"resn CRY = crystal (original) ligand (chain {cry_ch}) | "
+            f"resn CRY = {_ref_copy_label()} ligand (chain {cry_ch}) | "
             f"resn DOK = docked pose (chain {dok_ch})",
         ]
         body = header + struct + lig + rec_conect + lig_conect + ["END"]
@@ -9523,7 +9828,9 @@ def _write_receptor_context_pdbs(geoms: dict, benchmark_dir, out_dir: Path) -> l
     if not objs:
         return written
     col = {"placement-limited": "marine", "mixed": "orange", "form-limited": "purple"}
-    pml = ["# Receptor + crystal (original, resn CRY) + docked pose (resn DOK) per example",
+    pml = ["# Receptor + crystal (original, resn CRY) + docked pose (resn DOK) per example"
+           if REFERENCE_CONVENTION == "instance" else
+           f"# Receptor + {_ref_copy_label()} (resn CRY) + docked pose (resn DOK) per example",
            "# grid_mode tiles the three; ligands overlap so drop spurious ligand bonds."]
     for _r, obj in objs:
         pml.append(f"load {obj}.pdb, {obj}")
@@ -9537,7 +9844,7 @@ def _write_receptor_context_pdbs(geoms: dict, benchmark_dir, out_dir: Path) -> l
     for region, obj in objs:
         pml.append(f"color {col.get(region, 'orange')}, ({obj} and resn DOK)")
     pml += ["bg_color white", "set ray_opaque_background, 0",
-            "# green = crystal (original), coloured = docked pose; grey = receptor",
+            f"# green = {_ref_copy_label()}, coloured = docked pose; grey = receptor",
             "# to focus one example: set grid_mode, 0 ; disable all ; enable <object>",
             "orient resn CRY+DOK", "zoom resn CRY+DOK, 6", "ray 1800, 700"]
     pml_path = out_dir / "mechanism_real_with_receptor.pml"
@@ -9605,7 +9912,7 @@ def plot_mechanism_examples_real(metrics: pd.DataFrame, benchmark_dir, out: Path
                       f"form (Kabsch) RMSD = {g['form']:.2f} Å  ·  r = {g['r']:.2f}",
                       fontsize=9.5)
 
-    handles = [Line2D([0], [0], color="#333333", lw=3, label="crystal (original) ligand")]
+    handles = [Line2D([0], [0], color="#333333", lw=3, label=f"{_ref_copy_label()} ligand")]
     handles += [Line2D([0], [0], color=_MECH_3D_COLORS[r], lw=3, label=f"docked pose ({r})")
                 for r in order]
     fig.legend(handles=handles, loc="lower center", ncol=len(handles), frameon=False,
@@ -10575,12 +10882,14 @@ def _write_rank_quality_report(path: Path, *, tau_df, summary_df, stats, rvo_df,
         L.append(f"  - {clabel:24s}: {axl}  [{mkey}, kind={kind}]")
     L += ["",
           "Criteria (oracle order of a tool's poses; lower badness = better pose):",
-          "  - Crystal RMSD : as-placed heavy-atom RMSD to the crystal ligand",
+          f"  - Crystal RMSD : as-placed heavy-atom RMSD to the {_ref_ligand_phrase()}",
           "  - Kabsch RMSD  : best-fit RMSD after optimal superposition (form only)",
           "  - PB-validity  : PoseBusters-valid ranked above invalid (binary)",
           "  - Combined     : deployment pick — valid first, then by placement+form",
-          "                   (as-placed crystal RMSD + Kabsch/best-fit RMSD)",
+          f"                   (as-placed {_ref_noun()} RMSD + Kabsch/best-fit RMSD)",
           ""]
+    if REFERENCE_CONVENTION != "instance":
+        L += ["  " + _ref_convention_note(), ""]
 
     L += [bar, "1. KENDALL tau-b SUMMARY  (per-complex tau; +1 perfect, 0 chance, -1 reversed)", bar]
     L.append(f"{'tool':24s} {'criterion':10s} {'n':>4s} {'median':>7s} "
@@ -11022,6 +11331,10 @@ def aggregate_pocket_localization(df: pd.DataFrame, top_n: int,
     rows = []
     for method, sub in df[df["method"].isin(RANKING_TOOLS)].groupby("method"):
         sub = sub.copy()
+        # ``centroid_dist`` is measured at the pose's reference copy j* (the
+        # instance by default; the nearest deposited copy under
+        # --reference-convention nearest, decision D2). An any-copy variant would
+        # switch here to a per-copy minimum instead of the j* value.
         cd = pd.to_numeric(sub["centroid_dist"], errors="coerce")
         sub["on_pocket"] = (cd <= pocket_cutoff).fillna(False)
         sub["rank"] = pd.to_numeric(sub["rank"], errors="coerce")
@@ -11935,7 +12248,7 @@ def _write_pb_recovery_report(out_path: Path, *, figure_names, csv_names, method
     W("WHAT THESE FIGURES SHOW")
     W("  For each method, ONE representative pose per complex is pushed through the")
     W("  sequential PoseBusters filter cascade: first drop poses with RMSD > 2 Å from")
-    W("  the crystal ligand, then apply each canonical PoseBusters physical-validity")
+    W(f"  the {_ref_ligand_phrase()}, then apply each canonical PoseBusters physical-validity")
     W("  test in order, removing at every step the poses that fail it having passed")
     W("  all previous ones. Three pose selections are compared per method:")
     W("    top-1 (rank-1)    = the tool's top-ranked pose")
@@ -13188,6 +13501,8 @@ _CACHE_REQUIRED_COLS = {
     "method", "protein", "ligand", "pose_name", "rank", "rmsd",
     "centroid_dist", "pb_valid", "optimizer", "autodock_rank",
     "optimized_rank",
+    # schema 6: reference-ligand convention provenance
+    "reference_convention", "n_copies", "nearest_copy_index", "rmsd_ref_instance",
 }
 
 
@@ -13222,14 +13537,30 @@ def _per_pose_signature(args) -> dict:
     signature is reusable across different --top-n values.
     """
     return {
-        "schema": 5,  # AutoDock variants + original/optimized ranking provenance
+        "schema": 6,  # 5: AutoDock variants + ranking provenance; 6: reference convention
         "pb_csv": _file_fingerprint(Path(args.pb_csv)),
         "ids_file": str(args.ids_file) if args.ids_file else None,
         "split_equibind": bool(args.split_equibind),
         "diffdock_variant": str(args.diffdock_variant),
         "best_diffdock_only": bool(args.best_diffdock_only),
         "limit_pairs": int(args.limit_pairs),
+        "reference_convention": _args_reference_convention(args),
     }
+
+
+def _args_reference_convention(args) -> str:
+    return str(getattr(args, "reference_convention", None) or "instance")
+
+
+def _manifest_reference_convention(man: dict) -> "str | None":
+    """Convention a manifest was built under: the top-level key, else the one
+    inside the signature, else ``None`` (legacy schema ≤ 5 manifest)."""
+    if not isinstance(man, dict):
+        return None
+    conv = man.get("reference_convention")
+    if conv is None:
+        conv = (man.get("signature") or {}).get("reference_convention")
+    return str(conv) if conv is not None else None
 
 
 def _read_cached_per_pose(per_pose_csv: Path):
@@ -13240,8 +13571,10 @@ def _read_cached_per_pose(per_pose_csv: Path):
         df = pd.read_csv(per_pose_csv, low_memory=False)
     except Exception:
         return None
-    if not _CACHE_REQUIRED_COLS.issubset(df.columns):
-        print("  cached per-pose metrics lack required columns — cannot reuse.")
+    missing = sorted(c for c in _CACHE_REQUIRED_COLS if c not in df.columns)
+    if missing:
+        print("  cached per-pose metrics lack required columns — cannot reuse. "
+              f"Missing: {', '.join(missing)}")
         return None
     return df
 
@@ -13252,13 +13585,34 @@ def _load_cached_per_pose(args, sig: dict):
     With ``--reuse-cache`` the existing per_pose_metrics.csv is loaded WITHOUT
     checking the input signature (use when only the plotting/aggregation code
     changed — the caller asserts the cached pairs are the ones they want). This
-    bypasses ``--force`` too. Otherwise the cache is reused only when the manifest
-    signature matches the current inputs.
+    bypasses ``--force`` too. The ONE thing --reuse-cache does check is the
+    reference convention: a cache whose manifest records the other convention is
+    refused (``args.cache_refused`` is set and ``None`` returned), because every
+    crystal-referenced column would silently mean something else. Otherwise the
+    cache is reused only when the manifest signature matches the current inputs;
+    a signature that differs ONLY in the reference convention REFUSES rather than
+    recomputing unless ``--force`` is given (schema / input mismatches recompute
+    as before).
     """
     per_pose_csv = args.out_dir / "per_pose_metrics.csv"
     manifest = args.out_dir / "per_pose_metrics.manifest.json"
+    want = _args_reference_convention(args)
 
     if getattr(args, "reuse_cache", False):
+        if manifest.exists():
+            try:
+                man = json.loads(manifest.read_text())
+            except Exception:
+                man = {}
+            have = _manifest_reference_convention(man)
+            if have is not None and have != want:
+                print(f"ERROR: --reuse-cache: the cache in {args.out_dir} was built under "
+                      f"--reference-convention {have}, but this run requested {want}. "
+                      "Refusing to reuse it (every crystal-referenced column would "
+                      "change meaning). Point --out-dir at a cache built under "
+                      f"{want}, or rebuild with --force.")
+                args.cache_refused = f"reference_convention {have} != {want}"
+                return None
         df = _read_cached_per_pose(per_pose_csv)
         if df is not None:
             print(f"--reuse-cache: loaded {per_pose_csv} ({len(df):,} rows) "
@@ -13272,7 +13626,21 @@ def _load_cached_per_pose(args, sig: dict):
     except Exception:
         return None
     if man.get("signature") != sig:
-        print("  cached per-pose metrics are stale (inputs changed) — recomputing.")
+        old_sig = man.get("signature") or {}
+        if isinstance(old_sig, dict):
+            diff = sorted(k for k in set(old_sig) | set(sig)
+                          if old_sig.get(k) != sig.get(k))
+        else:
+            diff = ["signature"]
+        if diff == ["reference_convention"]:
+            have = old_sig.get("reference_convention")
+            print(f"ERROR: per-pose cache in {args.out_dir} built under {have}, run "
+                  f"requested {want}; pass --force to rebuild "
+                  "(or point --out-dir at a different directory).")
+            args.cache_refused = f"reference_convention {have} != {want}"
+            return None
+        print("  cached per-pose metrics are stale (inputs changed: "
+              f"{', '.join(diff)}) — recomputing.")
         return None
     df = _read_cached_per_pose(per_pose_csv)
     if df is None:
@@ -13289,7 +13657,9 @@ def _write_per_pose_cache(args, df: pd.DataFrame, sig: dict) -> Path:
     _write_csv(df, per_pose_csv, index=False)
     (args.out_dir / "per_pose_metrics.manifest.json").write_text(
         json.dumps({"signature": sig, "top_n": int(args.top_n),
-                    "n_rows": int(len(df))}, indent=2))
+                    "n_rows": int(len(df)),
+                    "reference_convention": _args_reference_convention(args)},
+                   indent=2))
     return per_pose_csv
 
 
@@ -13384,10 +13754,27 @@ def main() -> None:
                          "conformation (figure 20 / form_fidelity_summary.csv). "
                          "Default %(default)s.")
     ap.add_argument("--pocket-cutoff", type=float, default=POCKET_CENTROID_CUTOFF,
-                    help="Centroid distance (Å) to the crystal ligand within which "
-                         "a pose counts as being in the experimentally validated "
-                         "pocket, for the pocket-localization analysis "
-                         "(default %(default)s).")
+                    help="Centroid distance (Å) to the reference copy of the crystal "
+                         "ligand (per --reference-convention: the single instance, "
+                         "or the pose's nearest deposited copy) within which a pose "
+                         "counts as being in the experimentally validated pocket, for "
+                         "the pocket-localization analysis (default %(default)s).")
+    ap.add_argument("--reference-convention", choices=list(REFERENCE_CONVENTIONS),
+                    default="instance",
+                    help="Which deposited copy of the crystal ligand every "
+                         "crystal-referenced per-pose metric (rmsd, pb_rmsd, "
+                         "pb_kabsch_rmsd, pb_rmsd_within_2A, bestfit_rmsd, "
+                         "centroid_dist, torsions, contact_recovery, plif_recovery) "
+                         "is measured against. 'instance': record 0 of "
+                         "<ID>_ligands.sdf (== <ID>_ligand.sdf), always — the "
+                         "default, reproduces the frozen tables exactly. 'nearest': "
+                         "per pose, the copy of <ID>_ligands.sdf with the smallest "
+                         "symmetry-corrected in-place RMSD (PoseBusters check_rmsd "
+                         "convention); that one copy drives every metric of the "
+                         "pose. The convention is part of the per-pose cache "
+                         "signature and manifest; a cache built under the other "
+                         "convention is refused (see --reuse-cache / --force). "
+                         "Default %(default)s.")
     ap.add_argument("--split-equibind", action=argparse.BooleanOptionalAction,
                     default=True,
                     help="Split EquiBind into fpocket/p2rank/unguided x "
@@ -13444,6 +13831,12 @@ def main() -> None:
                          "Like --best-variants-only but the full tables are also written.")
     mf.add_method_filter_args(ap)
     args = ap.parse_args()
+    _set_reference_convention(args.reference_convention)
+    args.cache_refused = None
+    if args.reference_convention != "instance":
+        print(f"reference-convention: {args.reference_convention} — every "
+              "crystal-referenced metric is measured against the pose's nearest "
+              "deposited ligand copy (PoseBusters convention).")
 
     # --best-variants-only is a convenience umbrella for the two per-family "best"
     # filters. Apply it here, before anything reads those booleans: the per-pose
@@ -13475,6 +13868,12 @@ def main() -> None:
     sig = _per_pose_signature(args)
     df = _load_cached_per_pose(args, sig)
 
+    if df is None and getattr(args, "cache_refused", None):
+        # The loader already printed the ERROR (reference-convention mismatch).
+        # Exit non-zero so a harness / notebook stage cannot mistake the refusal
+        # for a completed run.
+        raise SystemExit(2)
+
     if df is None and args.reuse_cache:
         print(f"ERROR: --reuse-cache was set but no usable per-pose cache exists "
               f"in {args.out_dir}.\n       Run once without --reuse-cache to build "
@@ -13504,7 +13903,8 @@ def main() -> None:
             pairs = pairs[:args.limit_pairs]
         print(f"  pairs to process: {len(pairs):,} (workers={args.workers})")
 
-        work = [((p, l), recs, str(args.benchmark_dir.resolve()), root)
+        work = [((p, l), recs, str(args.benchmark_dir.resolve()), root,
+                 args.reference_convention)
                 for (p, l), recs in pairs]
 
         out_records: list[dict] = []
