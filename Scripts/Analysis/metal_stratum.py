@@ -335,9 +335,18 @@ def main(argv=None) -> int:
     cutoffs = sorted(set(float(c) for c in args.cutoffs) | {float(args.primary_cutoff)})
     prepare_out_dir(out_dir, args.overwrite)
 
-    usecols = ["method", "protein", "pose_file", "rank", "rmsd", "pb_valid", "gnina_affinity", "smina_affinity"]
+    usecols = ["method", "protein", "pose_file", "rank", "rmsd", "pb_valid", "gnina_affinity", "smina_affinity",
+               "reference_convention", "rmsd_ref_instance"]
     header = pd.read_csv(args.per_pose_csv, nrows=0).columns
     per_pose = pd.read_csv(args.per_pose_csv, usecols=[c for c in usecols if c in header], low_memory=False)
+    # The table's own convention labels the primary block (a hub table written under
+    # --reference-convention nearest carries nearest-copy RMSDs in ``rmsd``); a
+    # pre-schema-6 table is single-instance by construction.
+    table_convention = "instance"
+    if "reference_convention" in per_pose.columns:
+        vals = per_pose["reference_convention"].dropna().unique().tolist()
+        table_convention = vals[0] if len(vals) == 1 else ",".join(map(str, sorted(vals)))
+    print(f"per-pose table reference convention: {table_convention}")
     ids, ids_source = load_ids(Path(args.ids_file) if args.ids_file else None, per_pose)
     print(f"ids: {len(ids)} ({ids_source})")
     missing_arms = [a for a in args.arms if a not in set(per_pose.method)]
@@ -397,7 +406,11 @@ def main(argv=None) -> int:
           [x["protein"] for x in copy_dep[_ctag(args.primary_cutoff)]])
 
     # ---- contrasts -------------------------------------------------------
-    contrasts = contrasts_block(poses, ids, member, args.arms, cutoffs, "rmsd", "reference")
+    contrasts = contrasts_block(poses, ids, member, args.arms, cutoffs, "rmsd", table_convention)
+    if table_convention == "nearest" and "rmsd_ref_instance" in poses.columns:
+        # The single-instance twin the hub writes alongside the nearest value: gives the
+        # instance-convention block from the same table without a second file.
+        contrasts += contrasts_block(poses, ids, member, args.arms, cutoffs, "rmsd_ref_instance", "instance")
     nearest_info = None
     if args.nearest_csv:
         near = pd.read_csv(args.nearest_csv, low_memory=False)
