@@ -527,6 +527,50 @@ reg.add(Stage(
           "p 0.020; Fisher 0.256). Pass --nearest-csv <per-pose CSV with rmsd_nearest_copy> "
           "to add the nearest-copy convention block. --overwrite only permits replacing this "
           "script's own three output files; any other content in --out-dir is refused."))
+
+reg.add(Stage(
+    name="bench_selection_bias", section="3. Benchmark analysis",
+    title="Variant-selection winner's curse: per-family paired estimate",
+    determinism=BITEXACT, cost=CHEAP,
+    needs=["bench_pose_comparison"],
+    outputs=["posebusters_results/selection_bias/selection_bias.csv",
+             "posebusters_results/selection_bias/selection_bias_summary.json"],
+    thesis="App. C 'One caveat applies to the selected arm itself' and the Limitations winner's-curse range",
+    cmd=[VINA_PY, ANA / "nearest_copy_program" / "selection_bias.py",
+         "--per-pose-csv", f"{BENCH_REPORT}/per_pose_metrics.csv",
+         "--out-dir", "posebusters_results/selection_bias", "--overwrite"],
+    notes="ADDED 2026-09-08 (nearest-copy program, decision 4). Before this date the winner's-curse "
+          "figures in App. C and the Limitations had no generator. The estimator is the standard "
+          "c_k * sigma_d / sqrt(2) with c_k the expected maximum of k standard normals and sigma_d the "
+          "PAIRED (McNemar) standard error of the recovery difference between the family winner and its "
+          "runner-up on the same complexes, evaluated on the selection endpoint (top-15, PB-valid AND "
+          "rmsd <= 2 AND bestfit_rmsd <= 1). Families: the two exh128 AutoDock arms (k = 2), the three "
+          "DiffDock arms and the three unguided EquiBind arms (k = 3), plus the eight-rung AutoDock "
+          "exhaustiveness ladder (k = 8; the base rung is keyed autodock_mgltools[_gnina]). The double "
+          "gate and rank-1 are printed for comparison. Output is labelled by the table's reference_convention."))
+
+reg.add(Stage(
+    name="bench_reference_identity", section="3. Benchmark analysis",
+    title="Reference-dependent PoseBusters identity checks re-run against every deposited ligand copy",
+    determinism=BITEXACT, cost=CHEAP,
+    needs=["bench_pose_comparison"],
+    outputs=["posebusters_results/reference_identity/identity_cost_by_depth.csv",
+             "posebusters_results/reference_identity/identity_cost_summary.json"],
+    thesis="Results footnote on the cost of a co-crystallised reference (-1 / -2 / -2 DiffDock complexes)",
+    cmd=[VINA_PY, ANA / "nearest_copy_program" / "reference_identity_rerun.py",
+         "--per-pose-csv", f"{BENCH_REPORT}/per_pose_metrics.csv",
+         "--out-dir", "posebusters_results/reference_identity",
+         "--arms", "autodock_mgltools_exh128_gnina", "autodock_mgltools_exh128", "diffdock_smina",
+         "diffdock_gnina", "equibind_unguided_gnina", "--overwrite"],
+    notes="ADDED 2026-09-08 (nearest-copy program, decision 5). The footnote's -1 / -2 / -2 was measured "
+          "post hoc on 2026-08-22 with no registered generator. This stage recomputes the four InChI-based "
+          "identity checks (formula, connections, tetrahedral, double-bond; inchi_options 'w' as in the "
+          "redock config) per pose against the single instance, the multi-copy file loaded with load_all "
+          "and the nearest copy of each pose, then counts the complexes the identity requirement removes "
+          "from the PB-valid AND rmsd <= 2 recovery set per arm and depth. On 2026-09-08 all three references "
+          "give identical per-pose outcomes (0.95 % of poses fail; no complex has copies with different InChI) "
+          "and the cost is -1 / -2 / -2 (7ZXV_45D; +7XQZ_FPF) for both DiffDock arms under both conventions, "
+          "0 for AutoDock and EquiBind. About 1 minute on 8 workers."))
 print(f"{len(reg)} stages registered")
 ''')
 

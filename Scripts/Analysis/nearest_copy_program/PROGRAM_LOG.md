@@ -54,3 +54,34 @@ Rule: no data from the thesis is overwritten. All outputs in `_nearest` location
 | 12:50 | Phase 8 first build of the edited copy (`build_copy.sh`): `latexmk -pdf` exit 0, 0 LaTeX errors, 3 overfull boxes (same count as the shipped build), 145 pages (shipped 142; the sensitivity table and the longer convention paragraphs add three); 14 QA pages rasterised to `qa_raster/` | mechanical checks: braces balanced in all three edited files, begin/end environments balanced, shipped `thesis_latex/` md5s unchanged; direction check `tex_presence_check.py`: 748 of 748 moving harness values found printed in the copy |
 | 12:52 | Four adversarial reviews (main body, appendix) rescheduled for 14:07 by a one-shot cron (session limit) | pending |
 | 12:58 | Stale-literal sweep of the copy (old headline values 36.6, 65.3, 62.7, 97.7, 88.1, 84.5, 137.2, 164, +2.6, 18.2, 55.1) | every remaining hit is legitimate: other thresholds or ranks of the threshold-resolved and Wilson tables (the raw exh128 arm's new top-15 rate is itself 65.3 %), a Friedman statistic, PB-decomposition cells that did not move, and the App. C :230 confirmatory cell kept on the single instance by D10 |
+
+## 2026-09-08 13:55–14:05 — the eleven decisions, implementation and validation
+
+The user decided every open flag. What was done, in the copy unless stated:
+
+| # | Decision | Implementation | Validation |
+|---|----------|----------------|------------|
+| 1 | Keep 16 / 62 with the registered rule | no change; `body_appendix_short.tex` :165 already states the residue-level 5 Å rule and prints "Sixteen of the 78 ... the remaining 62" | text read back |
+| 2 | Delete the Fig 7 "resemble" sentence | `body_main_short.tex` :512, sentence "The two therefore resemble the reference more than they resemble each other and still carry different contact hypotheses." removed; the 0.463-below-both fact stays | exact-match replacement, 1 hit |
+| 3 | Report the weak DiffDock confidence association and its convention dependence | :516 gained "This weak association appears only under nearest-copy scoring. Against the deposited instance alone the same test did not survive correction."; :558 gained "an association visible only under nearest-copy scoring" | exact-match, 1 hit each |
+| 4 | Reproducible per-family winner's-curse estimator | NEW `nearest_copy_program/selection_bias.py`, registered as stage `bench_selection_bias`; run into `posebusters_results/selection_bias_nearest/` and (instance, dev) `_nearest_copy_dev/selection_bias_instance/`. App. C :248 rewritten with the numbers; Limitations :892 range 0.5–1.0 → 0.4–1.0 | see table below |
+| 5 | Re-run the reference-dependent PoseBusters checks with the multi-copy file | NEW `nearest_copy_program/reference_identity_rerun.py`, registered as stage `bench_reference_identity`; run into `posebusters_results/reference_identity_nearest/` (45,026 poses, 5 arms, ~1 min) | reproduces the footnote's −1/−2/−2 under instance AND nearest; footnote :144 extended by two sentences |
+| 6 | German clause + compensating cut | `Thesis_short.tex` Kurzfassung: "+ zur nächstgelegenen hinterlegten Ligandkopie" (+44); cuts "möglicherweise zu optimistisch"→"eher optimistisch" (−13) and "nicht allgemein für physikbasierte oder KI-basierte Dockingmethoden"→"nicht für Dockingmethoden allgemein" (−32); net 0 characters | page check after the rebuild |
+| 7–9 | keep as applied / moot | none | — |
+| 10 | Apply exactly Part A to the shipped `thesis_latex/` | A1, A1b, A2, A3, A4, A6 applied by exact-match from the change document; A5 flag only; shipped PDF rebuilt 14:01, 142 pages, 0 `!` errors | probed: "adds two recovered", "9e-9", "RMSD of 3.0", "prints both gates" present; old strings absent |
+| 11 | Promotion (copy over original, `--force` rebuild) | NOT executed; scheduled after the 14:07 reviews and Phase 7 with a final go | — |
+
+Winner's-curse estimator (c_k · σ_d / √2, paired SE of winner vs runner-up), selection endpoint = top-15 triple gate:
+
+| family | k | winner / runner-up | nearest bias (pp) | instance bias (pp) |
+|---|---|---|---|---|
+| AutoDock exh128 | 2 | gnina / raw (175 vs 166; 10/1 discordant) | 0.43 | 0.45 |
+| DiffDock | 3 | smina / gnina (144 vs 143; 4/3) | 0.52 | 0.59 |
+| EquiBind unguided | 3 | gnina / smina (57 vs 48; 18/9) | 1.02 | 0.98 |
+| AutoDock ladder | 8 | gnina128 / raw128 (top-15) | 1.09 top-15, 1.52 rank-1; double gate 1.43 / 1.62 | 1.14 / 1.73; double 1.50 / 1.91 |
+
+The old :248 figures ("near two at rank-1, near one and a half at top-15", eight arms, validity-aware gate) are reproduced by the instance double-gate ladder row (1.91 / 1.50), so the retired sentence was correct for its own definition.
+
+Identity re-run: per-pose identity failure 0.95 % under instance, combined (load_all) and nearest references alike; 0 poses differ between references; no complex has deposited copies with different InChI. Cost by arm and depth (rank-1 / top-15 / top-30): DiffDock smina −1/−2/−2 (7ZXV_45D, then +7XQZ_FPF) under both conventions; DiffDock gnina the same; AutoDock and EquiBind 0.
+
+Copy rebuilt 14:05–14:08 after the decision edits: latexmk exit 0, 0 `!` errors, 3 overfull boxes, 146 pages (145 before; the longer App. C caveat paragraph and the footnote add a page). Kurzfassung stays on page 4 with the Schlagworte on the same page (lowest text at 749 of 842 pt); raster `qa_raster/kurzfassung_after_decisions.png`.

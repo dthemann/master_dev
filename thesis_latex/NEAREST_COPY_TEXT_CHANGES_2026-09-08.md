@@ -17,6 +17,8 @@
 
 ## Part A. Corrections valid today, independent of the endpoint switch
 
+> **Status 2026-09-08 14:05.** Part A (A1, A1b, A2, A3, A4, A6) was applied verbatim to the shipped `thesis_latex/` on the user's instruction (decision 10, "apply exactly Part A to thesis_latex/"); A5 stays a flag. The shipped PDF was rebuilt (142 pages, 0 errors) and probed for the new strings. No yaml value changes.
+
 Source: plan Phase 0.3, Phase 0.4 and Section 8 ("Pre-existing defects in the current thesis found by the audits, independent of the switch"). Each item was re-verified on 2026-09-08 against the live files and the read-only canonical table before being written down.
 
 #### A1. M:113 — "adds three recovered complexes" → "two"
