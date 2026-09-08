@@ -107,9 +107,9 @@ STAGES: list[dict] = [
     dict(name="bench_endpoint_diagnostics", plan="3.2", flags=["--csv"], outputs=[NEAR_REPORT], inputs=[NEAR_PPM]),
     dict(name="bench_optimization_benefit", plan="3.2", flags=["--report-dir"], outputs=[NEAR_REPORT],
          inputs=[NEAR_PPM]),
-    dict(name="bench_ligand_difficulty", plan="3.2", flags=["--out-dir"],
+    dict(name="bench_ligand_difficulty", override={"--diffdock-variant": "smina"}, plan="3.2", flags=["--out-dir"],
          outputs=["PoseBusters_Benchmark_Analysis/ligand_difficulty_nearest"], inputs=[NEAR_PPM]),
-    dict(name="bench_receptor_difficulty", plan="3.2", flags=["--out-dir"],
+    dict(name="bench_receptor_difficulty", override={"--diffdock-variant": "smina"}, plan="3.2", flags=["--out-dir"],
          outputs=["PoseBusters_Benchmark_Analysis/receptor_difficulty_nearest"], inputs=[NEAR_PPM]),
     dict(name="bench_clusters", plan="3.2", flags=["--out-dir"], extra=["--crystal-copies", "any", "--force"],
          outputs=["posebusters_results/cluster_crystal_pocket_matched_equibind/"
@@ -263,6 +263,14 @@ def build_command(stage: dict, regen: dict, canon_writes: list[str], canon_trees
         if tok in EMPTY_VALUE_OPTIONS and (i + 1 == len(cmd) or cmd[i + 1].startswith("-")):
             repaired.append("")
     cmd = repaired
+    # Per-stage argument overrides for canonical commands that are themselves broken:
+    # REGENERATE.md passes --diffdock-variant diffdock_smina to the two difficulty
+    # scripts, whose parsers accept only {all,raw,smina,gnina} (pre-existing defect,
+    # recorded in PROGRAM_LOG.md); the override supplies the accepted spelling.
+    for flag, value in stage.get("override", {}).items():
+        for i, tok in enumerate(cmd[:-1]):
+            if tok == flag:
+                cmd[i + 1] = value
 
     # (1) every value of an output flag must carry _nearest and must not be canonical
     for i, tok in enumerate(cmd[:-1]):
