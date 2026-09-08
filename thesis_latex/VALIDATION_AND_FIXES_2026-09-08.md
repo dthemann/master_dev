@@ -189,3 +189,69 @@ No harness assertion covers prose clauses. That is precisely how a raw-arm count
 dominant-arm paragraph at :433. An equivalent raw-versus-gnina swap could recur silently elsewhere. Closing it
 would mean adding prose-level checks for the coverage rows, which is recorded here as an open item rather than
 done.
+
+
+---
+
+## 7. Appendix sweep, completed 2026-09-09 (findings OPEN, not yet fixed)
+
+The appendix (1,454 lines, 7 chunks) was validated on the same two routes with a refuter per finding: 14 verifier
+reports covering roughly 4,700 printed numbers, and 74 adjudications of which **40 returned REAL over 17 distinct
+lines** and 34 were refuted. None of these has been fixed; they are listed here for decision.
+
+| line | routes agreeing | printed | should be |
+|---|---|---|---|
+| :13 | 2 | one reference-free cluster-quality figure that matches its generating output in content but not byte for byte | zero such figures (37 of 39 shipped figures are byte-identical to their source; the only two unreconstructable figures are the two hand-composed Orai1 |
+| :77 | 5 | "Matched Vinardo passes place a rank-1 pose within 2 A of the crystal ligand for 37 of the 303 complexes again | 45 / 104 / 54 / 117 (Vinardo 45, Vina 104, Vinardo+gnina 54, Vina+gnina 117), n = 303 |
+| :156 | 4 | Every docked 2-APB file in the study records the atom types A, C, HD, NA and OA and not one records B. The bor | The reported Orai1 experimental-panel arm types 2-APB's boron as B, not as carbon. The staged ligand Dockings/Orai_JKU_MGLTools_exh128/_staging/ligand |
+| :167 | 1 | "Its centre is the midpoint of the axis-aligned bounding box over every atom record of the prepared receptor, | The box is built over the PDBFixer-cleaned receptor PDB (which still carries the full hydrogen shell), not over the prepared PDBQT. Replace ":167" wit |
+| :330 | 2 | 0.74 wall-hours | 0.72 wall-hours (0.71869 h = 2,587.3 s); same correction at :355, "the 0.72 hours the sixteen-way concurrent run actually took" |
+| :355 | 2 | 0.74 hours (Table 10 footnote: "rather than the 0.74 hours the sixteen-way concurrent run actually took") | 0.72 hours |
+| :363 | 1 | "...it was not binding in any case, since all 1,232 control complexes wrote the full ten modes." (the figure ' | 1,227 of the 1,232 control complexes wrote the full ten modes; five wrote nine. The conclusion "the energy window was not binding" is nevertheless COR |
+| :395 | 1 | Ctrl.~10 on each of the 1,232 units it covers | Ctrl. 10 on 1,227 of the 1,232 units it covers and nine on the remaining five |
+| :533 | 5 | 80,100 | 80,098 |
+| :562 | 1 | Among the displaced residues, Tyr80 and Lys87 are the two that occur most often within 4\angstrom{} of a rank- | Glu106 and Tyr80 (Glu106 79/308, Tyr80 51/308; Lys87 is only fifth at 19/308) |
+| :615 | 2 | 66 to 110 | 66 to 110 for the three thermally sampled frames (Fr300, Fr400, Fr499); Fr0's top-ranked pocket is a seven-residue set spanning M1 residues 87 to 109 |
+| :666 | 2 | "Four alternates do not share the reference pocket (7A9E\_R4W, 7TUO\_KL9, 7VKZ\_NOJ, 7Z1Q\_NIO) and no complex | The zero is arm-conditional, not unconditional. Over the full 27-arm pool, six (complex, arm) pairs gain complex-level recovery through an alternate c |
+| :1074 | 1 | 150 (in "all 150 poses it produced for them pass the twenty-two applied checks") | 150 is correct and stays; the clause attached to it does not. "all 150 poses it produced for them pass the twenty-two applied checks" is a stale carry |
+| :1233 | 2 | 300 (in "On a 300-pose sample slightly under half of those failures survive an equalised hydrogen treatment, w | No sample is needed: the equalised-hydrogen treatment can be, and has been, computed on all 9,090 raw EquiBind poses. Of the 2,116 internal-energy fai |
+| :1235 | 4 | 57 to 60 (raw DiffDock complexes removed by the validity gate at the deeper pools; sentence also states "a spa | 55 to 60 at the deeper pools, a span of 18.2 to 21.5 percentage points |
+| :1244 | 1 | "Published convergence points for boxes of this size sit above the value used here." (topic sentence of the re | "sit below the value used here and above the lowest rungs of the ladder" — the published convergence points are 25 and 50, against the exhaustiveness |
+| :1262 | 4 | chi2(2) = 393.3 with q = 6.2e-85 (minimum distance to protein), and in the same sentence chi2(2) = 299.0 with | 351.7 (chi2, df=2, q = 6.9e-76); the companion value in the same sentence is 267.1 (chi2, df=2, q = 8.0e-58) |
+
+### 7.1 The three that matter most
+
+**:77 is the only STALE-INSTANCE value found anywhere in the thesis.** "Matched Vinardo passes place a rank-1
+pose within 2 Å of the crystal ligand for 37 of the 303 complexes against 80 for Vina, and for 42 against 90 once
+each family is rescored with gnina." Recomputed on the promoted table, those four counts are exactly the retired
+single-instance values; under the nearest-copy convention they are **45, 104, 54 and 117**. The promotion missed
+them because the `autodock_vinardo` and `autodock` arms carry no harness assertion, so the 1398-check harness
+cannot see them. The sentence's "of the crystal ligand" should also become "of the nearest deposited copy" for
+consistency with the rest of the document.
+
+**:330 and :355 carry the retired rescoring wall clock that was corrected in the main text.** Both still print
+0.74 hours where the recorded optimiser union wall is 2,587.3 s = 0.72 hours. The main-text fix of that same
+value (footnote :733) was applied on 2026-09-08 without checking for appendix twins, so that earlier repair was
+incomplete.
+
+**:1235 is contested and needs a decision rather than a correction.** The sentence reads "For raw DiffDock it
+removes 65 complexes at rank-1 and 57 to 60 at the deeper pools, a span of 18.8 to 21.5 percentage points". Its
+generator `validity_gate_cost.csv` carries depths 1, 5, 15 and 30 with costs 65, 60, 57 and 55 and spans 21.45
+down to 18.15, which gives "55 to 60" and "18.2 to 21.5". The post-promotion audit of 2026-09-08 instead read the
+sentence as belonging to Table 22, whose depths are 1, 5, 10 and 15, and the wording was changed accordingly.
+Both readings are internally consistent and the sidecar has no depth 10, so the honest repair is to name the
+depths in the sentence rather than to pick a range silently. **This is a correction I introduced; it should not
+have been applied without checking the generator's own depth set.**
+
+### 7.2 Character of the rest
+
+Most of the remaining fourteen are pre-existing and convention-independent, and would have been just as wrong
+before the promotion: a residue ranking that names the wrong two residues (:562), a pocket-span claim that holds
+for three of the four frames (:615), an unconditional "no complex gains recovery" that is true only for the ten
+printed variants (:666), a 300-pose sample where the whole population was computable (:1233), a total pose count
+of 80,100 where the nine EquiBind configurations sum to **80,098** (:533, verified independently here), a
+box-construction description that names the prepared receptor instead of the cleaned PDB (:167), an atom-typing
+claim about the 2-APB boron contradicted by the staged ligand file (:156), a "all 1,232 units wrote ten modes"
+that is 1,227 with five writing nine (:363 and :395), a data-availability sentence describing a figure class that
+does not exist (:13), a literature convergence claim pointing the wrong way (:1244), and two chi-squared values
+in the per-check sweep (:1262).
