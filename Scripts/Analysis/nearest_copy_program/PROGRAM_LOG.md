@@ -203,3 +203,22 @@ The resumed run added 14 verifier results, giving the main text 3-4 independent 
 Unverifiable by construction (cited literature, no repository source): 73 % Orai1 transmembrane identity (:614, ref037 Hou 2012), 22.1 % and 67.3 % TEMPL success (:822, ref065). Do not re-file.
 
 Appendix validation (7 chunks x 2 routes + refuters) launched separately as wf_89c91e8b-782 after the model switch.
+
+## 2026-09-08 23:45 — the two remaining main-text defects re-validated adversarially and FIXED
+
+On the author's instruction ("please validate again; if they can be validated, please fix and document"), both
+were put to three agents each, on independent routes (primary data, document-internal, generator/third-party
+source), every one instructed to REFUTE the defect and to state the strongest case against its own verdict, plus
+a judge that re-verified the decisive facts. All six attempts and both judges returned DEFECT CONFIRMED; my own
+fourth route agreed.
+
+| location | fix | decisive evidence |
+|---|---|---|
+| main :433 | "a valid pose for all 303 complexes" → "a valid pose for 301 of the 303 complexes ... 82.2 % of the cohort remain after the rank-1 validity and crystal-site trim" | the paragraph's 82.2 % is `filmstrip_stats__per_tool_depth.csv` row `AutoDock,1,249,249,303,82.178` on `autodock_mgltools_exh128_gnina`, whose >=1-valid coverage is 301 (rank-1 valid 298); the raw arm reaches 303 but its own trim is 78.2 %. Table 1 prints both (303 raw / 301 gnina) and the parallel EquiBind sentence at :437 uses the gnina arm's 266. The lost complexes are 7NUT_GLP and 7OZC_G6S. The percentage was deliberately NOT changed (it is 249/303 over the universe, not 249/301), and "validity and" was added because the rank-1 drop is a two-step |
+| main :694 | "fifteen interaction classes" → "sixteen interaction classes, fifteen of which occur on Orai1 because the receptor carries no metal ion" | PandaMap 4.1.0 initialises sixteen interaction keys at `core.py:717` and `:797`, all live detectors; `run_pandamap.py:83` says "The 16 PandaMap interaction types"; the calibration panel exhibits all sixteen, the Orai benchmark panel fifteen (metal_coordination absent), the four Orai receptor PDBs carry no HETATM record at all. Both numbers are printed because the appendix's Orai FDR family depends on the fifteen |
+
+Verified after the edits: harness **1398/1398**, latexmk 0 errors, 145 pages, Kurzfassung and Schlagworte still on page 4, PDF probes confirm both new strings and the absence of both superseded ones. Neither edit changes a computed quantity, so no regeneration and no yaml pin moved.
+
+Also settled in the same round: main :516 `Wilcoxon p = 0.064` REFUTED as a defect (exact F1 from the integer contingency counts gives 0.06379; note the 26 exact ties make Pratt/z-split give 0.043), and main :871 "sixteenfold" REFUTED (39.0/2.4 = 16.25 from the sentence's own medians; the paired estimator on the same tier is 10.45x, CI 7.14-14.20 — different estimator, not an error).
+
+Full record for the examiner: `thesis_latex/VALIDATION_AND_FIXES_2026-09-08.md` (routes, gates, the stale-value trap, all eight fixes, the challenged-but-surviving values, the literature values that cannot be validated, and the open gap that no harness assertion covers prose clauses).
