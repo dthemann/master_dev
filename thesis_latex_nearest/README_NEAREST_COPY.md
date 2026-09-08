@@ -1,3 +1,5 @@
+> **PROMOTED 2026-09-08.** These sources were copied over `thesis_latex/` (author decision 11). Edit the shipped thesis from now on; this folder is the audited record of the switch.
+
 # thesis_latex_nearest
 
 Independent copy of the short-build thesis sources (Thesis_short.tex, body_main_short.tex, body_appendix_short.tex,

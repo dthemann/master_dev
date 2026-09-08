@@ -14,7 +14,7 @@
 > been retired and its paths predated the matched-EquiBind migration. That
 > drift is what this generator exists to prevent. See [`FINDINGS_2026-09-02.md`](FINDINGS_2026-09-02.md).
 
-Generated 2026-09-03 01:14 from 60 registered stages.
+Generated 2026-09-08 15:25 from 66 registered stages.
 
 Float numbers are the SHORT build's, read from the figure environments of
 `body_main_short.tex` and `body_appendix_short.tex` in document order.
@@ -102,7 +102,7 @@ described.
 
 **2. Benchmark docking** — 14 stages: `bench_prepared_inputs`, `bench_arm_status`, `bench_autodock_exh18_raw`, `bench_autodock_exh32_raw`, `bench_autodock_exh64_raw`, `bench_autodock_exh92_raw`, `bench_autodock_exh128_raw`, `bench_autodock_exh32_gnina`, `bench_autodock_exh64_gnina`, `bench_autodock_exh128_gnina`, `bench_diffdock`, `bench_pockets`, `bench_equibind`, `bench_equibind_minimize`
 
-**3. Benchmark analysis** — 19 stages: `bench_posebusters`, `bench_posebusters_matched`, `bench_pose_comparison`, `bench_validity_report`, `bench_figure1`, `bench_filmstrip`, `bench_topk`, `bench_optimization_benefit`, `bench_endpoint_diagnostics`, `bench_clusters`, `bench_pandamap`, `bench_pandamap_report`, `bench_interaction_audit`, `bench_effort_charged`, `bench_effort_elapsed`, `bench_exhaustiveness_returns`, `bench_ligand_difficulty`, `bench_receptor_difficulty`, `bench_diffdock_rerank`
+**3. Benchmark analysis** — 25 stages: `bench_posebusters`, `bench_posebusters_matched`, `bench_pose_comparison`, `bench_validity_report`, `bench_figure1`, `bench_filmstrip`, `bench_topk`, `bench_optimization_benefit`, `bench_endpoint_diagnostics`, `bench_metal_stratum`, `bench_selection_bias`, `bench_reference_identity`, `bench_alternate_copy_containment`, `bench_itt`, `bench_reference_convention`, `bench_clusters`, `bench_pandamap`, `bench_pandamap_report`, `bench_interaction_audit`, `bench_effort_charged`, `bench_effort_elapsed`, `bench_exhaustiveness_returns`, `bench_ligand_difficulty`, `bench_receptor_difficulty`, `bench_diffdock_rerank`
 
 **4. Orai staging** — 2 stages: `orai_receptors`, `orai_ligands`
 
@@ -361,6 +361,7 @@ Re-refines from the committed __refRAW.sdf, which is the exact input the origina
     --out-dir posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report \
     --top-n 15 \
     --diffdock-variant all \
+    --reference-convention nearest \
     --collapse-plots-only \
     --collapse-diffdock-variant diffdock_smina \
     --collapse-autodock-variant autodock_mgltools_exh128_gnina \
@@ -368,6 +369,7 @@ Re-refines from the committed __refRAW.sdf, which is the exact input the origina
     --workers 24
 ```
 
+PROMOTED 2026-09-08: --reference-convention nearest is the primary endpoint (every near-native, form, centroid, contact and PLIF metric is taken against the deposited copy of the ligand nearest to the pose; record 0 of <ID>_ligands.sdf is the single-instance sensitivity arm, kept in the *_ref_instance columns). The cache manifest records the convention and the hub refuses to rebuild a cache of another convention or schema without --force. Program record: Scripts/Analysis/nearest_copy_program/PROGRAM_LOG.md.
 --top-n 15 and --diffdock-variant all shaped the cached table. A re-render with --reuse-cache omits them, so dropping the cache after changing the input silently rebuilds at --top-n 5 on the raw diffdock key.
 CORRECTED 2026-09-02: the pin was --collapse-autodock-variant autodock_gnina, which the meeko preset cancels, because autodock_gnina is IN that preset. The two flags together dropped the whole AutoDock family and Figures 2 and 3 rendered with two tools instead of three. No error was raised. The dominant arm must be named in full.
 CORRECTED 2026-09-03: the cross-tool baseline in _TOPK_TEST_PAIRS was raw Vina, while Appendix C declares the family is computed on the gnina-rescored arm and Table 21 prints that arm's rates. The script carried raw Vina in every commit of its history, so it tested 31.4 against DiffDock's 33.7 instead of the printed 37.3, and reported ns at three of the four depths where the thesis reports significance. Table 21 had no assertion behind it, which is why the drift survived. check_table_21 now pins it.
@@ -464,6 +466,104 @@ The double exclusion is load-bearing. --exclude-preset meeko alone leaves five l
     --exclude-preset meeko
 ```
 
+#### `bench_metal_stratum` — Metal-adjacent stratum: membership, cofactor/ion split and stratum contrasts
+
+- **determinism** bitexact · **cost** cheap
+- **supports** App. C metal-adjacent stratum (78 of 303) and body_main_short.tex:88/:868
+- **needs** `bench_pose_comparison`
+- **writes** `posebusters_results/metal_stratum/metal_stratum_summary.json`, `posebusters_results/metal_stratum/metal_stratum.csv`, `posebusters_results/metal_stratum/metal_stratum_contrasts.csv`
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/metal_stratum.py \
+    --benchmark-dir "Data/PoseBuster Benchmark Set" \
+    --ids-file posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/analysed_cohort_ids.txt \
+    --per-pose-csv posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv \
+    --out-dir posebusters_results/metal_stratum \
+    --arms autodock_mgltools_exh128_gnina diffdock_smina equibind_unguided_gnina \
+    --cutoffs 4 5 6 \
+    --overwrite
+```
+
+ADDED 2026-09-08 (plan D4 / Phase 0.4). No generator existed before this date: the 78-complex list behind App. C :165 and the 73 / 81 sensitivity counts were never registered and could not be asserted. The rule that reproduces the printed 73 / 78 / 81 at 4 / 5 / 6 A is the RESIDUE-level one: minimum heavy-atom distance from the reference ligand instance (record 0 of <ID>_ligands.sdf == <ID>_ligand.sdf) to ANY atom of a residue containing at least one metal element (alkali, alkaline-earth, transition, post-transition), measured on the PoseBusters-shipped <ID>_protein.pdb, not on the docked receptor. The atom-level rule (distance to the metal atom itself) gives 65 / 77 / 80 and does NOT reproduce the print; the single complex separating 77 from 78 is 7TSF_H4B (haem ring at 2.78 A, Fe at 9.25 A). Membership is a complex-level property of the reference instance and does not follow the scored copy; it differs across deposited copies for exactly two complexes (7JHQ_VAJ in by the reference only, 7TB0_UD1 in by copy 1 only), which the summary JSON lists. The rule yields 16 cofactor / 62 free-ion, where :165 prints 15 / 63. The reference-convention contrasts reproduce :165 verbatim (37.8 / 39.6 / 33.3 / 17.9 % rank-1; 134 vs 149 of 225 p 0.142; 33 vs 49 of 78 p 0.020; Fisher 0.256). Pass --nearest-csv <per-pose CSV with rmsd_nearest_copy> to add the nearest-copy convention block. --overwrite only permits replacing this script's own three output files; any other content in --out-dir is refused.
+
+#### `bench_selection_bias` — Variant-selection winner's curse: per-family paired estimate
+
+- **determinism** bitexact · **cost** cheap
+- **supports** App. C 'One caveat applies to the selected arm itself' and the Limitations winner's-curse range
+- **needs** `bench_pose_comparison`
+- **writes** `posebusters_results/selection_bias/selection_bias.csv`, `posebusters_results/selection_bias/selection_bias_summary.json`
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/nearest_copy_program/selection_bias.py \
+    --per-pose-csv posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv \
+    --out-dir posebusters_results/selection_bias \
+    --overwrite
+```
+
+ADDED 2026-09-08 (nearest-copy program, decision 4). Before this date the winner's-curse figures in App. C and the Limitations had no generator. The estimator is the standard c_k * sigma_d / sqrt(2) with c_k the expected maximum of k standard normals and sigma_d the PAIRED (McNemar) standard error of the recovery difference between the family winner and its runner-up on the same complexes, evaluated on the selection endpoint (top-15, PB-valid AND rmsd <= 2 AND bestfit_rmsd <= 1). Families: the two exh128 AutoDock arms (k = 2), the three DiffDock arms and the three unguided EquiBind arms (k = 3), plus the eight-rung AutoDock exhaustiveness ladder (k = 8; the base rung is keyed autodock_mgltools[_gnina]). The double gate and rank-1 are printed for comparison. Output is labelled by the table's reference_convention.
+
+#### `bench_reference_identity` — Reference-dependent PoseBusters identity checks re-run against every deposited ligand copy
+
+- **determinism** bitexact · **cost** cheap
+- **supports** Results footnote on the cost of a co-crystallised reference (-1 / -2 / -2 DiffDock complexes)
+- **needs** `bench_pose_comparison`
+- **writes** `posebusters_results/reference_identity/identity_cost_by_depth.csv`, `posebusters_results/reference_identity/identity_cost_summary.json`
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/nearest_copy_program/reference_identity_rerun.py \
+    --per-pose-csv posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv \
+    --out-dir posebusters_results/reference_identity \
+    --arms autodock_mgltools_exh128_gnina autodock_mgltools_exh128 diffdock_smina diffdock_gnina equibind_unguided_gnina \
+    --overwrite
+```
+
+ADDED 2026-09-08 (nearest-copy program, decision 5). The footnote's -1 / -2 / -2 was measured post hoc on 2026-08-22 with no registered generator. This stage recomputes the four InChI-based identity checks (formula, connections, tetrahedral, double-bond; inchi_options 'w' as in the redock config) per pose against the single instance, the multi-copy file loaded with load_all and the nearest copy of each pose, then counts the complexes the identity requirement removes from the PB-valid AND rmsd <= 2 recovery set per arm and depth. On 2026-09-08 all three references give identical per-pose outcomes (0.95 % of poses fail; no complex has copies with different InChI) and the cost is -1 / -2 / -2 (7ZXV_45D; +7XQZ_FPF) for both DiffDock arms under both conventions, 0 for AutoDock and EquiBind. About 1 minute on 8 workers.
+
+#### `bench_alternate_copy_containment` — Alternate deposited ligand copies inside a 25 A PoseBusters-style cube on the reference instance
+
+- **determinism** bitexact · **cost** cheap
+- **supports** App. C box-volume paragraph ('only N of the 211 alternate copies have a centroid inside it')
+- **writes** `posebusters_results/reference_convention/alternate_copies_in_25A_cube.json`
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/nearest_copy_program/alternate_copy_box_containment.py \
+    --benchmark-dir "Data/PoseBuster Benchmark Set" \
+    --ids-file "Data/PoseBuster Benchmark Set/posebusters_pdb_ccd_ids.txt" \
+    --out posebusters_results/reference_convention/alternate_copies_in_25A_cube.json
+```
+
+ADDED 2026-09-08 after the appendix numbers review: the printed '8 of the 211' was a plan preview with no generator and was the 12.5 A SPHERE count; the stated rule (alternate copy's heavy-atom centroid inside the 25 A cube centred on the reference heavy-atom centroid) gives 11 of 211 over the 308 entries (16 by any heavy atom). 143 multi-copy entries, 211 alternates.
+
+#### `bench_itt` — Intention-to-treat check of the five dropped complexes
+
+- **determinism** bitexact · **cost** cheap
+- **supports** App. C cohort paragraph (closest AutoDock pose of the dropped complexes)
+- **needs** `bench_pose_comparison`
+- **writes** `posebusters_results/itt/itt_dropped_complexes.csv`, `posebusters_results/itt/itt_summary.json`
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/nearest_copy_program/itt_dropped_complexes.py \
+    --out-dir posebusters_results/itt \
+    --per-pose-csv posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv
+```
+
+ADDED 2026-09-08 (nearest-copy program, plan 2.6). Scores the raw AutoDock poses of the five complexes dropped from the analysed cohort against every deposited copy, so the cohort paragraph can say how close the excluded complexes came instead of asserting it.
+
+#### `bench_reference_convention` — Reference-convention sensitivity table (nearest copy against single instance)
+
+- **determinism** bitexact · **cost** cheap
+- **supports** Table 23 (App. C) and the Methods sensitivity sentence; 143 of 308 and 138 of 303 multi-copy counts
+- **needs** `bench_pose_comparison`
+- **writes** `posebusters_results/reference_convention/reference_convention_sensitivity.csv`, `posebusters_results/reference_convention/reference_convention_sensitivity.tex`, `posebusters_results/reference_convention/reference_convention_margins.csv`, `posebusters_results/reference_convention/reference_convention_summary.json`
+
+```bash
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/nearest_copy_program/reference_convention_table.py \
+    --per-pose-csv posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv \
+    --out-dir posebusters_results/reference_convention
+```
+
+ADDED 2026-09-08 (nearest-copy program, plan 2.7). Reads the rmsd / rmsd_ref_instance pair of the per-pose table and prints both conventions at every depth for the three selected arms, with the AutoDock-DiffDock margin and its Newcombe interval under each.
+
 #### `bench_clusters` — Pose clusters against the crystal pocket
 
 - **determinism** bitexact · **cost** moderate
@@ -481,6 +581,7 @@ The double exclusion is load-bearing. --exclude-preset meeko alone leaves five l
     --equibind-variant equibind_unguided_gnina \
     --site-cluster threshold \
     --pocket-radius 8.0 \
+    --crystal-copies any \
     --rank-by consensus \
     --stability-boot 25 \
     --workers 30 \
@@ -596,7 +697,8 @@ The charged basis divides cpu_core_s/32 + gpu_s uniformly. The default elapsed b
     --per-pose-csv posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv \
     --out-dir posebusters_results/autodock_exhaustiveness_returns \
     --n-boot 5000 \
-    --verify-input-parity
+    --verify-input-parity \
+    --cascade-pins-from posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/pose_validity_cascade.csv
 ```
 
 5,000 paired complex-level bootstrap resamples at a fixed seed; numerator and denominator recomputed on the same resample.
@@ -613,7 +715,7 @@ The charged basis divides cpu_core_s/32 + gpu_s uniformly. The default elapsed b
     --per-pose-metrics posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv \
     --features PoseBusters_Benchmark_Analysis/ligand_protein_features.csv \
     --out-dir PoseBusters_Benchmark_Analysis/ligand_difficulty \
-    --diffdock-variant diffdock_smina \
+    --diffdock-variant smina \
     --exclude-preset meeko \
     --exclude-methods autodock_mgltools,autodock_mgltools_gnina,autodock_mgltools_exh18,autodock_mgltools_exh64,autodock_mgltools_exh64_gnina,autodock_mgltools_exh92
 ```
@@ -630,7 +732,7 @@ The charged basis divides cpu_core_s/32 + gpu_s uniformly. The default elapsed b
     --per-pose-metrics posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv \
     --features PoseBusters_Benchmark_Analysis/ligand_protein_features.csv \
     --out-dir PoseBusters_Benchmark_Analysis/receptor_difficulty \
-    --diffdock-variant diffdock_smina \
+    --diffdock-variant smina \
     --exclude-preset meeko \
     --exclude-methods autodock_mgltools,autodock_mgltools_gnina,autodock_mgltools_exh18,autodock_mgltools_exh64,autodock_mgltools_exh64_gnina,autodock_mgltools_exh92
 ```
@@ -1077,11 +1179,11 @@ byte-identical copies exist.
 | Fig | Asset | Subject | Source |
 | --- | --- | --- | --- |
 | 1 | `image2` | Post-hoc optimisation and PoseBusters validity. Significance… | `posebusters_results/benchmark_matched_equibind/dock/validity_report_mgltools/00_figure2_validity_yield.png` |
-| 2 | `image3` | Best-of-top-N accuracy against the as-placed crystal RMSD | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/18_topn_within_thresholds_pbvalid_depths.png` |
+| 2 | `image3` | Best-of-top-N accuracy against the as-placed RMSD to the… | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/18_topn_within_thresholds_pbvalid_depths.png` |
 | 3 | `image4` | Best-of-top-N accuracy against the best-fit (Kabsch) RMSD | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/18_topn_within_thresholds_kabsch_pbvalid_depths.png` |
 | 4 | `image5` | Form versus in-place RMSD across ranking depth | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__thesis.png` |
-| 5 | `image6` | Top-N crystal-cluster co-recovery | `posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/topN_crystal_cluster_matrix.png` |
-| 6 | `image7` | Composition and geometry of the crystal-closest cluster. Rates… | `posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/crystal_cluster_homogeneity.png` |
+| 5 | `image6` | Top-N crystal-cluster co-recovery | `posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/topN_crystal_cluster_matrix.png` (+1 identical) |
+| 6 | `image7` | Composition and geometry of the crystal-closest cluster. Rates… | `posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/crystal_cluster_homogeneity.png` (+1 identical) |
 | 7 | `image9` | Mean Jaccard similarity of interaction fingerprints… | `pandamap_results/benchmark_matched_equibind/report/05_fingerprint_similarity_top5.png` |
 | 8 | `image13` | PoseBusters-valid yield of produced poses on Orai | `posebusters_results/_orai_matched_root/orai_pbvalid_yield_compare/09f_pbvalid_yield_dominant_orai_benchmark_vs_experimental.png` |
 | 9 | `image43` | Usable pose yield per Orai frame-ligand unit | `posebusters_results/_orai_matched_root/orai_pbvalid_tm_share_compare/fig_pbvalid_outside_tm_whisker.png` |
@@ -1113,7 +1215,7 @@ byte-identical copies exist.
 | 35 | `image40` | PCA biplot and score plot | `PoseBusters_Benchmark_Analysis/figures/10_pca_biplot.png` |
 | 36 | `image41` | Receptor profile | `PoseBusters_Benchmark_Analysis/figures/07_receptor_profile.png` |
 | 37 | `image42` | Conformer-generation difficulty | `PoseBusters_Benchmark_Analysis/figures/08_startconf_rmsd.png` |
-| 38 | `image8` | Cluster quality on the calibration benchmark | `posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/cluster_quality_metrics.png` |
+| 38 | `image8` | Cluster quality on the calibration benchmark | `posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/cluster_quality_metrics.png` (+1 identical) |
 | 39 | `image11` | Typed contacts versus the crystal by pose rank | `pandamap_results/benchmark_matched_equibind/report/10b_contact_decomposition_by_rank.png` |
 
 37 of 39 figures resolve to a file on disk.
@@ -1129,9 +1231,11 @@ Tables whose printed values are recomputed and asserted on every run by
 | --- | --- | --- |
 | 1 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv` | body_main_short.tex:261, tab:results-pose-production |
 | 10 | `posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/effort_summary.csv` | body_appendix_short.tex, tab:appendix-cost-per-pose |
+| 11 | `` | body_appendix_short.tex, tab:appendix-orai-protocols and the two paragraphs after it |
 | 12 | `pandamap_results/orai_interaction_compare_matched/orai_pandamap_interaction_compare_stats.txt` | body_appendix_short.tex, tab:appendix-orai-interaction |
 | 14 | `` | body_appendix_short.tex, tab:appendix-frame-geometry |
 | 16 | `PoseBusters_Benchmark_Analysis/summary_statistics.csv` | body_appendix_short.tex, tab:appendix-ligand-distribution |
+| 17 | `` | body_appendix_short.tex, tab:appendix-orai-descriptors |
 | 18 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_validity.csv` | body_appendix_short.tex, tab:appendix-top-k-recovery |
 | 19 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_stats.csv` | body_appendix_short.tex, tab:appendix-refinement-mcnemar |
 | 2 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_validity_gnina_arm.csv` | body_main_short.tex:336, tab:results-depth-recovery |
@@ -1147,6 +1251,7 @@ Tables whose printed values are recomputed and asserted on every run by
 | 5 | `posebusters_results/_orai_matched_root/orai_pbvalid_tm_share_compare/pbvalid_tm_share_pooled.csv` | body_main_short.tex, tab:results-orai-yield |
 | 6 | `posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/effort_summary.csv` | body_main_short.tex, tab:results-cost-per-qualifying-pose |
 | 8 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv` | body_appendix_short.tex, tab:appendix-exhaustiveness-ladder |
+| 9 | `` | body_appendix_short.tex, tab:appendix-protocols |
 
 Tables 7, 9, 11, 13, 15 and 23 are manual, compiled from the literature or
 from `DOCKING_PROTOCOL.md`. The remainder are not individually asserted; their

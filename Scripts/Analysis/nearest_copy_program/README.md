@@ -1,5 +1,8 @@
 # Nearest-copy endpoint program (independent layout)
 
+> **PROMOTED 2026-09-08.** The `_nearest` trees, the copy `thesis_latex_nearest/` and the harness copies of this folder were promoted into the canonical locations on the author's decision 11 (see `PROGRAM_LOG.md`, section PROMOTION). The `_nearest` directories named below no longer exist; their content IS the canonical data now. The pre-promotion state is backed up at `/home/manndo/master_dev_backup_instance_20260908/` and tagged `pre-promotion-instance-20260908`. The layout table is kept as the record of how the program ran.
+
+
 Executes plan v2 (`thesis_latex/PLAN_nearest_copy_primary_endpoint_2026-09-07_v2.md`) Phases 2-8 without touching
 any existing finding. Rule from the author (2026-09-08): no data from the thesis is overwritten. Every canonical
 directory, the shipped thesis under `thesis_latex/`, the harness yaml and `thesis_assertions.py` are READ-ONLY.

@@ -135,6 +135,8 @@ Fifteen of the 78 involve a metal-bearing cofactor such as haem, an iron-sulfur 
 
 ## Part B. Edits that belong to the endpoint switch (apply only if the switch is adopted)
 
+> **Part B status 2026-09-08 15:20.** Applied to the shipped thesis by the promotion of `thesis_latex_nearest/` (author decision 11), after six adversarial reviews; the shipped `thesis_latex/` sources are now identical to the copy. Values are the rebuilt ones, never the bracketed previews below.
+
 Everything below presumes plan decisions D1-D17 are adopted and the Phase 3 rebuild has run. Previews in square brackets come from the probe CSVs (plan Sections 1.1-1.11) and are NOT to be transcribed before the rebuild reproduces them (D16).
 
 ### B1. Methods redefinition (plan D11, Phase 5.1) at M:109-115

@@ -394,11 +394,18 @@ reg.add(Stage(
          "--pb-csv", f"{BENCH_PB}/posebusters_filtered_results.csv",
          "--out-dir", str(BENCH_REPORT),
          "--top-n", "15", "--diffdock-variant", "all",
+         "--reference-convention", "nearest",
          "--collapse-plots-only",
          "--collapse-diffdock-variant", "diffdock_smina",
          "--collapse-autodock-variant", "autodock_mgltools_exh128_gnina",
          "--exclude-preset", "meeko", "--workers", "24"],
-    notes="--top-n 15 and --diffdock-variant all shaped the cached table. A re-render "
+    notes="PROMOTED 2026-09-08: --reference-convention nearest is the primary endpoint (every "
+          "near-native, form, centroid, contact and PLIF metric is taken against the deposited copy "
+          "of the ligand nearest to the pose; record 0 of <ID>_ligands.sdf is the single-instance "
+          "sensitivity arm, kept in the *_ref_instance columns). The cache manifest records the "
+          "convention and the hub refuses to rebuild a cache of another convention or schema "
+          "without --force. Program record: Scripts/Analysis/nearest_copy_program/PROGRAM_LOG.md.\n"
+          "--top-n 15 and --diffdock-variant all shaped the cached table. A re-render "
           "with --reuse-cache omits them, so dropping the cache after changing the "
           "input silently rebuilds at --top-n 5 on the raw diffdock key.\n"
           "CORRECTED 2026-09-02: the pin was --collapse-autodock-variant autodock_gnina, "
@@ -587,6 +594,38 @@ reg.add(Stage(
           "generator and was the 12.5 A SPHERE count; the stated rule (alternate copy's heavy-atom centroid inside the "
           "25 A cube centred on the reference heavy-atom centroid) gives 11 of 211 over the 308 entries (16 by any heavy "
           "atom). 143 multi-copy entries, 211 alternates."))
+
+reg.add(Stage(
+    name="bench_itt", section="3. Benchmark analysis",
+    title="Intention-to-treat check of the five dropped complexes",
+    determinism=BITEXACT, cost=CHEAP,
+    needs=["bench_pose_comparison"],
+    outputs=["posebusters_results/itt/itt_dropped_complexes.csv",
+             "posebusters_results/itt/itt_summary.json"],
+    thesis="App. C cohort paragraph (closest AutoDock pose of the dropped complexes)",
+    cmd=[VINA_PY, ANA / "nearest_copy_program" / "itt_dropped_complexes.py",
+         "--out-dir", "posebusters_results/itt",
+         "--per-pose-csv", f"{BENCH_REPORT}/per_pose_metrics.csv"],
+    notes="ADDED 2026-09-08 (nearest-copy program, plan 2.6). Scores the raw AutoDock poses of the five "
+          "complexes dropped from the analysed cohort against every deposited copy, so the cohort paragraph "
+          "can say how close the excluded complexes came instead of asserting it."))
+
+reg.add(Stage(
+    name="bench_reference_convention", section="3. Benchmark analysis",
+    title="Reference-convention sensitivity table (nearest copy against single instance)",
+    determinism=BITEXACT, cost=CHEAP,
+    needs=["bench_pose_comparison"],
+    outputs=["posebusters_results/reference_convention/reference_convention_sensitivity.csv",
+             "posebusters_results/reference_convention/reference_convention_sensitivity.tex",
+             "posebusters_results/reference_convention/reference_convention_margins.csv",
+             "posebusters_results/reference_convention/reference_convention_summary.json"],
+    thesis="Table 23 (App. C) and the Methods sensitivity sentence; 143 of 308 and 138 of 303 multi-copy counts",
+    cmd=[VINA_PY, ANA / "nearest_copy_program" / "reference_convention_table.py",
+         "--per-pose-csv", f"{BENCH_REPORT}/per_pose_metrics.csv",
+         "--out-dir", "posebusters_results/reference_convention"],
+    notes="ADDED 2026-09-08 (nearest-copy program, plan 2.7). Reads the rmsd / rmsd_ref_instance pair of the "
+          "per-pose table and prints both conventions at every depth for the three selected arms, with the "
+          "AutoDock-DiffDock margin and its Newcombe interval under each."))
 print(f"{len(reg)} stages registered")
 ''')
 
@@ -611,6 +650,7 @@ reg.add(Stage(
          "--diffdock-variant", "diffdock_smina",
          "--equibind-variant", "equibind_unguided_gnina",
          "--site-cluster", "threshold", "--pocket-radius", "8.0",
+         "--crystal-copies", "any",
          "--rank-by", "consensus", "--stability-boot", "25",
          "--workers", "30", "--stats"],
     notes="The out-dir tag reads 'allposes' because --pb-valid-only is OFF for the "
@@ -712,7 +752,8 @@ reg.add(Stage(
     cmd=[VINA_PY, ANA / "autodock_exhaustiveness_returns.py",
          "--per-pose-csv", f"{BENCH_REPORT}/per_pose_metrics.csv",
          "--out-dir", "posebusters_results/autodock_exhaustiveness_returns",
-         "--n-boot", "5000", "--verify-input-parity"],
+         "--n-boot", "5000", "--verify-input-parity",
+         "--cascade-pins-from", f"{BENCH_REPORT}/pose_validity_cascade.csv"],
     notes="5,000 paired complex-level bootstrap resamples at a fixed seed; numerator "
           "and denominator recomputed on the same resample."))
 
@@ -730,7 +771,7 @@ for what, script, out in [
              "--per-pose-metrics", f"{BENCH_REPORT}/per_pose_metrics.csv",
              "--features", "PoseBusters_Benchmark_Analysis/ligand_protein_features.csv",
              "--out-dir", f"PoseBusters_Benchmark_Analysis/{out}",
-             "--diffdock-variant", "diffdock_smina",
+             "--diffdock-variant", "smina",
              "--exclude-preset", "meeko", "--exclude-methods", LADDER_EXCL]))
 
 reg.add(Stage(

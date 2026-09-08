@@ -54,7 +54,7 @@ that raise `NameError`, and a markdown cell duplicated verbatim.
 
 | Path | What it is |
 | --- | --- |
-| `Thesis_Reproduction.ipynb` | The new notebook. 33 cells, 58 declared stages. |
+| `Thesis_Reproduction.ipynb` | The new notebook. 37 cells, 66 declared stages. |
 | `Scripts/Analysis/repro_harness.py` | Stage registry, dependency graph, environment guard. |
 | `Scripts/Analysis/thesis_assertions.py` | Recomputes the printed numbers. |
 | `Scripts/Analysis/thesis_expected_values.yaml` | The printed numbers, with their location in the thesis. |
@@ -73,7 +73,7 @@ behaves exactly as before.
 
 ### 3.1 Verify first, run on request
 
-The default run mode executes nothing. It walks all 58 stages, checks their
+The default run mode executes nothing. It walks all 66 stages, checks their
 outputs exist, and asserts the thesis numbers. That takes a few minutes.
 
 The reason is arithmetic. Appendix B records the AutoDock search at 4.73

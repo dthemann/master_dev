@@ -12,8 +12,8 @@ conda activate vina
 jupyter lab Thesis_Reproduction.ipynb
 ```
 
-`Thesis_Reproduction.ipynb` is the pipeline. It declares 60 stages, walks them in
-dependency order, and finishes by recomputing 257 numbers the thesis prints and
+`Thesis_Reproduction.ipynb` is the pipeline. It declares 66 stages, walks them in
+dependency order, and finishes by recomputing 1,364 checks against numbers the thesis prints and
 comparing them to the document. The default run mode executes nothing expensive:
 it checks that every stage's outputs are present and asserts the numbers, which
 takes a few minutes. Re-running the docking itself is days of GPU and CPU time
@@ -64,7 +64,7 @@ rather than an error.
 ## Verifying
 
 ```bash
-python Scripts/Analysis/thesis_assertions.py       # 257 checks against the thesis
+python Scripts/Analysis/thesis_assertions.py       # 1,364 checks against the thesis
 python Scripts/Analysis/validate_regeneration.py   # re-runs 9 figure generators, ~10 min
 python Scripts/Analysis/build_results_current.py --check
 ```

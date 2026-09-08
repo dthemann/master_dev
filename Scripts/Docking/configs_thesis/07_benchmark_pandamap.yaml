@@ -41,6 +41,7 @@ pb_valid_only: true        # true → only poses that passed every PoseBusters t
 
 # ── Crystal reference (native interaction fingerprint) ────────────────────
 benchmark_dir: Data/PoseBuster Benchmark Set
+crystal_copies: all        # every deposited copy of the ligand (nearest-copy endpoint, promoted 2026-09-08); "reference" = record 0 only
 
 # ── Canonical receptor — REQUIRED for this run ────────────────────────────
 # Interaction fingerprints are keyed on (resname, resnum, chain), so they only
