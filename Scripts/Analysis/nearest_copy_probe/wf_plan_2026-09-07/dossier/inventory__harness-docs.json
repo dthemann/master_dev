@@ -1,0 +1,916 @@
+{
+ "dimension": "Reproduction harness and documentation (thesis_expected_values.yaml, thesis_assertions.py, _build_reproduction_notebook.py, REGENERATE.md, glossary/README/coverage docs, X-ray control notebook)",
+ "summary": "The harness currently runs 1,364 checks (I executed thesis_assertions.run_all read-only: 1364 results, 0 failures), not the 194 in the brief nor the 257 in README.md:15/67; the registry has 60 stages (REGENERATE.md:17, :103-115, and the builder's loops), not 58. Roughly 850 of the 1,364 result rows sit on a crystal-referenced column (rmsd, bestfit_rmsd, centroid_dist, crystal contacts) and move under nearest-copy: every cell of Tables 2, 3, 6, 8, 18, 19 (rates/wins), 21, 25, 26, 27, the near/form/triple columns of Table 1 (90 of 130 cells), the near-native half of Table 24, the near/both rows of Table 20 (24 of 36), Table 4's rates, the whole Appendix H.9 block, the refiner contrasts, the Figure 39 and audit prose, and 14 of the 39 figure md5 pairs (image3-9, 11, 24, 25, 44-47). Unchanged: cohort, determinism, Tables 5, 9, 10 (values), 11, 12, 14, 16, 17, Orai prose (fig 23/24), Table 1's poses/valid columns, Table 24's all-poses half, Table 20's validity rows, image2 and every Orai/dataset figure. Where the six-arm all-depths CSV covers an arm I derived the new value (Tables 1 near columns for 6 arms, 2, 6 complexes/poses_near2, 8 exh128 rows, 18 for 5 of 7 variants, 19 for 2 of 4 contrasts, 21 rates/wins for 2 of 4, 22, 24 near-pose counts, 25, 26 RMSD half, H.9 in full); everything on bestfit/Kabsch, crystal clusters, crystal contacts, the filmstrip, Holm p-values and the arms not in the CSV is \"recompute\". Notable derived consequences: Appendix H.9's rank-1 TOST verdict flips (equivalent_within_10pp true -> false, 90% CI upper bound 11.7), MDE 9.8 -> 10.5 pp, discordant 112 -> 129, n_needed 4200 -> 1100, power 0.12 -> 0.32; the validity-gate cost (\"two at rank-1, four at top-5, three deeper\") is unchanged; Table 22's AutoDock-gnina, EquiBind-gnina and raw-AutoDock rows coincide numerically with the old values. In thesis_assertions.py only seven gate lines hard-code the column (:122-124, :393, :426, :611, :615, :1432, :1457) plus thesis_endpoint_diagnostics.py:77 behind check_table_25/26/H.9; the other check_* functions read regenerated sidecars and need no code change. If the hub writes the nearest-copy value into the existing rmsd/pb_rmsd/pb_kabsch_rmsd/bestfit_rmsd/centroid_dist/contact_recovery/plif_recovery columns and adds *_ref_instance secondary columns, no consumer changes and adding rmsd_ref_instance to _CACHE_REQUIRED_COLS (hub :13187-13191) makes every stale per_pose cache unusable even under --reuse-cache. Fourteen of the 19 section-3 stages must re-run in dependency order behind bench_pose_comparison; bench_figure1, bench_pandamap, all PoseBusters, docking, Orai and dataset stages do not. A new cheap stage (reference-convention contrast from per_pose_metrics, the inverted form of the M2 doc's proposed bench_nearest_copy_sensitivity) plus a yaml block is needed or the M2 quantification lives nowhere in the harness. REGENERATE.md is generated (:3) and must not be hand-edited; the X-ray control notebook busts the deposited ligand with no reference and no RMSD (builder :283, :503) and is convention-independent.",
+ "sites": [
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 19,
+   "what": "meta.recorded: \"2026-09-02\"",
+   "depends_how": "Dates the recorded printed values, all of which are single-instance today",
+   "change": "Bump to the date the nearest-copy tables are transcribed; add a meta.reference_convention: nearest-copy line so a reader of the spec knows which convention the numbers assume",
+   "effort": "trivial",
+   "current_value": "2026-09-02",
+   "new_value": "date of the re-transcription",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 56,
+   "what": "Table 1 gate comment: \"near-native rmsd <= 2.0 (NOT conditioned on validity)\", form \"bestfit_rmsd <= 1.0 AND rmsd < 1000\", triple at :58",
+   "depends_how": "Documents the gates on columns that are today the single-reference symmetry_rmsd and Kabsch RMSD",
+   "change": "Add one comment line stating that rmsd, bestfit_rmsd and centroid_dist are the nearest-copy values and that *_ref_instance carries the single deposited instance",
+   "effort": "trivial",
+   "current_value": "no reference convention stated",
+   "new_value": "convention stated",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 71,
+   "what": "table_1 rows :71-80, 13 columns x 10 arms; e.g. autodock_mgltools_exh128_gnina: [8976, 301, 8880, 98.9, 202, 319, 3.6, 227, 2836, 31.6, 160, 221, 2.5]",
+   "depends_how": "near_complexes/near_poses/near_pct gate on rmsd<=2; form_* on bestfit_rmsd<=1 & rmsd<1000; triple_* on both. poses/valid_* (4 of 13 columns, 40 cells) do not depend on the reference",
+   "change": "CHANGES for 90 cells. Derived near columns (complexes, poses, pct): exh128 raw 202/307/3.4 -> 217/437/4.9; exh128_gnina 202/319/3.6 -> 217/451/5.0; diffdock 152/1683/18.7 -> 161/2118/23.5; diffdock_smina 173/1715/19.1 -> 186/2169/24.1; equibind_unguided_gnina 83/498/5.5 -> 86/515/5.7. diffdock_gnina, equibind_unguided_raw/smina, equibind_fpocket_raw, equibind_p2rank_raw near columns: recompute. All form_* and triple_* cells: recompute (Kabsch vs the nearest copy is not in the probe CSV)",
+   "effort": "medium",
+   "current_value": "see :71-80",
+   "new_value": "partly derived, rest recompute",
+   "risk": "Values must be transcribed from the rebuilt thesis table, not from the script output, or the harness stops being a check of the document"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 97,
+   "what": "table_2 rows: AutoDock [111, 198, 199], DiffDock [103, 167, 169], EquiBind [55, 80, 80]",
+   "depends_how": "pbvalid_near_native_k from topk_recovery_validity_gnina_arm.csv, computed on rmsd<=2 & pb_valid",
+   "change": "CHANGES, all 9 cells: AutoDock [149, 213, 214], DiffDock [132, 179, 183], EquiBind [57, 83, 83]",
+   "effort": "trivial",
+   "current_value": "[111,198,199] / [103,167,169] / [55,80,80]",
+   "new_value": "[149,213,214] / [132,179,183] / [57,83,83]",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 101,
+   "what": "table_2 note: \"36.6 (111), 65.3 (198), 65.7 (199) for AutoDock\"",
+   "depends_how": "Prose restatement of the single-instance counts",
+   "change": "49.2 (149), 70.3 (213), 70.6 (214)",
+   "effort": "trivial",
+   "current_value": "36.6 (111), 65.3 (198), 65.7 (199)",
+   "new_value": "49.2 (149), 70.3 (213), 70.6 (214)",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 118,
+   "what": "table_3 reach_pct, co_reach_phi, all_three_observed/expected (:118-126), e.g. AutoDock reach [[59,53,64],[79,74,83],[81,76,85],[83,79,87]]",
+   "depends_how": "Parsed from topN_crystal_cluster_matrix_stats.txt; the crystal-closest cluster is defined against the centroid loaded from <ID>_ligand.sdf at pose_cluster_crystal_pocket_report.py:921",
+   "change": "CHANGES, all 28 cells: recompute after bench_clusters is re-run with a nearest-copy crystal centroid (the report script needs its own change, it does not read rmsd from per_pose_metrics for this)",
+   "effort": "medium",
+   "current_value": "see :118-126",
+   "new_value": "recompute",
+   "risk": "pose_cluster_crystal_pocket_report.py must decide which copy defines 'the crystal cluster' per complex (per-pose nearest copy vs the copy most poses are nearest to)"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 150,
+   "what": "table_4 rows :150-164, n/precision/recall/f1 x 5 ranks x 3 tools, e.g. AutoDock precision [0.561, 0.550, 0.485, 0.497, 0.439]",
+   "depends_how": "native_recovery_by_rank.csv compares pose contacts to the crystal fingerprint computed from <ID>_ligand.sdf (pandamap_interaction_report.py:599); n counts PB-valid poses at rank and is reference-independent",
+   "change": "CHANGES for the 45 rate cells if the native fingerprint follows the nearest copy (per-pose reference on another chain); the 15 n cells are expected unchanged but must be verified. Recompute",
+   "effort": "large",
+   "current_value": "see :150-164",
+   "new_value": "recompute",
+   "risk": "Requires PandaMap fingerprints of every alternate copy and a per-pose reference choice; the largest downstream code change of the whole switch"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 180,
+   "what": "table_10 rows autodock [6.02, 4.12, 60.73] etc. and footnote :184-190",
+   "depends_how": "Per generated pose and campaign totals; no crystal reference",
+   "change": "UNCHANGED values. The file effort_summary.csv is rewritten by bench_effort_charged, so re-verify only",
+   "effort": "trivial",
+   "current_value": "as printed",
+   "new_value": "same",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 241,
+   "what": "table_20 rows :241-246, e.g. \"DiffDock/near-native\": [0.6, 0.7, 0.1, 0.1, 0.5, 0.4]; \"DiffDock/PoseBusters-valid\": [57, 59, 60, 62, 63, 67]",
+   "depends_how": "optimization_benefit_by_rank.csv near_% is rmsd<=2 (optimization_benefit_stats.py:115); pbv_% is validity only",
+   "change": "CHANGES for the four near-native and both rows (24 cells); UNCHANGED for the two PoseBusters-valid rows (12 cells). Recompute (diffdock_gnina and equibind_unguided_smina are not in the probe CSV)",
+   "effort": "small",
+   "current_value": "see :241-246",
+   "new_value": "recompute",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 278,
+   "what": "table_22 rows :278-284, e.g. \"DiffDock (raw)\": [[15.5, 11.9, 20.0], [19.1, 15.1, 23.9], [19.5, 15.4, 24.3], [18.8, 14.8, 23.6]]",
+   "depends_how": "near_k - valid_k over 303 from topk_recovery_validity.csv, both on rmsd<=2",
+   "change": "CHANGES for DiffDock (raw): [[21.5, 17.2, 26.4], [19.8, 15.7, 24.7], [19.5, 15.4, 24.3], [18.8, 14.8, 23.6]]. Derived values coincide with the old ones for \"AutoDock Vina + gnina\" [[0.7,0.2,2.4],[1.3,0.5,3.3],[1.0,0.3,2.9],[1.0,0.3,2.9]], \"EquiBind (gnina-opt)\" [[0.7,0.2,2.4],[1.0,0.3,2.9],[1.0,0.3,2.9],[1.0,0.3,2.9]] and footnote_autodock_raw [[0.3,0.1,1.8],[0.3,0.1,1.8],[0.0,0.0,1.3],[0.0,0.0,1.3]]. \"DiffDock (gnina-opt)\" and \"EquiBind (raw)\": recompute",
+   "effort": "small",
+   "current_value": "see :278-284",
+   "new_value": "DiffDock raw changes; three rows coincide; two rows recompute",
+   "risk": "Do not assume the coinciding rows pass; let the harness confirm"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 305,
+   "what": "table_25 rows: \"AutoDock Vina + gnina\": [88, 2, 1, 87]; \"DiffDock + smina\": [63, 1, 2, 64]; \"EquiBind + gnina\": [26, 2, 1, 25]",
+   "depends_how": "Near/valid sets at depths 1 and 15 via TED.recovered (rmsd<=2)",
+   "change": "CHANGES: AutoDock [65, 2, 1, 64]; DiffDock [45, 0, 2, 47]; EquiBind [27, 2, 1, 26]. The four subset assertions per arm stay tautologically true",
+   "effort": "trivial",
+   "current_value": "[88,2,1,87] / [63,1,2,64] / [26,2,1,25]",
+   "new_value": "[65,2,1,64] / [45,0,2,47] / [27,2,1,26]",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 331,
+   "what": "table_26 metrics: RMSD: rmsd, \"Kabsch RMSD\": bestfit_rmsd (:331-332); rows :334-359 (180 cells); cross_check :360-365",
+   "depends_how": "pb_valid & column<=t at depths 1/15/30; metric column names are read from the yaml by check_table_26 :1286-1295",
+   "change": "CHANGES, all 180 cells. RMSD half derived: AutoDock d1 [0.0, 8.6, 18.2, 30.0, 38.0, 41.6, 44.9, 49.2, 49.8, 53.5], d15 [0.0, 13.2, 24.4, 40.6, 50.2, 57.8, 64.7, 70.3, 71.9, 74.3], d30 [0.0, 13.2, 24.4, 40.6, 50.5, 58.4, 65.7, 70.6, 72.6, 75.2]; DiffDock d1 [0.3, 5.0, 12.5, 20.1, 28.4, 34.3, 40.3, 43.6, 46.2, 48.8], d15 [1.3, 11.9, 23.4, 34.3, 43.9, 50.5, 55.4, 59.1, 62.7, 64.7], d30 [1.3, 12.9, 24.4, 35.3, 44.9, 52.8, 57.4, 60.4, 64.0, 66.7]; EquiBind d1 [0.0, 1.3, 4.0, 6.9, 10.2, 13.2, 16.2, 18.8, 20.1, 21.1], d15 [0.7, 3.3, 6.6, 10.6, 14.9, 18.5, 22.8, 27.4, 29.0, 30.7], d30 [0.7, 3.3, 6.9, 10.9, 14.9, 18.5, 23.1, 27.4, 29.0, 30.7]. Kabsch half: recompute. If option B (new column names) is chosen, :331-332 must name the new columns",
+   "effort": "medium",
+   "current_value": "see :334-359",
+   "new_value": "RMSD half derived above; Kabsch recompute",
+   "risk": "The 2 A column must still equal Table 2 (149/213 and 132/179 and 57/83), which the derived values do"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 381,
+   "what": "table_27 rows :381-389, e.g. \"AutoDock/1\": [190, 190, 62.7, 1.490, 0.758, 4.220, 0.845, 0.426, 1.507, 0.365, 47.9, 25.3, 26.8]",
+   "depends_how": "Filmstrip sidecar: in-place and form medians vs the reference, cohort trimmed at 8 A centroid_dist (filmstrip_rank1_top5_top15.py:133)",
+   "change": "CHANGES, all 117 cells: recompute after bench_filmstrip re-runs on the new per_pose table",
+   "effort": "small",
+   "current_value": "see :381-389",
+   "new_value": "recompute",
+   "risk": "Coverage (n_valid_complexes) rises because more poses fall inside 8 A of a copy"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 643,
+   "what": "table_24 near_native_rmsd: 2.0; near_native block :675-683, e.g. \"AutoDock + gnina\": [319, 97.5, 0.0, 0.9, 1.6, 1.6]; all_poses block :666-674",
+   "depends_how": "check_table_24 filters d.rmsd <= 2.0 (:1457) for the near-native half; the all-poses half is validity only",
+   "change": "CHANGES for the near_native half (48 cells + 8 join-to-Table-1 near_poses cells). Derived pose counts and valid%: AutoDock raw 307/98.4 -> 437/98.6; AutoDock+gnina 319/97.5 -> 451/98.0; DiffDock raw 1683/50.3 -> 2118/50.2; DiffDock+smina 1715/94.6 -> 2169/95.3; EquiBind+gnina 498/93.6 -> 515/93.8; group shares and the three arms not in the CSV: recompute. UNCHANGED: all_poses block, applied-checks count, join",
+   "effort": "small",
+   "current_value": "see :675-683",
+   "new_value": "partly derived",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 711,
+   "what": "table_21 rows :711-714, e.g. \"AutoDock (gnina-opt) -> DiffDock (raw)\": [[37.3, 33.7, 62, 51, 0.6938], ...]",
+   "depends_how": "Near-native (unconditioned) rates, discordant wins and Holm p over a 16-test family, from topk_recovery_stats.csv written by the hub",
+   "change": "CHANGES, all 80 cells. Derived rates/wins: AutoDock(gnina)->DiffDock(raw) [49.8, 43.6, 77, 58], [67.3, 50.2, 99, 47], [70.0, 52.1, 100, 46], [71.3, 52.8, 102, 46] with raw McNemar p 0.121 / 2.0e-05 / 9.2e-06 / 4.8e-06; AutoDock(gnina)->EquiBind(gnina) [49.8, 19.5, 111, 19], [67.3, 26.1, 141, 16], [70.0, 28.4, 141, 15], [71.3, 28.4, 144, 14]. Holm p and the two DiffDock (gnina-opt) contrasts: recompute. family_size 16 unchanged",
+   "effort": "small",
+   "current_value": "see :711-714",
+   "new_value": "partly derived, p_holm recompute",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 798,
+   "what": "table_18 rows :798-804, e.g. \"AutoDock (gnina-opt)\": [[37.3, 36.6], [62.0, 60.7], [65.0, 64.0], [66.3, 65.3]]",
+   "depends_how": "near_k / valid_k from topk_recovery_validity.csv (rmsd<=2)",
+   "change": "CHANGES, all 56 cells. Derived: \"AutoDock Vina\" [[43.2, 42.9], [56.4, 56.1], [62.7, 62.7], [65.3, 65.3]]; \"AutoDock (gnina-opt)\" [[49.8, 49.2], [67.3, 66.0], [70.0, 69.0], [71.3, 70.3]]; \"DiffDock (raw)\" [[43.6, 22.1], [50.2, 30.4], [52.1, 32.7], [52.8, 34.0]]; \"DiffDock + smina\" [[45.2, 43.6], [54.1, 52.8], [57.8, 56.8], [60.1, 59.1]]; \"EquiBind (gnina-opt)\" [[19.5, 18.8], [26.1, 25.1], [28.4, 27.4], [28.4, 27.4]]. \"DiffDock (gnina-opt)\" and \"EquiBind (raw)\": recompute",
+   "effort": "small",
+   "current_value": "see :798-804",
+   "new_value": "derived for 5 of 7 variants",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 822,
+   "what": "table_19 rows :822-825, e.g. \"AutoDock Vina -> AutoDock (gnina-opt)\": [[31.4, 37.3, 21, 39], [50.8, 62.0, 3, 37], [58.7, 65.0, 3, 22], [61.1, 66.3, 1, 17]]",
+   "depends_how": "Within-tool near-native contrasts on rmsd<=2",
+   "change": "CHANGES, 64 cells. Derived: AutoDock Vina -> gnina-opt [[43.2, 49.8, 19, 39], [56.4, 67.3, 3, 36], [62.7, 70.0, 3, 25], [65.3, 71.3, 1, 19]]; DiffDock raw -> smina [[43.6, 45.2, 5, 10], [50.2, 54.1, 5, 17], [52.1, 57.8, 5, 22], [52.8, 60.1, 5, 27]]; the two gnina contrasts: recompute. family_size 16 unchanged",
+   "effort": "small",
+   "current_value": "see :822-825",
+   "new_value": "derived for 2 of 4 contrasts",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 857,
+   "what": "table_6 rows: autodock {complexes: 199, cpu_core_s_per_near2: 1752.8, gpu_s_per_near2: 118.9, poses_near2: 311}; diffdock {169, 2.93, 49.9, 1622}; equibind {80, 165.3, 1.4, 466}",
+   "depends_how": "complexes and poses_near2 are pb_valid & rmsd<=2 (check_table_6 :393; docking_effort_comparison.py:256 DEFAULT_RMSD_COLUMN = \"rmsd\"); the per-near2 seconds are campaign totals divided by poses_near2",
+   "change": "CHANGES, all 12 cells. Derived: complexes 214 / 183 / 83; poses_near2 442 / 2068 / 483; dividing the fixed totals (which reproduce the old cells to 0.1 %) gives cpu_core_s_per_near2 about 1233 / 2.30 / 159, gpu_s_per_near2 about 83.6 / 39.1 / 1.32, to be confirmed from the regenerated effort_summary.csv",
+   "effort": "small",
+   "current_value": "199/169/80 complexes, 311/1622/466 poses",
+   "new_value": "214/183/83 complexes, 442/2068/483 poses; seconds approx as above",
+   "risk": "The per-near2 seconds are given as approximations only"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 861,
+   "what": "table_6 note: \"That is why AutoDock reads 199 here and 202 there\"",
+   "depends_how": "Restates the single-instance counts",
+   "change": "\"214 here and 217 there\"",
+   "effort": "trivial",
+   "current_value": "199 / 202",
+   "new_value": "214 / 217",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 880,
+   "what": "table_8 rows :880-887, e.g. autodock_mgltools_exh128: counts [94, 153, 185, 202]; autodock_mgltools_exh128_gnina: counts [111, 184, 198, 199]",
+   "depends_how": "check_table_8 :426 gate pb_valid & rmsd<=2 at depths 1/5/15/30 per rank_col",
+   "change": "CHANGES, all 32 cells. Derived: exh128 raw [130, 170, 198, 217]; exh128_gnina [149, 200, 213, 214]. The six other rungs (exh18, exh32 raw/gnina, exh64 raw/gnina, exh92) are not in the probe CSV: recompute",
+   "effort": "small",
+   "current_value": "see :880-887",
+   "new_value": "two rows derived, six recompute",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 889,
+   "what": "table_8 note: \"the raw exh128 rung leads it over the full pool, 202 against 199\"",
+   "depends_how": "Single-instance counts",
+   "change": "\"217 against 214\" (the raw rung still leads by three)",
+   "effort": "trivial",
+   "current_value": "202 against 199",
+   "new_value": "217 against 214",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 907,
+   "what": "figures.pairs image3 (18_topn_within_thresholds_pbvalid_depths.png), image4 (kabsch), image5 (filmstrip), image6/7/8 (cluster report), image9/image11 (pandamap report), image24 (effort_by_quality_near2), image25 (resource_per_near_native_valid_pose), image44-47 (exhaustiveness returns) at :907-914, :923-929",
+   "depends_how": "md5 of the shipped asset must equal the pipeline file; all 14 are rendered from crystal-referenced metrics",
+   "change": "CHANGES: each of the 14 must be regenerated by its stage and hand-copied into thesis_latex/media/media matched by md5 (never by timestamp). image2 (:906, validity yield from the PB CSV only), image1, image12-23, image33-43 unchanged",
+   "effort": "medium",
+   "current_value": "14 pairs match today",
+   "new_value": "14 new byte-identical copies",
+   "risk": "Copying a re-rendered figure whose generator is nondeterministic breaks the pair; Figures 2, 3, 5, 6, 38 are already excluded from validate_regeneration for that reason (DECLARED :163-175)"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 1003,
+   "what": "prose.refiner_contrasts: equibind_near_top15 {gnina: 83, smina: 61, p 0.0001131}; equibind_selection_top15 {55, 46, 0.1078}; diffdock_triple_top15 {133, 132, 1.0}; diffdock_double_top15 {167, 167, 1.0}; diffdock_near_top15 {170, 170, 1.0}",
+   "depends_how": "check_prose_refiners :611 (rmsd<=2) and :615 (bestfit<=1 & rmsd<1000)",
+   "change": "CHANGES, 15 cells. Derived: equibind_near_top15 gnina 86; diffdock_double_top15 smina 179; diffdock_near_top15 smina 182. smina-EquiBind, gnina-DiffDock, both selection (triple) counts and all p-values: recompute",
+   "effort": "small",
+   "current_value": "see :1003-1007",
+   "new_value": "partly derived",
+   "risk": "The Discussion sentence these back (EquiBind arms separate on near-nativeness) may change verdict"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 1021,
+   "what": "prose.appendix_h9: diff_pp [2.6, 13.2, 10.2, 9.9]; ci95_lo [-4.2, 5.7, 2.8, 2.5]; ci95_hi [9.4, 20.4, 17.5, 17.1]; mcnemar_p [0.5085, 0.00076, 0.0090, 0.0113]; rank1 both 51, neither 140, discordant 112, 37.0 %, mde 9.8, power 0.12, n_needed 4200, mde_at_428 8.2; ci90 [-3.1..8.3 etc.]; smallest_passing_margin [8.4, 19.4, 16.4, 16.0]; equivalent_within_10pp [true, false, false, false]",
+   "depends_how": "TED.recovered valid gate on rmsd<=2, AutoDock* vs DiffDock*",
+   "change": "CHANGES, all ~50 cells. Derived with the repo's stats_utils: diff_pp [5.6, 13.2, 11.2, 10.2]; ci95_lo [-1.7, 5.7, 3.9, 3.0]; ci95_hi [12.8, 20.4, 18.4, 17.3]; mcnemar_p [0.1587, 0.000763, 0.00363, 0.00752]; rank1 both_recover 76, neither 98, discordant 129, discordant_pct 42.6, mde_pp 10.5, observed_power 0.32, n_needed 1100, mde_at_428 8.8; ci90_lo [-0.5, 6.9, 5.1, 4.2]; ci90_hi [11.7, 19.3, 17.2, 16.2]; smallest_passing_margin [11.7, 19.4, 17.3, 16.2]; equivalent_within_10pp [false, false, false, false]; equivalent_within_5pp all false",
+   "effort": "small",
+   "current_value": "see :1021-1044",
+   "new_value": "derived above",
+   "risk": "The rank-1 equivalence verdict flips to not equivalent within 10 pp, so the appendix sentence 'only rank-1 is equivalent within 10 points' becomes false and the power/MDE narrative (4,200 needed) changes materially"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 1073,
+   "what": "prose.figure_39: autodock_spurious_rank1 15.3, diffdock_spurious_rank1 14.1, autodock_spurious_rank5 17.6, equibind_matched_rank1 16.7, equibind_missed_rank1 18.9, equibind_spurious_min/max 12.0/12.6",
+   "depends_how": "10b_contact_decomposition_by_rank.csv: tp/fp/fn typed contacts against the crystal fingerprint from <ID>_ligand.sdf",
+   "change": "CHANGES if the crystal fingerprint follows the nearest copy: recompute",
+   "effort": "small",
+   "current_value": "see :1073-1079",
+   "new_value": "recompute",
+   "risk": "same per-pose reference choice as Table 4"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 1096,
+   "what": "prose.audit: profiled_poses 4253, profiled_complexes 303, median_rmsd 7.57, within_2a_pct 21.3, crude_f1 {0.565, 0.529, 0.471}, standardised_f1 {0.532, 0.527, 0.513}, site_filtered_overlap {0.683, 0.714, 0.629}, site_filtered_complexes {257, 240, 155}, dropped_by_site_filter {44, 60, 111}, metal_records 6296, metal_complexes 121",
+   "depends_how": "interaction_pose_basis_audit.py joins rmsd/bestfit_rmsd from per_pose_metrics (:206-253) and site-filters on rmsd",
+   "change": "CHANGES for median_rmsd, within_2a_pct, crude/standardised F1, site_filtered_*, dropped_by_site_filter: recompute. UNCHANGED for profiled_poses, profiled_complexes, metal_records, metal_complexes",
+   "effort": "small",
+   "current_value": "see :1096-1106",
+   "new_value": "recompute",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 24,
+   "what": "cohort (:24-34), determinism (:39-49), table_5 (:832-844), table_9 (:404-432), table_11 (:450-501), table_12 (:540-586), table_14 (:206-226), table_16 (:595-620), table_17 (:736-782), prose.figure_23 (:1046-1061), prose.figure_24 (:1062-1069), figures.unreproducible (:968-983)",
+   "depends_how": "Validity-only, Orai, descriptors, configs, receptor geometry, cost totals or cohort; none reads a crystal-referenced column",
+   "change": "UNCHANGED (about 330 result rows). Re-run the harness to confirm rather than assume",
+   "effort": "trivial",
+   "current_value": "as printed",
+   "new_value": "same",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_assertions.py",
+   "line": 16,
+   "what": "Module docstring gate table :12-30: \"Near-native (Table 1) rmsd <= 2, NOT conditioned on validity\", \"Form bestfit_rmsd <= 1 AND rmsd < 1000\"; :22-24 \"AutoDock reads 202 complexes in Table 1 and 199 in Table 6\"",
+   "depends_how": "States the gates without naming the reference; quotes single-instance counts",
+   "change": "Add a sentence that rmsd/bestfit_rmsd are the nearest-copy values (secondary *_ref_instance columns exist); change 202/199 to 217/214",
+   "effort": "trivial",
+   "current_value": "202 / 199",
+   "new_value": "217 / 214",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_assertions.py",
+   "line": 122,
+   "what": "check_table_1 gates: near = d[\"rmsd\"] <= 2.0 (:122); form = (d[\"bestfit_rmsd\"] <= 1.0) & (d[\"rmsd\"] < 1000) (:123); triple (:124)",
+   "depends_how": "Hard-codes the column names rmsd and bestfit_rmsd from per_pose_metrics.csv",
+   "change": "Option A (hub writes nearest-copy into the existing columns): no change. Option B (new columns): rename to the nearest-copy columns here and in :393, :426, :611, :615, :1432, :1457 and thesis_endpoint_diagnostics.py:77",
+   "effort": "trivial",
+   "current_value": "rmsd / bestfit_rmsd",
+   "new_value": "unchanged under A",
+   "risk": "A partial rename would silently mix conventions between checks"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_assertions.py",
+   "line": 393,
+   "what": "check_table_6 complexes recompute: mask = d[\"pb_valid\"].astype(bool) & (d[\"rmsd\"] <= 2.0)",
+   "depends_how": "Reads per_pose_metrics.csv rmsd",
+   "change": "As :122 (no change under option A)",
+   "effort": "trivial",
+   "current_value": "rmsd",
+   "new_value": "unchanged under A",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_assertions.py",
+   "line": 426,
+   "what": "check_table_8: gate = d[\"pb_valid\"].astype(bool) & (d[\"rmsd\"] <= 2.0), depth on cfg[\"rank_col\"]",
+   "depends_how": "per_pose_metrics.csv rmsd",
+   "change": "As :122",
+   "effort": "trivial",
+   "current_value": "rmsd",
+   "new_value": "unchanged under A",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_assertions.py",
+   "line": 611,
+   "what": "check_prose_refiners vec(): m = (d[\"_r\"] <= k) & (d[\"rmsd\"] <= 2.0) (:611); triple adds (d[\"bestfit_rmsd\"] <= 1.0) & (d[\"rmsd\"] < 1000) (:615)",
+   "depends_how": "per_pose_metrics.csv rmsd / bestfit_rmsd",
+   "change": "As :122",
+   "effort": "trivial",
+   "current_value": "rmsd / bestfit_rmsd",
+   "new_value": "unchanged under A",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_assertions.py",
+   "line": 1432,
+   "what": "check_table_24: met = pd.read_csv(met_csv, usecols=[\"method\", key, \"rmsd\"]) (:1432); d = d[d.rmsd <= t[\"near_native_rmsd\"]] (:1457)",
+   "depends_how": "per_pose_metrics.csv rmsd, joined to the PB table on pose_file",
+   "change": "As :122; usecols must name the column that carries the nearest-copy value",
+   "effort": "trivial",
+   "current_value": "rmsd",
+   "new_value": "unchanged under A",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_assertions.py",
+   "line": 1206,
+   "what": "_arm_sets/check_table_25 (:1206-1262), check_table_26 (:1265-1326, dist column from yaml metrics at :1295), check_prose_appendix_h9 (:1497-1620) all route through thesis_endpoint_diagnostics.recovered",
+   "depends_how": "thesis_endpoint_diagnostics.py:77 `ok = x.rmsd <= 2.0` is the single gate they share; :18-19 docstring says 'Near-nativeness uses the rmsd column, NOT pb_rmsd'",
+   "change": "No code change under option A; under B change TED :77 once and the three checks follow. TED :40-41 DEFAULT_METRICS still names the superseded benchmark_full_protein_vina_scoring tree (already noted in REPRODUCTION_COVERAGE \u00a73.5) and should be repointed while touching the file",
+   "effort": "trivial",
+   "current_value": "x.rmsd <= 2.0",
+   "new_value": "unchanged under A",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_assertions.py",
+   "line": 148,
+   "what": "check_table_2 (:148-180, topk_recovery_validity_gnina_arm.csv), check_tables_18_19 (:187-258), check_table_21 (:265-320, topk_recovery_stats.csv), check_table_3 (:854-908, cluster stats txt), check_table_4 (:911-953, native_recovery_by_rank.csv), check_table_20 (:1102-1146), check_table_22 (:1149-1203), check_table_27 (:1329-1367, filmstrip sidecar), check_prose fig39/audit (:503-565)",
+   "depends_how": "Read regenerated sidecars; contain no gate of their own",
+   "change": "No code change; the sidecars change when their stages re-run and the yaml values are re-transcribed",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_assertions.py",
+   "line": 684,
+   "what": "check_figures md5 pairs (:684-699) and coverage assertion (:720-728)",
+   "depends_how": "Byte-identity of shipped assets to pipeline outputs",
+   "change": "No code change; 14 regenerated PNGs must be copied into media/media before the check passes",
+   "effort": "trivial",
+   "current_value": "39 pairs match",
+   "new_value": "39 must match again",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_assertions.py",
+   "line": 808,
+   "what": "run_all (:808-841) lists 28 check_* functions; the harness returned 1364 results, 0 failures when I ran it",
+   "depends_how": "Total count is what README.md:15-16/:67 and the notebook cell quote",
+   "change": "Add a call for the new reference-convention check (see decisions); the total rises by the new block's rows",
+   "effort": "trivial",
+   "current_value": "1364 checks",
+   "new_value": "1364 + new block",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/_build_reproduction_notebook.py",
+   "line": 386,
+   "what": "Stage bench_pose_comparison (:386-415): cmd posebusters_pose_comparison.py --pb-csv ... --top-n 15 --diffdock-variant all --collapse-plots-only --collapse-diffdock-variant diffdock_smina --collapse-autodock-variant autodock_mgltools_exh128_gnina --exclude-preset meeko --workers 24; notes :401-415",
+   "depends_how": "The hub scores every pose against Data/PoseBuster Benchmark Set/<ID>/<ID>_ligand.sdf (hub :1520); this stage's outputs feed 14 downstream stages",
+   "change": "Add the hub's new reference flag (name to be fixed by the hub dimension, e.g. --crystal-reference nearest-copy) and ensure the first run is not a cache reuse (no --reuse-cache, or --force); append a dated CHANGED note stating the convention switch, that rmsd/pb_rmsd/pb_kabsch_rmsd/bestfit_rmsd/centroid_dist/contact_recovery/plif_recovery are nearest-copy and *_ref_instance is the single deposited instance, and that any later --reuse-cache re-render must still add --collapse-plots-only",
+   "effort": "small",
+   "current_value": "single-instance default",
+   "new_value": "nearest-copy flag + note",
+   "risk": "The hub's --reuse-cache path (hub :13261-13266) bypasses the input signature; unless _CACHE_REQUIRED_COLS (hub :13187-13191) gains a new column such as rmsd_ref_instance, a stale single-instance cache will be reused silently"
+  },
+  {
+   "file": "Scripts/Analysis/_build_reproduction_notebook.py",
+   "line": 345,
+   "what": "Section 3 markdown: \"the hub writes per_pose_metrics.csv, and nine downstream stages join against it\" (:345-347)",
+   "depends_how": "Describes the hub's role; the count is already stale (14 stages declare needs bench_pose_comparison)",
+   "change": "State the nearest-copy convention in one sentence and correct the count",
+   "effort": "trivial",
+   "current_value": "nine downstream stages",
+   "new_value": "fourteen, plus convention sentence",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/_build_reproduction_notebook.py",
+   "line": 420,
+   "what": "Stages that must RE-RUN because they read per_pose_metrics.csv crystal columns: bench_validity_report :420-432 (CHEAP), bench_filmstrip :448-458 (CHEAP), bench_topk :460-472 (CHEAP), bench_optimization_benefit :474-482 (CHEAP), bench_endpoint_diagnostics :484-493 (CHEAP), bench_clusters :502-521 (MODERATE, also loads _ligand.sdf itself), bench_pandamap_report :532-543 (CHEAP, also loads _ligand.sdf itself), bench_interaction_audit :545-564 (CHEAP), bench_effort_charged :582-594 (CHEAP), bench_effort_elapsed :596-604 (CHEAP), bench_exhaustiveness_returns :606-621 (MODERATE), bench_ligand_difficulty/bench_receptor_difficulty :623-638 (CHEAP), bench_diffdock_rerank :640-652 (CHEAP)",
+   "depends_how": "Each declares needs=[\"bench_pose_comparison\"] and reads rmsd/bestfit_rmsd/centroid_dist or the crystal SDF",
+   "change": "Re-run in this order after bench_pose_comparison via RUN_MODE=\"force\" with FORCE_STAGES (:94-95) listing exactly these 15 names; no definition change except bench_clusters and bench_pandamap_report whose scripts need their own crystal-loading change (pose_cluster_crystal_pocket_report.py:921, pandamap_interaction_report.py:599)",
+   "effort": "medium",
+   "current_value": "outputs on disk are single-instance",
+   "new_value": "regenerated",
+   "risk": "Forcing bench_pose_comparison alone leaves 14 stale sidecars that the harness will happily read"
+  },
+  {
+   "file": "Scripts/Analysis/_build_reproduction_notebook.py",
+   "line": 434,
+   "what": "Stages that do NOT re-run: bench_figure1 :434-446 (needs bench_posebusters_matched, reads the PB CSV only), bench_pandamap :523-530 (pose fingerprints), bench_posebusters/_matched :367-384, all section-2 docking stages :225-330, all Orai stages :674-1075, dataset_figures :1077-1090",
+   "depends_how": "None reads a crystal-referenced metric",
+   "change": "None",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/_build_reproduction_notebook.py",
+   "line": 484,
+   "what": "No stage exists for a reference-convention contrast; M2_REVALIDATION_2026-09-07.md:167-172 proposes bench_nearest_copy_sensitivity (bitexact, cheap, needs bench_pose_comparison) and nearest_copy_probe/nearest_copy_rescoring.py:33-58 already computes both conventions",
+   "depends_how": "Under the primary-endpoint switch the sensitivity direction inverts: the secondary quantity is the single instance",
+   "change": "Register a new Stage after bench_endpoint_diagnostics, section \"3. Benchmark analysis\", determinism BITEXACT, cost CHEAP, needs [\"bench_pose_comparison\"], writing pose_comparison_report/reference_convention_contrast.csv from the rmsd and rmsd_ref_instance columns (no re-scoring), thesis \"the reference-convention paragraph and table in Appendix I\"; mirror appears in REGENERATE.md automatically",
+   "effort": "small",
+   "current_value": "absent",
+   "new_value": "one new stage (registry 60 -> 61)",
+   "risk": "If the hub does not keep the single-instance column, this stage needs the probe's re-scoring path and becomes MODERATE"
+  },
+  {
+   "file": "Scripts/Analysis/_build_reproduction_notebook.py",
+   "line": 1154,
+   "what": "Section 10 markdown :1138-1168: \"Coverage was extended on 2026-09-03 from 8 of the 27 tables to 23\", \"37 of the 39 shipped assets\", \"No entry is expected to fail\"",
+   "depends_how": "Narrates the harness state; will describe a spec whose numbers were re-transcribed",
+   "change": "Add a dated paragraph recording the convention switch and that every crystal-referenced assertion was re-transcribed from the rebuilt document",
+   "effort": "trivial",
+   "current_value": "no convention statement",
+   "new_value": "one paragraph",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/_build_reproduction_notebook.py",
+   "line": 1243,
+   "what": "Section 11 regeneration check: RUN_REGEN_CHECK = False (:1245); validate_regeneration.py re-renders 9 generators and byte-compares (:1231-1233); DECLARED list at validate_regeneration.py:163-175 excludes Figures 2, 3, 5, 6, 38 as nondeterministic re-renders",
+   "depends_how": "Its recorded baseline is the single-instance figure set",
+   "change": "Run validate_regeneration.py once after the 14 figures are re-shipped so the recorded result (describe_result :235) is re-based; no code change",
+   "effort": "small",
+   "current_value": "baseline single-instance",
+   "new_value": "re-based",
+   "risk": "about 10 minutes"
+  },
+  {
+   "file": "Scripts/Analysis/_build_reproduction_notebook.py",
+   "line": 1287,
+   "what": "Section 12: regenerate_guide.build(reg) writes REGENERATE.md from the registry and the yaml (:1287-1296)",
+   "depends_how": "REGENERATE.md content is derived; regenerate_guide.py:320-336 builds the table index from every yaml key starting with table_",
+   "change": "Rebuild the notebook (python _build_reproduction_notebook.py), execute it; REGENERATE.md regenerates. A new yaml block only appears in the table index if its key starts with table_ (e.g. table_28), not under prose",
+   "effort": "trivial",
+   "current_value": "generated 2026-09-03",
+   "new_value": "regenerated",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/REGENERATE.md",
+   "line": 3,
+   "what": "\"This file is generated. Do not edit it by hand.\" (:3-9); \"Generated 2026-09-03 01:14 from 60 registered stages.\" (:17)",
+   "depends_how": "Whole file derives from the registry and yaml",
+   "change": "Do not edit. Regenerate via the notebook's last cell; :17 becomes 61 stages",
+   "effort": "trivial",
+   "current_value": "60 registered stages",
+   "new_value": "61",
+   "risk": "Hand edits are overwritten on the next run"
+  },
+  {
+   "file": "Scripts/Analysis/REGENERATE.md",
+   "line": 105,
+   "what": "Order \u00a73: \"3. Benchmark analysis \u2014 19 stages: bench_posebusters, ..., bench_diffdock_rerank\"",
+   "depends_how": "Generated from reg.by_section()",
+   "change": "Gains the new reference-convention stage on regeneration (20 stages)",
+   "effort": "trivial",
+   "current_value": "19 stages",
+   "new_value": "20",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/REGENERATE.md",
+   "line": 351,
+   "what": "Stage block bench_pose_comparison :351-373: command :358-369 and the two CORRECTED notes :372-373",
+   "depends_how": "Mirrors the builder's cmd/notes",
+   "change": "Shows the new flag and the dated CHANGED note once the builder is edited and the guide regenerated",
+   "effort": "trivial",
+   "current_value": "single-instance command",
+   "new_value": "regenerated",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/REGENERATE.md",
+   "line": 1080,
+   "what": "Figure index :1077-1119, e.g. row 2 \"Best-of-top-N accuracy against the as-placed crystal RMSD\" -> 18_topn_within_thresholds_pbvalid_depths.png; \"37 of 39 figures resolve\" (:1119)",
+   "depends_how": "Rebuilt by md5 against the shipped media; subjects come from the thesis captions",
+   "change": "Regenerates after the 14 figures are re-shipped; must still read 37 of 39",
+   "effort": "trivial",
+   "current_value": "37 of 39",
+   "new_value": "37 of 39",
+   "risk": "A re-shipped figure whose md5 matches no pipeline file shows as 'no source on disk'"
+  },
+  {
+   "file": "Scripts/Analysis/REGENERATE.md",
+   "line": 1128,
+   "what": "Table index :1128-1149 lists table_1..table_27 sources; :1151-1153 \"Tables 7, 9, 11, 13, 15 and 23 are manual\"",
+   "depends_how": "Generated from yaml table_* keys (regenerate_guide.py:323)",
+   "change": "Gains a row if the new reference-convention block is keyed table_28; :1151 sentence is hard-coded in regenerate_guide.py:334 and stays",
+   "effort": "trivial",
+   "current_value": "27 table keys",
+   "new_value": "28 if table_28 added",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/REGENERATE.md",
+   "line": 1157,
+   "what": "\u00a77 What cannot be reconstructed :1157-1171",
+   "depends_how": "Static list",
+   "change": "UNCHANGED",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 141,
+   "what": "Slide 6 \"36.6 %, 34.0 %, 18.2 % (rank-1 placement) ... In counts, 111, 103 and 55 of 303\" (:141-146); \"+2.6 points ... Newcombe -4.2 to +9.4, exact McNemar p = 0.509\" (:147-149)",
+   "depends_how": "Rank-1 PB-valid & rmsd<=2 against the single instance",
+   "change": "49.2 %, 43.6 %, 18.8 %; counts 149, 132, 57; gap +5.6 points, interval -1.7 to +12.8, p = 0.159",
+   "effort": "trivial",
+   "current_value": "36.6/34.0/18.2; 111/103/55; +2.6; -4.2..+9.4; 0.509",
+   "new_value": "49.2/43.6/18.8; 149/132/57; +5.6; -1.7..+12.8; 0.159",
+   "risk": "none"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 151,
+   "what": "\"52.5 %, 52.1 %, 33.3 % (rank-1 form)\" and the discordant tie counts 47/46, 30/31, 25/26 (:151-159)",
+   "depends_how": "bestfit_rmsd <= 1 vs the single reference conformer",
+   "change": "CHANGES: recompute (Kabsch vs nearest copy not derivable)",
+   "effort": "trivial",
+   "current_value": "52.5/52.1/33.3",
+   "new_value": "recompute",
+   "risk": "none"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 121,
+   "what": "\"at most four of 303 ... two at rank-1, four at top-5 and three at the deeper pools\" (:121-129)",
+   "depends_how": "near minus valid-and-near complexes per depth",
+   "change": "UNCHANGED by derivation: AutoDock* 151-149=2, 204-200=4, 216-213=3, 217-214=3",
+   "effort": "trivial",
+   "current_value": "2 / 4 / 3",
+   "new_value": "2 / 4 / 3",
+   "risk": "none"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 170,
+   "what": "Winner's-curse and selection-margin entries \"0.4 to 0.8 percentage points\", \"near two points at rank-1\", \"3.0 percentage points ... eight complexes for AutoDock Vina, one for DiffDock, nine for EquiBind\" (:170-189)",
+   "depends_how": "Triple gate (pb_valid & rmsd<=2 & bestfit<=1) at top-15 across variants",
+   "change": "CHANGES: recompute",
+   "effort": "trivial",
+   "current_value": "see :170-189",
+   "new_value": "recompute",
+   "risk": "none"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 191,
+   "what": "\"9.8 percentage points (minimum detectable difference) ... observed +2.6 ... underpowered by a factor of nearly four ... Over the 112 discordant complexes\" (:191-201)",
+   "depends_how": "McNemar power on rank-1 valid recovery",
+   "change": "10.5 pp MDE, observed +5.6, factor about 1.9, 129 discordant, observed power 0.32",
+   "effort": "trivial",
+   "current_value": "9.8; +2.6; 112; power 0.12",
+   "new_value": "10.5; +5.6; 129; 0.32",
+   "risk": "none"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 224,
+   "what": "Slide 7 \"2.6 widening to 6.6 points ... 36.6 % against 34.0 % ... At 1 A they are 22.1 % against 15.5 %\" (:224-231)",
+   "depends_how": "Table 26 RMSD block rank-1 at 2 A and 1 A",
+   "change": "5.6 widening to 9.9 points; 49.2 against 43.6; at 1 A 30.0 against 20.1",
+   "effort": "trivial",
+   "current_value": "2.6 -> 6.6; 22.1 vs 15.5",
+   "new_value": "5.6 -> 9.9; 30.0 vs 20.1",
+   "risk": "none"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 233,
+   "what": "\"Kabsch RMSD <= 2 A at rank-1: AutoDock 78.9 %, DiffDock 82.5 % ... at 1.75 A 74.6 and 76.2\" (:233-240); \"1.49 to 5.04 A (AutoDock) and 1.47 to 1.93 A (DiffDock) ... 190 then 2,200 ... 164 then 2,139\" (:242-251); \"48 % to 78 % placement-limited\" (:253-262); \"8 A near-site trim ... 62.7 % to 90.8 %\" (:264-271); symmetry caveat \"1.490 against 1.543 ... two of 909 ... 37.0 % and 18.5 %\" (:273-282)",
+   "depends_how": "Kabsch block of Table 26, Table 27 filmstrip medians and coverage, PB-vs-own RMSD comparison, all against the single instance",
+   "change": "CHANGES: recompute all",
+   "effort": "small",
+   "current_value": "see lines",
+   "new_value": "recompute",
+   "risk": "none"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 288,
+   "what": "Slide 8 \"95 %\" cluster-level 4 A oracle (:288-296); \"97.7 % at a median 0.34 A. AutoDock alone reaches 88.1 %, DiffDock 84.5 %\" (:297-299); \"57 % ... 56.8 %, 55.4 %, 55.8 % ... 49.5 % legacy rule\" (:301-312)",
+   "depends_how": "Crystal-closest cluster and 4 A crystal-site reach against the single instance",
+   "change": "CHANGES: pooled 4 A reach goes to 99.7 % (M2 doc :99-101 on the canonical file); rank-1 reach 183 -> 241, 172 -> 225, 137 -> 144; the 95 % cluster oracle and the blind-rule rates: recompute",
+   "effort": "small",
+   "current_value": "95 %; 97.7 %; 88.1/84.5; 56.8/55.4/55.8",
+   "new_value": "recompute; 99.7 %",
+   "risk": "none"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 314,
+   "what": "\"0.45, 0.42, 0.38 and 0.46 (Jaccard) ... 0.450 for DiffDock over 300, 0.417 AutoDock over 301, 0.380 EquiBind over 266 ... F1 0.565 against 0.529 ... common 264: 0.474 / 0.431 / 0.381\" (:314-331)",
+   "depends_how": "Similarity to the crystal contact fingerprint from <ID>_ligand.sdf",
+   "change": "CHANGES if the fingerprint follows the nearest copy: recompute",
+   "effort": "small",
+   "current_value": "see :314-331",
+   "new_value": "recompute",
+   "risk": "depends on the Table 4 decision"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 496,
+   "what": "Slide 11 \"137.2, 49.4, 2.4 seconds and 199, 169, 80 complexes\" (:496-506); \"223 ... 303 - 80\" and alternative denominators 157.7/227.6/8.1, 271/479/38 (:512-520); \"21.7 seconds ... over 202 complexes and 302 qualifying poses ... 1,805.0 s against 1,752.8 s\" (:522-530); \"5.3 / 5.3 / 137.2 ... 303 -> 301 -> 199, 303 -> 300 -> 169, 303 -> 266 -> 80 ... 25.9, 5.4, 6.0\" (:532-540); \"a quarter ... 80 of 303, 26.4 %\" (:542-547)",
+   "depends_how": "Qualifying pose = pb_valid & rmsd<=2 in docking_effort_comparison.py",
+   "change": "Complex counts 214/183/83; 303-83 = 220; 27.4 %; 1,752.8 -> about 1,233; the medians per qualifying pose and the ratios: recompute",
+   "effort": "small",
+   "current_value": "199/169/80; 223; 26.4 %",
+   "new_value": "214/183/83; 220; 27.4 %; rest recompute",
+   "risk": "none"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 561,
+   "what": "Slide 12 \"36.6 / 34.0 / 18.2 and 65.3 / 55.1 / 26.4 ... rank-1 111, 103, 55; top-15 198, 167, 80; top-30 199, 169, 80. Depth gains AutoDock +28.7, DiffDock +21.1, EquiBind +8.3 ... adds 87 complexes, DiffDock 64. Separation +13.2 at top-5 (p_holm 7.6e-4), +10.2 at top-15 (0.009), +9.9 at top-30 (0.011)\" (:561-573)",
+   "depends_how": "Table 2 and Appendix H.9 numbers",
+   "change": "49.2 / 43.6 / 18.8 and 70.3 / 59.1 / 27.4; counts 149/132/57, 213/179/83, 214/183/83; depth gains +21.1, +15.5, +8.6; adds 64 and 47; separation +13.2 at top-5 (raw p 7.6e-4, Holm recompute), +11.2 at top-15 (raw p 0.0036), +10.2 at top-30 (raw p 0.0075)",
+   "effort": "trivial",
+   "current_value": "see :561-573",
+   "new_value": "as listed",
+   "risk": "none"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 580,
+   "what": "\"31.0 -> 36.6 % ... 61.1 -> 65.3 % at top-15 ... raw search is nominally ahead, 202 complexes against 199\" (:580-588)",
+   "depends_how": "Table 18/8 exh128 raw vs gnina",
+   "change": "42.9 -> 49.2 %; 65.3 -> 70.3 %; 217 against 214",
+   "effort": "trivial",
+   "current_value": "31.0 -> 36.6; 61.1 -> 65.3; 202 vs 199",
+   "new_value": "42.9 -> 49.2; 65.3 -> 70.3; 217 vs 214",
+   "risk": "none"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 590,
+   "what": "\"0.1 to 4.6 points\" fixed-rank optimisation gain (:590-598); \"about six in ten rank-1 failures contain no qualifying pose\" (:616-618); \"+6.7 against +20.5 points ... 134 against 149 of 225 ... 33 against 49 of 78\" (:656-666); collision table `28.7` (:679); \"97.7 % pooled full-cloud oracle\" (:689)",
+   "depends_how": "Table 20 near rows, pool-failure share, metal-stratum split of top-15 recovery, depth gain, pooled reach",
+   "change": "Recompute Table 20 spans and the metal split; six-in-ten becomes (303-214)/(303-149) = 89/154 = 58 %, still about six in ten; 28.7 collision entry becomes 21.1; 97.7 % becomes 99.7 %",
+   "effort": "trivial",
+   "current_value": "see lines",
+   "new_value": "partly derived",
+   "risk": "none"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 1,
+   "what": "Header: \"Source deck: Mann_MasterThesis_Defence_v3.pptx ... checked line-by-line against body_main_short.tex and body_appendix_short.tex on 2026-09-03\"",
+   "depends_how": "The glossary is tied to a versioned deck and a dated check",
+   "change": "Write a new version alongside (house rule: deliverables are never overwritten, revise as _v2), re-dated, and re-check every line reference after the LaTeX rebuild moves line numbers",
+   "effort": "medium",
+   "current_value": "v3 deck, 2026-09-03",
+   "new_value": "new dated version",
+   "risk": "Every :NNN line reference in the glossary is a body_*_short.tex line number that shifts when the text changes"
+  },
+  {
+   "file": "thesis_latex/README.md",
+   "line": 12,
+   "what": "\"The current build is 142 pages.\"",
+   "depends_how": "Page count of the short build",
+   "change": "Re-count after the rebuild (an added appendix table or paragraph may change it); no convention text in this file",
+   "effort": "trivial",
+   "current_value": "142 pages",
+   "new_value": "recompute",
+   "risk": "none"
+  },
+  {
+   "file": "README.md",
+   "line": 15,
+   "what": "\"It declares 60 stages, walks them in dependency order, and finishes by recomputing 257 numbers the thesis prints\" (:15-16); \"python Scripts/Analysis/thesis_assertions.py       # 257 checks against the thesis\" (:67)",
+   "depends_how": "Counts of registry stages and harness rows; 257 is already stale (harness returns 1,364 today)",
+   "change": "61 stages; the new harness total; add a third bullet under \"Two things to know\" (:48) stating that rmsd and every crystal-referenced column are nearest-copy values and *_ref_instance carries the single deposited instance",
+   "effort": "trivial",
+   "current_value": "60 stages; 257 numbers",
+   "new_value": "61 stages; new count (>=1,364)",
+   "risk": "none"
+  },
+  {
+   "file": "README.md",
+   "line": 27,
+   "what": "\"XRay_PoseBusters_Control.ipynb | standalone control: the PoseBusters battery run on the deposited crystal ligands\"",
+   "depends_how": "Describes a notebook that never computes an RMSD",
+   "change": "UNCHANGED",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "THESIS_REPRODUCTION.md",
+   "line": 57,
+   "what": "\"33 cells, 58 declared stages\" (:57); \"walks all 58 stages\" (:76); \"exit 0. 58 stages, all with their outputs present\" (:380)",
+   "depends_how": "Stage count, already two behind the registry (60)",
+   "change": "61 after the new stage; add the convention switch to its design record",
+   "effort": "trivial",
+   "current_value": "58",
+   "new_value": "61",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/REPRODUCTION_COVERAGE_2026-09-03.md",
+   "line": 26,
+   "what": "\"assertions 459 -> 1,282 (1,362 after the Table 12 fix)\" (:26); \"Tables now asserted: 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 14, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27\" (:31-32); \u00a75 \"Recomputation from the primary data, by hand ... Tables 3, 4, 10, 14, 20, 24, 25, 26 and 27 and the Appendix H.9 block\" (:210-213); \u00a76 traps (:223-252)",
+   "depends_how": "A dated record of the 09-03 pass; its hand-validation of Tables 3, 4, 20, 24, 25, 26, 27 and H.9 was against single-instance values",
+   "change": "Do not edit the dated file. Write REPRODUCTION_COVERAGE_<date>.md recording the convention switch, the re-transcription, the new assertion count, the re-validation of the crystal-referenced blocks, and a new trap: rmsd/bestfit_rmsd/centroid_dist are nearest-copy, *_ref_instance is single-instance, and the per_pose cache must be rebuilt (never --reuse-cache across the switch)",
+   "effort": "small",
+   "current_value": "1,362 assertions; single-instance validation",
+   "new_value": "new dated document",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/_build_xray_control_notebook.py",
+   "line": 283,
+   "what": "lig = BENCH / i / f\"{i}_ligand.sdf\" (:283) hashed into the manifest (:288); the checker call `_buster.bust(lig, None, prot, full_report=True)` (:503) with \"no reference ligand\" (:392-393); PoseBusters(config=\"dock\") (:436)",
+   "depends_how": "Uses the deposited ligand as mol_pred only; passes None as mol_true, so no RMSD and no copy choice is involved",
+   "change": "UNCHANGED. The notebook is convention-independent. Optional, not required: bust every record of <ID>_ligands.sdf to show the 138 alternate copies also clear the battery",
+   "effort": "trivial",
+   "current_value": "busts the single deposited instance",
+   "new_value": "same",
+   "risk": "none"
+  },
+  {
+   "file": "XRay_PoseBusters_Control.ipynb",
+   "line": 17,
+   "what": "cell 5 (code) line 17: lig  = BENCH / i / f\"{i}_ligand.sdf\" \u2014 the only match for rmsd|_ligand.sdf|ligands.sdf|per_pose_metrics|centroid|nearest|copies|mol_true|check_rmsd across all cells",
+   "depends_how": "Generated from the builder; same single use",
+   "change": "UNCHANGED",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 13187,
+   "what": "_CACHE_REQUIRED_COLS = {\"method\", \"protein\", \"ligand\", \"pose_name\", \"rank\", \"rmsd\", \"centroid_dist\", \"pb_valid\", \"optimizer\", \"autodock_rank\", \"optimized_rank\"} (:13187-13191); --reuse-cache loads per_pose_metrics.csv WITHOUT checking the input signature (:13252-13266)",
+   "depends_how": "The harness stage bench_pose_comparison and every downstream stage trust this cache; a single-instance cache would be reused silently under --reuse-cache",
+   "change": "Add the new secondary column (e.g. rmsd_ref_instance) to the required set so a pre-switch cache is refused even under --reuse-cache; record this in the stage notes",
+   "effort": "trivial",
+   "current_value": "11 required columns, none convention-specific",
+   "new_value": "+1 column",
+   "risk": "Without it the first --reuse-cache re-render after the switch reproduces the old convention with no error"
+  },
+  {
+   "file": "Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1225,
+   "what": "posebusters_rmsd wrapper: _pb_check_rmsd(Chem.RemoveHs(pose), Chem.RemoveHs(ref), ...) with a single ref (:1210-1230); crystal loaded at :1520 from <ID>_ligand.sdf; own symmetry_rmsd at :1173",
+   "depends_how": "Produces pb_rmsd, pb_kabsch_rmsd (== bestfit_rmsd) and pb_rmsd_within_2A against the single instance",
+   "change": "The installed PoseBusters check_rmsd (posebusters/modules/rmsd.py:30-65) already minimises over every conformer of mol_true with choose_by=\"rmsd\" and reports that conformer's Kabsch value, so passing a multi-conformer mol_true built from <ID>_ligands.sdf gives nearest-copy pb_rmsd/pb_kabsch_rmsd/bestfit_rmsd in one call; the in-place `rmsd` must take the min over copies via symmetry_rmsd as the probe does (nearest_copy_rescoring.py:45-53)",
+   "effort": "small",
+   "current_value": "single ref",
+   "new_value": "multi-conformer ref",
+   "risk": "Hub dimension owns the edit; noted here because the harness stage's cost class and flags depend on it"
+  },
+  {
+   "file": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 921,
+   "what": "crystal_centroid(): sdf = benchmark_dir / cid / f\"{cid}_ligand.sdf\"",
+   "depends_how": "bench_clusters (Table 3, Figures 5, 6, 38) defines the crystal cluster from the single instance independently of per_pose_metrics",
+   "change": "Must load <ID>_ligands.sdf and pick the copy per complex or per pose; until it does, re-running bench_clusters on a nearest-copy per_pose table mixes conventions",
+   "effort": "medium",
+   "current_value": "_ligand.sdf",
+   "new_value": "_ligands.sdf with a copy rule",
+   "risk": "Copy rule is an open design question"
+  },
+  {
+   "file": "Scripts/Analysis/pandamap_interaction_report.py",
+   "line": 599,
+   "what": "cand = benchmark_dir / protein / f\"{protein}_ligand.sdf\" (crystal fingerprint source); RMSD join at :2251-2255 uses rmsd from per_pose_metrics",
+   "depends_how": "bench_pandamap_report (Table 4, Figures 7, 39, image9/image11) computes native contacts from the single instance",
+   "change": "Needs a per-copy crystal fingerprint and a per-pose nearest-copy selection if Table 4 is to follow the convention; otherwise Table 4 stays single-instance and the yaml must say so",
+   "effort": "large",
+   "current_value": "_ligand.sdf",
+   "new_value": "per-copy fingerprints or an explicit exemption",
+   "risk": "Requires PandaMap runs on alternate copies (other chains)"
+  },
+  {
+   "file": "Scripts/Analysis/topk_recovery_gnina_arm.py",
+   "line": 130,
+   "what": "pc._topn_within_frames(..., rmsd_col=\"rmsd\") at :130, :132 (also :194, :287); posebusters_validity_report.py:748 _RMSD_COLUMNS = (\"rmsd\", \"pb_rmsd\", \"pb_kabsch_rmsd\") and :2372 --rmsd-column default \"rmsd\"; docking_effort_comparison.py:256-257 DEFAULT_RMSD_COLUMN = \"rmsd\", DEFAULT_KABSCH_COLUMN = \"bestfit_rmsd\"; optimization_benefit_stats.py:115; autodock_exhaustiveness_returns.py:536-537; ligand_docking_difficulty.py:99; receptor_docking_difficulty.py:93; diffdock_gnina_rerank_analysis.py:220-223; interaction_pose_basis_audit.py:206-253; filmstrip_rank1_top5_top15.py:133 (centroid_dist)",
+   "depends_how": "Every consumer stage names the rmsd/bestfit_rmsd/centroid_dist columns explicitly",
+   "change": "Option A: no change anywhere. Option B: 11 scripts need a column rename and the validity report's choices tuple needs the new name",
+   "effort": "medium",
+   "current_value": "rmsd / bestfit_rmsd / centroid_dist",
+   "new_value": "unchanged under A",
+   "risk": "Option B makes a partial switch likely"
+  }
+ ],
+ "decisions": [
+  {
+   "question": "How should the hub expose the nearest-copy values to the harness and its 14 downstream consumers?",
+   "options": [
+    "A: write nearest-copy into the existing columns rmsd, pb_rmsd, pb_kabsch_rmsd, pb_rmsd_within_2A, bestfit_rmsd, centroid_dist, contact_recovery, plif_recovery and add *_ref_instance secondary columns plus n_copies, nearest_copy_idx, nearest_copy_is_ref; add rmsd_ref_instance to _CACHE_REQUIRED_COLS",
+    "B: add rmsd_nearest_copy etc. as new columns and rename the column in thesis_assertions.py (:122-124, :393, :426, :611, :615, :1432, :1457), thesis_endpoint_diagnostics.py:77, the yaml table_26.metrics and 11 consumer scripts"
+   ],
+   "recommendation": "A. It leaves thesis_assertions.py and every consumer untouched, the single-instance value survives as the secondary column the brief requires, and the extra required cache column turns the --reuse-cache trap into a hard refusal of any pre-switch per_pose_metrics.csv."
+  },
+  {
+   "question": "Does the reference-convention contrast get a harness stage and yaml block?",
+   "options": [
+    "Register bench_reference_convention (section 3, BITEXACT, CHEAP, needs bench_pose_comparison) writing reference_convention_contrast.csv from rmsd and rmsd_ref_instance, plus a table_28 yaml block asserting multi_copy_ids 143, multi_copy_analysed 138, rank-1 gains 38/29/2, top-15 gains 15/12/3 and a zero-loss count",
+    "Leave the M2 quantification to prose and the probe directory only"
+   ],
+   "recommendation": "Register it. Without a stage and a table_* key the M2 effect appears in neither REGENERATE.md's table index (regenerate_guide.py:323 lists only table_* keys) nor the assertion run, and the probe under nearest_copy_probe/ is not wired to the registry."
+  },
+  {
+   "question": "Do the crystal-contact metrics (Table 4, Figure 7 Jaccard, Figure 39, the audit's site filter, contact_recovery/plif_recovery) follow the nearest copy?",
+   "options": [
+    "Yes: compute a PandaMap fingerprint for every copy in <ID>_ligands.sdf and pick per pose the copy nearest by rmsd (pandamap_interaction_report.py:599 and the hub's contact metrics)",
+    "No: keep the interaction family single-instance and state the exemption in the yaml table_4 comment, the Methods and the audit"
+   ],
+   "recommendation": "Yes, because the brief defines the convention as every crystal-referenced metric and a mixed convention would put Table 4's n on PB-valid poses that recovered a copy while scoring their contacts against a different chain. Cost is the largest of the switch (new fingerprinting of 138 complexes' alternate copies) and it is the item to schedule first."
+  },
+  {
+   "question": "Which copy defines the crystal cluster in pose_cluster_crystal_pocket_report.py (Table 3, Figures 5, 6, 38)?",
+   "options": [
+    "Per pose: a pose's cluster is crystal-compatible if within the radius of any copy",
+    "Per complex: the copy nearest to the most poses, or the reference copy only"
+   ],
+   "recommendation": "Per pose (any copy), consistent with the per-pose minimum used for rmsd; document the rule in the stage notes and the yaml table_3 comment."
+  },
+  {
+   "question": "How are the dated documents handled?",
+   "options": [
+    "Edit REPRODUCTION_COVERAGE_2026-09-03.md and DEFENCE_NOTES_NUMBER_GLOSSARY.md in place",
+    "Write REPRODUCTION_COVERAGE_<date>.md and a new glossary version, leave the dated files as records"
+   ],
+   "recommendation": "New dated files, per the house rule that deliverables are revised as new versions; REGENERATE.md is regenerated, never edited; README.md, thesis_latex/README.md and THESIS_REPRODUCTION.md are living documents and are edited."
+  },
+  {
+   "question": "In what order are the yaml values re-transcribed?",
+   "options": [
+    "Copy the regenerated sidecar values into the yaml directly",
+    "Rebuild the thesis tables from the regenerated outputs first, then transcribe the printed values into the yaml, then run the harness"
+   ],
+   "recommendation": "The second. The yaml records what the thesis prints (yaml :2-12); transcribing from the outputs makes the harness a tautology and hides a table left un-updated, which is exactly how Table 21 drifted."
+  }
+ ],
+ "open_questions": [
+  "Should bestfit_rmsd/pb_kabsch_rmsd be evaluated against the copy selected by in-place RMSD (PoseBusters choose_by=\"rmsd\" behaviour, rmsd.py:41, :61) or minimised independently over copies? The former is what 'derived from that nearest copy' implies and what the installed check_rmsd does by default.",
+  "Table 4's n cells (15) are expected unchanged because they count PB-valid poses at rank, but a PandaMap fingerprint may be unavailable for some alternate copies on other chains; verify after the re-run rather than assume.",
+  "Appendix H.9's rank-1 TOST verdict flips (equivalent_within_10pp true -> false; 90 % CI upper bound 11.7) and the power narrative changes (MDE 9.8 -> 10.5 pp, power 0.12 -> 0.32, n_needed 4,200 -> 1,100). Which body sentences depend on 'only rank-1 is equivalent within 10 points' and 'roughly 4,200' belongs to the thesis-text dimension.",
+  "The metal stratum (78 of 303 complexes with a metal within 5 A of the crystal ligand, glossary :647-654) is defined against the reference instance; whether it should be recomputed against any copy is undecided.",
+  "The hub's full re-score runtime under nearest-copy is unmeasured; the probe scored 53,651 poses against all copies in about one minute on 16 cores with symmetry_rmsd only, the hub additionally computes PoseBusters RMSD, strain and contacts for 241,914 rows, so bench_pose_comparison stays MODERATE but should be timed.",
+  "Three counts disagree: the brief says 58 stages and 194 asserted numbers, README.md:15-16 and :67 say 60 stages and 257 numbers, REGENERATE.md:17 says 60 stages, REPRODUCTION_COVERAGE:26 says 1,362 assertions, and the harness returned 1,364 results today. The registry has 60 (builder loops at :255, :275, :623, :844, :858, :927). Which figure the thesis itself prints, if any, was not found in body_appendix_short.tex.",
+  "Table 22's derived values for AutoDock (gnina-opt), EquiBind (gnina-opt) and the raw-AutoDock footnote coincide with the printed ones; confirm by harness rather than by inspection before leaving those cells untouched.",
+  "validate_regeneration.py DECLARED (:163-175) already excludes Figures 2, 3, 5, 6, 38 from byte comparison; the 14 re-shipped figures still have to be md5-paired in the yaml, which for nondeterministic renders means copying the exact file the stage wrote, not a re-render."
+ ],
+ "artifacts_written": [
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/assertion_counts.txt"
+ ]
+}

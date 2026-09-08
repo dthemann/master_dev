@@ -1,0 +1,148 @@
+{
+ "dimension": "figures-media",
+ "role": "EVIDENCE AUDITOR",
+ "confirmed": 19,
+ "refuted": [],
+ "corrected": [
+  {
+   "site": "inventory site 1 (Fig 3, body_main_short.tex:400) \u2014 'the probe CSV has no such column, so recompute'",
+   "correction": "The evidence base already carries a nearest-copy Kabsch column: /tmp/.../scratchpad/wf/per_pose_two_conventions.csv header 'kabsch_nearest,kabsch_min_all,pb_rmsd_nearest,cd_nearest' with 8976/8993/9088 non-null rows for the three headline arms. Recomputed existence gates (PB-valid & kabsch<=t, n=303): rank-1 1 \u00c5 52.5/52.1/33.3 -> unchanged; top-15 1 \u00c5 71.9/72.3/51.2 -> 71.6/72.3/51.5; top-15 2 \u00c5 93.4/95.7/79.9 -> 93.4/95.4/80.2; top-30 1 \u00c5 74.3/74.6/54.1 -> 74.3/74.6/53.8. Median |kabsch_nearest - bestfit_rmsd| over the 13,328 poses whose nearest copy is not the reference is 0.014 \u00c5 (p90 0.065, max 2.51). The flipped rank-1 count is 38/29/2 with the PB gate (38/30/2 without), not '~38/30/2' throughout. new_value is therefore derivable, not 'recompute'."
+  },
+  {
+   "site": "inventory site 2 (Fig 4) \u2014 'filmstrip_rank1_top5_top15.py:131-132 ... trims by centroid_dist > 8 \u00c5'; 'body:409'",
+   "correction": "The trim is on line 133: `c = c[c[\"centroid_dist\"].le(P.FAR_FROM_RECEPTOR_CENTROID_A)].copy()`; the 8 \u00c5 constant lives in posebusters_pose_comparison.py:8265 `FAR_FROM_RECEPTOR_CENTROID_A = 8.0`. The '1.5 \u00c5 at rank-1 to 5.0 \u00c5 at top-15' sentence is body_main_short.tex:410, not :409 (:409 is blank). Companion files exist under the stem WITHOUT the `__thesis` suffix (\u2026__rank1_top5_top15__caption.txt:4 '5651 dropped at top-15', :5 '2329 pose(s) beyond the frame'); the __thesis stem has only the PNG."
+  },
+  {
+   "site": "inventory site 4 (Fig 6, body_main_short.tex:468) \u2014 'quoted at body:471-474 and appendix :1392'; '58/138 AutoDock* and 53/138 DiffDock* multi-copy rank-1 poses sit on an alternate copy'",
+   "correction": "body :471 and :473 are blank; the Friedman/Cochran/McNemar text is at :472 and :474; in the appendix it is :1394 ('Friedman \u03c7\u00b2 = 33.6, Kendall W = 0.055 \u2026 Cochran's Q = 139.6'), :1392 is the \\section line. The 58/53 reproduce only under the definition 'rank-1 pose within 4 \u00c5 of an alternate copy centroid AND > 4 \u00c5 from the reference centroid' (cd_min_alt<=4 & cd_ref>4: 58/53/7); by nearest_copy_is_ref==False the counts are 75/81/78 of 138. State the definition."
+  },
+  {
+   "site": "inventory site 5 (Fig 38) \u2014 body_appendix_short.tex:1396 / caption :1397",
+   "correction": "\\includegraphics{media/media/image8.png} is at :1398 and the caption at :1399 (:1396 is \\begin{figure}, :1397 \\centering)."
+  },
+  {
+   "site": "inventory site 6 (Fig 7) \u2014 'Text at body:488 prints 0.450 (300) \u2026'; '230/229/33 within 4 \u00c5 of its centroid'",
+   "correction": "body_main_short.tex:488 is blank; the Jaccard sentence is :489. Recomputed from nearest_copy_alldepths.csv (PB-valid, eff_rank<=5, cd_min_alt<=4): 233/229/34 poses (in 102/91/11 complexes), not 230/229/33. The 2 \u00c5 sizing 105/119/11 poses in 70/49/3 complexes reproduces exactly."
+  },
+  {
+   "site": "inventory site 7 (Fig 39) \u2014 body_appendix_short.tex:1409 / :1410 / :1413",
+   "correction": "\\includegraphics{media/media/image11.png} is at :1411, caption at :1412, \\end{figure} at :1413; the paragraph printing 15.3 / 14.1 / 17.6 / 16.7 / 18.9 is :1415."
+  },
+  {
+   "site": "inventory site 10 (Fig 18) \u2014 'The probe CSV covers only autodock_mgltools_exh128 and _exh128_gnina, so nearest_copy_rescoring.py must first be run with --arms \u2026'; new_value 'recompute'",
+   "correction": "Already done in the plan's evidence base: /tmp/.../scratchpad/wf/nearest_copy_ladder_arms.csv holds exactly those six arms (autodock_mgltools_exh18 8986, autodock_mgltools 8991, _exh64 8996, _exh92 8984, _gnina 8991, _exh64_gnina 8996 rows; max eff_rank 30, 303 complexes each). The rmsd2 gate of autodock_exhaustiveness_returns.py:540 (`out[\"rmsd2\"] = out[\"rmsd\"] <= RMSD_OK_A`, no PB gate) reproduces every shipped k exactly from these CSVs, so the new values are derivable: Fig 18 exh32 raw->gnina rank-1 86->101 becomes 110->131 (+21), oracle 156->157 becomes 172->173; exh64 95->113 becomes 124->144; exh128 95->113 (exh_raw_vs_rescored_stats.txt:62) becomes 131->151."
+  },
+  {
+   "site": "inventory site 11 (Fig 19) \u2014 new_value 'recompute'",
+   "correction": "Derivable from nearest_copy_ladder_arms.csv + nearest_copy_alldepths.csv (rmsd_nearest_copy<=2, no PB gate, as the script's rmsd2): rank-1 k by rung 18/32/64/92/128 = 93/110/124/124/131 (shipped 73/86/95/92/95, exh_depth_sweep_stats.txt:16-17). The top step exh92->exh128 at rank-1 becomes +7 (was +3) and exh64->exh92 becomes 0 (was -3). 'depth 22' (discordance resolvability) still needs the McNemar sweep."
+  },
+  {
+   "site": "inventory site 12 (Fig 20) \u2014 new_value 'recompute'",
+   "correction": "Derivable: rank-1 rmsd2 73/86/95/92/95 -> 93/110/124/124/131; oracle 126/156/183/194/202 -> 144/172/202/209/217 (exh_yield_vs_cost_stats.txt:14-23 reproduce exactly from the same CSVs under the reference column). The caption claim 'buys nothing at rank-1' for exh92 survives (124 vs 124 at exh64, a tie rather than -3)."
+  },
+  {
+   "site": "inventory site 13 (Fig 21) \u2014 new_value 'recompute'",
+   "correction": "rmsd2 numerators derivable: rank-1 +13/+9/-3/+3 -> +17/+14/0/+7; whole pool +30/+27/+11/+8 -> +28/+30/+7/+8 (exh_marginal_return_stats.txt:14-21). Triple-gate bars need kabsch_nearest for the ladder arms, which per_pose_two_conventions.csv does not carry (six headline arms only). Companion value '+5.9' is confirmed at exh_marginal_return_stats.txt:28 (5.8796, triple oracle exh64->exh92)."
+  },
+  {
+   "site": "inventory sites 28-38 (Figs 27-37) \u2014 body_appendix_short.tex:566, 673, 713, 724, 735, 741, 747, 758, 764, 775, 786",
+   "correction": "Each cited line is \\begin{figure}; the \\includegraphics lines are two later: image12 :568, image33 :675, image34 :715, image35 :726, image36 :737, image37 :743, image38 :749, image39 :760, image40 :766, image41 :777, image42 :788 (grep -n includegraphics body_appendix_short.tex). md5 pairings all verified byte-identical; classification UNCHANGED stands."
+  },
+  {
+   "site": "inventory site 40 \u2014 thesis_expected_values.yaml:1071 `prose.figure_39:`",
+   "correction": "The `figure_39:` key is at :1070; source/input at :1071-1072 and the seven values at :1073-1079. Values confirmed (15.3, 14.1, 17.6, 16.7, 18.9, 12.0, 12.6)."
+  },
+  {
+   "site": "inventory site 41 \u2014 validate_regeneration.py 'DECLARED (lines 165-179)'; 'The cluster case's analysis_cache.pkl must be invalidated (out-dir signature)'",
+   "correction": "DECLARED starts at :163 (`DECLARED = [` at :163; '2, 3' at :164; '5, 6, 38' at :167; '28-37' at :175). The cluster cache is NOT keyed to the out-dir alone: pose_cluster_crystal_pocket_report.py:3953 `\"per_pose_csv\": _file_fp(args.per_pose_csv)` fingerprints the per-pose table, so the hub rewrite invalidates it automatically; the residual risk is a code-only change to crystal_centroid (:920-921) before the CSV changes, which reuses the cached single-copy analysis because `_CACHE_SCHEMA = 5` (:3927) is not bumped and `benchmark_dir` is keyed by path only (:3961, docstring :3948-3950). Also: bench_clusters in _build_reproduction_notebook.py:503-521 passes no --force."
+  },
+  {
+   "site": "inventory site 42 \u2014 probe README 'Figures 18-21 need six further arms \u2026 and Figures 3, 4 and 18-21 need a nearest-copy Kabsch/bestfit column that the probe does not compute'; new_value '12 arms + bestfit_nearest_copy'",
+   "correction": "Literal claim about nearest_copy_rescoring.py is true (README 'Columns added per pose: n_copies, rmsd_ref_re \u2026, rmsd_min_alt'; script :63 `--arms nargs='+' required=True`), but the plan's evidence base already has the six ladder arms (wf/nearest_copy_ladder_arms.csv, 53,944 rows), five extra arms (wf/nearest_copy_extra_arms.csv: diffdock_gnina, equibind_unguided_raw/_smina, equibind_fpocket_raw, equibind_p2rank_raw) and kabsch_nearest for the six primary arms (wf/per_pose_two_conventions.csv). What is still missing is kabsch_nearest for the six ladder arms (needed only for the triple-gate panels of Figs 18-21)."
+  },
+  {
+   "site": "inventory decision 1 (cluster union) \u2014 'min-over-copies in _dist calls at :1107, :553, :579, :584, :614, :624, :944, :966'",
+   "correction": "pose_cluster_crystal_pocket_report.py:553 is `np.linalg.norm(C[idx] - crystal, axis=1)` (not a `_dist` call, but a crystal distance); :614 contains no `_dist` call (the call is :624). The grep also shows crystal-distance sites the list omits: :1019 `cd = _dist(C[idx], crystal)`, :3313 `cp = min(pk, key=lambda p: _dist(p[\"center\"], cr))`, :4457-4458 `dist_to_crystal` / `medoid_dist_to_crystal`, :4752 `ddc.append(_dist(p[\"center\"], cr))`."
+  }
+ ],
+ "missing": [
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 474,
+   "what": "Pre-existing rounding drift in a Fig 38 companion number not listed in plan Risk 11: the body prints 'its medoid-centred variant 55.4%' while the shipped sidecar prints 'consensus + medoid 55.5%' (posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/cluster_quality_metrics_stats.txt:11); 168/303 = 55.4455.",
+   "change": "Add :474 (55.4 vs 55.5) to Risk 11 and fix the rounding rule before the Fig 38 precision-at-1 numbers are overwritten, or the new value inherits an unexplained 0.1 pp offset.",
+   "effort": "trivial",
+   "current_value": "55.4 % (body) vs 55.5 % (sidecar)",
+   "new_value": "recompute under D5 with one rounding rule"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 3927,
+   "what": "`_CACHE_SCHEMA = 5` is part of the analysis-cache key (:3952 `\"schema\": _CACHE_SCHEMA`); the crystal directory is keyed by path only (:3961, docstring :3948-3950 'Pocket / crystal directories are keyed by path only \u2026 pass --force if you regenerate those'). Plan Phase 2.1 changes crystal_centroid (:920-921) and the correct-site rule (:1107-1109) without bumping the schema, and the bench_clusters stage (_build_reproduction_notebook.py:503-521) passes no --force, so a Phase 2 dry run on the unchanged CSV silently reuses the single-copy analysis.",
+   "change": "Bump `_CACHE_SCHEMA` to 6 in Phase 2.1 (or add the reference convention to the signature dict) so Figs 5, 6, 38 and Table 3 cannot come from a stale analysis_cache.pkl.",
+   "effort": "trivial",
+   "current_value": "_CACHE_SCHEMA = 5",
+   "new_value": "_CACHE_SCHEMA = 6 (+ convention key)"
+  },
+  {
+   "file": "/home/manndo/master_dev/posebusters_results/autodock_exhaustiveness_returns/figures/exh_yield_vs_cost_stats.txt",
+   "line": 4,
+   "what": "Resolution of the inventory's open question. The sidecar records `source: \u2026/benchmark_full_protein_vina_scoring/dock/pose_comparison_report/per_pose_metrics.csv` (pre-matched tree). Recomputing rmsd2 (no PB gate) from the matched-tree probe CSVs reproduces every shipped k exactly (rank-1 73/86/95/92/95, oracle 126/156/183/194/202; exh32 raw->gnina 86->101, 156->157), so the AutoDock rows are identical across the two trees and the shipped Figs 18-21 are consistent with the matched table.",
+   "change": "Record in the plan that the exhaustiveness figures are tree-invariant for AutoDock and that the regenerated sidecar `source:` line will change to the matched path (a text diff, not a number diff).",
+   "effort": "trivial",
+   "current_value": "source: benchmark_full_protein_vina_scoring",
+   "new_value": "source: benchmark_matched_equibind"
+  },
+  {
+   "file": "/home/manndo/master_dev/posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/effort_summary.csv",
+   "line": 2,
+   "what": "Inventory sites 9/16 leave poses_near2 as 'recompute' although it is derivable from nearest_copy_alldepths.csv (pb_valid & rmsd_nearest_copy<=2, all 30 ranks): 311/1622/466 -> 442/2068/483 (AutoDock*/DiffDock*/EquiBind*). Per-pose currencies then fall by 30 % / 22 % / 4 % (cpu_core_s_per_near2 1752.8 -> about 1233; 2.93 -> about 2.30; 165.3 -> about 159).",
+   "change": "Enter the derivable poses_near2 targets in the yaml table_6 / Fig 16 expectations before the rerun so the harness checks a prediction rather than transcribing the output (plan Risk 15).",
+   "effort": "trivial",
+   "current_value": "poses_near2 311 / 1622 / 466",
+   "new_value": "442 / 2068 / 483"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/validate_regeneration.py",
+   "line": 123,
+   "what": "The nine byte-gated figures are gated only against the CURRENT canonical table: Case '4' stages `REPORT / \"per_pose_metrics.csv\"` (:123-124) and Cases '15', '18-21', '7, 39' read `REPORT / \"per_pose_metrics.csv\"` directly (:136, :145, :157); check_figures (thesis_assertions.py:684-693) compares media md5 to source md5. Neither layer can tell an instance-convention table from a nearest-copy one; only the D8 manifest/convention field can. Plan Risk 6 mentions only the five un-gated figures.",
+   "change": "Extend Risk 6 (or Phase 6.2) with one sentence: the byte gates prove media == re-render of the canonical table, and the convention itself is asserted only through the manifest check of 1.9 / 3.3 and the new bench_reference_convention stage.",
+   "effort": "trivial",
+   "current_value": "Risk 6 covers Figs 2, 3, 5, 6, 38 only",
+   "new_value": "Risk 6 also states what the nine gates do and do not prove"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Section 4, plan lines 473-474 ('Figures to regenerate (14 of 39)') and Section 3.2 table row at plan line 410",
+   "claim": "'\u2026 7 (image9), 10 (image24), 11 (image25), 18 (image44) \u2026' and '| 715, 751 | Fig 10 / Fig 11 captions: 199, 169, 80; 53 shared |'",
+   "correction": "image24 is Figure 15 and image25 is Figure 16 (Thesis_short.lof:18 'figure 15 \u2026 Charged seconds per qualifying pose', :19 'figure 16 \u2026 Hardware resource per qualifying pose'; body_main_short.tex:714-715 and :750-751, labels fig:results-r23 / fig:results-r24). Figures 10 and 11 are the Orai figures image15 (Transmembrane loss, body :631-632) and image16 (inter-tool consensus-site distances, :646-647), which the same plan lists as unchanged. The tex line numbers 715/751 are right, so the edit would land correctly, but the labels contradict Phase 6.1's '12 Orai figures unchanged' and would mislead anyone checking by figure number.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 4, plan lines 475-476 ('Producing stages: \u2026')",
+   "claim": "Producing stages for the 14 figures are 'hub (18_topn_within_thresholds_*), bench_filmstrip, bench_clusters, bench_pandamap_report, bench_effort_charged / bench_effort_elapsed, bench_exhaustiveness_returns'",
+   "correction": "Figs 7 and 39 also require the `bench_pandamap` stage (_build_reproduction_notebook.py:524, the run_pandamap.py crystal tasks that plan 2.2 rewrites at run_pandamap.py:963 `crystal = cfg.benchmark_dir / protein / f\"{protein}_ligand.sdf\"`); bench_pandamap_report (:533, needs=['bench_pandamap', 'bench_pose_comparison']) only re-reads the profiles. The hub stage is named `bench_pose_comparison` (:387). Phase 3.2 does list 'PandaMap crystal tasks', so this is an internal inconsistency of Section 4, not a missing step.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 2.1, plan line 264 (producer of Figs 5, 6, 38)",
+   "claim": "'`:1109-1111` a cluster is correct if within `--match-thr` of ANY copy'",
+   "correction": "The correct-site rule is at pose_cluster_crystal_pocket_report.py:1107-1109 (`cp = min(pockets, key=lambda p: _dist(p[\"center\"], crystal))`, `correct_dist = \u2026`, `correct_is_hit = bool(correct_dist <= thr)`); :1110 is `p1 = _precision_at_1(pockets, crystal, thr)`. Off by two lines. The other refs (:562 _precision_at_1, :963 cdist, :1020 rmsd read, :3697 oracle rmsd, :4064 crystal_centroid call) are correct.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 6.1, plan lines 309-313, and Risk 6, plan line 511",
+   "claim": "Regenerate the 14 figures, 'Hand-copy each into thesis_latex/media/media/ and confirm by md5 against the producing report file'; Risk 6: 'Figures 2, 3, 5, 6, 38 have no byte gate'.",
+   "correction": "The md5 hand-check verifies media == producing file, and the nine validate_regeneration.py gates verify media == re-render from the CURRENT canonical per_pose_metrics.csv (validate_regeneration.py:123-124 stage, :136, :145, :157). Neither check fails if the producing file was itself generated from a pre-switch table or a stale analysis_cache.pkl (cluster report: _CACHE_SCHEMA = 5 at :3927, benchmark_dir keyed by path only at :3961, no --force in the bench_clusters command at _build_reproduction_notebook.py:503-521). Phase 6 has no step that proves the regenerated figures are on the nearest convention; the plan relies on D8 in Phase 1.9/3.3 but Phase 6 does not reference it and Risk 6 does not mention the limitation.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 1.7 plan line 195 and Section 3.2 plan line 406 (Fig 6 / Fig 38 companions)",
+   "claim": "'precision-at-one 56.8 / 55.4 / 55.8 %' as the value to recompute under D5",
+   "correction": "The thesis body prints 55.4 (body_main_short.tex:474 'its medoid-centred variant 55.4%'), but the producing sidecar prints 55.5 (cluster_quality_metrics_stats.txt:11 'consensus + medoid 55.5%'; 168/303 = 55.4455). Pre-existing rounding drift; Risk 11 lists :476 and :408 but not :474.",
+   "severity": "minor"
+  }
+ ],
+ "notes": "Scope audited: all 43 sites of inventory__figures-media.json plus plan Phase 6, Section 4 and Risk 6. Every one of the 39 media/imageN.png md5s was re-hashed against its claimed source: 37 byte-identical, image12/image14 orphan (md5 a27b91c9\u2026 / 5967dab8\u2026) as stated; the two-source claim for image25 (charged and elapsed effort dirs both 8ca0604e\u2026) holds. The REGENERATE/UNCHANGED classification (14/25) is correct; no site was refuted outright. Sites 0, 3, 8, 9, 14-27 and 39 confirmed verbatim, including recomputation of every 'new_value' the inventory gave: 2 \u00c5 rank-1 49.2/43.6/18.8 (149/132/57), top-15 70.3/59.1/27.4 (213/179/83), top-30 70.6/60.4/27.4, the full 1-5 \u00c5 grid, qualifying 214/183/83 with 54 shared, pose-level 4 \u00c5 reach 183->241/172->225/137->144 (rank-1, no PB gate) and 86->91/81->86/50->52 (top-15) all reproduce exactly from nearest_copy_alldepths.csv. Line-number corrections are all within the \u00b15 tolerance (mostly \\\\begin{figure} cited instead of \\\\includegraphics, +2). The substantive corrections: (a) the six ladder arms and a kabsch_nearest column already exist in the plan's scratch evidence base, so Figs 3 and 18-21 have derivable targets rather than 'recompute' (given above); (b) the cluster cache is keyed on the per-pose CSV fingerprint, not the out-dir, and the real trap is a code-only change with an unbumped _CACHE_SCHEMA; (c) plan Sections 3/4 mislabel image24/image25 as Figs 10/11 (they are 15/16). The one major plan error is that Phase 6's verification (md5 hand-copy + byte gates) cannot detect a figure regenerated on the wrong convention or from a stale cache; the plan's D8 manifest check would, but Phase 6 does not invoke it. Phase 6 effort M/0.5 day is defensible for copying and captions once Phases 1-3 have run. Scratch scripts: /tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf2/recompute.py and recompute2.py. No repository file was modified."
+}

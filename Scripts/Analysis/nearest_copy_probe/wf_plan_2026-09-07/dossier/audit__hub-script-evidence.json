@@ -1,0 +1,170 @@
+{
+ "dimension": "hub-script \u2014 Scripts/Analysis/posebusters_pose_comparison.py: crystal loading, crystal-referenced per-pose metrics, gates/aggregators, cache and CLI",
+ "role": "EVIDENCE AUDITOR",
+ "refuted": [
+  {
+   "site": "inventory summary sentence 'No aggregation, gate or figure in the remaining ~13,000 lines reads the crystal'",
+   "reason": "Contradicted by the inventory's own site [16]: posebusters_pose_comparison.py:9323 `cry = bdir / str(row[\"protein\"]) / f\"{row['protein']}_ligand.sdf\"` and :9351-9352 `cpath = Path(benchmark_dir) / str(prot) / f\"{prot}_ligand.sdf\"; pose, crystal = load_first_mol(pf), load_first_mol(cpath)` are a second crystal-load site (fig 20g exemplars, PyMOL PDBs written at :9411/:9518). The summary must say 'exactly two places'."
+  },
+  {
+   "site": "inventory site [22] current_value attribution: 'collapsed frame n=303: top1_pb_valid_and_rmsd2_% 36.634 / 33.993 / 18.152 ... (AutoDock*/DiffDock*/EquiBind*)' sourced to top1_summary.csv (:13696)",
+   "reason": "top1_summary.csv has no EquiBind row. aggregate_top1 (:1722) iterates `df[df[\"method\"].isin(RANKING_TOOLS)]` and RANKING_TOOLS (:746-762) lists only autodock_*/unidock keys; the canonical top1_summary.csv prints methods autodock, diffdock, unidock2 only. The EquiBind* values 18.152/18.812 come from topk_recovery_validity.csv row 'EquiBind (gnina-opt)' k=1 (valid_k 55 = 18.151815 %, near_k 57 = 18.811881 %), and the EquiBind centroid figure 45.215 (137/303) exists in no hub table at all (probe-derived). The AutoDock/DiffDock values (36.633663 / 33.993399; 60.396040 / 56.765677) are confirmed in top1_summary.csv."
+  }
+ ],
+ "corrected": [
+  {
+   "site": "site [6] posebusters_pose_comparison.py:1566 \u2014 'identity-mapping fallback when no substructure match at :1185-1188'",
+   "correction": "The fallback is at :1188-1191: `if not matches: if pose.GetNumAtoms() != ref.GetNumAtoms(): return float(\"nan\"); matches = [tuple(range(ref.GetNumAtoms()))]`. :1185 is `ref_coords = ref.GetConformer().GetPositions()`. Values 113/107/57 -> 151/137/59 confirmed from nearest_copy_alldepths.csv (eff_rank==1, rmsd<=2 vs rmsd_nearest_copy<=2)."
+  },
+  {
+   "site": "site [7] :1567 new_value 'rank-1 4 A reach 241 / 225 / 144 (probe: min over copies; at j* recompute)'",
+   "correction": "Recomputed from per_pose_two_conventions.csv column cd_nearest (centroid at the argmin-RMSD copy, i.e. the plan's D2): 239 / 225 / 143; min-over-copies gives 241 / 225 / 144. Since the plan adopts D2, the inventory's new_value should be 239/225/143 (78.9/74.3/47.2 %) with 241/225/144 as the centroid_dist_min variant; current 183/172/137 confirmed (cd_ref<=4 and centroid_dist<=4 agree exactly)."
+  },
+  {
+   "site": "site [15] :1513 \u2014 'caller builds work = [...] at :13494'",
+   "correction": ":13494 is `idx = idx[idx[\"protein\"].astype(str).isin(allowed)].copy()` (the --ids-file restriction). The work tuple is built at :13507-13508: `work = [((p, l), recs, str(args.benchmark_dir.resolve()), root) for (p, l), recs in pairs]`."
+  },
+  {
+   "site": "site [56] :13346 \u2014 'thread via sig (:13454), the work tuple (:13494)'",
+   "correction": "`sig = _per_pose_signature(args)` is at :13475 (:13454 is `args.best_equibind_only = True` inside the --best-variants-only block); the work tuple is at :13507. The argparse anchor :13346-13347 `--benchmark-dir` is confirmed; no convention flag exists in :13343-13445."
+  },
+  {
+   "site": "inventory decision 6 \u2014 'Refuse (error like the missing-cache case at :13460-13464)'",
+   "correction": ":13460-13464 is the --collapse-plots-only comment/flag block. The missing-cache error is at :13478-13482: `if df is None and args.reuse_cache: print(f\"ERROR: --reuse-cache was set but no usable per-pose cache exists ...\"); return`."
+  },
+  {
+   "site": "site [22] :1719 new_value centroid '79.538 / 74.257 / 47.525 ... (centroid values at min-over-copies, recompute at j*)'",
+   "correction": "At copy j* (D2) the rank-1 centroid<=4 A counts are 239/225/143 -> 78.878 / 74.257 / 47.195 %; the listed 79.538/74.257/47.525 are the min-over-copies variant. The rmsd-based new values 49.175/43.564/18.812 and 49.835/45.215/19.472 are confirmed (149/132/57 and 151/137/59 over 303). Note also that EquiBind never appears in top1_summary.csv (see refuted)."
+  },
+  {
+   "site": "site [29] :2413 \u2014 '`_succ` = `sub[\"rmsd\"] <= 2.0` (:2422), `& pb_valid` when valid (:2424)'",
+   "correction": "Lines are :2424 `s = sub[\"rmsd\"] <= 2.0` and :2426 `s = s & sub[\"pb_valid\"].astype(bool)`; :2422 is the closing docstring `\"\"\"`."
+  },
+  {
+   "site": "site [30] :786 \u2014 '`sel_df[\"rmsd\"] <= 2.0` at :2586-2588'",
+   "correction": "The masks are at :2583-2585: `(\"rmsd_le_2A\", sel_df[\"rmsd\"] <= 2.0, \"rmsd2\")` and `(sel_df[\"rmsd\"] <= 2.0) & sel_df[\"pb_valid\"].astype(bool), \"rmsd2_valid\"`; :2587-2588 are `k = int(mask.sum())` / `lo, hi = su.wilson_ci(k, n)`. The CSV is written at :13912 (`comparison_vs_posebusters_paper.csv`), not :3025 (which is the generic `_write_csv(pd.DataFrame(recs), csv_out, index=False)`)."
+  },
+  {
+   "site": "site [31] :3162 \u2014 '`w2 = sub[sub[\"rmsd\"] <= thr]` (:3186), oracle idxmin (:3187)'",
+   "correction": ":3190 `w2 = sub[sub[\"rmsd\"] <= thr]` and :3191 `orc = sub.loc[sub.groupby([\"protein\", \"ligand\"])[\"rmsd\"].idxmin()]`; :3186-3187 are the pb_valid bool-coercion comment and map."
+  },
+  {
+   "site": "site [34] :4578 \u2014 '`le2 = rmsd <= 2.0` (:4630), `kab = bestfit_rmsd < kabsch_thr` (:4639), `both`/`triple` (:4640-4641)'",
+   "correction": ":4639 `le2 = pd.to_numeric(sub[\"rmsd\"], errors=\"coerce\") <= 2.0`, :4648 `kab = pd.to_numeric(kcol, errors=\"coerce\") < kabsch_thr`, :4649-4650 `both = le2 & pbv` / `triple = both & kab`. :4630 is the column-name list `\"triple_of_rmsd2_%\", \"triple_of_all_%\"]`."
+  },
+  {
+   "site": "site [37] :6211 \u2014 '`_stats_within_by_depth` (:6511-6606, `best_rmsd <= threshold` at :6541)'",
+   "correction": "The hit test is at :6544 `rec = pd.to_numeric(frames[m][\"best_rmsd\"], errors=\"coerce\") <= threshold`; :6541 is `hd = {}`."
+  },
+  {
+   "site": "site [43] :8265 current_value 'probe, eff_rank<=15, share of poses with centroid <=6 A of reference: 45.2% / 51.2% / 45.9%' -> '58.4% / 66.9% / 48.7%'",
+   "correction": "These numbers reproduce only at a 6 A cutoff over ALL eff_rank<=15 poses (no validity gate), whereas the constant at :8265 is `FAR_FROM_RECEPTOR_CENTROID_A = 8.0` and the filmstrip cohort is `_form_components(_valid_topd_poses(df, d, None))` (:8588, PB-valid) trimmed by `c[\"centroid_dist\"].le(centroid_max)` (:8590). On the hub's basis (PB-valid, eff_rank<=15, <=8 A) the shares are 49.3 / 53.3 / 54.8 % -> 63.4 / 69.8 / 57.9 % (min over copies). The 6 A figure belongs to POCKET_CENTROID_CUTOFF (:733), a different analysis."
+  },
+  {
+   "site": "site [44] :9807 \u2014 '`near = sub[\"rmsd\"] <= thr` (:9830), `valid = near & pb_valid` (:9831)' and '_TOPK_TEST_PAIRS (:9764-9797: within-tool pairs plus AutoDock (gnina-opt) vs DiffDock (raw) / DiffDock (gnina-opt) / EquiBind (gnina-opt))'",
+   "correction": "near/valid are at :9833-9834 (`near = sub[\"rmsd\"] <= thr` / `valid = near & _to_bool(sub[\"pb_valid\"])`); :9830 is the complex index. The between-tool family also contains `(\"DiffDock (gnina-opt)\", \"EquiBind (gnina-opt)\")` at :9788, omitted in the inventory. The new values 149/132/57, 213/179/83, 214/183/83, 151/137/59 are confirmed from the probe CSV and the current 111/103/55, 198/167/80, 199/169/80, 113/107/57 from topk_recovery_validity.csv."
+  },
+  {
+   "site": "site [47] :10998 \u2014 '`on_pocket = cd <= pocket_cutoff` (:11035), `oracle_on = ...` (:11044)'",
+   "correction": ":11026 `sub[\"on_pocket\"] = (cd <= pocket_cutoff).fillna(False)` and :11039 `oracle_on = bool(gr.loc[gr[\"rmsd\"].idxmin(), \"on_pocket\"])`; :11035 is `gtop = g[g[\"rank\"] <= top_n]`, :11044 is `pc = pd.DataFrame(per_complex,`. The one-line switch to a centroid_dist_min column would be at :11025-11026, not :11033."
+  },
+  {
+   "site": "site [48] :11252 \u2014 '`rep = rep[[...,\"rmsd\"]]` (:11267); `rmsd_ok = rmsd <= 2.0` (:11290)'",
+   "correction": ":11271 `rep = rep[[\"method\", \"protein\", \"ligand\", \"pose_name\", \"rmsd\"]]` and :11294 `rmsd_ok = (pd.to_numeric(merged[\"rmsd\"], errors=\"coerce\") <= 2.0).fillna(False)` inside `if gate_rmsd:` (:11293); :11290 is `surv = pd.Series(True, index=merged.index)`."
+  },
+  {
+   "site": "site [16] :9323 change text and plan step 1.10 ':9313-9330 mechanism exemplars'",
+   "correction": "The selection logic is :9312-9316 and `_files_ok` :9319-9324; the actual crystal load that must switch to record nearest_copy_index is `_example_geometry` :9351-9352, outside the cited range."
+  },
+  {
+   "site": "site [73] thesis_expected_values.yaml:56 effort 'medium'",
+   "correction": "The plan's own Phase 7.1 says about 850 of 1,364 result rows move and classes the phase L (1 day); the yaml re-pin is large, not medium. The cited gate lines :56-58 and inputs (:65, :94, :238, :268, :299, :322, :641, :706, :795, :817, :877, :907-909, :988, :1010, :1095) are all confirmed."
+  }
+ ],
+ "missing": [
+  {
+   "file": "Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1568,
+   "what": "The try/except around the RMSD call (`except Exception: rmsd, cdist = float(\"nan\"), float(\"nan\")`) leaves no copy index when the per-copy list fails; the later calls at :1572, :1581, :1585, :1588 would index `copies_h[j_star]` with an unbound name. The probe (nearest_copy_rescoring.py:54) uses `np.nanargmin(r)`, which raises on an all-NaN list.",
+   "change": "In the except branch set `j_star = ref_copy_index`; compute j_star as `int(np.argmin(np.nan_to_num(r, nan=np.inf)))` (the posebusters rmsd.py:61 pattern) so ties and all-NaN resolve to record 0.",
+   "effort": "trivial",
+   "current_value": "rmsd, cdist = nan, nan; no j_star",
+   "new_value": "j_star = ref_copy_index on failure"
+  },
+  {
+   "file": "Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1391,
+   "what": "`crystal_lig = _ligand_for_plif(crystal_mol); if crystal_lig is None: return [nan]*n` \u2014 with several copies a single copy failing `_ligand_for_plif` must not zero the whole matrix, and the pose offset `enumerate(valid_idx, start=1)` at :1410 hard-codes ONE reference ligand at the front of `valid_ligs` (:1397).",
+   "change": "Build `copy_ligs`, drop None copies (record their column as NaN), start the pose enumeration at `len(copy_ligs)` and return an (n_poses x n_copies) matrix.",
+   "effort": "small",
+   "current_value": "start=1, single crystal_bv = bvs[0]",
+   "new_value": "start=n_valid_copies, crystal_bvs = bvs[:n_valid_copies]"
+  },
+  {
+   "file": "Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1469,
+   "what": "PoseRecord field `pb_rmsd_within_2A: bool` is filled from `pb_within` (:1572) and is therefore also crystal-referenced; the inventory lists pb_rmsd/pb_kabsch but not this flag.",
+   "change": "Document that it follows copy j*; optionally add `pb_rmsd_within_2A_ref_instance`.",
+   "effort": "trivial"
+  },
+  {
+   "file": "Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 13243,
+   "what": "`if not _CACHE_REQUIRED_COLS.issubset(df.columns): print(...); return None` \u2014 under --reuse-cache this surfaces only as the generic ERROR at :13479-13481 ('no usable per-pose cache exists'), which does not tell the operator that the cache is a pre-switch (single-instance) table.",
+   "change": "Print which required columns are missing (e.g. `reference_convention`) so a stale-convention cache is diagnosable.",
+   "effort": "trivial"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Phase 1, step 1.11 (line 258)",
+   "claim": "Regression: assert `rmsd`, `pb_rmsd`, `bestfit_rmsd`, `centroid_dist` equal the frozen table to 1e-9 A on all 241,914 rows and `oracle_summary.csv` is byte-identical apart from the new columns.",
+   "correction": "The check would not catch failures in the most invasive edits. Steps 1.3, 1.4 and 1.6 move contact_recovery (:1588), plif_recovery (:1560-1562, restructured into an n_poses x n_copies matrix), rot_angle_deg (:1581), tfd/max_torsion_dev_deg/mean_torsion_dev_deg/n_torsions_flipped/n_rot_bonds (:1585) and pb_rmsd_within_2A (:1572) onto copy j*, and none of them is in the asserted column list. Under `instance` every PoseRecord float/bool column must be compared (contact_recovery/plif_recovery to 1e-12, torsion columns exactly). Also the frozen table has 241,913 rows (wc -l 241914 includes the header; manifest `n_rows: 241913`), and oracle_summary.csv acquires no new columns (only per_pose_metrics.csv does), so it must be strictly byte-identical.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 1, step 1.8 (line 255)",
+   "claim": "`:1513-1514` and the work-tuple builder at `:13494`",
+   "correction": ":13494 is `idx = idx[idx[\"protein\"].astype(str).isin(allowed)].copy()`; the builder is at :13507-13508 `work = [((p, l), recs, str(args.benchmark_dir.resolve()), root) for (p, l), recs in pairs]`. The signature is computed at :13475 (`sig = _per_pose_signature(args)`), not :13454.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 1, step 1.10 (line 257)",
+   "claim": "`:9313-9330` mechanism exemplars: load record `nearest_copy_index` of `_ligands.sdf` instead of `_ligand.sdf`. ... Sidecar text writers (`:4827`, `:5625`, `:5690`, `:6199`, `:6402`, `:6508`, `:10667`, `:12043`) print the convention string from the manifest.",
+   "correction": "The crystal loads are at :9323 (`_files_ok`) and :9351-9352 (`_example_geometry`: `pose, crystal = load_first_mol(pf), load_first_mol(cpath)`), the latter outside the cited range. The eight text writers are `out_path.write_text(...)` calls inside functions that receive neither `args` nor the manifest (e.g. :4827 `out_path.write_text(\"\\n\".join(L))`), so printing the convention needs a new parameter or module-level setting threaded through eight call sites \u2014 not a T item.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 0, D1 (line 30)",
+   "claim": "Centroid-nearest can disagree with RMSD-nearest only for six adjacent-copy ids and RMSD is the gate.",
+   "correction": "In nearest_copy_alldepths.csv the centroid-nearest and RMSD-nearest copy disagree on 317 of 24,486 multi-copy rows spanning 77 ids (the inventory states the 317 correctly). Restricted to poses within 4 A of any copy it is 72 rows on 5 ids (6YYO_Q1K, 7A9E_R4W, 7CD9_FVR, 7JY3_VUD, 7Z1Q_NIO) and 0 rows among poses with nearest RMSD <= 2 A, so the conclusion (gate unaffected) holds but the sentence must be qualified 'for poses near a copy'.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 0, D2 (line 31)",
+   "claim": "Measured cost of 'follow': Kabsch median shift 0.001 A",
+   "correction": "Not reproduced on any basis from per_pose_two_conventions.csv: median |kabsch_nearest - bestfit_rmsd| is 0.0128 A over the 70 flipped rank-1 poses of the three headline arms, 0.0149 A over the 434 alt-copy near-native PB-valid top-15 poses, 0.0144 A over all 13,328 poses whose nearest copy is not the reference (and 0.000 over all poses, since 75 % are single-copy or reference-nearest). The downstream claim 'form verdict changes on 0/2/0 of the 38/29/2 flipped rank-1 poses' IS confirmed (38 flips / 34 form-ok unchanged; 30 flips of which 29 valid / 23 form-ok, 2 verdict changes; 2 / 1 / 0). Also 239 vs 241 is confirmed.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 4, 'Hub sidecars that change (all regenerated by one --force run)' (lines 484-491)",
+   "claim": "The listed sidecars, including `topk_recovery_validity*.csv`, are all regenerated by one `--force` run.",
+   "correction": "`topk_recovery_validity_gnina_arm.csv` is written by Scripts/Analysis/topk_recovery_gnina_arm.py (stage bench_topk, `outputs=[f\"{BENCH_REPORT}/topk_recovery_validity_gnina_arm.csv\"]`), not by the hub. The list also omits hub outputs that change: comparison_vs_posebusters_paper.csv (:13912), pocket_localization.csv / pocket_localization_by_rank.csv (:14439/:14441), oracle_rank_distribution.csv (:14097), oracle_rmsd_per_pair.csv (:13710), refinement_gain_vs_depth_pbvalid.csv and _kabsch (:14282/:14350), rank_position_concordance.csv / rank_validity_by_rank.csv / rank_vs_oracle.csv (:14160-14170, not matched by `rank_quality_*.csv`), pb_waterfall_top1_vs_top*.csv (:11584), pb_top30_recovery_by_test*.csv (:11867), the mechanism exemplar PDB/PML/manifest (:9411/:9442/:9451) and the text reports (:4827, :5625, :5690, :6199, :6508, :10667, :12043). The registry sweep in 8.2 relies on this list being complete.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 3 header and step 3.1 (lines 272-274)",
+   "claim": "Rebuild (compute ~ 1-2 h wall ...)",
+   "correction": "No wall-time record of a hub --force run exists (the inventory's own open question says so); the only evidence is the cost class MODERATE = 'minutes to about an hour' at repro_harness.py:70. State it as an estimate and measure on the first run.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 1, step 1.2 (line 249)",
+   "claim": "`ref_copy_index` by centroid identity with `crystal_h` (0 on this dataset)",
+   "correction": "Confirmed and strengthened: record 0 of every `<ID>_ligands.sdf` has heavy+H coordinates identical (atol 1e-4, same atom order) to `<ID>_ligand.sdf` in all 428 directories, so `instance` mode reproduces the frozen table only if j* is forced to index 0 \u2014 a centroid tie-break would also work but the coordinate identity should be asserted once in the regression (1.11) rather than assumed.",
+   "severity": "minor"
+  }
+ ],
+ "confirmed": 57,
+ "notes": "Method: opened every cited line of posebusters_pose_comparison.py (14,789 lines) plus all 14 non-hub files in the inventory and recomputed every derivable number from /tmp/.../scratchpad/nearest_copy_alldepths.csv, wf/per_pose_two_conventions.csv, wf/nearest_copy_extra_arms.csv and the archived two-convention CSVs. Confirmed exactly: process_pair anchors :1513-1634 (crystal :1520/:1525/:1528, contacts :1531-1532, PLIF :1560-1562, rmsd :1566, centroid :1567, pb_rmsd :1572, rigid fit :1581, bestfit :1584, torsions :1585, recovery :1588, PoseRecord :1459-1511, asdict :1592-1633); helpers load_first_mol :1149-1162, reassign_template :1165-1170, symmetry_rmsd :1173-1200, centroid_distance :1203-1207, posebusters_rmsd :1210-1230, compute_plif_recovery :1383-1415 (:1397/:1408/:1412); constants :661-663, :726-733, :8265; cache _CACHE_REQUIRED_COLS :13187-13191, schema 5 at :13225, _read_cached_per_pose :13235-13246, --reuse-cache bypass :13261-13266, manifest write :13290-13292, --force/--reuse-cache help :13367-13380; manifest {schema 5, top_n 15, n_rows 241913}; per_pose_metrics.csv 241,913 rows, 27 methods, plif_recovery non-null 92.3 %, bestfit_rmsd == pb_kabsch_rmsd on every row, 0 NaN rmsd. Probe reproduces rmsd to 4.66e-10 and centroid_dist to 4.55e-13 (rmsd_refcopy and rmsd_ref_re both). Numbers confirmed: rank-1 near 113/107/57 -> 151/137/59; valid 111/103/55 -> 149/132/57; centroid<=4 183/172/137 -> 241/225/144 (min) or 239/225/143 (j*); best-of-15 valid 198/167/80 -> 213/179/83; top-30 199/169/80 -> 214/183/83; AutoDock* vs DiffDock* McNemar 60/52 p 0.509 -> 73/56 p 0.159, top-15 82/51 -> 82/48; 38 AutoDock* flips with 34 form-ok; 30 DiffDock* flips (29 PB-valid) with 23 form-ok; 317 centroid/RMSD disagreement rows; pooled any-tool 4 A oracle reach 297 -> 302 of 303 (98.0 -> 99.7 %); any-pose reach 88.4 -> 92.4 / 85.1 -> 90.1 %; D1's 414/414 load_all verdict agreement (pb_loadall_rank1.csv); plan 4.2's 77/58 p 0.121 for AutoDock gnina-opt vs DiffDock raw at k=1 is confirmed on the NEAR-NATIVE (no validity) basis that App C :1031 uses (the valid basis gives 101/19); DiffDock gnina-opt pair 72/59 p 0.29, so the 'genuine tie' wording survives. EquiBind winner margin under BEST_VARIANT_METRIC is 26.07 vs 20.13 % (unguided gnina vs unguided smina) in oracle_summary_all_variants.csv, a 6 pp cushion; the probe's +2/+3 complex shift for unguided gnina cannot close it, so a flip is implausible though the other seven EquiBind variants remain unmeasured. D6's 'seven gate lines in thesis_assertions.py' confirmed (:122-124, :393, :426, :611, :615). D7 precedent `pose_comparison_report.bak-preexh128rerun-20260830` exists (under benchmark_full_protein_vina_scoring/dock/). D8 and D13 consistent with code and appendix (:782-784). The `nine dependent stages` count matches nine per_pose_metrics.csv consumers in _build_reproduction_notebook.py (:430, :492, :512, :542, :555, :579, :617, :634, :649). Repository untouched; scratch only under scratchpad/wf2/."
+}

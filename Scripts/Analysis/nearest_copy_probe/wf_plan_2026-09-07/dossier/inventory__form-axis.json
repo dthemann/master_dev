@@ -1,0 +1,523 @@
+{
+ "dimension": "Form axis (Kabsch RMSD <= 1 A) and the placement-vs-form decomposition under the nearest-copy convention",
+ "summary": "(1) PoseBusters semantics, read at posebusters/modules/rmsd.py:52-70: check_rmsd computes rmsds, kabsch_rmsds and intercentroids for EVERY conformer of mol_true, then with the default choose_by=\"rmsd\" takes i = argmin(rmsds) and reports kabsch_rmsd = kabsch_rmsds[i]. The Kabsch value therefore FOLLOWS the conformer that minimised the in-place RMSD; it is not an independent minimum. The multi-conformer mol_true comes from tools/loading.py:121 -> _load_and_combine_mols (:158-166), which AddConformer()s every SDF record onto the first \"without checking identity or atom order\"; I verified all 138 multi-copy ids in the 303 have identical element sequence and bond list across records, so that path is safe on this benchmark. Empirically (24,486 multi-copy poses, six arms) the PoseBusters multi-conformer kabsch equals the kabsch of the in-place-argmin copy to 5e-5 A and differs from the independent min-over-copies in 13,247 poses (max 3.46 A). (2) Kabsch against the nearest copy computed for all 24,486 multi-copy poses of the six arms (13,328 with nearest_copy_is_ref False) plus 20,587 for the five other Table 1 arms, via the thesis loaders, reassign_template and ppc.posebusters_rmsd(pose, copy) per copy; kabsch_ref reproduces bestfit_rmsd to 8.9e-16 A on every row including the 50 single-copy check poses and 11,158 multi-copy nearest==ref rows; recomputed sym_rmsd reproduces rmsd/rmsd_nearest_copy to 5e-10 A and pb_rmsd_ref reproduces pb_rmsd to 3e-11 A. Files: wf/nearest_copy_kabsch.csv, wf/nearest_copy_kabsch_extra_arms.csv, wf/per_pose_two_conventions.csv (53,651 rows with kabsch_nearest, kabsch_min_all, pb_rmsd_nearest, cd_nearest). (3) All reference-convention values reproduce exactly (Table 1 cells, 160/133/55, 74.3/74.6/95.4/97.0, 47/46, 6,169/2,329). Under nearest-copy with form following the in-place copy: Table 1 Form column barely moves (AutoDock* 227/2,836/31.6% -> 227/2,823/31.5%; DiffDock* 237/3,903/43.4% -> 236/3,887/43.2%; EquiBind* 200/2,661/29.3% -> 199/2,661/29.3%) and three arms LOSE one form complex, because the copy a pose sits on can be a slightly different conformer than the reference; the combined (triple) column jumps (AutoDock raw/gnina 164/160 -> 178/175 complexes, 221/221 -> 324/325 poses; DiffDock* 138 -> 148, 1,227 -> 1,516; EquiBind* 55 -> 57). Triple-gate top-15 selection: AutoDock* 160 -> 175, DiffDock smina 133 -> 144 vs gnina 132 -> 143 (smina still carried, 1,031 vs 1,022 poses, seven discordant, three gnina-only), EquiBind gnina 55 -> 57 vs smina 46 -> 48. Kabsch recovery at best-of-top-30 is unchanged at the quoted precision: 74.3/74.6 at 1 A and 95.4/97.0 at 2 A; rank-1 52.5/52.1/33.3 unchanged; EquiBind top-30 54.1 -> 53.8; 26 of 90 Table 26 Kabsch cells move by 0.3-0.7 pp; form McNemar AutoDock vs DiffDock 47/46, 30/31, 25/26 -> 48/47, 30/32, 25/26 (p_holm stays 1.000). The H.4 / Figure 4 decomposition inputs (_form_components: inplace = pb_rmsd, form = bestfit_rmsd, plus the 8 A centroid trim) ALL move for the 13,328 flipped poses and the cohort grows: 6,169 -> 7,565 PB-valid near-site poses at top-15 (2,329 -> 2,854 clipped), rank-1 coverage 62.7/54.1/47.2% -> 82.2/73.9/51.2%, all 117 Table 27 cells change (AutoDock rank-1 in-place median 1.490 -> 1.376, top-15 5.043 -> 4.922, drift +3.55 unchanged; DiffDock drift +0.46 -> +0.53; EquiBind +1.09 -> +0.96). The validity-within-near-native strata of Appendix H.4 grow from 319/1,715/498 to 451/2,169/515 poses. (4) Form should FOLLOW the in-place nearest copy, as PoseBusters does: it keeps one comparator per pose so in-place^2 = placement^2 + form^2 remains meaningful, and it is what redock.yml load_all produces. The independent min-over-copies differs at the 1 A gate on 271 of 24,486 multi-copy poses, never loses a pose (by construction) and raises DiffDock top-30 1 A recovery to 75.2%, rank-1 DiffDock/EquiBind to 52.5/34.0%, DiffDock top-15 triple to 146 vs 144, and Table 1 form complexes to 227/238/200; the cost is that form then credits conformational heterogeneity between chains rather than the copy the pose actually recovered. Because the follow convention loses one form complex in three arms (149 poses lost, 91 gained), the \"no complex loses\" statement of the M2 sensitivity arm is true for near-nativeness but NOT for the Form block and must not be carried over.",
+ "sites": [
+  {
+   "file": "/home/manndo/anaconda3/envs/vina/lib/python3.12/site-packages/posebusters/modules/rmsd.py",
+   "line": 60,
+   "what": "check_rmsd: `if choose_by == \"rmsd\": i = np.argmin(np.nan_to_num(rmsds, nan=np.inf))` then `rmsd = rmsds[i]; kabsch_rmsd = kabsch_rmsds[i]; centroid_dist = intercentroids[i]` (lines 52-70); docstring line 37-38 says 'If multiple conformers are present, the lowest RMSD will be reported'.",
+   "depends_how": "Defines the upstream semantics: with a multi-conformer mol_true the Kabsch and centroid values follow the conformer minimising the in-place CalcRMS, not an independent minimum. The thesis currently passes a single-conformer crystal so the branch is never exercised.",
+   "change": "No change to PoseBusters. Adopt the same rule in the hub (form and centroid follow the copy chosen by the in-place minimum). Verified empirically on 24,486 poses: pbmulti_kabsch == kabsch of the in-place-argmin copy (max 5e-5 A); != independent min in 13,247 poses (max 3.46 A).",
+   "effort": "trivial",
+   "current_value": "choose_by='rmsd' default; kabsch follows in-place argmin",
+   "new_value": "same rule applied to <ID>_ligands.sdf copies",
+   "risk": "PoseBusters picks the copy by CalcRMS whereas the thesis gate uses its own symmetry_rmsd; the two differ by up to 1.295 A on individual poses (max |rmsd - pb_rmsd| in the six arms), so if the hub lets PoseBusters pick the copy for pb_rmsd/kabsch while symmetry_rmsd picks it for rmsd, the two can land on different copies for rare poses."
+  },
+  {
+   "file": "/home/manndo/anaconda3/envs/vina/lib/python3.12/site-packages/posebusters/tools/loading.py",
+   "line": 158,
+   "what": "`_load_and_combine_mols`: `mol = next(supplier)` ... `for mol_next in supplier: mol.AddConformer(mol_next.GetConformer(), assignId=True)` with the comment 'warning: combines molecules without checking identity or atom order' (called from _load_mol line 121-122 when load_all is True).",
+   "depends_how": "This is how redock.yml:307 `load_all: True` turns <ID>_ligands.sdf into the multi-conformer mol_true; it silently assumes every record has the same atom order.",
+   "change": "If the hub reuses this loader, add an explicit atom-order/topology check. Verified for this benchmark: all 138 multi-copy ids in the 303 have identical element sequence and bond list across records (copies_same_atom_order True for every protein in wf/nearest_copy_kabsch.csv), so the assumption holds here.",
+   "effort": "trivial",
+   "current_value": "no atom-order check",
+   "new_value": "check passes 138/138",
+   "risk": "none on this benchmark; a future dataset with reordered records would silently mis-pair conformers."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1520,
+   "what": "process_pair: `crystal_sdf = cdir / f\"{pdb_id}_ligand.sdf\"`, `crystal = load_first_mol(crystal_sdf)`, `crystal_h = Chem.RemoveHs(crystal)` (1520-1526); every per-pose metric below is computed against crystal_h.",
+   "depends_how": "Single deposited instance is the only reference loaded; nothing reads <ID>_ligands.sdf.",
+   "change": "Load all records of <ID>_ligands.sdf (the probe's load_all_mols pattern), pick per pose the copy minimising symmetry_rmsd, and pass THAT copy to posebusters_rmsd, rigid_body_fit, torsion_metrics, centroid_distance and the contact/PLIF references; keep the reference-instance values as *_refcopy secondaries.",
+   "effort": "medium",
+   "current_value": "one crystal per complex",
+   "new_value": "1 to 12 copies per complex (138 of 303 multi-copy)",
+   "risk": "reassign_template must keep using a single template (all copies share topology, verified)."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1572,
+   "what": "`pb_rmsd, pb_kabsch, pb_within = posebusters_rmsd(pose, crystal_h)` followed at 1580 by `rot_angle, self_bestfit = rigid_body_fit(pose, crystal_h)`, at 1584 by `bestfit = pb_kabsch if not math.isnan(pb_kabsch) else self_bestfit` and at 1585 by `torsion_metrics(pose, crystal_h)`.",
+   "depends_how": "pb_rmsd, pb_kabsch_rmsd, bestfit_rmsd (== pb_kabsch_rmsd), rot_angle_deg and the torsion columns are all measured against the single reference conformer.",
+   "change": "Call each with the nearest copy (chosen by the in-place minimum) so bestfit_rmsd becomes kabsch_nearest and pb_rmsd becomes pb_rmsd_nearest; write bestfit_rmsd_refcopy / pb_rmsd_refcopy as secondaries. Under follow-convention only the 13,328 flipped poses (six arms) change value; median |kabsch_nearest - bestfit| on them is 0.014 A, q90 0.065 A, max 2.51 A.",
+   "effort": "small",
+   "current_value": "bestfit_rmsd vs <ID>_ligand.sdf",
+   "new_value": "bestfit_rmsd vs nearest copy; wf/nearest_copy_kabsch.csv columns kabsch_nearest, pb_rmsd_nearest, cd_nearest",
+   "risk": "mixing conventions between pb_rmsd and bestfit_rmsd breaks the quadrature identity in _form_components (placement clipped to 0)."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1210,
+   "what": "`def posebusters_rmsd(pose, ref, threshold=2.0)` wraps `_pb_check_rmsd(Chem.RemoveHs(pose), Chem.RemoveHs(ref), rmsd_threshold=threshold, heavy_only=True)` and returns (rmsd, kabsch_rmsd, within) (1210-1229); docstring: 'kabsch_rmsd - same after optimal superposition (conformer similarity only)'.",
+   "depends_how": "Accepts one ref; if handed a multi-conformer ref it would already return the in-place-argmin copy's kabsch (PoseBusters semantics).",
+   "change": "Either pass the chosen single copy (recommended, keeps the thesis symmetry_rmsd as the copy selector) or pass the combined multi-conformer mol and also return the chosen conformer id. Docstring must say which copy.",
+   "effort": "trivial",
+   "current_value": "single ref",
+   "new_value": "nearest copy",
+   "risk": "see rmsd.py:60 risk on CalcRMS vs symmetry_rmsd copy choice."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1173,
+   "what": "`def symmetry_rmsd(pose, ref)`: 'Heavy-atom RMSD over all symmetry-equivalent matchings, NO superposition' against one ref (1173-1200); this is the `rmsd` column that gates every <= 2 A number and, via the guard `rmsd < 1000`, the Form block.",
+   "depends_how": "The copy that minimises this quantity is the copy the form value must follow; the selection index is not exposed today.",
+   "change": "Return or record the argmin copy index so posebusters_rmsd/rigid_body_fit/torsion_metrics use the same copy (coupling point between the near-native dimension and this one).",
+   "effort": "small",
+   "current_value": "single-ref value",
+   "new_value": "min over copies plus chosen index",
+   "risk": "none beyond the coupling."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 7043,
+   "what": "`def _form_components(reps)`: `reps[\"form\"] = pd.to_numeric(reps[\"bestfit_rmsd\"])`, `inplace = reps[\"pb_rmsd\"].where(reps[\"pb_rmsd\"].notna(), reps[\"rmsd\"])`, `reps[\"placement\"] = np.sqrt((inplace**2 - form**2).clip(lower=0))` (7043-7053); comment block 6960-6975 documents the quadrature.",
+   "depends_how": "Both inputs are single-reference columns; placement is derived from them. Under nearest-copy BOTH columns move for the 13,328 flipped poses (pb_rmsd by tens of Angstrom, bestfit by a median 0.014 A).",
+   "change": "No code change if bestfit_rmsd/pb_rmsd are redefined as the nearest-copy values; rename here if new columns are added. The 8 A trim applied by callers (_filmstrip_cohorts :8590, filmstrip_rank1_top5_top15.py:133) must switch to the centroid distance to the same copy.",
+   "effort": "trivial",
+   "current_value": "inplace=pb_rmsd, form=bestfit_rmsd, both vs reference",
+   "new_value": "same names vs nearest copy; wf/filmstrip_table27_two_conventions.csv",
+   "risk": "inplace and form must come from the SAME copy or placement^2 goes negative and is clipped."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 4648,
+   "what": "aggregate_pose_validity_cascade (Table 1 source): `le2 = rmsd <= 2.0`, `kcol = sub[\"bestfit_rmsd\"]`, `kab = pd.to_numeric(kcol) < kabsch_thr`, `both = le2 & pbv`, `triple = both & kab` (4636-4651). Note the strict `<` here against `<=` in thesis_assertions.py:123.",
+   "depends_how": "Form (kabsch1_*) and triple (apex) blocks of Table 1 read bestfit_rmsd and rmsd vs the single reference.",
+   "change": "Redefine inputs to nearest copy. Six-arm values (reference -> follow): form poses AD raw 2,848 -> 2,829, AD gnina 2,836 -> 2,823, DD raw 4,012 -> 4,016, DD smina 3,903 -> 3,887, EB gnina 2,661 -> 2,661, unidock2 2,729 -> 2,715; form complexes 225/227/225/237/200/196 -> 225/227/224/236/199/196; triple complexes 164/160/83/138/55/65 -> 178/175/92/148/57/82; triple poses 221/221/722/1,227/282/85 -> 324/325/869/1,516/289/125. Independent-min variant in the same CSV.",
+   "effort": "trivial",
+   "current_value": "see Table 1",
+   "new_value": "wf/table1_form_two_conventions.csv and wf/table1_form_two_conventions_extra_arms.csv",
+   "risk": "the `<` vs `<=` mismatch is pre-existing and only bites at exactly 1.000 A."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1862,
+   "what": "aggregate_topn_within_thresholds(..., rmsd_col: str = \"rmsd\") with docstring 1884: 'pass rmsd_col=\"bestfit_rmsd\" for the best-fit (Kabsch) RMSD'; driver at 14321 and 14347 passes rmsd_col=\"bestfit_rmsd\" for 18_topn_within_thresholds_kabsch_pbvalid_depths.png (Figure image4, Table 26 Kabsch half).",
+   "depends_how": "Existence gate pb_valid & bestfit_rmsd <= t over top-d, all vs the reference conformer.",
+   "change": "Inputs redefined; outputs move little: 1 A column 52.5/71.9/74.3, 52.1/72.3/74.6, 33.3/51.2/54.1 -> follow 52.5/71.6/74.3, 52.1/72.3/74.6, 33.3/51.5/53.8 (independent 52.5/71.9/74.3, 52.5/72.6/75.2, 34.0/51.5/54.1); 2 A top-30 95.4/97.0/81.8 -> 95.4/97.0/82.5.",
+   "effort": "trivial",
+   "current_value": "74.3 / 74.6 / 54.1 at 1 A top-30",
+   "new_value": "74.3 / 74.6 / 53.8 (follow); wf/kabsch_recovery_depths_two_conventions.csv",
+   "risk": "none; regenerate figure and hand-copy to media/media/image4.png (md5 3bd4750267ce76b79cdc1dd40eb4f90e currently matches the report PNG)."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 8590,
+   "what": "_filmstrip_cohorts: `c = _form_components(_valid_topd_poses(df, d, None))` then `c = c[c[\"centroid_dist\"].le(centroid_max)]` with FAR_FROM_RECEPTOR_CENTROID_A = 8.0 (line 8265); `c[\"r\"] = form**2/inplace**2` and _mechanism_region (7283) bins r at 1/3 and 2/3.",
+   "depends_how": "The near-site trim uses the centroid distance to the single reference, so every pose sitting on an alternate copy is excluded from Figure 4 / Table 27 today.",
+   "change": "Trim on the centroid distance to the nearest copy (cd_nearest). Cohort grows 497/2,345/6,169 -> 628/2,911/7,565 poses at depths 1/5/15; all Table 27 rows change (see wf/filmstrip_table27_two_conventions.csv).",
+   "effort": "trivial",
+   "current_value": "centroid_dist <= 8 vs reference",
+   "new_value": "cd_nearest <= 8",
+   "risk": "EquiBind gnina_affinity ties (333 poses in 133 groups) make depth-5 cells tie-break dependent; use the hub's mergesort-by-generation-index, not the probe's cumcount."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/filmstrip_rank1_top5_top15.py",
+   "line": 131,
+   "what": "`c = P._form_components(...)` and line 133 `c = c[c[\"centroid_dist\"].le(P.FAR_FROM_RECEPTOR_CENTROID_A)].copy()`; writes the Table 27 sidecar 20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__stats_per_tool_depth.csv and the thesis PNG (image5, md5 7c8aa802780756fad9a2645a216ec187 matches).",
+   "depends_how": "Same single-reference inputs as the hub; this is the bench_filmstrip reproduction stage.",
+   "change": "Follows the hub column change; switch the trim column; re-run stage bench_filmstrip; hand-copy PNG to media/media/image5.png.",
+   "effort": "trivial",
+   "current_value": "reference cohort",
+   "new_value": "nearest-copy cohort",
+   "risk": "none."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 126,
+   "what": "Form definition: 'With both ligands translated to a common centroid and R the optimal proper rotation ... the form error is' ... 'where x_i and y_i are the centred coordinates of the i-th heavy-atom pair ... The value is obtained from the PoseBusters implementation' (126-130).",
+   "depends_how": "Does not say which crystallographic copy supplies y_i; today implicitly the single instance.",
+   "change": "Add one sentence: the crystal conformer is the deposited copy nearest the pose in place, the copy PoseBusters itself selects when several are supplied.",
+   "effort": "trivial",
+   "current_value": "copy unstated",
+   "new_value": "nearest copy, following the in-place minimum",
+   "risk": "prose rules: no mid-sentence colon or semicolon."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 133,
+   "what": "'Here, however, the in-place and best-fit values independently minimise over symmetry-equivalent atom mappings and may select different mappings for the same pose. The decomposition is therefore approximate ... Form recovery is reported independently of the 2 A in-place threshold.' (comment at 132: in-place from CalcRMS, Kabsch from GetBestRMS).",
+   "depends_how": "Under the follow convention a second coupling appears: the copy is chosen by the in-place minimum and the form value follows it, so form is no longer fully independent of placement. Under the independent convention the sentence stays true but form then credits any deposited conformer.",
+   "change": "State the copy rule here (recommended: 'both values are taken against the copy that minimises the in-place RMSD').",
+   "effort": "trivial",
+   "current_value": "mapping caveat only",
+   "new_value": "mapping caveat plus copy rule",
+   "risk": "none."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 191,
+   "what": "'Variants were chosen based on quality of the produced poses, i.e. being PoseBusters-valid, within 2 A in place and within 1 A in Kabsch form (cp. Table~\\ref{tab:results-pose-production}).'",
+   "depends_how": "Triple gate definition; both distance terms are vs the single instance.",
+   "change": "Definitional; numbers live at :193/:197. Optionally add 'to the nearest deposited copy'.",
+   "effort": "trivial",
+   "current_value": "as printed",
+   "new_value": "unchanged wording or one clause",
+   "risk": "none."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 193,
+   "what": "'raw search leads its own rescored sibling, 164 complexes against 160' ... 'The two DiffDock refiners each recover 138 complexes. They agree on 133 and differ on five in each direction (exact McNemar p = 1.000)' ... 'gnina also exceeds smina in pooled validity (62.0% versus 51.3%) and complex count (55 versus 48).'",
+   "depends_how": "Pool-level triple gate (Table 1 combined column) vs the single reference.",
+   "change": "Follow: 178 against 175; smina 148 and gnina 149, agree on 145, differ 3 (smina only) / 4 (gnina only), so 'each recover 138' and 'five in each direction' are gone; EquiBind 57 versus 50. Independent: 178/175; 150 and 150, agree 147, 3/3; 57 versus 51.",
+   "effort": "small",
+   "current_value": "164 vs 160; 138/138, 133, 5/5; 55 vs 48",
+   "new_value": "178 vs 175; 148/149, 145, 3/4; 57 vs 50 (follow)",
+   "risk": "McNemar p on 3/4 discordant is 1.000 (unchanged verdict)."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 197,
+   "what": "'DiffDock + smina is carried forward on the selection criterion, leading gnina by 133 to 132 complexes and by 834 to 828 qualifying poses at the top-15 ranking depth. Since the arms disagree on nine complexes, including four recovered only by gnina the ordering is unstable. Moreover, Table 1 gives gnina higher pooled validity and near-native recovery (176 versus 173 complexes), but smina higher form recovery (237 versus 235), i.e. components also conflict.'",
+   "depends_how": "Top-15 triple gate and Table 1 near-native/form blocks vs the single reference.",
+   "change": "Follow: 144 to 143 complexes, 1,031 to 1,022 poses, disagree on seven with three gnina-only; near-native recovery becomes a tie at 186 each, so 'gnina higher ... near-native recovery' is false and the 'components also conflict' argument reduces to validity (gnina) against form (smina 236 versus 235). Independent: 146 to 144, 1,039 to 1,026, six discordant with two gnina-only, form 238 versus 236. The selection does NOT flip under either convention.",
+   "effort": "small",
+   "current_value": "133/132, 834/828, nine/four, 176 vs 173, 237 vs 235",
+   "new_value": "144/143, 1,031/1,022, seven/three, 186 vs 186, 236 vs 235 (follow); wf/selection_contrasts_top15_two_conventions.csv",
+   "risk": "the one-complex margin stays one complex, so the 'unstable' reading survives."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 205,
+   "what": "Provenance comment: '% Blocks recomputed as: PB = pb_valid; NN = rmsd<=2.0; Form = (bestfit_rmsd<=1.0 AND rmsd<1000); combined = all three.' and 211-214: 'Without the guard the three DiffDock Form cells read 4,030 / 3,915 / 3,885 poses ... The guarded values 4,012 / 3,903 / 3,873 ... The Form complex counts 225 / 237 / 235 are identical with or without the guard.'",
+   "depends_how": "Documents the gate on single-reference columns and quotes guard-on/off counts.",
+   "change": "Rewrite the gate line to name the nearest-copy columns; guarded follow values 4,016 / 3,887 / 3,854 and complexes 224 / 236 / 235; guard-off counts: recompute (the 42 exploded DiffDock poses remain guarded out because they are >1,000 A from every copy).",
+   "effort": "trivial",
+   "current_value": "4,012 / 3,903 / 3,873; 225 / 237 / 235",
+   "new_value": "4,016 / 3,887 / 3,854; 224 / 236 / 235 (follow); guard-off: recompute",
+   "risk": "none."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 286,
+   "what": "Table 1 printed rows 286-296. Form and combined cells: 'AutoDock (raw) ... 225 & 2,848 & 31.7\\% & 164 & 221 & 2.5\\%'; 'AutoDock + gnina ... 227 & 2,836 & 31.6\\% & 160 & 221 & 2.5\\%'; 'DiffDock (raw) ... 225 & 4,012 & 44.5\\% & 83 & 722 & 8.0\\%'; 'DiffDock + smina ... 237 & 3,903 & 43.4\\% & 138 & 1,227 & 13.6\\%'; 'DiffDock + gnina ... 235 & 3,873 & 43.1\\% & 138 & 1,219 & 13.6\\%'; 'EquiBind (raw) ... 185 & 2,479 & 27.3\\% & 2 & 21 & 0.2\\%'; 'EquiBind + smina ... 191 & 2,610 & 28.7\\% & 48 & 249 & 2.7\\%'; 'EquiBind + gnina ... 200 & 2,661 & 29.3\\% & 55 & 282 & 3.1\\%'; fpocket raw '180 & 2,449 & 26.9\\% & 0 & 0 & 0.0\\%'; P2Rank raw '181 & 2,336 & 27.4\\% & 0 & 0 & 0.0\\%'.",
+   "depends_how": "Form = bestfit<=1 & rmsd<1000 and combined = pb_valid & rmsd<=2 & bestfit<=1, all vs the single instance.",
+   "change": "Follow convention, in row order: 225/2,829/31.5% and 178/324/3.6%; 227/2,823/31.5% and 175/325/3.6%; 224/4,016/44.6% and 92/869/9.6%; 236/3,887/43.2% and 148/1,516/16.9%; 235/3,854/42.9% and 149/1,513/16.8%; 186/2,487/27.4% and 2/21/0.2%; 192/2,617/28.8% and 50/253/2.8%; 199/2,661/29.3% and 57/289/3.2%; 179/2,441/26.9% and 0/0/0.0%; 180/2,339/27.5% and 0/0/0.0% (P2Rank raw near-native block also becomes 1 complex / 2 poses / 0.0%). Independent-min values in the CSVs.",
+   "effort": "small",
+   "current_value": "as quoted",
+   "new_value": "wf/table1_form_two_conventions.csv + wf/table1_form_two_conventions_extra_arms.csv",
+   "risk": "three Form complex counts DROP by one under follow (DD raw, DD smina, EB gnina) and two guided rows drop by one; the appendix sentence 'no complex loses' must not be extended to the Form block."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 396,
+   "what": "'AutoDock and DiffDock recover 74.3\\% and 74.6\\%, respectively, at the primary 1 A threshold and best-of-top-30 depth, compared with 95.4\\% and 97.0\\% at 2 A. Form differs among tools at every depth (Cochran's Q p < 1e-9). Rank-1 recovery is 52.5\\% for AutoDock, 52.1\\% for DiffDock and 33.3\\% for EquiBind. AutoDock and DiffDock exceed EquiBind at every depth (p_holm <= 4e-10). ... 47 against 46 discordant complexes at rank-1, 30 against 31 at top-15 and 25 against 26 at top-30.'",
+   "depends_how": "Kabsch existence gate (pb_valid & bestfit <= t) vs the reference conformer; paired tests on the same hits.",
+   "change": "Follow: 74.3 / 74.6 / 95.4 / 97.0 and 52.5 / 52.1 / 33.3 UNCHANGED; discordant 48 against 47, 30 against 32, 25 against 26 (uncorrected exact p 1.00 / 0.90 / 1.00, p_holm stays 1.000). Independent: 74.3 / 75.2 / 95.4 / 97.0; 52.5 / 52.5 / 34.0; 47/47, 29/31, 23/26. Cochran's Q and the vs-EquiBind Holm p: recompute (uncorrected exact McNemar vs EquiBind <= 1.1e-8 at rank-1 and <= 3e-11 deeper under both conventions, so the verdict holds).",
+   "effort": "small",
+   "current_value": "74.3/74.6, 95.4/97.0, 52.5/52.1/33.3, 47/46, 30/31, 25/26",
+   "new_value": "74.3/74.6, 95.4/97.0, 52.5/52.1/33.3, 48/47, 30/32, 25/26 (follow); wf/form_mcnemar_two_conventions.csv",
+   "risk": "the printed 'p_holm <= 4e-10' does not match the current report's rank-1 p_holm 8.997e-09 even before the change (18_topn_within_thresholds_kabsch_pbvalid_depths_report.txt:49) and should be re-derived from the regenerated report."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 404,
+   "what": "'EquiBind remains weakest on form, rising from 33.3\\% at rank-1 to 54.1\\% at best-of-top-30. ... The 20.8-point depth gain ... From top-15 to top-30, placement gains at most 0.7 points, whereas form at 1 A gains 2.3 points for both AutoDock and DiffDock and 3.0 for EquiBind (Table~\\ref{tab:results-near-native-form}).'",
+   "depends_how": "Kabsch and near-native depth tables vs the reference.",
+   "change": "Follow: 33.3% to 53.8%, a 20.5-point gain; placement top-15 to top-30 gains up to 1.3 points (DiffDock 179 -> 183), so 'at most 0.7' becomes 'at most 1.3'; form gains 2.6 (AutoDock 217 -> 225), 2.3 (DiffDock 219 -> 226) and 2.3 (EquiBind 156 -> 163). Independent: 34.0% to 54.1% (20.1 points); form gains 2.3 / 2.6 / 2.6.",
+   "effort": "small",
+   "current_value": "33.3 -> 54.1, 20.8, 0.7, 2.3/2.3/3.0",
+   "new_value": "33.3 -> 53.8, 20.5, 1.3, 2.6/2.3/2.3 (follow)",
+   "risk": "the 'both AutoDock and DiffDock' phrasing no longer holds under follow."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 406,
+   "what": "'Their top-15 selection gains are 87 and 64 complexes, yet about six in ten rank-1 failures contain no qualifying pose anywhere in the pool.'",
+   "depends_how": "Double-gate rank-1 to top-15 net gain and pool ceiling vs the reference.",
+   "change": "Net gains 213-149 = 64 and 179-132 = 47; failures with no pose anywhere: AutoDock 89 of 154 (58%), DiffDock 120 of 171 (70%), against 104/192 (54%) and 134/200 (67%) today, so 'six in ten' becomes 'six to seven in ten'.",
+   "effort": "trivial",
+   "current_value": "87 and 64; about six in ten",
+   "new_value": "64 and 47; six to seven in ten",
+   "risk": "shared with the near-native dimension; listed because it sits inside the form section."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 408,
+   "what": "Footnote: 'Poses whose docked centroid lies more than 8 A from the crystal-ligand site were removed leaving 6,169 PoseBusters-valid poses for scoring. Axes are clipped at 5 A ... removing 2,329 poses from the graph frame.'",
+   "depends_how": "Trim on centroid distance to the single reference; clip counts on pb_rmsd/bestfit vs it.",
+   "change": "7,565 poses kept and 2,854 beyond 5 A on either axis (follow; 7,566 / 2,855 independent); 'crystal-ligand site' becomes 'nearest deposited copy'.",
+   "effort": "trivial",
+   "current_value": "6,169; 2,329",
+   "new_value": "7,565; 2,854",
+   "risk": "none."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 410,
+   "what": "'AutoDock returns a valid pose for all 303 complexes, but only 62.7\\% remain after the rank-1 crystal-site trim. Its median in-place RMSD deteriorates most with depth, from 1.5 A at rank-1 to 5.0 A at top-15. The +3.55 A shift has a receptor-bootstrap interval of +3.00 to +3.99 A and is supported across disjoint within-complex rank bands (Friedman p < 1e-15). Placement-limited poses rise from 48\\% to 78\\%, while form-limited poses fall from 27\\% to 8\\%. ... largest within-complex spread (5.72 A).'",
+   "depends_how": "Table 27 / Figure 4 inputs (pb_rmsd, bestfit_rmsd, centroid trim) vs the reference.",
+   "change": "Follow: 82.2% remain; medians 1.4 A (1.376) to 4.9 A (4.922); shift +3.55 A (4.922-1.376 = 3.546, unchanged at two decimals), interval recompute; placement-limited 47% to 77%, form-limited 28% to 9%; within-complex spread and Friedman: recompute.",
+   "effort": "small",
+   "current_value": "62.7%, 1.5 -> 5.0, +3.55, 48 -> 78, 27 -> 8, 5.72",
+   "new_value": "82.2%, 1.4 -> 4.9, +3.55, 47 -> 77, 28 -> 9, recompute",
+   "risk": "bootstrap and Friedman values need the hub's aggregate_filmstrip_statistics run."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 412,
+   "what": "'DiffDock is most stable with depth in the near-site cohort, drifting +0.46 A in place versus +3.55 A for AutoDock and +1.09 A for EquiBind. Expanding the pool fifteen-fold keeps DiffDock medians near 1.5--1.9 A in place and 0.9 A in form. ... Form shifts only +0.03 A (bootstrap interval -0.05 to +0.12 A), although disjoint rank bands differ across the 137 complete complexes (Friedman p = 0.006). ... within-complex spread is 2.34 A, compared with 5.72 A for AutoDock.'",
+   "depends_how": "Same Table 27 inputs.",
+   "change": "Follow: drifts +0.53 (1.532 -> 2.062), +3.55, +0.96 (3.239 -> 4.195); DiffDock medians 1.5--2.1 A in place and 0.9 A in form; form shift +0.05 A (0.890 -> 0.936); intervals, 137-complex Friedman and the spreads: recompute.",
+   "effort": "small",
+   "current_value": "+0.46/+3.55/+1.09; 1.5--1.9; +0.03; 2.34/5.72",
+   "new_value": "+0.53/+3.55/+0.96; 1.5--2.1; +0.05; recompute",
+   "risk": "DiffDock is no longer strictly 'most stable' by a wide margin on the near-site cohort once its alternate-copy poses enter (its in-place median rises 1.467 -> 1.532 at rank-1 while AutoDock's falls 1.490 -> 1.376)."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 419,
+   "what": "'\\caption{Form versus in-place RMSD across ranking depth}\\label{fig:results-r3}' for media/media/image5.png (line 418), md5 7c8aa802780756fad9a2645a216ec187 == pose_comparison_report/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__thesis.png; line 401 caption 'Best-of-top-N accuracy against the best-fit (Kabsch) RMSD' for image4.png md5 3bd4750267ce76b79cdc1dd40eb4f90e == 18_topn_within_thresholds_kabsch_pbvalid_depths.png.",
+   "depends_how": "Both figures are rendered from the single-reference columns.",
+   "change": "Regenerate via the hub (--reuse-cache with --collapse-plots-only) and bench_filmstrip, then hand-copy and re-verify by md5.",
+   "effort": "small",
+   "current_value": "md5 as stated",
+   "new_value": "new PNGs",
+   "risk": "figures are matched by md5 not timestamp; do not assume a rebuild updated media/."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 324,
+   "what": "'Conditioning on poses already within 2 A of the crystal indicates that placement, not chemistry, explains most of the remaining gap.'",
+   "depends_how": "The conditioning stratum (rmsd <= 2) is vs the single reference; the strata grow under nearest-copy (AutoDock 319 -> 451 poses, DiffDock 1,715 -> 2,169, EquiBind 498 -> 515) and validity within them moves 97.49/94.58/93.57% -> 98.00/95.34/93.79%.",
+   "change": "Numbers behind the sentence move slightly; the attribution itself is already recorded as refuted (memory appendix-h4-placement-attribution-error) and is not changed in sign by the convention.",
+   "effort": "trivial",
+   "current_value": "strata 319 / 1,715 / 498",
+   "new_value": "451 / 2,169 / 515; wf/h4_near_native_pose_counts_two_conventions.csv",
+   "risk": "none."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 781,
+   "what": "'smina is carried forward on the selection criterion by 133 complexes to 132, but that one-complex margin survives only in the three-way conjunction of validity, near-nativeness and form. Dropping either the validity or the form term leaves the two arms exactly level, and gnina is level or ahead on every component taken alone. ... gnina recovers 83 near-native complexes at top-15 against 61 for smina ... Only on the selection endpoint, where the margin is nine complexes, are the two EquiBind arms not separable.'",
+   "depends_how": "Top-15 triple and double gates vs the reference.",
+   "change": "Follow: 144 to 143; dropping the form term gives 179 to 177 (smina ahead, not level) and smina is ahead on the Form block (236 vs 235) while near-native is level at 186, so 'gnina is level or ahead on every component taken alone' becomes false; EquiBind selection margin 57 vs 48 stays nine; the 83 vs 61 near-native pair: recompute (validity-gated top-15 reads 83 vs 64 under follow).",
+   "effort": "small",
+   "current_value": "133 to 132; exactly level; gnina level or ahead; nine",
+   "new_value": "144 to 143; 179 to 177; smina ahead on form; nine (follow)",
+   "risk": "the Discussion's mechanism reading of the refiners needs rewording rather than a number swap."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 790,
+   "what": "'AutoDock and DiffDock were indistinguishable on internal form at the prespecified 1 A Kabsch threshold, while AutoDock led on near-nativeness from top-5 onwards.'",
+   "depends_how": "Qualitative summary of :396.",
+   "change": "Holds under both conventions (p_holm 1.000 at every depth).",
+   "effort": "trivial",
+   "current_value": "indistinguishable",
+   "new_value": "unchanged",
+   "risk": "none."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 664,
+   "what": "'Where a structure contains multiple crystallographic copies of the same ligand, the comparison is made against the single deposited reference instance rather than against the closest copy. The symmetry correction therefore resolves symmetry within that one instance and not equivalence between copies.'",
+   "depends_how": "The only place the convention is stated; the form definition at body_main_short.tex:126 inherits it.",
+   "change": "Invert to the nearest-copy rule and add that the best-fit (form) value and the centroid are taken against the same copy, which is the copy PoseBusters selects when its redock configuration loads all instances (redock.yml:307). Keep the single-instance value as the secondary column.",
+   "effort": "small",
+   "current_value": "single deposited reference instance",
+   "new_value": "nearest of all deposited copies, form following the in-place choice",
+   "risk": "must also mention that 143 of 308 entries (138 of 303) are multi-copy."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 267,
+   "what": "'On the three-part selection endpoint at the top-15 depth the unguided arms recover 2, 46 and 55 complexes of 303 taken raw, with smina and with gnina, against 0, 7 and 14 under fpocket and 0, 5 and 18 under P2Rank, so the best guided configuration trails the selected unguided one by 37 complexes.' ... 'The Form block is the exception and is flat, between 180 and 200 complexes across all nine configurations'.",
+   "depends_how": "Triple gate at top-15 and the Form block over all nine EquiBind arms vs the reference.",
+   "change": "Follow: unguided 2, 48 and 57; Form block unguided raw/smina/gnina 186/192/199, fpocket raw 179, P2Rank raw 180, so 'between 179 and 199' pending the four guided optimised arms; guided triple counts (0/7/14, 0/5/18) and the 37-complex margin: recompute (those arms were not Kabsch-scored here).",
+   "effort": "small",
+   "current_value": "2, 46, 55; 180 to 200; 37",
+   "new_value": "2, 48, 57; 179 to 199 (partial); recompute",
+   "risk": "another agent's wf/nearest_copy_guided_equibind_arms.csv holds in-place values for the guided optimised arms but no Kabsch."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 230,
+   "what": "'Read as complexes recovered per additional hour, on the conjunction of validity, near-nativeness and form over the whole pool, the three measurable steps return +71.6, +35.9 and +5.9 complexes per hour. The contrast ... is +65.6 per hour with a 95\\% interval of +32.1 to +137.2.'",
+   "depends_how": "Pool-level triple gate on the exhaustiveness ladder rungs (exh32/64/92/128 raw) vs the reference; exh128 raw moves 164 -> 178 here, the other rungs were not scored.",
+   "change": "recompute on the ladder arms (autodock_mgltools_exh18/32/64/92 and their gnina siblings) after re-scoring.",
+   "effort": "medium",
+   "current_value": "+71.6, +35.9, +5.9; +65.6 (+32.1 to +137.2)",
+   "new_value": "recompute",
+   "risk": "the bootstrap interval is the one prespecified confirmatory cell of that appendix."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 1263,
+   "what": "'The 2 A in-place column at each depth reproduces the pass-all recovery of Table~\\ref{tab:results-depth-recovery}, and the 1 A Kabsch column is the form endpoint the Results quote.'",
+   "depends_how": "Introduces Table 26; the join to Table 2 is asserted in the yaml cross_check.",
+   "change": "Wording unchanged; the joined counts move together.",
+   "effort": "trivial",
+   "current_value": "as printed",
+   "new_value": "unchanged",
+   "risk": "none."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 1319,
+   "what": "Table 26 Kabsch rows 1319-1338: '\\multirow{9}{*}{Kabsch RMSD} & AutoDock Vina + gnina & 1 & 10.2\\% & 25.7\\% & 41.6\\% & 52.5\\% & 61.1\\% & 66.7\\% & 74.6\\% & 78.9\\% & 81.5\\% & 84.8\\%'; depth 30 row 1324 '18.8\\% & 37.0\\% & 58.7\\% & 74.3\\% & 82.8\\% & 88.4\\% & 92.7\\% & 95.4\\% & 97.7\\% & 97.7\\%'; DiffDock depth 30 row 1330 '22.4\\% & 42.6\\% & 60.4\\% & 74.6\\% & 84.5\\% & 92.7\\% & 96.0\\% & 97.0\\% & 97.7\\% & 98.0\\%'; EquiBind rows 1332-1337.",
+   "depends_how": "pb_valid & bestfit_rmsd <= t existence over top-d vs the reference.",
+   "change": "Follow: 26 of 90 cells move by 0.3-0.7 pp, e.g. AutoDock d1 10.2/25.7/61.1/74.6 -> 10.6/25.1/60.7/74.9, d30 18.8/37.0 -> 19.5/36.6; DiffDock d30 22.4/42.6/60.4 -> 22.8/41.9/59.7, d30 1.5 A 92.7 -> 93.1; EquiBind d30 17.2/31.0/43.9/54.1/64.4 -> 16.8/30.7/43.6/53.8/64.7 and 2 A 81.8 -> 82.5. The 1 A and 2 A AutoDock/DiffDock top-30 cells are unchanged. Full grid in wf/kabsch_recovery_depths_two_conventions.csv (both conventions).",
+   "effort": "small",
+   "current_value": "90 cells as printed",
+   "new_value": "26 cells change (follow)",
+   "risk": "the RMSD half of the same table (rows 1300-1318) belongs to the near-native dimension and changes far more."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 1376,
+   "what": "Table 27 rows 1375-1383, e.g. 'AutoDock Vina + gnina (5) & 882 & 256 & 84.5\\% & 3.476 & 1.791 & 6.035 & 1.265 & 0.704 & 1.984 & 0.172 & 65.1\\% & 19.4\\% & 15.5\\%' and 'EquiBind + gnina (5) & 673 & 156 & 51.5\\% & 3.640 & 1.770 & 6.191 & 1.260 & 0.752 & 2.018 & 0.154 & 64.3\\% & 20.8\\% & 14.9\\%'; footnote 1385: 'trimmed of poses whose centroid lies more than 8 A from the crystal-ligand site' ... 'rank-1 medians of 1.490 against 1.543 A for AutoDock Vina + gnina and 1.467 against 1.566 A for DiffDock + smina'.",
+   "depends_how": "Every cell is a function of pb_rmsd, bestfit_rmsd and centroid_dist vs the single reference.",
+   "change": "All 117 cells change. Follow examples: AutoDock (1) 190/190/62.7%/1.490/0.758/4.220/0.845/0.426/1.507/0.365/47.9/25.3/26.8 -> 249/249/82.2%/1.376/0.682/3.734/0.824/0.402/1.513/0.368/46.6/25.7/27.7; AutoDock (5) -> 1147/272/89.8%/3.291/1.615/5.926/1.215/0.645/1.962/0.178/63.7/19.6/16.7; AutoDock (15) 2200/275/90.8% -> 2832/286/94.4%, medians 5.043 -> 4.922 and 1.445 -> 1.416; DiffDock (1) 164/164/54.1% -> 224/224/73.9%, 1.467 -> 1.532; DiffDock (15) 2139/259/85.5% -> 2801/269/88.8%, 1.929 -> 2.062; EquiBind (1) 143/47.2% -> 155/51.2%, 2.977 -> 3.239; EquiBind (15) 1830/156/51.5% -> 1932/169/55.8%, 4.065 -> 4.195. Footnote medians 1.490 vs 1.543 and 1.467 vs 1.566 -> 1.376 vs 1.491 and 1.532 vs 1.585; 'crystal-ligand site' -> nearest copy. Full rows in wf/filmstrip_table27_two_conventions.csv.",
+   "effort": "small",
+   "current_value": "9 rows x 13 cells as printed",
+   "new_value": "see CSV (follow and independent)",
+   "risk": "EquiBind depth-5 cells depend on gnina_affinity tie-breaking (my reference reproduction gives 3.624/2.023/0.155/64.2/15.0 against the printed 3.640/2.018/0.154/64.3/14.9); take final values from the hub sidecar."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 1186,
+   "what": "'Intermolecular failure for DiffDock falls from 14.6\\% over all produced poses to 5.4\\% over its 1,715 near-native poses, and for EquiBind from 37.0\\% to 6.2\\% over 498 near-native poses. The 98.9\\% against 62.0\\% spread ... narrows to roughly four percentage points once the pose is in the right place. ... EquiBind still fails the intermolecular group on 31 of its 498 near-native poses against 5 of 319 for AutoDock.'",
+   "depends_how": "The near-native stratum is rmsd <= 2 vs the single reference.",
+   "change": "Strata become 2,169 (DiffDock), 515 (EquiBind), 451 (AutoDock) poses; all-check validity within them 95.3 / 93.8 / 98.0% (gap 4.2 pp against 3.9 today); the intermolecular-only rates and the 31 / 5 counts: recompute (per-check columns are not in per_pose_metrics.csv; total invalid within stratum is 32 of 515 and 9 of 451).",
+   "effort": "small",
+   "current_value": "1,715; 498; 319; 5.4%; 6.2%; 31; 5",
+   "new_value": "2,169; 515; 451; recompute rates",
+   "risk": "the attribution sentence is separately recorded as refuted."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 57,
+   "what": "Gate comment '#   form        bestfit_rmsd <= 1.0 AND rmsd < 1000' and line 58 '#   triple      pb_valid AND rmsd <= 2.0 AND bestfit_rmsd <= 1.0'; table_1 rows 71-80 carry form_complexes/form_poses/form_pct/triple_* (e.g. line 72 'autodock_mgltools_exh128_gnina: [8976, 301, 8880, 98.9, 202, 319, 3.6, 227, 2836, 31.6, 160, 221, 2.5]').",
+   "depends_how": "Asserted against per_pose_metrics.csv columns bestfit_rmsd and rmsd.",
+   "change": "Update the 10 rows (form and triple cells listed under body_main_short.tex:286) and state the copy convention in the comment; add secondary-column assertions if *_refcopy columns are kept.",
+   "effort": "trivial",
+   "current_value": "as quoted",
+   "new_value": "wf/table1_form_two_conventions*.csv",
+   "risk": "a mismatch is a finding by design, so the harness will fail until updated."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 332,
+   "what": "table_26 metrics mapping '\"Kabsch RMSD\": bestfit_rmsd' (line 332) and the 90 Kabsch cells at 350-359, e.g. line 353 '30: [18.8, 37.0, 58.7, 74.3, 82.8, 88.4, 92.7, 95.4, 97.7, 97.7]'.",
+   "depends_how": "Reads bestfit_rmsd by name with pb_valid gate and TED._effective_rank.",
+   "change": "Replace 26 cells (follow) per wf/kabsch_recovery_depths_two_conventions.csv; mapping unchanged if the column is redefined.",
+   "effort": "trivial",
+   "current_value": "as quoted",
+   "new_value": "see CSV",
+   "risk": "none."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 376,
+   "what": "table_27 input '20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__stats_per_tool_depth.csv' and rows 381-389, e.g. '\"AutoDock/1\": [190, 190, 62.7, 1.490, 0.758, 4.220, 0.845, 0.426, 1.507, 0.365, 47.9, 25.3, 26.8]'.",
+   "depends_how": "All 117 cells derive from the single-reference sidecar.",
+   "change": "Replace all rows from the regenerated sidecar (follow values in wf/filmstrip_table27_two_conventions.csv).",
+   "effort": "trivial",
+   "current_value": "as quoted",
+   "new_value": "e.g. AutoDock/1 [249, 249, 82.2, 1.376, 0.682, 3.734, 0.824, 0.402, 1.513, 0.368, 46.6, 25.7, 27.7]",
+   "risk": "none."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 1005,
+   "what": "'diffdock_triple_top15:    {smina: 133, gnina: 132, mcnemar_p: 1.0}' and line 1004 'equibind_selection_top15: {gnina: 55, smina: 46, mcnemar_p: 0.1078}' (line 1006 diffdock_double_top15 167/167).",
+   "depends_how": "Triple gate at top-15 with the rmsd<1000 guard vs the reference (thesis_assertions.py:612-615).",
+   "change": "Follow: diffdock_triple_top15 {smina: 144, gnina: 143}, equibind_selection_top15 {gnina: 57, smina: 48}, diffdock_double_top15 {179, 177}; independent: 146/144, 57/49, 179/177. McNemar p values: recompute (DiffDock discordant 4/3 gives p = 1.0).",
+   "effort": "trivial",
+   "current_value": "133/132; 55/46; 167/167",
+   "new_value": "144/143; 57/48; 179/177 (follow)",
+   "risk": "none."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/thesis_assertions.py",
+   "line": 123,
+   "what": "check_table_1: `form = (d[\"bestfit_rmsd\"] <= 1.0) & (d[\"rmsd\"] < 1000)` and line 124 `triple = valid & near & (d[\"bestfit_rmsd\"] <= 1.0)`; gate docs at 18-19; selection gate at 612-615 `if gate == \"triple\": m &= (d[\"bestfit_rmsd\"] <= 1.0) & (d[\"rmsd\"] < 1000)`; check_table_26 at 1266-1300 reads the yaml metric column.",
+   "depends_how": "Reads bestfit_rmsd and rmsd by name from per_pose_metrics.csv.",
+   "change": "No code change if the primary columns are redefined as nearest-copy values; otherwise rename to the new column names in three places and in the docstring table.",
+   "effort": "trivial",
+   "current_value": "bestfit_rmsd / rmsd",
+   "new_value": "same names (recommended) or *_nearest",
+   "risk": "none."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/_build_reproduction_notebook.py",
+   "line": 449,
+   "what": "Stage 'bench_filmstrip' (449-458): title 'Figure 4: form against placement across ranking depth', determinism BITEXACT, needs ['bench_pose_comparison'], outputs the 20d_..._thesis.png, thesis 'Figure 4 (media/media/image5.png); Table 27', cmd filmstrip_rank1_top5_top15.py --report-dir ... --exclude-preset meeko; mirrored at REGENERATE.md:409-420.",
+   "depends_how": "Downstream of the hub; inherits whatever columns per_pose_metrics.csv carries.",
+   "change": "No registration change needed; must be re-run after the hub; the Kabsch depth figure (image4) is produced inside bench_pose_comparison itself (driver lines 14321-14378), so a --reuse-cache re-render must add --collapse-plots-only.",
+   "effort": "trivial",
+   "current_value": "stage as registered",
+   "new_value": "re-run",
+   "risk": "none."
+  },
+  {
+   "file": "/home/manndo/master_dev/posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/18_topn_within_thresholds_kabsch_pbvalid_depths_report.txt",
+   "line": 48,
+   "what": "'AutoDock* > DiffDock*: discordant +47/-46, p_holm=1.0000 ns' (48), 'AutoDock* > EquiBind: discordant +79/-21, p_holm=8.997e-09 ***' (49), top-15 'discordant +31/-30' (52), top-30 '+26/-25' (56); headroom block 60-75: 'top-15->top-30: +7 complexes (2.3%)' for AutoDock and DiffDock, '+9 complexes (3.0%)' for EquiBind, 'top-1->top-30: +63 complexes (20.8%)'.",
+   "depends_how": "Companion stats file the Results sentences at :396 and :404 quote.",
+   "change": "Regenerated by the hub; expected follow values: 48/47, 30/32, 25/26; headroom +8 (2.6%) / +7 (2.3%) / +7 (2.3%); EquiBind top-1->top-30 +62 (20.5%).",
+   "effort": "trivial",
+   "current_value": "as quoted",
+   "new_value": "regenerate",
+   "risk": "none."
+  }
+ ],
+ "decisions": [
+  {
+   "question": "Should the form (Kabsch) value follow the copy chosen by the in-place minimum, or be minimised independently over all copies?",
+   "options": [
+    "Follow the in-place nearest copy (PoseBusters choose_by='rmsd' semantics; one comparator per pose; keeps in-place^2 = placement^2 + form^2 on a single copy). Effects vs today: Table 1 form complexes 225/227/224/236/235/186/192/199 for the eight main rows (three arms lose one complex, 149 poses lost, 91 gained); headline 74.3/74.6/95.4/97.0 and 52.5/52.1/33.3 unchanged; EquiBind top-30 54.1 -> 53.8; DiffDock top-15 triple 144 vs gnina 143.",
+    "Independent minimum over copies (never loses a pose; credits the best-matching deposited conformer regardless of where the pose sits). Effects: Table 1 form complexes 225/227/227/238/236/188/195/200; DiffDock top-30 1 A 75.2, rank-1 52.5, EquiBind rank-1 34.0 / top-30 54.1; DiffDock top-15 triple 146 vs 144; verdict differs from follow on 271 of 24,486 multi-copy poses; breaks the single-copy quadrature for the 13,248 poses where the copies differ."
+   ],
+   "recommendation": "Follow the in-place nearest copy. It is what the upstream tool does, it is the only rule under which placement = sqrt(in-place^2 - form^2) refers to one physical comparator, and the headline form numbers are unchanged under it. Disclose explicitly that the Form block can lose a complex (three rows drop by one), so the 'no complex loses' statement stays confined to near-nativeness."
+  },
+  {
+   "question": "Redefine the existing columns (bestfit_rmsd, pb_rmsd, pb_kabsch_rmsd, centroid_dist, rmsd) as the nearest-copy values and add *_refcopy secondaries, or add new *_nearest columns and leave the old names as the single-instance values?",
+   "options": [
+    "Redefine primary names; add bestfit_rmsd_refcopy, pb_rmsd_refcopy, rmsd_refcopy, centroid_dist_refcopy, plus nearest_copy_index and n_copies.",
+    "Keep old names single-instance; add *_nearest columns and rename every reader (_form_components, aggregate_pose_validity_cascade, aggregate_topn_within_thresholds callers, _filmstrip_cohorts, filmstrip_rank1_top5_top15.py, thesis_assertions.py x3, yaml metric mapping, thesis_endpoint_diagnostics.py)."
+   ],
+   "recommendation": "Redefine the primary names. Fourteen scripts and the assertion harness read bestfit_rmsd and rmsd by name; the secondary column is what the plan calls for anyway, and the gate documentation in thesis_assertions.py:18-19 and the yaml comment at :57-58 then need only a wording change."
+  },
+  {
+   "question": "Who chooses the copy: the thesis symmetry_rmsd (loop over copies, pass the chosen single copy to check_rmsd) or PoseBusters' own multi-conformer check_rmsd (load_all, CalcRMS argmin)?",
+   "options": [
+    "Thesis symmetry_rmsd picks the copy for rmsd, then pb_rmsd/kabsch/centroid/torsions are computed against that same copy (what wf/nearest_copy_kabsch.csv did).",
+    "Hand PoseBusters the combined multi-conformer mol_true and let its CalcRMS argmin pick; compute symmetry_rmsd separately as min over copies."
+   ],
+   "recommendation": "Thesis symmetry_rmsd picks. CalcRMS and symmetry_rmsd differ by up to 1.295 A on individual poses in the six arms, so letting each engine pick independently can put rmsd and bestfit_rmsd on different copies for rare poses and break the decomposition; a single explicit selection index avoids that and is what the M2 probe already validated to 5e-10 A."
+  }
+ ],
+ "open_questions": [
+  "The four multi-copy ids whose alternate copies do not share the reference pocket (7A9E_R4W, 7TUO_KL9, 7VKZ_NOJ, 7Z1Q_NIO) were not treated separately; whether a form credit against a non-pocket-sharing copy should count is a policy call not sized here.",
+  "The four guided optimised EquiBind arms (fpocket/p2rank x smina/gnina) and the ladder rungs exh18/32/64/92 (+gnina) were not Kabsch-scored, so appendix :267 (0/7/14, 0/5/18, margin 37, Form '180 to 200') and :230 (+71.6/+35.9/+5.9 per hour) stay 'recompute'.",
+  "body_main_short.tex:396 prints 'p_holm <= 4e-10' for AutoDock/DiffDock vs EquiBind while the current companion report (18_topn_within_thresholds_kabsch_pbvalid_depths_report.txt:49) gives rank-1 p_holm 8.997e-09; this pre-dates the convention change and should be reconciled when the report is regenerated.",
+  "EquiBind gnina_affinity ties (333 poses in 133 same-complex groups) make some Table 27 depth-5 cells depend on the tie-break; my probe-based reference reproduction differs from the printed EquiBind (5) row in the third decimal, so final nearest-copy cells must come from the hub's mergesort ranking.",
+  "The H.4 intermolecular-only failure rates within the near-native stratum (14.6 -> 5.4%, 37.0 -> 6.2%, 31 of 498, 5 of 319) need the per-check PoseBusters columns, which per_pose_metrics.csv does not carry; only the stratum sizes and all-check validity were recomputed here.",
+  "Receptor-bootstrap intervals, Friedman tests, the 137-complete-complex count and the within-complex spreads (2.34 / 5.72 A) at body_main_short.tex:410-412 require aggregate_filmstrip_statistics and were not re-run."
+ ],
+ "artifacts_written": [
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/kabsch_nearest.py",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/kabsch_nearest_extra_arms.py",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/analyse_kabsch.py",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/nearest_copy_kabsch.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/nearest_copy_kabsch_extra_arms.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/nearest_copy_extra_arms.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/per_pose_two_conventions.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/per_pose_two_conventions_extra_arms.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/table1_form_two_conventions.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/table1_form_two_conventions_extra_arms.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/triple_gate_depths_two_conventions.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/kabsch_recovery_depths_two_conventions.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/form_mcnemar_two_conventions.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/filmstrip_table27_two_conventions.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/h4_near_native_pose_counts_two_conventions.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/selection_contrasts_top15_two_conventions.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/kabsch_nearest.log",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/kabsch_extra.log",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/probe_extra.log"
+ ]
+}

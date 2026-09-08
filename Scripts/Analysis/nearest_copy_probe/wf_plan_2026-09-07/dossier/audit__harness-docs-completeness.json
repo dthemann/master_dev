@@ -1,0 +1,146 @@
+{
+ "dimension": "harness-docs",
+ "role": "COMPLETENESS AUDITOR",
+ "refuted": [],
+ "corrected": [
+  {
+   "site": "Scripts/Analysis/_build_reproduction_notebook.py:434 (inventory site 'Stages that do NOT re-run ... bench_pandamap :523-530 (pose fingerprints)')",
+   "correction": "bench_pandamap DOES re-run. Its command (builder :531, `run_pandamap.py -c 07_benchmark_pandamap.yaml`) is what writes crystal_interactions.csv: run_pandamap.py:1174-1176 reads `# crystal references (always recomputed fresh unless present)` / `if cfg.benchmark_dir and (cfg.overwrite or not crystal_csv.exists()):` and :963 builds the tasks from `f\"{protein}_ligand.sdf\"`. Plan 2.2 changes :963 to per-copy tasks, so the stage must execute again; the pose half resume-skips at :1157-1161 (`if summary_csv.exists() and not cfg.overwrite`). The stage's `outputs` (:528) lists only pandamap_interactions.csv, so the harness cannot see whether crystal_interactions.csv was rebuilt."
+  }
+ ],
+ "missing": [
+  {
+   "file": "THESIS_REPRODUCTION.md",
+   "line": 382,
+   "what": "\"**225 of 225 thesis numbers reproduce.** Table 1 in full, all 130 cells across ten arms; Table 2's nine recovery counts; ... and 24 of 24 shipped figure assets byte-identical\" (:382-385), followed by the gate table :390-396 (`rmsd <= 2`, `bestfit_rmsd <= 1 AND rmsd < 1000`) and :398-399 \"AutoDock reads 202 complexes in Table 1 and 199 in Table 6\". Plan 7.4 names only :57/:76/:380.",
+   "change": "Re-state the run record (stage count, assertion count, figure-pair count) and add one sentence to the gate table that `rmsd`, `bestfit_rmsd` and `centroid_dist` are evaluated against the nearest deposited copy with `*_ref_instance` twins; 202/199 -> 217/214.",
+   "effort": "trivial",
+   "current_value": "225 of 225; 24 of 24; 202 / 199",
+   "new_value": "new totals; 217 / 214; convention sentence"
+  },
+  {
+   "file": "Scripts/Analysis/REGENERATE_NOTES.md",
+   "line": 69,
+   "what": "\"runs all 58 stages in dependency order and asserts 225 printed numbers\" (:69-71); \"the composition of the profiled pool (median 7.62 \u00c5, 20.7 % within 2 \u00c5), the placement share of the between-tool ordering (80.9 %), the site-filtered top-5 union Jaccard (rmsd < 10 \u00c5)\" (:185-188); crystal-cluster reach note \"21 of 303 complexes counted as reached with their nearest cluster 4.01 to 21.82 \u00c5 away\" (:455-462); figure index row \"Best-of-top-N accuracy, as-placed RMSD\" (:504). The file is kept deliberately (builder :1283-1285 \"kept as REGENERATE_NOTES.md for its per-command commentary and its traps\") and is absent from both the inventory and the plan.",
+   "change": "Do not rewrite; add a dated banner in the house pattern already used at :30-40 (\"CORRECTION, 2026-09-02\") and :495 (\"SUPERSEDED 2026-09-02\") stating that every crystal-referenced number in the file predates the nearest-copy convention and pointing to REGENERATE.md.",
+   "effort": "trivial",
+   "current_value": "58 stages / 225 numbers; 7.62 \u00c5 / 20.7 % / 80.9 %; as-placed",
+   "new_value": "dated supersession banner"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 507,
+   "what": "\"on 53 complexes where every tool succeeds the ordering persists (Friedman \u03c7\u00b2 = 85.2, p = 3.2e-19, Kendall W = 0.80) and every pair clears Holm. Median per-complex cost ratios are 0.14 for DiffDock against AutoDock and 0.02 for EquiBind.\" (:507-510). The all-succeed set is the intersection of the three qualifying-pose sets (PB-valid AND rmsd <= 2, existence over all poses) and is crystal-referenced; the inventory's :496 site stops at :547 but does not list this entry.",
+   "change": "Derived from scratchpad/nearest_copy_alldepths.csv (pb_valid & rmsd_nearest_copy <= 2, headline arms): per-tool 214 / 183 / 83, intersection 54 (was 199 / 169 / 80, 53). Friedman, W, Holm and the cost ratios: recompute from the regenerated effort sidecar.",
+   "effort": "trivial",
+   "current_value": "53 complexes; \u03c7\u00b2 85.2; W 0.80; 0.14 / 0.02",
+   "new_value": "54 complexes; statistics recompute"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 205,
+   "what": "Definitional entries: \"2 \u00c5 is the field convention for RMSD-to-crystal\" (:205-206) and \"A cluster centroid within 4 \u00c5 of the crystal ligand site\" (:213-214); collision table row \"`2 \u00c5` | in-place near-nativeness threshold\" (:680). Under D2/D5 the reference is the nearest deposited copy (any copy for the 4 \u00c5 site rule).",
+   "change": "In the new glossary version, qualify both definitions with \"nearest deposited copy\" so the defence wording matches the new Methods sentence.",
+   "effort": "trivial",
+   "current_value": "RMSD-to-crystal; the crystal ligand site",
+   "new_value": "RMSD to the nearest deposited copy; any copy's site"
+  },
+  {
+   "file": "Scripts/Analysis/_build_reproduction_notebook.py",
+   "line": 528,
+   "what": "bench_pandamap stage: `outputs=[f\"{PMAP}/pandamap_interactions.csv\"]` (:528) and `cmd=[VINA_PY, ANA / \"run_pandamap.py\", \"-c\", CFG / \"07_benchmark_pandamap.yaml\"]` (:531). The artefact that changes under the switch is crystal_interactions.csv, written only `if cfg.benchmark_dir and (cfg.overwrite or not crystal_csv.exists())` (run_pandamap.py:1176); the config has no `overwrite` key and is \"READ-ONLY to the pipeline\" (configs_thesis/07_benchmark_pandamap.yaml:16-17).",
+   "change": "Add crystal_interactions.csv (and crystal_pose_summary.csv) to the stage outputs, and add a stage note plus a Phase 3 pre-step: delete the two crystal CSVs before FORCE-running bench_pandamap so the pose half resume-skips (:1157-1161) and only the crystal references are re-profiled. Never pass --overwrite (it re-profiles the whole 54 GB pose set).",
+   "effort": "small",
+   "current_value": "outputs: pandamap_interactions.csv only; no recompute trigger",
+   "new_value": "outputs + explicit delete-then-force recipe"
+  },
+  {
+   "file": "Scripts/Analysis/_build_reproduction_notebook.py",
+   "line": 623,
+   "what": "Loop registering bench_ligand_difficulty and bench_receptor_difficulty (:623-638), both `needs=[\"bench_pose_comparison\"]` and reading per_pose_metrics.csv; ligand_docking_difficulty.py:99-112 takes `met.groupby([\"tool\",\"protein\"])[\"rmsd\"].min()` and `pct_success_le2 = 100 * (sub[\"oracle_rmsd\"] <= 2).mean()`. The inventory's :420 site lists them; the plan's Phase 3.2 re-run list does not.",
+   "change": "Add both stages to Phase 3.2 (they are CHEAP) and to FORCE_STAGES; their outputs PoseBusters_Benchmark_Analysis/ligand_difficulty and receptor_difficulty back \"Discussion; the appendix difficulty analysis\" (builder :630).",
+   "effort": "trivial",
+   "current_value": "single-instance oracle_rmsd",
+   "new_value": "regenerated"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_assertions.py",
+   "line": 812,
+   "what": "run_all prints only `spec['meta']['recorded']` (:811-812); no check reads a convention field, and posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.manifest.json carries only the keys signature{schema:5, pb_csv...}, top_n, n_rows (inspected). The plan's yaml `meta.reference_convention` (7.1) is therefore read by nothing.",
+   "change": "Make `check_reference_convention` (plan 7.2) assert manifest.signature.reference_convention == yaml meta.reference_convention and signature.schema == 6 (D8) before the numeric block, so a per_pose_metrics.csv built under the old convention fails loudly in verify mode. repro_harness.Stage.satisfied() (:286) checks file presence only and cannot see this.",
+   "effort": "small",
+   "current_value": "meta.recorded printed; convention unchecked",
+   "new_value": "manifest-vs-yaml convention assertion"
+  },
+  {
+   "file": "Scripts/Analysis/regenerate_guide.py",
+   "line": 323,
+   "what": "`rows = [(k, v) for k, v in spec.items() if k.startswith(\"table_\")]` builds the REGENERATE.md table index; :341 hard-codes \"Tables 7, 9, 11, 13, 15 and 23 are manual\". Plan 7.1 names the new yaml block `reference_convention`, so it would not appear in the table index the inventory decision relies on.",
+   "change": "Either key the block `table_28` (if the D9 sensitivity table is printed as Table 28) or extend :323 to a declared list of extra keys; re-check the hard-coded manual-table sentence at :341 after the table count changes.",
+   "effort": "trivial",
+   "current_value": "table_* filter; manual list 7, 9, 11, 13, 15, 23",
+   "new_value": "new key indexed; sentence re-verified"
+  },
+  {
+   "file": "CLEANUP_PLAN.md",
+   "line": 168,
+   "what": "\"All 58 stages must still report their outputs present\" (:168), \"All 257 checks must still reproduce\" (:169), \"| Pipeline | 58 stages, 257 checks, 20 assets |\" (:194), \"**60 stages**\" (:211), \"257 of 257 asserted thesis numbers\" (:213). Not named in Risk 16 or 7.4.",
+   "change": "No edit (dated record, same rule as REPRODUCTION_COVERAGE_2026-09-03.md); state that explicitly so the Phase 8.2 registry sweep does not flag it.",
+   "effort": "trivial",
+   "current_value": "58/60 stages, 257 checks",
+   "new_value": "left as record, listed as such"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Section 7 'What does NOT change', bullet 'Dataset descriptors (Figs 28-37, Tables 2-3)'; Section 4 'Unchanged: 2, 3, 4 (dataset)'; Section 1.1 heading and Section 3.2 row ':347-349 | Table 5 rows'",
+   "claim": "Tables 2-3 (and 2-4) are dataset-descriptor tables that do not change; the depth-recovery table at body_main_short.tex:347-349 is 'Table 5'.",
+   "correction": "thesis_latex/Thesis_short.lot: Table 2 = 'PoseBusters Pass-All Recovery by Ranking Depth', Table 3 = 'Crystal-Cluster Reach and Co-Reach by Ranking Depth', Table 4 = 'Native-Interaction Recovery versus the Crystal by Pose Rank', Table 5 = 'Physical-Validity and Operational-Placement Yield for the Orai1 Experimental Ligands', Tables 16/17 = the ligand-descriptor tables. body_main_short.tex:335 labels the table whose rows are at :347-349 `tab:results-depth-recovery` (Table 2). The yaml keys table_2/3/4 match the .lot and the plan's own 7.1 lists all three as changing, so Sections 4 and 7 list changing tables as unchanged and Section 1.1/3.2 use a numbering that contradicts 7.1 ('Tables 5, 9, 10 ... stay'). Fix every 'Table 5' meaning depth recovery to 'Table 2', and Section 7's dataset bullet to Tables 16-17.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 3.2 ('PandaMap crystal tasks then bench_pandamap_report ... Not re-run: bench_figure1, all PoseBusters ...') and inventory site :434",
+   "claim": "bench_pandamap does not re-run; the crystal tasks are a separate step.",
+   "correction": "The crystal fingerprints are produced inside the bench_pandamap stage (run_pandamap.py:1174-1186, gated at :1176 on `cfg.overwrite or not crystal_csv.exists()`); no separate 'crystal task' stage exists. Because the harness's stage command (builder :531) has no --overwrite and the config is read-only, a forced re-run keeps the existing single-instance crystal_interactions.csv silently and Table 4 / Fig 7 / Fig 39 / the audit regenerate on stale natives. The plan needs an explicit pre-step (delete pandamap_results/benchmark_matched_equibind/crystal_interactions.csv and crystal_pose_summary.csv, then FORCE bench_pandamap; poses resume-skip at :1157-1161) and crystal_interactions.csv in the stage's outputs.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 3.2 '(14 of the 19 section-3 stages plus 3 new)'",
+   "claim": "Fourteen section-3 stages re-run, namely the thirteen listed plus the PandaMap crystal tasks.",
+   "correction": "bench_ligand_difficulty and bench_receptor_difficulty (builder :623-638, `needs=[\"bench_pose_comparison\"]`, ligand_docking_difficulty.py:99-112 gates on rmsd) are omitted although the inventory's :420 site lists them, and bench_pandamap re-runs (previous item). REGENERATE.md:105 lists 19 section-3 stages; only bench_posebusters, bench_posebusters_matched and bench_figure1 stay, so the re-run set is 16 of 19 plus the new stages. FORCE_STAGES (builder :95) must carry all of them.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 7.1 'add meta.reference_convention: nearest-copy' and Phase 7.2 'add check_reference_convention'",
+   "claim": "Recording the convention in the yaml meta block and adding a numeric check closes the harness side of D8.",
+   "correction": "Nothing reads meta.* except the print at thesis_assertions.py:811-812, and per_pose_metrics.manifest.json currently has only signature/top_n/n_rows. Unless check_reference_convention asserts the manifest's convention and schema against the yaml, a per_pose_metrics.csv left at the old convention passes verify mode (repro_harness.py:286 checks presence only). The plan should specify that assertion, which is the only harness-level guard against the staleness Risk 15 and D8 describe.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 2.7 'writing reference_convention_sensitivity.csv from the *_ref_instance columns ... Move nearest_copy_probe/nearest_copy_rescoring.py under it as the stage script'",
+   "claim": "The probe script can serve as the new stage's script.",
+   "correction": "The probe re-scores every pose from the SDFs with symmetry_rmsd (nearest_copy_probe/README.md:3-6, run recipe :14-17, about a minute on 16 cores), while the inventory decision and the first half of 2.7 define the stage as a pure re-reader of per_pose_metrics.csv (rmsd vs rmsd_ref_instance). Keeping the probe as the stage script would install a second RMSD implementation that can drift from the hub. Decide one: a new small re-reader script (BITEXACT, CHEAP) and retire the probe to the archive.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 7.1 'add a reference_convention block' with inventory decision 2 ('table_28 yaml block ... regenerate_guide.py:323 lists only table_* keys')",
+   "claim": "The new yaml block appears in REGENERATE.md's table index.",
+   "correction": "regenerate_guide.py:323 filters `k.startswith(\"table_\")`; a block named `reference_convention` (and the two blocks 'for the two new stages') never reach the index, which is the reason the inventory gave for registering the stage at all. Name the block table_28 or extend :323; re-check the hard-coded sentence at :341.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 7.3 ':345 section text (convention sentence, \"fourteen downstream stages\")'",
+   "claim": "The Section 3 markdown should read 'fourteen downstream stages'.",
+   "correction": "Direct `needs=[\"bench_pose_comparison\"]` entries in the builder number 13 today (validity_report, filmstrip, topk, optimization_benefit, endpoint_diagnostics, clusters, pandamap_report, effort_charged, effort_elapsed, exhaustiveness_returns, ligand_difficulty, receptor_difficulty, diffdock_rerank) plus bench_interaction_audit indirectly; after registering three new stages that also need it the count is 16-17. Derive the number from the registry in the markdown or avoid the literal.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 7.4 and Risk 14/16 (documents list)",
+   "claim": "The documentation set is REPRODUCTION_COVERAGE, glossary, README.md, THESIS_REPRODUCTION.md:57/:76/:380, thesis_latex/README.md, the probe README.",
+   "correction": "Missing: THESIS_REPRODUCTION.md:382-385 ('225 of 225', '24 of 24 shipped figure assets') and its gate table :390-399 (202/199); Scripts/Analysis/REGENERATE_NOTES.md (:69-71 '58 stages ... 225 printed numbers', :185-188 audit numbers, :455-462, :504 'as-placed RMSD'), which the builder keeps on purpose (:1283-1285) and therefore needs a dated supersession banner rather than silence; CLEANUP_PLAN.md:168-213 stale counts, to be declared a dated record so the 8.2 sweep does not flag them.",
+   "severity": "minor"
+  }
+ ],
+ "confirmed": 0,
+ "notes": "Sweep method: fresh greps over the nine named files plus repro_harness.py, regenerate_guide.py, validate_regeneration.py, run_pandamap.py, ligand/receptor_docking_difficulty.py, pose_cluster_crystal_pocket_report.py, REGENERATE_NOTES.md, CLEANUP_PLAN.md, FINDINGS_*.md, thesis_latex/README.md, Thesis_short.lot, body_main_short.tex labels, and the live per_pose_metrics.manifest.json; one pandas derivation from scratchpad/nearest_copy_alldepths.csv (all-three-succeed 53 -> 54; rank-1 all-three 27 -> 28). No file under /home/manndo/master_dev was written; scratch dir wf2 was created but unused. Verified as stated by the plan and NOT filed: X-ray control convention-independence (_build_xray_control_notebook.py:89-91 'supplies no reference', :393 'no reference ligand'); the 14 figure md5 pairs (yaml :905-931: image3-9, 11, 24, 25, 44-47); bench_clusters' analysis cache already fingerprints per_pose_csv by size+sha256 (pose_cluster_crystal_pocket_report.py:3953) so the hub rebuild invalidates it without --force; validate_regeneration's recorded verdict is fingerprinted on per_pose_metrics.manifest.json (:124) so it goes stale automatically, while Figs 2, 3, 5, 6, 38 are DECLARED not tested (:163-166), meaning 5 of the 14 re-shipped figures rely on the md5 pair alone. The hub reuses a cache whenever the manifest signature matches even without --reuse-cache (posebusters_pose_comparison.py:13263-13270), so plan 1.9's 'add the convention to _per_pose_signature' is load-bearing for the harness stage, not optional. Stage counts: registry 60 (REGENERATE.md:105 shows 19 in section 3); plan's 63 after three new stages is arithmetically right but the '14 of 19' re-run count is wrong (16 of 19)."
+}

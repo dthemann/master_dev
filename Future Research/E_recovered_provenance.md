@@ -1,5 +1,15 @@
 # E — Write down the recovered MD provenance
 
+> **UPDATE 2026-09-03 — read this first.** The timing caveat below is now resolved by measurement,
+> and two of the "keep on the unknown list" items have moved. The frame interval was measured from
+> bulk-water displacement at about 0.66 ps, so `bar3` spans roughly 0.33 ns and `fix1` about 38 ps.
+> `fix1` is a fixed-protein heating stage, which makes Fr0 the minimised pre-dynamics structure
+> rather than an equilibrated one. The homology model is identified as Frischauf et al. 2015
+> (ModelArchive `ma-akdjp`), and no publication describes this membrane, so Najjar et al. 2025 must
+> not be cited for the setup. Full evidence and drop-in replacement text:
+> `Scripts/Analysis/MD_FRAME_PROVENANCE_ANSWERS_2026-09-03.md`.
+
+
 **Cost:** one paragraph, no computation. **Priority: do this first.**
 **Type:** rewriting.
 

@@ -1,0 +1,1006 @@
+{
+ "dimension": "thesis_latex/body_main_short.tex (whole body) plus the Abstract and Kurzfassung in thesis_latex/Thesis_short.tex: every sentence, table cell, caption and footnote whose number or wording derives from the single-instance crystal reference",
+ "summary": "Read both files in full (876 + 240 lines). The single-instance convention reaches 90+ sites in the body and 9 in the Abstract/Kurzfassung. Numbers I could re-derive from the nearest-copy CSV reproduce the printed reference values to the digit (Table 5: 111/198/199, 103/167/169, 55/80/80, gains +87/+64/+25 with Wilson 23.9-34.0/16.9-26.1/5.7-11.9; McNemar 0.509/7.6e-4/0.009/0.011; Newcombe +2.6 [-4.2,+9.4] via the thesis's own stats_utils; MDE 9.8 pp on 112 discordant; 90% interval -3.1..+8.3 = 'about eight points'; 62.7% rank-1 near-site trim = 190/303; 6,169 near-site poses; 311/1,622/466/302 qualifying poses over 199/169/80/202 complexes; pooled 4 A reach 98.0%), so their nearest-copy counterparts are exact: rank-1 49.2/43.6/18.8%, top-15 70.3/59.1/27.4%, top-30 70.6/60.4/27.4%; gains +64 (+21.1, Wilson 16.9-26.1) / +47 (+15.5, 11.9-20.0) / +26 (+8.6, 5.9-12.3); 15->30 +1/+4/+0 (b=4,c=0 p=0.125, no star); AutoDock-DiffDock +5.6 pp [-1.7,+12.8], exact McNemar p=0.159, 129 discordant (73/56), MDE 10.5 pp, observed power 0.32, 90% interval -0.5..+11.7 ('about twelve points', TOST margin 11.7); top-5 contrast is IDENTICAL under both conventions (88/48, +13.2 [+5.7,+20.4], p_holm 7.6e-4); top-15 +11.2 [+3.9,+18.4] p_holm 0.004; top-30 +10.2 [+3.0,+17.3] p_holm 0.008; Cochran Q p 2e-17 to 2e-29; validity gate removes at most FIVE complexes (DiffDock rank-1 137->132), not four; rank-1 failures with no qualifying pose 57.8%/70.2%/89.4% (was 54.2/67.0/89.9); raw exh128 arm 42.9%/65.3%/71.6% at d=1/15/30 (was 31.0/61.1/66.7), gnina-vs-raw rank-1 disc 39/20 exact p=0.018 (was 0.040); Table 1 near-nativeness blocks for the five re-scored arms (e.g. AutoDock+gnina 217 comp / 451 poses / 5.0%, DiffDock+smina 186/2,169/24.1%, EquiBind+gnina 86/515/5.7%); qualifying poses 442/2,068/483 (Vina-only 431) over 214/183/83 (217); AutoDock median qualifying poses per succeeding complex rises from 1 to 2; 4 A any-pose reach AutoDock 92.4%, DiffDock 90.1%, pooled 99.7% (302/303); near-site PB-valid top-15 pool 6,169 -> 7,566; rank-1 near-site trim 62.7% -> 82.2%. Everything resting on Kabsch form (needs a per-copy Kabsch that the CSV lacks), the triple selection gate, cluster-level reach (Table 6, Figs 5-6), interaction fingerprints (Fig 7, Table 7, :489-:532), cost medians/IQRs/Friedman, Fig 4 bootstraps, and the five arms not re-scored (diffdock_gnina, equibind_unguided_smina, three raw EquiBind arms) is 'recompute'. Wording must change at the Methods definition (:109, :113, :115, :119, :124-133, :158, :165, :170), Table 5 lead-in (:326), Fig 2/3 captions, the cost definition (:708), and a new Limitations sentence (:868); the Abstract needs 5 number swaps and one wording decision, the Kurzfassung 5 swaps of which only the CI grows by one character on an already full page.",
+ "sites": [
+  {
+   "file": "thesis_latex/Thesis_short.tex",
+   "line": 61,
+   "what": "Abstract: 'permits assessment against known poses under a primary endpoint combining PoseBusters validity with a heavy-atom root-mean-square deviation of at most 2 A'",
+   "depends_how": "Implicitly the deviation to the single deposited ligand instance",
+   "change": "WORDING (optional): 'a heavy-atom RMSD of at most 2 A to the nearest deposited copy of the ligand'; numbers unaffected",
+   "effort": "trivial",
+   "risk": "Adds ~8 words to a one-page abstract"
+  },
+  {
+   "file": "thesis_latex/Thesis_short.tex",
+   "line": 63,
+   "what": "Abstract: 'Rank-1 recovery ... reached 36.6% of complexes for AutoDock, 34.0% for DiffDock and 18.2% for EquiBind, leaving the leading pair unresolved at 2.6 points with a 95% interval of -4.2 to +9.4' and 'about six in ten rank-1 failures for the leading pair containing no qualifying pose' and 'raised recovery to 65.3% and 55.1%' and 'recovering only 80 of 303 complexes'",
+   "current_value": "36.6 / 34.0 / 18.2; 2.6; -4.2 to +9.4; six in ten; 65.3 / 55.1; 80 of 303",
+   "new_value": "49.2 / 43.6 / 18.8; 5.6; -1.7 to +12.8 (exact McNemar p 0.159, still unresolved); 57.8% AutoDock and 70.2% DiffDock (wording decision: 'six to seven in ten'); 70.3 / 59.1; 83 of 303",
+   "depends_how": "Every rate is the PB-valid AND rmsd<=2 existence gate against the single reference",
+   "change": "Five number swaps; 'unresolved' stays true; 'gaps at top-5 and top-15 are statistically resolved' stays true (top-5 identical, top-15 p_holm 0.004); WORDING for the six-in-ten clause",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/Thesis_short.tex",
+   "line": 80,
+   "what": "Kurzfassung: 'erlaubt die Bewertung anhand bekannter Posen unter einem primaeren Endpunkt aus PoseBusters-Gueltigkeit und Schweratom-RMSD von hoechstens 2 A'",
+   "depends_how": "Implicit single-instance reference",
+   "change": "WORDING optional only; recommend no change because the page has zero slack",
+   "effort": "trivial",
+   "risk": "Kurzfassung page is full"
+  },
+  {
+   "file": "thesis_latex/Thesis_short.tex",
+   "line": 91,
+   "what": "Kurzfassung: 'bei 36,6% fuer AutoDock, 34,0% fuer DiffDock und 18,2% fuer EquiBind'",
+   "current_value": "36,6 / 34,0 / 18,2",
+   "new_value": "49,2 / 43,6 / 18,8 (identical character count, 51 -> 51)",
+   "depends_how": "Rank-1 PB-valid & <=2 A vs single reference",
+   "change": "Numbers only; German sentence length unchanged",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/Thesis_short.tex",
+   "line": 92,
+   "what": "Kurzfassung: 'bei 2,6 Prozentpunkten unaufgeloest blieb'",
+   "current_value": "2,6",
+   "new_value": "5,6 (same length; 'unaufgeloest' stays true at p=0.159)",
+   "depends_how": "Rank-1 AutoDock-DiffDock difference vs single reference",
+   "change": "Number only",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/Thesis_short.tex",
+   "line": 94,
+   "what": "Kurzfassung: '\\ensuremath{-}4,2 bis +9,4'",
+   "current_value": "-4,2 bis +9,4 (13 chars)",
+   "new_value": "-1,7 bis +12,8 (14 chars, +1)",
+   "depends_how": "Newcombe 95% interval of the rank-1 paired difference vs single reference",
+   "change": "Number only; the only Kurzfassung change that lengthens the text, by one character on the short line :93-94 (likely absorbed, must be checked in the rendered PDF)",
+   "effort": "trivial",
+   "risk": "Page is full; a line-wrap here spills the Kurzfassung onto a second page"
+  },
+  {
+   "file": "thesis_latex/Thesis_short.tex",
+   "line": 95,
+   "what": "Kurzfassung: 'etwa sechs von zehn Fehlschlaegen am Rang 1 enthielten beim fuehrenden Paar keine qualifizierende Pose'",
+   "current_value": "sechs von zehn (54.2% AutoDock, 67.0% DiffDock)",
+   "new_value": "57.8% AutoDock, 70.2% DiffDock -> 'sechs bis sieben von zehn' (+11 chars) or keep 'etwa sechs von zehn' (defensible for AutoDock only)",
+   "depends_how": "Failures with no PB-valid <=2 A pose in the top-30 vs single reference",
+   "change": "WORDING decision; if lengthened, a compensating cut is needed on this page",
+   "effort": "trivial",
+   "risk": "Kurzfassung page is full"
+  },
+  {
+   "file": "thesis_latex/Thesis_short.tex",
+   "line": 97,
+   "what": "Kurzfassung: 'dennoch auf 65,3% und 55,1%'",
+   "current_value": "65,3 / 55,1",
+   "new_value": "70,3 / 59,1 (same length)",
+   "depends_how": "Top-15 existence gate vs single reference",
+   "change": "Numbers only",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/Thesis_short.tex",
+   "line": 100,
+   "what": "Kurzfassung: 'nur fuer 80 von 303 Komplexen'",
+   "current_value": "80",
+   "new_value": "83 (same length)",
+   "depends_how": "EquiBind* complexes with a PB-valid <=2 A pose (cost denominator) vs single reference",
+   "change": "Number only",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 88,
+   "what": "'78 of the 303 analysed complexes place a metal within 5 A of the crystal ligand, so the rates reported for those two arms are apo-like rates'",
+   "current_value": "78 of 303",
+   "new_value": "78 if the stratum stays a property of the reference instance (recommended); recompute if the stratum follows the nearest copy",
+   "depends_how": "Metal neighbourhood measured around the single deposited instance",
+   "change": "WORDING: 'of the deposited reference ligand instance'; decision on whether the stratum follows the copy",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 109,
+   "what": "Methods definition: 'Near-nativeness is the symmetry-corrected heavy-atom root-mean-square deviation (RMSD) between a docked pose and the crystallographic ligand:'",
+   "depends_how": "This IS the single-instance convention statement",
+   "change": "WORDING mandatory: '... between a docked pose and the nearest of the crystallographic copies of the ligand deposited with the entry, taken per pose as the minimum over copies'. Add that 143 of 308 entries (138 of the 303) hold more than one copy, that the copies sit a median 36.0 A apart on other chains, and that the value to the single deposited instance is retained as a secondary column",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 113,
+   "what": "'the i-th corresponding atoms in the docked and crystallographic positions. RMSD is computed in place without superposition onto the crystal ligand.' and 'Substituting the fully symmetrised value into the rank-1 gate adds three recovered complexes across the three tools and removes none (Appendix ...)'",
+   "current_value": "three recovered complexes, removes none",
+   "new_value": "recompute (the fully symmetrised PoseBusters value against the nearest copy is not in the probe CSV; pb_rmsd is reference-only)",
+   "depends_how": "Both the mapping statement and the symmetrisation check are against the single instance",
+   "change": "WORDING: 'onto the nearest crystal copy'; the three-complex sensitivity sentence must be re-derived against the nearest copy",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 115,
+   "what": "'The headline crystal-referenced criterion, valid-near-native, requires both RMSD <= 2 A and PB-validity.'",
+   "depends_how": "Criterion definition inherits the reference from :109",
+   "change": "WORDING: add 'where the RMSD is taken to the nearest deposited copy'",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 119,
+   "what": "'It is assessed by clustering poses across tools and against the crystallographic pocket'",
+   "depends_how": "Crystal-site reach uses the single instance centroid",
+   "change": "WORDING: 'against the pocket of the nearest crystallographic copy'",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 124,
+   "what": "Form section: 'In-place RMSD combines placement and internal-form errors. Best-fit Kabsch superposition separates them.' through :130 'The value is obtained from the PoseBusters implementation'",
+   "depends_how": "Kabsch partner is implicitly the single instance; under nearest-copy the form partner must be defined",
+   "change": "WORDING: state that the form RMSD is taken to the same copy that minimises the in-place value (recommended) so the decomposition at :133 stays per-copy consistent; all form numbers become recompute because per-copy Kabsch values do not exist yet",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 133,
+   "what": "'the in-place and best-fit values independently minimise over symmetry-equivalent atom mappings and may select different mappings for the same pose. The decomposition is therefore approximate' and 'Table ... resolves form recovery over ten thresholds from 0.25 to 2.5 A'",
+   "depends_how": "Decomposition and the appendix threshold table are single-instance",
+   "change": "WORDING: add that the copy is fixed by the in-place minimum before the form value is taken; appendix table recompute (cross-reference only here)",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 140,
+   "what": "Footnote: 'Providing a co-crystallised reference was measured post hoc across all poses of the whole-protein benchmark run. Applying them only reduces DiffDock recovery in Table ... by one complex at rank-1 and by two at top-15 and top-30. AutoDock and EquiBind remain unchanged.'",
+   "current_value": "-1 / -2 / -2 DiffDock; 0 others",
+   "new_value": "recompute (PoseBusters redock with the single _ligand.sdf; with _ligands.sdf and load_all:True the battery would itself score the nearest copy)",
+   "depends_how": "Reference-dependent PoseBusters checks were fed the single instance and the recovery they modify is Table 5",
+   "change": "Numbers recompute against Table 5's new counts; consider noting that redock.yml:307 load_all:True is the upstream default for multiple copies",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 158,
+   "what": "'Crystal-site recovery is assessed separately at the prespecified 4 A centroid threshold. The cluster nearest the crystal is not automatically counted as recovered.'",
+   "depends_how": "4 A rule measured to the single instance centroid",
+   "change": "WORDING: 'nearest crystallographic copy' in both sentences",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 165,
+   "what": "'On the calibration benchmark, each tool is compared with the crystal-ligand fingerprint using mean Jaccard overlap and rank-resolved precision, recall and F1 for native-contact recovery.'",
+   "depends_how": "The reference fingerprint is profiled from the single instance on its own chain; alternate copies contact residues on another chain, so residue-number keys differ",
+   "change": "WORDING plus a method decision: either profile each copy and compare each pose to its nearest copy with chain-agnostic residue keys, or exempt the interaction analysis from the nearest-copy convention and say so here",
+   "effort": "medium",
+   "risk": "If exempted, the thesis has two crystal conventions and must say which metric uses which"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 170,
+   "what": "'Computational cost is reported per pose that is PoseBusters-valid and within 2 A of the crystal ligand'",
+   "depends_how": "Qualifying-pose definition vs single instance",
+   "change": "WORDING: 'within 2 A of the nearest crystallographic copy'",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 191,
+   "what": "'Variants were chosen based on quality of the produced poses, i.e. being PoseBusters-valid, within 2 A in place and within 1 A in Kabsch form' and 'Cost is charged per PoseBusters-valid pose within 2 A'",
+   "depends_how": "Selection triple gate and cost gate both vs the single instance",
+   "change": "WORDING only if selection is re-run under nearest-copy (decision); otherwise add a clause that selection was made under the single-instance convention",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 193,
+   "what": "'raw search leads its own rescored sibling, 164 complexes against 160' and 'The two DiffDock refiners each recover 138 complexes. They agree on 133 and differ on five in each direction (exact McNemar p = 1.000)' and 'complex count (55 versus 48)'",
+   "current_value": "164 vs 160; 138/138, 133, 5/5, p=1.000; 55 vs 48",
+   "new_value": "recompute (triple gate needs per-copy Kabsch; diffdock_gnina and equibind_unguided_smina were not re-scored)",
+   "depends_how": "Table 1 combined block (PB & rmsd<=2 & bestfit<=1) vs single instance",
+   "change": "Numbers; the raw-leads-rescored ordering may persist (near-native-only: 217 vs 217)",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 195,
+   "what": "'AutoDock Vina at exhaustiveness 128 with gnina rescoring reaches 160 complexes' and 'DiffDock with smina reaches 133, compared with 132 for gnina. Unguided EquiBind with gnina reaches 55, compared with 46 for smina' and 'no fpocket- or P2Rank-guided arm exceeds 18 at any depth' and 'Under that endpoint the same AutoDock variant stands at 198 complexes at top-15 rather than 160'",
+   "current_value": "160; 133 vs 132; 55 vs 46; 18; 198 rather than 160",
+   "new_value": "recompute; recompute (one-complex margin, selection may flip); recompute; recompute (likely holds); 213 rather than recompute",
+   "depends_how": "Top-15 triple gate (selection) and double gate (reporting) vs single instance",
+   "change": "Numbers; WORDING if the DiffDock refiner selection flips to gnina",
+   "effort": "medium",
+   "risk": "A flipped DiffDock refiner changes the DiffDock* arm in every downstream figure and the Orai panels' 'selected calibration variant'"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 197,
+   "what": "'leading gnina by 133 to 132 complexes and by 834 to 828 qualifying poses at the top-15 ranking depth. Since the arms disagree on nine complexes, including four recovered only by gnina' and 'higher pooled validity and near-native recovery (176 versus 173 complexes), but smina higher form recovery (237 versus 235)' and footnote 'Re-ranking the refined poses by the smina score nominates a near-native rank-1 pose for 32.7% of complexes, compared with 33.7% under DiffDock confidence ranking on those same coordinates. The gnina equivalent reaches 32.3%'",
+   "current_value": "133/132, 834/828, nine, four; 176 vs 173; 237 vs 235; 32.7 / 33.7 / 32.3",
+   "new_value": "recompute throughout (smina arm near-native complexes become 186; gnina arm not re-scored; footnote needs smina/gnina scores; the 33.7% confidence-rank rate becomes about 43.6% under nearest-copy without validity)",
+   "depends_how": "All vs single instance; the footnote's conclusion 'DiffDock native ranking outperforms the smina ranking' rests on a one-point margin",
+   "change": "Numbers; WORDING if the re-ranking conclusion flips",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 205,
+   "what": "Provenance comment: 'Blocks recomputed as: PB = pb_valid; NN = rmsd<=2.0; Form = (bestfit_rmsd<=1.0 AND rmsd<1000); combined = all three.' and :206-214 exploded-pose guard counts '4,030 / 3,915 / 3,885 ... 4,012 / 3,903 / 3,873'",
+   "depends_how": "Names the reference-only columns rmsd and bestfit_rmsd",
+   "change": "Comment must name the nearest-copy columns (rmsd_nearest_copy, per-copy bestfit) and the guard must apply rmsd_nearest_copy<1000; guard counts recompute",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 264,
+   "what": "Table 1 header 'Near-Nativeness RMSD <= 2 A' and 'Form Kabsch RMSD <= 1 A' (repeated at :277-283)",
+   "depends_how": "Column semantics vs single instance",
+   "change": "WORDING optional: header or table footnote 'to the nearest deposited copy'",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 293,
+   "what": "Table 1 row 'AutoDock (raw) & 128 & 8,976 & 303 & 8,943 & 99.6% & 202 & 307 & 3.4% & 225 & 2,848 & 31.7% & 164 & 221 & 2.5%'",
+   "current_value": "NN 202 / 307 / 3.4%; Form 225 / 2,848 / 31.7%; combined 164 / 221 / 2.5%",
+   "new_value": "NN 217 / 437 / 4.9%; Form recompute; combined recompute",
+   "depends_how": "rmsd and bestfit_rmsd vs single instance",
+   "change": "Numbers",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 294,
+   "what": "Table 1 row 'AutoDock + gnina & & 8,976 & 301 & 8,880 & 98.9% & 202 & 319 & 3.6% & 227 & 2,836 & 31.6% & 160 & 221 & 2.5%'",
+   "current_value": "NN 202 / 319 / 3.6%; Form 227 / 2,836 / 31.6%; combined 160 / 221 / 2.5%",
+   "new_value": "NN 217 / 451 / 5.0%; Form recompute; combined recompute",
+   "depends_how": "vs single instance",
+   "change": "Numbers",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 295,
+   "what": "Table 1 row 'DiffDock (raw) & & 9,013 & 242 & 2,198 & 24.4% & 152 & 1,683 & 18.7% & 225 & 4,012 & 44.5% & 83 & 722 & 8.0%'",
+   "current_value": "NN 152 / 1,683 / 18.7%; Form 225 / 4,012 / 44.5%; combined 83 / 722 / 8.0%",
+   "new_value": "NN 161 / 2,118 / 23.5%; Form recompute (guard on nearest-copy rmsd); combined recompute",
+   "depends_how": "vs single instance",
+   "change": "Numbers",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 297,
+   "what": "Table 1 row 'DiffDock + smina & 8,993 & 300 & 7,597 & 84.5% & 173 & 1,715 & 19.1% & 237 & 3,903 & 43.4% & 138 & 1,227 & 13.6%'",
+   "current_value": "NN 173 / 1,715 / 19.1%; Form 237 / 3,903 / 43.4%; combined 138 / 1,227 / 13.6%",
+   "new_value": "NN 186 / 2,169 / 24.1%; Form recompute; combined recompute",
+   "depends_how": "vs single instance",
+   "change": "Numbers",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 299,
+   "what": "Table 1 row 'DiffDock + gnina & 8,993 & 300 & 7,831 & 87.1% & 176 & 1,716 & 19.1% & 235 & 3,873 & 43.1% & 138 & 1,219 & 13.6%'",
+   "current_value": "NN 176 / 1,716 / 19.1%; Form 235 / 3,873 / 43.1%; combined 138 / 1,219 / 13.6%",
+   "new_value": "recompute (arm not in the six re-scored arms)",
+   "depends_how": "vs single instance",
+   "change": "Numbers; this arm must be added to the nearest-copy re-scoring run",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 300,
+   "what": "Table 1 rows :300-304 EquiBind (raw) unguided '19 & 103 & 1.1% ... 2 & 21 & 0.2%', EquiBind + smina '64 & 453 & 5.0% ... 48 & 249 & 2.7%', EquiBind (raw) fpocket and P2Rank '0 & 0 & 0.0%'",
+   "current_value": "as printed",
+   "new_value": "recompute (equibind_unguided_raw, equibind_unguided_smina, equibind_fpocket_raw, equibind_p2rank_raw not re-scored); the zero cells may become non-zero",
+   "depends_how": "vs single instance",
+   "change": "Numbers; four arms need re-scoring",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 302,
+   "what": "Table 1 row 'EquiBind + gnina & & 9,088 & 266 & 5,633 & 62.0% & 83 & 498 & 5.5% & 200 & 2,661 & 29.3% & 55 & 282 & 3.1%'",
+   "current_value": "NN 83 / 498 / 5.5%; Form 200 / 2,661 / 29.3%; combined 55 / 282 / 3.1%",
+   "new_value": "NN 86 / 515 / 5.7%; Form recompute; combined recompute",
+   "depends_how": "vs single instance",
+   "change": "Numbers",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 324,
+   "what": "'Conditioning on poses already within 2 A of the crystal indicates that placement, not chemistry, explains most of the remaining gap. The validity requirement removes at most four of 303 complexes from the headline endpoint at any depth.'",
+   "current_value": "at most four",
+   "new_value": "at most five (DiffDock rank-1: 137 near-native, 132 valid-and-near-native; AutoDock 2/4/3/3, EquiBind 2/3/3/3 at d=1/5/15/30)",
+   "depends_how": "Near-native minus valid-near-native, both vs single instance",
+   "change": "Number and WORDING ('four' -> 'five'); the conditioning sentence is qualitative and appendix-backed (recompute there)",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 326,
+   "what": "'A complex is recovered if any inspected pose is PoseBusters-valid and within 2 A.'",
+   "depends_how": "Table 5 gate definition vs single instance",
+   "change": "WORDING: 'within 2 A of the nearest deposited copy'",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 347,
+   "what": "Table 5 row 'AutoDock & 36.6% (111) & 65.3% (198) & 65.7% (199) & +87 (+28.7%) *** & +1 (+0.3%)'",
+   "current_value": "36.6% (111) / 65.3% (198) / 65.7% (199) / +87 (+28.7%) *** / +1 (+0.3%)",
+   "new_value": "49.2% (149) / 70.3% (213) / 70.6% (214) / +64 (+21.1%) *** / +1 (+0.3%)",
+   "depends_how": "Existence gate PB-valid & rmsd<=2 vs single instance",
+   "change": "Numbers",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 348,
+   "what": "Table 5 row 'DiffDock & 34.0% (103) & 55.1% (167) & 55.8% (169) & +64 (+21.1%) *** & +2 (+0.7%)'",
+   "current_value": "34.0% (103) / 55.1% (167) / 55.8% (169) / +64 (+21.1%) *** / +2 (+0.7%)",
+   "new_value": "43.6% (132) / 59.1% (179) / 60.4% (183) / +47 (+15.5%) *** / +4 (+1.3%) (15->30 discordant b=4, c=0, exact p=0.125, no star)",
+   "depends_how": "vs single instance",
+   "change": "Numbers",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 349,
+   "what": "Table 5 row 'EquiBind & 18.2% (55) & 26.4% (80) & 26.4% (80) & +25 (+8.3%) *** & +0 (+0.0%)'",
+   "current_value": "18.2% (55) / 26.4% (80) / 26.4% (80) / +25 (+8.3%) *** / +0",
+   "new_value": "18.8% (57) / 27.4% (83) / 27.4% (83) / +26 (+8.6%) *** / +0 (+0.0%)",
+   "depends_how": "vs single instance",
+   "change": "Numbers",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 353,
+   "what": "Table 5 footnote 'Recovery is the PoseBusters-valid, within-2 A recovery also reported across distance thresholds in Table ..., and the two coincide at every depth shown here.'",
+   "depends_how": "Coincidence with the appendix threshold table holds only if both are regenerated under the same convention",
+   "change": "No wording change if the appendix table is regenerated in the same pass; otherwise the sentence becomes false",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 359,
+   "what": "Provenance comments :355-372: 'autodock_mgltools_exh128_gnina: 111/198/199 (the raw exh128 arm is 94/185/202 ...)', 'DiffDock-smina 103/167/169, EquiBind-gnina 55/80/80', 'near-native gained +88/+63/+26; of which remain PB-invalid -2/-1/-2; valid rescued +1/+2/+1; net +87/+64/+25', 'discordant b = 1/2/0, c = 0'",
+   "current_value": "as quoted",
+   "new_value": "149/213/214 (raw 130/198/217); 132/179/183; 57/83/83; near-native-only gains +65/+45/+27 with the invalid/rescued split recompute, net +64/+47/+26; 15->30 b = 1/4/0",
+   "depends_how": "Comment documents the single-instance derivation",
+   "change": "Comment text",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 380,
+   "what": "'report accuracy for the 303 complexes with PoseBusters-valid poses against as-placed crystal RMSD (i.e. near-nativeness) and best-fit Kabsch RMSD (i.e. form)'",
+   "depends_how": "Figures 2 and 3 are drawn from rmsd and bestfit_rmsd vs single instance",
+   "change": "WORDING: 'as-placed RMSD to the nearest crystal copy'; Figures 2/3 (media/media/image3.png, image4.png) must be regenerated and re-copied by md5",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 382,
+   "what": "'Near-native recovery differs among tools at every depth (Cochran's Q p < 1e-7)' ... 'Rank-1 accuracy is 36.6% for AutoDock, 34.0% for DiffDock and 18.2% for EquiBind. AutoDock and DiffDock exceed EquiBind at every depth (all p_holm < 3e-7). AutoDock and DiffDock do not differ detectably at rank-1, where the gap is +2.6 percentage points (Newcombe hybrid-score 95% interval -4.2 to +9.4, exact McNemar p = 0.509), but they do from top-5 onwards, by +13.2 points at top-5 (+5.7 to +20.4, p_holm = 7.6e-4), +10.2 at top-15 (+2.8 to +17.5, p_holm = 0.009) and +9.9 at top-30 (+2.5 to +17.1, p_holm = 0.011)'",
+   "current_value": "Q p<1e-7; 36.6/34.0/18.2; p_holm<3e-7; +2.6 (-4.2,+9.4) p=0.509; +13.2 (+5.7,+20.4) 7.6e-4; +10.2 (+2.8,+17.5) 0.009; +9.9 (+2.5,+17.1) 0.011",
+   "new_value": "Q p<1e-7 holds (2.0e-17 at rank-1); 49.2/43.6/18.8; p_holm<3e-7 holds (max 8.1e-13); +5.6 (-1.7 to +12.8, p = 0.159); top-5 UNCHANGED +13.2 (+5.7 to +20.4, p_holm = 7.6e-4, discordant 88/48 in both conventions); +11.2 (+3.9 to +18.4, p_holm = 0.004); +10.2 (+3.0 to +17.3, p_holm = 0.008)",
+   "depends_how": "All from the existence gate vs single instance",
+   "change": "Numbers; 'margins over DiffDock opening at top-5 and narrowing slightly with increasing depth' stays true (+5.6, +13.2, +11.2, +10.2)",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 386,
+   "what": "'The rank-1 contrast draws information only from the 112 discordant complexes, so the minimum detectable difference there is 9.8 percentage points at 80% power and the study is underpowered for the observed +2.6-point estimate.'",
+   "current_value": "112; 9.8; +2.6",
+   "new_value": "129 (73/56); 10.5 pp; +5.6 (observed power 0.32, still underpowered; projected n for the observed effect falls from about 4,200 to about 1,100 in the appendix)",
+   "depends_how": "Discordant pairs vs single instance",
+   "change": "Numbers",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 388,
+   "what": "'Ranking depth affects every tool (Cochran's Q p < 1e-6 throughout). From rank-1 to best-of-top-15, AutoDock gains +28.7 percentage points (Wilson 95% interval 23.9--34.0), DiffDock +21.1 (16.9--26.1) and EquiBind +8.3 (5.7--11.9). AutoDock rises from 36.6% to 65.3%, adding 87 complexes compared with DiffDock's 64.' ... 'raising AutoDock's rank-1 recovery from 31.0% to 36.6% and its top-15 recovery from 61.1% to 65.3%' ... 'Over the whole pool the raw search is nominally ahead, 202 complexes against 199'",
+   "current_value": "+28.7 (23.9-34.0); +21.1 (16.9-26.1); +8.3 (5.7-11.9); 36.6->65.3, 87 vs 64; 31.0->36.6, 61.1->65.3; 202 vs 199",
+   "new_value": "+21.1 (16.9--26.1); +15.5 (11.9--20.0); +8.6 (5.9--12.3); 49.2% to 70.3%, adding 64 compared with 47; 42.9% to 49.2% and 65.3% to 70.3%; 217 against 214 (raw exh128 near-native top-30 vs gnina valid-near-native top-30, same mixed basis as printed)",
+   "depends_how": "Depth gains, Wilson intervals and the raw-vs-gnina contrast all vs single instance",
+   "change": "Numbers; 'the gain is confined to the top of the list' still holds",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 393,
+   "what": "Figure 2 caption 'Best-of-top-N accuracy against the as-placed crystal RMSD' (media/media/image3.png)",
+   "depends_how": "Figure drawn from rmsd vs single instance",
+   "change": "WORDING ('nearest crystal copy') and figure regeneration; media file hand-copied and matched by md5",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 396,
+   "what": "'AutoDock and DiffDock recover 74.3% and 74.6%, respectively, at the primary 1 A threshold and best-of-top-30 depth, compared with 95.4% and 97.0% at 2 A. Form differs among tools at every depth (Cochran's Q p < 1e-9). Rank-1 recovery is 52.5% for AutoDock, 52.1% for DiffDock and 33.3% for EquiBind. ... (p_holm <= 4e-10) ... p_holm = 1.000 with 47 against 46 discordant complexes at rank-1, 30 against 31 at top-15 and 25 against 26 at top-30'",
+   "current_value": "74.3/74.6; 95.4/97.0; 52.5/52.1/33.3; 47/46, 30/31, 25/26",
+   "new_value": "recompute (per-copy Kabsch values do not exist; conditioned on PB validity)",
+   "depends_how": "bestfit_rmsd vs single instance",
+   "change": "Numbers; the 'tie throughout' conclusion is expected to hold but must be re-tested",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 401,
+   "what": "Figure 3 caption 'Best-of-top-N accuracy against the best-fit (Kabsch) RMSD' (media/media/image4.png)",
+   "depends_how": "Figure drawn from bestfit_rmsd vs single instance",
+   "change": "Figure regeneration once per-copy Kabsch exists; caption wording optional",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 404,
+   "what": "'EquiBind remains weakest on form, rising from 33.3% at rank-1 to 54.1% at best-of-top-30 ... The 20.8-point depth gain ... From top-15 to top-30, placement gains at most 0.7 points, whereas form at 1 A gains 2.3 points for both AutoDock and DiffDock and 3.0 for EquiBind'",
+   "current_value": "33.3 -> 54.1; 20.8; placement at most 0.7; form 2.3 / 2.3 / 3.0",
+   "new_value": "form values recompute; placement 15->30 becomes at most 1.3 points (DiffDock +4 complexes)",
+   "depends_how": "Form vs single instance; placement gain is Table 5's 15->30 column",
+   "change": "Numbers; 'at most 0.7' -> 'at most 1.3'",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 406,
+   "what": "'Their top-15 selection gains are 87 and 64 complexes, yet about six in ten rank-1 failures contain no qualifying pose anywhere in the pool.' ... 'Refined-score ordering can be considered an unclaimed remedy for DiffDock, worth about three points of rank-1 recovery on the reported coordinates.'",
+   "current_value": "87 and 64; six in ten (54.2% / 67.0%); about three points",
+   "new_value": "64 and 47; 57.8% AutoDock, 70.2% DiffDock (WORDING: 'six to seven in ten'); recompute (footnote :197 basis)",
+   "depends_how": "vs single instance",
+   "change": "Numbers and wording",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 408,
+   "what": "Footnote: 'Poses whose docked centroid lies more than 8 A from the crystal-ligand site were removed leaving 6,169 PoseBusters-valid poses for scoring. Axes are clipped at 5 A ... removing 2,329 poses from the graph frame.'",
+   "current_value": "6,169; 2,329",
+   "new_value": "7,566 (top-15 PB-valid poses of the three arms within 8 A of the nearest copy); clipped count recompute (my clipping rule gives 2,337 for the reference basis against the printed 2,329, so use the figure script)",
+   "depends_how": "8 A trim against the single instance centroid",
+   "change": "Numbers and WORDING ('nearest crystal copy'); Figure 4 (image5.png) regenerate",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 410,
+   "what": "'AutoDock returns a valid pose for all 303 complexes, but only 62.7% remain after the rank-1 crystal-site trim. Its median in-place RMSD deteriorates most with depth, from 1.5 A at rank-1 to 5.0 A at top-15. The +3.55 A shift has a receptor-bootstrap interval of +3.00 to +3.99 A ... (Friedman p < 1e-15). Placement-limited poses rise from 48% to 78%, while form-limited poses fall from 27% to 8% ... (5.72 A)'",
+   "current_value": "62.7%; 1.5 -> 5.0; +3.55 (+3.00, +3.99); 48->78; 27->8; 5.72",
+   "new_value": "82.2% (249/303); medians 1.5 -> 4.9 (1.49 / 4.94); shift about +3.45, bootstrap recompute; stratum shares and spread recompute",
+   "depends_how": "Near-site cohort defined by centroid distance to the single instance; in-place RMSD vs single instance",
+   "change": "Numbers",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 412,
+   "what": "'DiffDock is most stable with depth in the near-site cohort, drifting +0.46 A in place versus +3.55 A for AutoDock and +1.09 A for EquiBind. Expanding the pool fifteen-fold keeps DiffDock medians near 1.5--1.9 A in place and 0.9 A in form ... Form shifts only +0.03 A (bootstrap interval -0.05 to +0.12 A), although disjoint rank bands differ across the 137 complete complexes (Friedman p = 0.006) ... 2.34 A, compared with 5.72 A'",
+   "current_value": "+0.46 / +3.55 / +1.09; 1.5-1.9; 0.9; +0.03 (-0.05, +0.12); 137; 2.34 / 5.72",
+   "new_value": "recompute (DiffDock near-site medians 1.59 -> 2.10 in place under nearest copy, so drift about +0.5; form values need per-copy Kabsch)",
+   "depends_how": "Near-site cohort and both RMSD axes vs single instance",
+   "change": "Numbers",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 414,
+   "what": "'valid-near-native recovery is only 26.4% by top-15 and 26.4% over all thirty poses. Its rank-1 median in-place RMSD of 2.9 A already exceeds the near-native threshold.'",
+   "current_value": "26.4 / 26.4; 2.9",
+   "new_value": "27.4% / 27.4%; about 3.3 A (near-site PB-valid rank-1 median 3.28; confirm basis)",
+   "depends_how": "vs single instance",
+   "change": "Numbers",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 427,
+   "what": "'scored for crystal-site recovery under the 4 A rule defined in the Methods. Sixteen of 303 complexes have no qualifying cluster and count as non-reaches.'",
+   "current_value": "Sixteen",
+   "new_value": "recompute (cluster-level; the pose-level count of complexes with no pose within 4 A falls from 6 to 1)",
+   "depends_how": "Cluster centroid distance to the single instance centroid",
+   "change": "Number and WORDING ('nearest-copy site')",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 432,
+   "what": "Figure 5 caption 'Top-N crystal-cluster co-recovery' (media/media/image6.png)",
+   "depends_how": "Reach vs single instance",
+   "change": "Figure regenerate; caption wording optional",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 435,
+   "what": "'From rank-1 to top-15, DiffDock gains 26 percentage points, AutoDock 24 and EquiBind 4 ... At top-15, all converge at phi = +0.23 to +0.28 with Fisher p <= 2.8e-4.'",
+   "current_value": "26 / 24 / 4; +0.23 to +0.28; 2.8e-4",
+   "new_value": "recompute",
+   "depends_how": "Cluster reach vs single instance",
+   "change": "Numbers",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 455,
+   "what": "Table 6 rows :455-461: 'AutoDock reach 59 [53--64] & 79 [74--83] & 81 [76--85] & 83 [79--87]', 'DiffDock reach 54 [49--60] & 76 [70--80] & 79 [74--83] & 81 [76--85]', 'EquiBind reach 43 [37--49] & 46 [40--51] & 47 [41--52] & 47 [42--53]', co-reach phi '+0.33 +0.23 +0.24 +0.23', '+0.45 +0.27 +0.29 +0.28', '+0.42 +0.30 +0.29 +0.26', 'All three reach 89 / 42 & 114 / 82 & 121 / 90 & 125 / 96'",
+   "current_value": "as quoted",
+   "new_value": "recompute (pose-level rank-1 4 A reach rises 183->241, 172->225, 137->144, so every cell moves up)",
+   "depends_how": "Cluster reach and Wilson intervals vs single instance centroid",
+   "change": "All numeric cells",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 469,
+   "what": "Figure 6 caption 'Composition and geometry of the crystal-closest cluster. Rates are taken over all 303 complexes, 18 of which contribute no pose to any panel' (media/media/image7.png)",
+   "current_value": "18",
+   "new_value": "recompute",
+   "depends_how": "Crystal-closest cluster defined vs single instance",
+   "change": "Number, WORDING ('nearest-copy-closest'), figure regenerate",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 472,
+   "what": "'DiffDock a median six of fifteen poses in the crystal cluster and 81% reach, and AutoDock five poses and 83% reach. EquiBind ... 47% reach ... (Holm-corrected rank-biserial -0.28, p = 2.7e-4) ... (McNemar p = 0.470 on 38 against 31 discordant complexes) ... 125 complexes solved by all tools versus 96.1 expected (permutation p < 1e-4), and 18 by none versus 5.2 expected. AutoDock accounts for 28 of the 55 single-tool solutions, compared with 25 for DiffDock and two ... 0.70 A for AutoDock over 233 ... 0.56 A for EquiBind over 135 and 0.38 A for DiffDock over 229 ... 110 complexes ... 0.70 A against 0.57 A and 0.31 A'",
+   "current_value": "as quoted",
+   "new_value": "recompute",
+   "depends_how": "Every statistic is relative to the crystal cluster or crystal centroid of the single instance",
+   "change": "Numbers",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 474,
+   "what": "'At the 4 A crystal-site threshold, the retrospective oracle recovers 95% of complexes, compared with about 56% for the best inexpensive first-cluster rules. Consensus ranking reaches 56.8%, its medoid-centred variant 55.4% and confidence weighting 55.8% ... 7.3, 5.9 and 6.3 points respectively on the 49.5% legacy pose-count rule ... (Holm-corrected McNemar p = 3.6e-4 ..., 0.004 ... and 0.008 ...). The 38-point oracle gap'",
+   "current_value": "95; 56; 56.8 / 55.4 / 55.8; 49.5; 7.3 / 5.9 / 6.3; 3.6e-4 / 0.004 / 0.008; 38",
+   "new_value": "recompute (the reference-free values in the same paragraph, 2.13 -> 3.72 A radius, partial rho -0.07 p 0.26, Jaccard 0.78, are unchanged)",
+   "depends_how": "Oracle and rule precision-at-1 are hits vs the single instance centroid",
+   "change": "Numbers",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 476,
+   "what": "'the pooled three-tool oracle places a pose within 4 A of the crystal site for 97.7% of complexes, at a median distance of 0.34 A. AutoDock alone reaches 88.1% at 0.53 A and DiffDock 84.5% at 0.56 A. Together they already reach 97.7% at 0.37 A, so EquiBind adds nothing to the pooled reach. Averaging cluster members makes the pooled centre coarser than the best individual pose, with a median distance of 1.23 A.'",
+   "current_value": "97.7% / 0.34; 88.1 / 0.53; 84.5 / 0.56; 97.7 / 0.37; 1.23",
+   "new_value": "99.7% (302/303); per-tool any-pose reach 92.4% and 90.1% on the canonical basis; AutoDock+DiffDock 99.7%; medians recompute on the sentence's own pose basis (the printed 97.7/88.1 are already one complex off the canonical 98.0/88.4, see M2 note)",
+   "depends_how": "Centroid distance to the single instance",
+   "change": "Numbers; 'EquiBind adds nothing' still true",
+   "effort": "small",
+   "risk": "Generating script of this sentence is untraced; do not replace by hand"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 481,
+   "what": "'Crystal-pose interactions are compared with those of PoseBusters-valid pipeline poses ... all poses and the crystal reference use one common author-numbered receptor per complex'",
+   "depends_how": "The reference fingerprint is the single instance's contacts; alternate copies sit on other chains with different residue keys",
+   "change": "WORDING plus method decision (see :165); if the interaction analysis follows the nearest copy, the receptor canonicalisation must map chains",
+   "effort": "large"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 486,
+   "what": "Figure 7 caption 'Mean Jaccard similarity of interaction fingerprints, whole-protein search' (media/media/image9.png)",
+   "depends_how": "Crystal row/column of the matrix is the single instance fingerprint",
+   "change": "Figure regenerate if the interaction analysis follows the nearest copy",
+   "effort": "large"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 489,
+   "what": "'DiffDock has the highest mean typed-interaction Jaccard similarity to the crystal, at 0.450 over 300 complexes, compared with 0.417 over 301 for AutoDock and 0.380 over 266 for EquiBind ... Across the 264 complexes ... 0.474, AutoDock 0.431 and EquiBind 0.381. DiffDock leads AutoDock (Wilcoxon p = 0.014) and both exceed EquiBind (p = 1.6e-3 and 5.2e-8). AutoDock averages only 0.313 on the 37 ... Pairwise tool similarities range from 0.357 to 0.463, and the AutoDock--DiffDock pair at 0.463 exceeds either tool's similarity to the crystal.'",
+   "current_value": "as quoted",
+   "new_value": "recompute (pairwise tool-tool values 0.357-0.463 are reference-free and unchanged)",
+   "depends_how": "Crystal fingerprint = single instance",
+   "change": "Numbers; the conclusion 'resemble each other more than either resembles the reference' may not survive because poses on alternate copies currently score zero overlap",
+   "effort": "large"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 493,
+   "what": "'Rank-1 F1 is 0.57 for AutoDock, 0.53 for DiffDock and 0.47 for EquiBind ... Across 280 shared AutoDock--DiffDock complexes, the means are 0.5663 and 0.5324 ... (Wilcoxon p = 0.25) ... 0.556 for AutoDock and 0.492 for DiffDock ... By rank 5, AutoDock declines to 0.42, while DiffDock remains near 0.51 and EquiBind near 0.44 ... Kendall tau ...'",
+   "current_value": "as quoted",
+   "new_value": "recompute",
+   "depends_how": "Precision/recall/F1 vs the single instance contact set",
+   "change": "Numbers; the Kendall-tau ordering claims must be re-tested",
+   "effort": "large"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 502,
+   "what": "Table 7 caption 'Native-Interaction Recovery versus the Crystal by Pose Rank, Whole-Protein Search' and all cells :514-525 (e.g. 'AutoDock precision 0.561 0.550 0.485 0.497 0.439', 'DiffDock F1 0.529 0.517 0.503 0.479 0.512', 'EquiBind recall 0.459 0.451 0.450 0.433 0.423')",
+   "current_value": "as printed",
+   "new_value": "recompute (the 'complexes n' rows are validity-driven and stay)",
+   "depends_how": "Native contacts = single instance contacts",
+   "change": "All statistic cells; caption WORDING 'versus the nearest crystal copy'",
+   "effort": "large"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 530,
+   "what": "'At rank 1, AutoDock and DiffDock recover 21.0 and 19.4 native contacts while missing 15.3 and 16.4. By rank 5, AutoDock falls to 15.3 matched against 21.0 missed, while spurious contacts rise to 17.6 ... DiffDock remains near 18.6 matched and 17.4 missed'",
+   "current_value": "as quoted",
+   "new_value": "recompute",
+   "depends_how": "Matched/missed/spurious vs single instance contacts (appendix Figure 9)",
+   "change": "Numbers",
+   "effort": "large"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 532,
+   "what": "'AutoDock and DiffDock show no detected difference in nominated rank-1 contact fidelity ... all three per-complex Kendall correlations negative and surviving correction. DiffDock's flatter pool remains unordered'",
+   "depends_how": "Qualitative summary of :489-:530",
+   "change": "Re-test; wording only if a conclusion flips",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 708,
+   "what": "'Cost is normalised per qualifying pose, defined as PoseBusters-valid and within 2 A of the crystal ligand.'",
+   "depends_how": "Qualifying pose vs single instance",
+   "change": "WORDING: 'of the nearest crystallographic copy'",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 715,
+   "what": "Figure 10 caption 'Each box covers that pipeline's own 199, 169 and 80 qualifying complexes, while the bracketed tests use the 53 all three share' (media/media/image24.png)",
+   "current_value": "199, 169, 80; 53",
+   "new_value": "214, 183, 83; shared set recompute (at least 53)",
+   "depends_how": "Qualifying complexes vs single instance",
+   "change": "Numbers; figure regenerate",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 737,
+   "what": "Table 8 row 'AutoDock & 137.2 & 75.6 to 167.4 & 199 & 1,752.8 & 118.9 & 311'",
+   "current_value": "137.2; 75.6-167.4; 199; 1,752.8; 118.9; 311",
+   "new_value": "median/IQR recompute (median qualifying poses per succeeding complex rises 1 -> 2, so the median cost roughly halves); 214; about 1,233 (545,112 CPU-core-s / 442); about 83.6 (36,972 GPU-s / 442); 442",
+   "depends_how": "Qualifying poses = PB-valid & rmsd<=2 vs single instance; pooled currencies divide fixed campaign totals by the qualifying count",
+   "change": "Every cell but the label",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 738,
+   "what": "Table 8 row 'DiffDock & 49.4 & 14.1 to 127.3 & 169 & 2.93 & 49.9 & 1,622'",
+   "current_value": "49.4; 14.1-127.3; 169; 2.93; 49.9; 1,622",
+   "new_value": "median/IQR recompute; 183; about 2.30 and about 39.1 if the campaign totals are fixed (verify against the 64 dropped elapsed==0 rows); 2,068",
+   "depends_how": "vs single instance",
+   "change": "Every cell but the label",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 739,
+   "what": "Table 8 row 'EquiBind & 2.4 & 1.0 to 7.3 & 80 & 165.3 & 1.4 & 466'",
+   "current_value": "2.4; 1.0-7.3; 80; 165.3; 1.4; 466",
+   "new_value": "median/IQR recompute; 83; about 159.5; about 1.35; 483",
+   "depends_how": "vs single instance",
+   "change": "Every cell but the label",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 741,
+   "what": "Table 8 row 'AutoDock, Vina search only & 21.7 & 9.9 to 45.3 & 202 & 1,805.0 & 0.0 & 302'",
+   "current_value": "21.7; 9.9-45.3; 202; 1,805.0; 302",
+   "new_value": "median/IQR recompute; 217; about 1,264.7 (545,112 / 431); 431",
+   "depends_how": "vs single instance",
+   "change": "Every cell but the label and the 0.0 GPU cell",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 744,
+   "what": "'Among 53 complexes where every tool succeeds, the ordering persists (Friedman chi2 = 85.2, p = 3.2e-19, Kendall W = 0.80), and every pair passes Holm correction. Median per-complex cost ratios are 0.14 for DiffDock versus AutoDock and 0.02 for EquiBind. gnina raises AutoDock cost to roughly three times the search alone ... The median successful complex yields one, although 199 of 303 complexes now yield at least one, far more than the 169 of DiffDock.'",
+   "current_value": "53; 85.2 / 3.2e-19 / 0.80; 0.14 / 0.02; yields one; 199 / 169",
+   "new_value": "shared set and Friedman recompute; ratios recompute; median successful AutoDock complex now yields TWO qualifying poses (WORDING); 214 / 183",
+   "depends_how": "Qualifying-pose denominator vs single instance",
+   "change": "Numbers and wording",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 746,
+   "what": "'Median charged seconds per generated, valid, and valid-near-native pose are 5.3, 5.3 and 137.2 for AutoDock. The DiffDock values are 7.6, 9.2 and 49.4, and the EquiBind values are 0.3, 0.4 and 2.4. Contributing complexes fall from 303 to 301 to 199 for AutoDock, 303 to 300 to 169 for DiffDock, and 303 to 266 to 80 for EquiBind. Moving from valid to valid-near-native multiplies unit cost by about 25.9, compared with 5.4 for DiffDock and 6.0 for EquiBind ... contributes only one or two qualifying poses out of thirty ... It fails in the other 223.'",
+   "current_value": "137.2 / 49.4 / 2.4; 199 / 169 / 80; 25.9 / 5.4 / 6.0; 223",
+   "new_value": "third values recompute (first two per tool unchanged); 214 / 183 / 83; multipliers recompute; 220",
+   "depends_how": "Valid-near-native denominator vs single instance",
+   "change": "Numbers",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 751,
+   "what": "Figure 11 caption 'Hardware resource per qualifying pose' (media/media/image25.png)",
+   "depends_how": "Per-qualifying-pose axis vs single instance",
+   "change": "Figure regenerate",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 754,
+   "what": "'The tools convert their compute into 311, 1,622 and 466 qualifying poses'",
+   "current_value": "311 / 1,622 / 466",
+   "new_value": "442 / 2,068 / 483",
+   "depends_how": "vs single instance",
+   "change": "Numbers",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 758,
+   "what": "'Without gnina, Vina requires a median 21.7 s and no GPU time per qualifying pose, still below DiffDock on the charged basis. Its CPU cost per qualifying pose is 1,805.0 s, higher than the rescored arm's 1,752.8 s, because rescoring adds nine qualifying poses at no CPU cost.'",
+   "current_value": "21.7; 1,805.0 vs 1,752.8; nine",
+   "new_value": "median recompute; about 1,264.7 vs about 1,233.3 (ordering holds); eleven (431 -> 442)",
+   "depends_how": "vs single instance",
+   "change": "Numbers",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 760,
+   "what": "'Allocating the whole campaign to complexes that yield a qualifying pose gives 271, 479 and 38 s. On this denominator AutoDock is cheaper than DiffDock in charged and GPU terms, with 186 versus 478 GPU-seconds per success'",
+   "current_value": "271 / 479 / 38; 186 vs 478",
+   "new_value": "recompute (campaign totals over 214 / 183 / 83 successes; AutoDock GPU about 172.8 s per success)",
+   "depends_how": "Success denominator vs single instance",
+   "change": "Numbers",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 768,
+   "what": "'AutoDock had the highest physical validity and led DiffDock on near-native recovery and native-pocket reach at every depth. The near-native lead is inconclusive at rank-1 and separable from top-5 onwards, and reach never separated them. The rank-1 interval spans a 4.2-point DiffDock lead to a 9.4-point AutoDock lead.'",
+   "current_value": "4.2 / 9.4",
+   "new_value": "1.7-point DiffDock lead to a 12.8-point AutoDock lead; the qualitative claims hold (margin widens, p 0.159; reach separation recompute)",
+   "depends_how": "vs single instance",
+   "change": "Numbers",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 777,
+   "what": "'Requiring validity removes at most four of 303 complexes at any depth.'",
+   "current_value": "four",
+   "new_value": "five",
+   "depends_how": "Same quantity as :324",
+   "change": "Number/wording",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 779,
+   "what": "'DiffDock validity rose sharply while its fixed-rank near-native rate barely changed. EquiBind showed a modest near-native increase. Table ... reports these changes by rank band.'",
+   "depends_how": "Appendix refinement-bands table vs single instance",
+   "change": "Qualitative claim holds (DiffDock rank-1 raw->smina +1.7 pp under both conventions); appendix table recompute",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 781,
+   "what": "'smina is carried forward on the selection criterion by 133 complexes to 132, but that one-complex margin survives only in the three-way conjunction ... Dropping either the validity or the form term leaves the two arms exactly level, and gnina is level or ahead on every component taken alone. Exact McNemar separates them at no depth ... gnina recovers 83 near-native complexes at top-15 against 61 for smina, and that difference survives Holm correction. Only on the selection endpoint, where the margin is nine complexes, are the two EquiBind arms not separable.'",
+   "current_value": "133 / 132; level; 83 vs 61; nine",
+   "new_value": "recompute (EquiBind gnina top-15 near-native becomes 86; smina and DiffDock-gnina arms not re-scored)",
+   "depends_how": "Selection triple gate and component counts vs single instance",
+   "change": "Numbers; WORDING if the DiffDock refiner selection flips",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 788,
+   "what": "'added only about eight percentage points for EquiBind ... About six in ten rank-1 failures of the two tools contained no qualifying pose at any depth. The corresponding share for EquiBind was about nine in ten.'",
+   "current_value": "eight; six in ten; nine in ten",
+   "new_value": "+8.6 (holds); 57.8% / 70.2% (WORDING 'six to seven in ten'); 89.4% (holds)",
+   "depends_how": "vs single instance",
+   "change": "Wording of the six-in-ten clause",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 790,
+   "what": "'AutoDock and DiffDock were indistinguishable on internal form at the prespecified 1 A Kabsch threshold, while AutoDock led on near-nativeness from top-5 onwards.'",
+   "depends_how": "Form tie and top-5 lead vs single instance",
+   "change": "Top-5 lead holds (identical contrast); form tie must be re-tested with per-copy Kabsch",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 792,
+   "what": "'AutoDock had the higher point estimate at top-15, but the paired reach test ... did not separate them. Pooling all tools placed the crystal pocket somewhere in the pose cloud for 95% of complexes, but the best inexpensive cluster rule ranked it first in only 57%.'",
+   "current_value": "95%; 57%",
+   "new_value": "recompute",
+   "depends_how": "Cluster reach vs single instance",
+   "change": "Numbers; WORDING 'crystal pocket' -> 'a deposited copy's pocket'",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 794,
+   "what": "'The one equivalence statement in this work covers the valid-near-native recovery contrast, and its margin was read off the data after the fact rather than prespecified.'",
+   "depends_how": "Margin at :834 changes from about eight to about twelve points",
+   "change": "No wording change here; :834 carries the number",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 806,
+   "what": "'the gnina re-ranking that improves AutoDock rank-1 recovery on the crystal benchmark'",
+   "depends_how": "Raw exh128 vs gnina at rank-1 (130 -> 149 under nearest copy)",
+   "change": "Holds; no change",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 817,
+   "what": "'EquiBind succeeding on 80 of 303 against 169 for DiffDock'",
+   "current_value": "80 / 169",
+   "new_value": "83 / 183",
+   "depends_how": "Cost success denominator vs single instance",
+   "change": "Numbers",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 824,
+   "what": "'AutoDock has higher accuracy and pocket-localisation point estimates, while DiffDock costs less per qualifying pose. Their rank-1 near-nativeness gap is unresolved.'",
+   "depends_how": "vs single instance",
+   "change": "Holds (p 0.159); cost ordering to be confirmed after medians recompute",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 834,
+   "what": "'Rank-1 recovery was 36.6% for AutoDock, 34.0% for DiffDock and 18.2% for EquiBind. Retrospective top-15 recovery was 65.3%, 55.1% and 26.4%. The AutoDock--DiffDock rank-1 difference was +2.6 percentage points (95% interval -4.2 to +9.4) and was not statistically resolved, although AutoDock led from top-5 onwards, by +13.2 points there (p_holm = 7.6e-4) and +10.2 at top-15 ... A post-hoc 90% compatibility interval places the rank-1 difference within about eight points.'",
+   "current_value": "36.6/34.0/18.2; 65.3/55.1/26.4; +2.6 (-4.2, +9.4); +13.2 (7.6e-4); +10.2; about eight",
+   "new_value": "49.2/43.6/18.8; 70.3/59.1/27.4; +5.6 (-1.7 to +12.8), p 0.159; +13.2 (p_holm 7.6e-4) unchanged; +11.2; 'within about twelve points' (90% interval -0.5 to +11.7)",
+   "depends_how": "vs single instance",
+   "change": "Numbers and one wording ('eight' -> 'twelve')",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 836,
+   "what": "'Rank-1 native-interaction recovery likewise did not separate the leading tools. DiffDock led only for the top-five contact union.'",
+   "depends_how": "Interaction analysis vs single instance fingerprint",
+   "change": "Re-test; wording only if a conclusion flips",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 843,
+   "what": "'Fixed-rank near-native rates changed by only 0.1--0.7 percentage points for DiffDock, 4.1--4.6 for EquiBind with gnina and 3.5--4.4 with smina ... AutoDock gained by re-ranking, from 31.0% to 36.6% at rank-1. That single step does not clear Holm correction on its own, and the gain reaches significance only from top-5 onwards.'",
+   "current_value": "0.1-0.7; 4.1-4.6; 3.5-4.4; 31.0 -> 36.6; does not clear Holm",
+   "new_value": "band ranges recompute (appendix basis; DiffDock rank-1 raw->smina is +1.7 pp on the plain rate under both conventions); 42.9% to 49.2%; rank-1 gnina-vs-raw exact p falls from 0.040 to 0.018 (discordant 39/20), so the Holm statement must be re-tested and may flip",
+   "depends_how": "vs single instance",
+   "change": "Numbers; WORDING risk on the Holm clause",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 848,
+   "what": "'median charged cost per qualifying pose was 2.4 s for EquiBind, 49.4 s for DiffDock and 137.2 s for AutoDock. DiffDock succeeded on 169 complexes, AutoDock on 199 and EquiBind on 80 ... The remaining twentyfold EquiBind advantage over DiffDock ... conditional on EquiBind succeeding on a quarter of the set'",
+   "current_value": "2.4 / 49.4 / 137.2; 169 / 199 / 80; twentyfold; quarter",
+   "new_value": "medians recompute; 183 / 214 / 83; ratio recompute; 'quarter' holds (27%)",
+   "depends_how": "vs single instance",
+   "change": "Numbers",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 857,
+   "what": "'near-nativeness separated it from DiffDock only from top-5 onwards ... About six in ten AutoDock and DiffDock rank-1 failures, and nine in ten EquiBind failures, contained no qualifying pose. Selection still recovered 87 and 64 additional complexes at top-15 for the leading tools, compared with 25 for EquiBind.'",
+   "current_value": "six in ten; nine in ten; 87 / 64 / 25",
+   "new_value": "57.8% / 70.2% (wording); 89.4% (holds); 64 / 47 / 26",
+   "depends_how": "vs single instance",
+   "change": "Numbers and wording",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 866,
+   "what": "'the winning margins were eight complexes for AutoDock Vina, one for DiffDock and nine for EquiBind. Only the AutoDock margin is separable ... The largest of those margins is 3.0 percentage points of the 303 ... A winner's-curse correction computed per family over three arms puts it between 0.4 and 0.8 percentage points'",
+   "current_value": "eight / one / nine; 3.0; 0.4-0.8",
+   "new_value": "recompute (triple gate at top-15 under nearest copy; arms outside the six re-scored need re-scoring)",
+   "depends_how": "Selection endpoint vs single instance",
+   "change": "Numbers; if selection is frozen under the old convention, add a clause saying so",
+   "effort": "medium"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 868,
+   "what": "'A metal ion or metal-containing cofactor lies within 5 A of the crystal ligand in 78 of the 303 calibration complexes ... The AutoDock-over-DiffDock top-15 contrast is +6.7 percentage points on the 225 metal-free complexes against +20.5 on the 78 metal-adjacent ones ... Best-of-top-k and crystal-nearest clusters are oracle ceilings'",
+   "current_value": "78; +6.7 on 225; +20.5 on 78",
+   "new_value": "78 if the stratum stays a reference-instance property; +6.7/+20.5 recompute (top-15 margin is now 34 pooled)",
+   "depends_how": "Stratum and contrast vs single instance",
+   "change": "Numbers; WORDING 'deposited reference instance'; ADD one sentence here stating the nearest-copy convention, that 138 of the 303 complexes carry more than one copy, that no complex loses recovery under it, and that the single-instance secondary column gives 111/103/55 at rank-1 (the values a crystal-centred box would reproduce)",
+   "effort": "small"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 870,
+   "what": "'Cost per qualifying pose is conditional on success and therefore favours EquiBind.'",
+   "depends_how": "Qualifying pose vs single instance",
+   "change": "Holds; no change",
+   "effort": "trivial"
+  }
+ ],
+ "decisions": [
+  {
+   "question": "Is the variant selection (triple gate PB-valid & <=2 A & Kabsch <=1 A at top-15, :191-:199, :781, :866) re-run under nearest-copy or frozen at the single-instance selection?",
+   "options": [
+    "Re-run selection under nearest-copy and accept that the DiffDock refiner (133 vs 132) may flip to gnina, which changes the DiffDock* arm everywhere including the Orai panels",
+    "Freeze the selection, state at :191 that variants were selected under the single-instance convention, and report all downstream numbers under nearest-copy"
+   ],
+   "recommendation": "Re-run it, because a thesis that reports under one convention and selects under another invites the same examiner objection twice; if DiffDock flips, the whole DiffDock arm must be re-scored (diffdock_gnina is not among the six re-scored arms)"
+  },
+  {
+   "question": "Do the interaction-fingerprint metrics (:165, :481-:532, Fig 7, Table 7) follow the nearest copy?",
+   "options": [
+    "Profile every deposited copy, compare each pose to its nearest copy with chain-agnostic residue keys (full consistency, largest effort, new canonicalisation code)",
+    "Exempt the interaction analysis and say so explicitly at :165 and :481 (poses recovering an alternate copy keep scoring zero overlap)",
+    "Restrict the interaction analysis to poses whose nearest copy is the reference and disclose the reduced cohort"
+   ],
+   "recommendation": "Option 1 if the plan truly means 'every crystal-referenced metric'; otherwise option 2 with an explicit exemption sentence, because option 3 changes cohorts silently"
+  },
+  {
+   "question": "Which copy supplies the Kabsch form partner (:124-:133, Table 1 Form block, :396, :404, Fig 3)?",
+   "options": [
+    "The copy that minimises the in-place RMSD for that pose",
+    "The copy that minimises the Kabsch RMSD independently"
+   ],
+   "recommendation": "The in-place-nearest copy, so the placement^2 = in-place^2 - form^2 decomposition at :133 stays per-copy consistent"
+  },
+  {
+   "question": "How to phrase the 'about six in ten rank-1 failures contain no qualifying pose' clause (Abstract :63, Kurzfassung :95, body :406, :788, :857) now that the shares are 57.8% (AutoDock) and 70.2% (DiffDock)?",
+   "options": [
+    "Keep 'about six in ten' (accurate for AutoDock only)",
+    "'six to seven in ten' in English and 'sechs bis sieben von zehn' in German (+11 characters on a Kurzfassung page with zero slack, requires a compensating cut)",
+    "Drop the pooled phrase and give both shares"
+   ],
+   "recommendation": "Option 2, and pay for it in the Kurzfassung by trimming elsewhere on the same page; the CI at :94 already grows by one character"
+  },
+  {
+   "question": "Does the metal-adjacent stratum (:88, :868, 78 of 303) follow the nearest copy?",
+   "options": [
+    "Keep it as a property of the deposited reference instance and re-word it as such",
+    "Re-derive per nearest copy"
+   ],
+   "recommendation": "Keep and re-word; receptors were stripped for every chain, so the apo-like caveat is a complex property"
+  },
+  {
+   "question": "Should the Abstract and Kurzfassung name the convention?",
+   "options": [
+    "One clause in the English Abstract ('to the nearest deposited copy'), nothing in the Kurzfassung",
+    "Both silent, disclosure only in Methods and Limitations"
+   ],
+   "recommendation": "Option 1; the Kurzfassung has no room and the Abstract clause is cheap"
+  }
+ ],
+ "open_questions": [
+  "Table 6, Figures 5-6 and :427/:435/:472/:474/:792 are cluster-level reach vs the reference centroid; the probe gives pose-level reach only (rank-1 183->241 / 172->225 / 137->144, any-pose pooled 98.0% -> 99.7%), so the clustering script must be re-run with the nearest-copy centroid to size these cells",
+  "The :476 sentence already prints 97.7%/88.1% where the canonical file gives 98.0%/88.4% (M2 note); its generating script must be traced before 99.7%/92.4%/90.1% is written in",
+  "Does the DiffDock confidence-vs-smina re-ranking footnote (:197: 33.7% vs 32.7% vs 32.3%) still favour native confidence under nearest-copy? The near-native rank-1 rate without validity becomes 43.6%, and the smina/gnina re-ranked rates need the scores that are not in the probe CSV",
+  "Does the gnina-vs-raw AutoDock rank-1 step (:843) now clear Holm correction? Its raw exact p falls from 0.040 to 0.018 (discordant 39/20)",
+  "Five printed arms were not re-scored (diffdock_gnina, equibind_unguided_smina, equibind_unguided_raw, equibind_fpocket_raw, equibind_p2rank_raw); Table 1 rows :299-:301 and :303-:304 and the selection margins at :193/:195/:781/:866 cannot be finalised until they are",
+  "The 2,329 clipped-pose count in the :408 footnote does not reproduce under my 5 A rule (2,337 on the reference basis), so the figure script's exact clipping rule must be used for the new value",
+  "Whether Figure 4's +3.55 A / +0.46 A / +1.09 A drifts are per-pose or per-complex medians (my per-pose recomputation gives 1.54 -> 5.06 for AutoDock, matching the printed 1.5 -> 5.0, but DiffDock 1.57 -> 1.98 = +0.41 against the printed +0.46)",
+  "Under nearest-copy the AutoDock median succeeding complex yields two qualifying poses instead of one (:744), so the cost-per-qualifying-pose ordering (:744-:760, :817, :848) must be re-derived from the timing files, which the probe does not touch"
+ ],
+ "artifacts_written": [
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/calc.py"
+ ]
+}

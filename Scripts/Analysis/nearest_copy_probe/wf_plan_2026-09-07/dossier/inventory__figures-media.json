@@ -1,0 +1,534 @@
+{
+ "dimension": "figures and media",
+ "summary": "39 \\includegraphics in the short build (16 in body_main_short.tex, 23 in body_appendix_short.tex, 0 in Thesis_short.tex). md5 of every media/media/imageN.png was matched against 76,057 PNGs under posebusters_results, pandamap_results, pocket_results, PoseBusters_Benchmark_Analysis, results_current, Dockings, Data, Scripts, obsolete and the repo root; 37/39 match a live pipeline output byte-for-byte and the match table agrees line-for-line with REGENERATE.md section 5 and thesis_expected_values.yaml `figures.pairs`. The two non-matches (image12 = Fig 27, image14 = Fig 22) are hand-composed PyMOL renders whose captions disclaim measurement; no analytical figure is already stale. Classification: 14 REGENERATE, 25 UNCHANGED, 0 UNKNOWN. REGENERATE = Figs 2, 3 (hub 18_topn multi-depth curves on `rmsd` / `bestfit_rmsd`), 4 (filmstrip on rmsd, bestfit and the 8 \u00c5 `centroid_dist` trim), 5, 6, 38 (cluster report: `crystal_centroid()` reads the single `<cid>_ligand.sdf`, `cp = min(pockets, key=dist to crystal)`, `_precision_at_1(... crystal ...)`), 7, 39 (PandaMap: crystal fingerprint built from `<protein>_ligand.sdf` only, keys carry `chain`, so a pose on the other-chain copy scores Jaccard about 0; 105/119/11 top-5 PB-valid poses of AutoDock*/DiffDock*/EquiBind* are within 2 \u00c5 of an alternate copy), 15, 16 (effort near2 = pb_valid & `rmsd` <= 2; caption \"199, 169 and 80\" -> 214, 183 and 83, \"53 all three share\" -> 54, both computed from the nearest-copy CSV), 18-21 (exhaustiveness gates on `rmsd` <= 2 and `bestfit_rmsd` < 1; the probe CSV covers only the exh128 pair, so six ladder arms need re-scoring). UNCHANGED = Fig 1 (validity only, script reads only posebusters_filtered_results.csv), the 12 Orai figures (crystal-free), Fig 17 flow chart, Figs 22/27 renders, Figs 28-37 dataset descriptors (Fig 30 panel A already plots the \"Multi-instance\" share from `_ligands.sdf`; Fig 37 start-conformer RMSD is vs `_ligand.sdf` but is a dataset descriptor, not a pose metric). Nearest-copy values reproduced the shipped reference numbers exactly before substitution (36.6/34.0/18.2 rank-1, 65.3/55.1/26.4 top-15, 199/169/80 qualifying, 53 shared). Byte-compare gates: validate_regeneration.py re-renders Figs 1, 4, 7, 8-16, 18-21, 23, 25, 26, 39 and declares (does not re-render) Figs 2, 3, 5, 6, 38, so those five REGENERATE figures have no md5 harness and must be hand-copied to media by md5 as the house rule requires.",
+ "sites": [
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 392,
+   "what": "Fig 2 \\includegraphics{media/media/image3.png}, caption :393 \"Best-of-top-N accuracy against the as-placed crystal RMSD\", label fig:results-r2a. md5 c890b237... == posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/18_topn_within_thresholds_pbvalid_depths.png",
+   "depends_how": "Produced inside the hub by aggregate_topn_within_thresholds(rmsd_col=\"rmsd\") (posebusters_pose_comparison.py:1857-1862, docstring: 'symmetry-corrected heavy-atom rmsd (no superposition)'); `rmsd` is symmetry_rmsd vs the single <ID>_ligand.sdf loaded at process_pair :1520 `crystal_sdf = cdir / f\"{pdb_id}_ligand.sdf\"`. Companion 18_topn_within_thresholds_pbvalid_depths_report.txt prints 2 \u00c5 rank-1 36.6/34.0/18.2, top-15 65.3/55.1/26.4, top-30 65.7/55.8/26.4 (reproduced exactly from the probe CSV).",
+   "change": "REGENERATE. Re-run stage bench_pose_comparison (REGENERATE.md: posebusters_pose_comparison.py --pb-csv ... --out-dir ... --top-n 15 --diffdock-variant all --collapse-plots-only --collapse-diffdock-variant diffdock_smina --collapse-autodock-variant autodock_mgltools_exh128_gnina --exclude-preset meeko --workers 24) with `rmsd` = nearest-copy value and the single-instance value kept as a secondary column. Caption carries no number. Companion table at 2 \u00c5 becomes rank-1 49.2/43.6/18.8 (149/132/57), top-15 70.3/59.1/27.4 (213/179/83), top-30 70.6/60.4/27.4 (214/183/83); full 1-5 \u00c5 grid computed: rank-1 1 \u00c5 22.1->30.0 / 15.5->20.1 / 6.9->6.9, 3 \u00c5 40.9->55.8 / 39.9->52.5 / 24.1->24.8, 4 \u00c5 46.2->61.7 / 42.6->56.4 / 27.4->28.1, 5 \u00c5 50.8->66.7 / 46.5->62.4 / 33.3->34.0. Not byte-compare gated (validate_regeneration.py DECLARED \"2, 3\").",
+   "effort": "medium",
+   "current_value": "2 \u00c5: rank-1 36.6/34.0/18.2; top-15 65.3/55.1/26.4; top-30 65.7/55.8/26.4 (AutoDock*/DiffDock*/EquiBind*)",
+   "new_value": "2 \u00c5: rank-1 49.2/43.6/18.8; top-15 70.3/59.1/27.4; top-30 70.6/60.4/27.4",
+   "risk": "Hub re-render trap: --reuse-cache omits --top-n 15 and --diffdock-variant all; a cache drop silently rebuilds at --top-n 5 on the raw diffdock key (REGENERATE.md bench_pose_comparison note). The hub writes ~92 PNGs; only this one and image4 ship."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 400,
+   "what": "Fig 3 \\includegraphics{media/media/image4.png}, caption :401 \"Best-of-top-N accuracy against the best-fit (Kabsch) RMSD\", label fig:results-r2b. md5 3bd47502... == pose_comparison_report/18_topn_within_thresholds_kabsch_pbvalid_depths.png",
+   "depends_how": "Same hub function with rmsd_col=\"bestfit_rmsd\" (posebusters_pose_comparison.py:1877-1879: 'pass rmsd_col=\"bestfit_rmsd\" for the best-fit (Kabsch) RMSD'); bestfit_rmsd == pb_kabsch_rmsd from PoseBusters check_rmsd against the same single reference. Companion 18_topn_within_thresholds_kabsch_pbvalid_depths_report.txt prints rank-1 1 \u00c5 52.5/52.1/33.3, top-15 1 \u00c5 71.9/72.3/51.2, 2 \u00c5 93.4/95.7/79.9.",
+   "change": "REGENERATE. Requires a Kabsch RMSD against the nearest copy's conformer (new column, e.g. bestfit_nearest_copy) \u2014 the probe CSV has no such column, so recompute. Kabsch differs between copies only by their conformational difference, so the shift will be small but non-zero on the ~38/30/2 flipped rank-1 poses.",
+   "effort": "medium",
+   "current_value": "1 \u00c5 rank-1 52.5/52.1/33.3; top-15 71.9/72.3/51.2",
+   "new_value": "recompute",
+   "risk": "Decision needed whether form (bestfit) is re-referenced to the nearest copy at all; the M2 memo scopes the change to 'every crystal-referenced metric', which includes it."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 418,
+   "what": "Fig 4 \\includegraphics{media/media/image5.png}, caption :419 \"Form versus in-place RMSD across ranking depth\", label fig:results-r3. md5 7c8aa802... == pose_comparison_report/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__thesis.png",
+   "depends_how": "filmstrip_rank1_top5_top15.py:131-132 calls P._form_components(P._valid_topd_poses(df, d, None)) on the hub's `inplace` (= rmsd) and `form` (= bestfit_rmsd) and trims by `centroid_dist` > 8 \u00c5 from the crystal-ligand site (companion __caption.txt: '5651 dropped at top-15', '2329 pose(s) beyond the frame at top-15'; hub :8313 'trims the ejected blind-docking mode', :8514 'centroid-trimmed to the crystal-site neighbourhood'). All three inputs are vs the single reference.",
+   "change": "REGENERATE. Stage bench_filmstrip: filmstrip_rank1_top5_top15.py --report-dir posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report --exclude-preset meeko, after the hub writes nearest-copy rmsd, bestfit and centroid_dist. Companions: __caption.txt, __panel_data_and_stats.txt, __cohort_summary.csv, __stats_per_tool_depth.csv (Table 27 source), __stats_crosstool_paired.csv, __stats_within_tool_trend.csv, __stats_pose_diversity.csv. Caption has no number; the 5651/2329 trim counts and every median/drift in the companions change (recompute). Byte-compare gated (validate_regeneration.py Case \"4\").",
+   "effort": "small",
+   "current_value": "trim: 5651 dropped at top-15; 2329 beyond frame; AutoDock rank-1 median in-place 1.5 \u00c5 -> 5.0 \u00c5 at top-15 (body:409)",
+   "new_value": "recompute",
+   "risk": "Script constant still names the pre-matched tree; --report-dir must be passed (REGENERATE.md note)."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 431,
+   "what": "Fig 5 \\includegraphics{media/media/image6.png}, caption :432 \"Top-N crystal-cluster co-recovery\", label fig:results-r4. md5 4a7e415f... == posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/topN_crystal_cluster_matrix.png",
+   "depends_how": "pose_cluster_crystal_pocket_report.py:920-921 `def crystal_centroid(benchmark_dir, cid): sdf = benchmark_dir / cid / f\"{cid}_ligand.sdf\"` \u2014 one centroid; :1107 `cp = min(pockets, key=lambda p: _dist(p[\"center\"], crystal))`, :1108-1109 correct_is_hit = dist <= thr (4 \u00c5); :863 reads `rmsd` and `centroid_dist` from per_pose_metrics for purity. Companion topN_crystal_cluster_matrix_stats.txt (Table 3 source) prints reach rank-1 59%/54%/43%, top-15 83%/81%/47%, all-three 89/42 ... 125/96.",
+   "change": "REGENERATE. Stage bench_clusters (pose_cluster_crystal_pocket_report.py --ids-file ... --per-pose-csv ... --out-dir ..._allposes --autodock-variant autodock_mgltools_exh128_gnina --diffdock-variant diffdock_smina --equibind-variant equibind_unguided_gnina --site-cluster threshold --pocket-radius 8.0 --rank-by consensus --stability-boot 25 --workers 30 --stats) after the script is taught to load every record of <cid>_ligands.sdf and define the correct site against all copies (design decision below). Companions: _stats.txt, _caption.txt, per_complex_summary.csv, per_cluster.csv, summary.json. Pose-level 4 \u00c5 proxy from the probe CSV: rank-1 reach 60%->80% / 57%->74% / 45%->48% (183->241 / 172->225 / 137->144), top-15 86%->91% / 81%->86% / 50%->52%; cluster-level reach must be recomputed. Not byte-compare gated (DECLARED \"5, 6, 38\"); analysis_cache.pkl is keyed to the out-dir signature.",
+   "effort": "large",
+   "current_value": "reach rank-1 59/54/43 %, top-15 83/81/47 %; all-three observed/expected 89/42, 114/82, 121/90, 125/96",
+   "new_value": "recompute (pose-level proxy: rank-1 80/74/48 %)",
+   "risk": "With several copies a complex may hold several 'correct' clusters; reach, co-reach phi and the permutation expectation all change definition, not just value. body_main_short.tex:427 'Sixteen of 303 complexes have no qualifying cluster' (summary.json oracle_hit_rate/ensemble_clusters 0.9472) falls."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 468,
+   "what": "Fig 6 \\includegraphics{media/media/image7.png}, caption :469 \"Composition and geometry of the crystal-closest cluster. Rates are taken over all 303 complexes, 18 of which contribute no pose to any panel\", label fig:results-r5. md5 36d0416a... == cluster_crystal_pocket_matched_equibind/.../crystal_cluster_homogeneity.png",
+   "depends_how": "Same cluster report run and the same single-centroid `crystal`. The caption's 18 is the 0-tool bin of panel (B): crystal_cluster_homogeneity_stats.txt:14 `obs=[18.0, 55.0, 105.0, 125.0] exp=[5.15, 51.83, 149.9, 96.12] [0,1,2,3 tools]`; panel (A) rates {'AutoDock*': 0.832, 'DiffDock*': 0.809, 'EquiBind*': 0.472} (stats.txt:10); _cluster_purity (script:545-559) uses `rmsd <= 2.0` from the per-pose table.",
+   "change": "REGENERATE with Fig 5 (same command). Caption number 18 -> recompute (will fall, since 58/138 AutoDock* and 53/138 DiffDock* multi-copy rank-1 poses sit on an alternate copy). Companions crystal_cluster_homogeneity_stats.txt and .json (Friedman, Cochran Q, McNemar, Dunn, Jonckheere numbers quoted at body:471-474 and appendix :1392) all recompute.",
+   "effort": "large",
+   "current_value": "18 (complexes reached by 0 tools); reach 83.2/80.9/47.2 %",
+   "new_value": "recompute",
+   "risk": "Caption text must be edited by hand after the run; the number is not asserted in thesis_expected_values.yaml."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 1396,
+   "what": "Fig 38 \\includegraphics{media/media/image8.png}, caption :1397 \"Cluster-quality assessment (n = 303, 8\\angstrom{} centroid-clustering cut and 4\\angstrom{} crystal-site recovery threshold). Panels A-C show internal-validity indices, panel D compactness against separation, panel E bootstrap stability and panel F precision-at-one of five ranking rules against the oracle ceiling\", label fig:results-r6. md5 b1455839... == cluster_crystal_pocket_matched_equibind/.../cluster_quality_metrics.png",
+   "depends_how": "Panels A-E are reference-free (pooled pose cloud). Panel F is _precision_at_1(pockets, crystal, thr) (script:562-596: `dd = _dist(p[\"center\"], crystal); out[f\"p1_{name}_hit\"] = bool(dd <= thr)`) against the single centroid. Companion cluster_quality_metrics_stats.txt: 'rank-1 pocket within 4 \u00c5 of crystal', consensus 56.8%, confidence 55.8%, medoid 55.5%, size 49.5%, tightest 27.7%.",
+   "change": "REGENERATE with Fig 5 (same command); only panel F and the oracle-ceiling line change, but the PNG re-renders whole. Companion precision@1 table and Holm McNemar family recompute. Caption unchanged (no number changes; threshold stays 4 \u00c5).",
+   "effort": "large",
+   "current_value": "precision@1 consensus 56.8 %, size 49.5 %, tightest 27.7 %",
+   "new_value": "recompute",
+   "risk": "Not byte-compare gated; hand-copy to media by md5."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 485,
+   "what": "Fig 7 \\includegraphics{media/media/image9.png}, caption :486 \"Mean Jaccard similarity of interaction fingerprints, whole-protein search\", label fig:results-r7. md5 e6f022da... == pandamap_results/benchmark_matched_equibind/report/05_fingerprint_similarity_top5.png",
+   "depends_how": "run_pandamap.py:963 `crystal = cfg.benchmark_dir / protein / f\"{protein}_ligand.sdf\"` builds ONE crystal task per pair (crystal_interactions.csv pose_file = .../7L7C_XQ1_ligand.sdf); pandamap_interaction_report.py:619 `mode='typed' -> {(interaction_type, resname, resnum, chain)}` and :1181-1200 native_recovery compares each pose to cryst_fp[(p,l)]. A pose recovering the copy on another chain therefore has Jaccard about 0. Sizing from the probe CSV (PB-valid, eff_rank<=5): AutoDock* 105 poses in 70 complexes, DiffDock* 119 in 49, EquiBind* 11 in 3 are within 2 \u00c5 of an alternate copy (230/229/33 within 4 \u00c5 of its centroid). Text at body:488 prints 0.450 (300), 0.417 (301), 0.380 (266); common-264 0.474/0.431/0.381; Wilcoxon p = 0.014.",
+   "change": "REGENERATE. Two stages: bench_pandamap (run_pandamap.py -c Scripts/Docking/configs_thesis/07_benchmark_pandamap.yaml) must gain one crystal task per record of <ID>_ligands.sdf against the canonical hetatm_cleaned receptor, then bench_pandamap_report (pandamap_interaction_report.py -c 07 --in-dir pandamap_results/benchmark_matched_equibind --per-pose-metrics ... --exclude-methods unidock2,autodock_gnina) must pick, per pose, the fingerprint of its nearest copy (join on per_pose_metrics nearest-copy index). Companions: 05_fingerprint_similarity_top5.txt, native_recovery_per_pose.csv, native_recovery_summary.csv, native_recovery_by_rank.csv (Table 4), 04_native_recovery.txt, 13_native_f1_oracle.csv, 14_rmsd_vs_recovery*.csv, interaction_pose_basis_audit.txt/.csv (yaml `prose.audit` pins profiled_poses 4253, median_rmsd 7.57, within_2a_pct 21.3, crude_f1 0.565/0.529/0.471, standardised_f1 0.532/0.527/0.513, site_filtered_* ). Byte-compare gated (validate_regeneration.py Case \"7, 39\").",
+   "effort": "large",
+   "current_value": "mean Jaccard 0.450 / 0.417 / 0.380 (DiffDock/AutoDock/EquiBind)",
+   "new_value": "recompute",
+   "risk": "Cheaper alternative (drop `chain` from the key) changes semantics for every pose, not just multi-copy ones, and would mis-credit contacts on a chain the pose never touched. Verify posebusters_results/benchmark/dock/hetatm_cleaned/<ID>_protein.pdb retains the other chains before profiling the copies."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 1409,
+   "what": "Fig 39 \\includegraphics{media/media/image11.png}, caption :1410 \"Matched, missed and spurious typed contacts versus the crystal, by pose rank, whole-protein search\", label fig:results-r9. md5 05fab43b... == pandamap_results/benchmark_matched_equibind/report/10b_contact_decomposition_by_rank.png",
+   "depends_how": "Same native fingerprint (single-copy, chain-keyed) as Fig 7: matched = pose \u2229 crystal, missed = crystal \u2212 pose, spurious = pose \u2212 crystal. Companion 10b_contact_decomposition_by_rank.txt/.csv; yaml prose.figure_39 (thesis_expected_values.yaml:1071-1079) pins autodock_spurious_rank1 15.3, diffdock_spurious_rank1 14.1, autodock_spurious_rank5 17.6, equibind_matched_rank1 16.7, equibind_missed_rank1 18.9, equibind_spurious_min/max 12.0/12.6; appendix :1413 prints the same numbers.",
+   "change": "REGENERATE with Fig 7 (same two stages). Every asserted number in prose.figure_39 recomputes; poses on an alternate copy move from 'all missed + all spurious' to mostly matched.",
+   "effort": "large",
+   "current_value": "spurious rank-1 15.3 (AutoDock) / 14.1 (DiffDock); EquiBind matched 16.7 vs missed 18.9",
+   "new_value": "recompute",
+   "risk": "yaml assertions must be updated in the same commit or thesis_assertions.py reports a finding."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 714,
+   "what": "Fig 15 \\includegraphics{media/media/image24.png}, caption :715 \"Charged device-occupancy seconds per qualifying pose. Each box covers that pipeline's own 199, 169 and 80 qualifying complexes, while the bracketed tests use the 53 all three share\", label fig:results-r23. md5 d5ab5f94... == posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/panels/effort_by_quality_near2.png",
+   "depends_how": "docking_effort_comparison.py:256-257 DEFAULT_RMSD_COLUMN = \"rmsd\", DEFAULT_KABSCH_COLUMN = \"bestfit_rmsd\"; :1108 `df[\"near2\"] = df[\"pb_valid\"] & (_numcol(rmsd_column) <= NEAR2_RMSD_A)`, :1109 form1. Qualifying complexes = any pose over all 30 (max eff_rank 30 for every arm), which reproduces 199/169/80 and the 53-complex intersection from the probe CSV.",
+   "change": "REGENERATE. Stage bench_effort_charged (docking_effort_comparison.py --dataset benchmark --autodock-dir Dockings/vina_results_full_protein_vina_scoring_mgltools_exh128 --autodock-prep mgl_tools --autodock-refine gnina --autodock-gnina-gpu --autodock-method autodock_mgltools_exh128_gnina --autodock-optimizer-workers 16 --equibind-dir Dockings/Benchmark_Equibind_cputimed --unidock2-dir '' --unidock-dir '' --per-pose-csv ... --out-dir ..._charged --basis charged --cpu-threads 32), either after the hub rewrites `rmsd` or with --rmsd-column/--kabsch-column pointing at the nearest-copy columns. Caption: 199, 169 and 80 -> 214, 183 and 83; 53 -> 54. Companions: effort_by_quality_stats.json, effort_summary.csv (Table 6: poses_near2 311/1622/466 and *_per_near2 recompute; yaml table_6 pins complexes 199/169 and cpu_core_s_per_near2 1752.8/2.93), per_complex_effort.csv. Byte-compare gated (Case \"15\").",
+   "effort": "small",
+   "current_value": "199, 169 and 80 qualifying complexes; 53 shared",
+   "new_value": "214, 183 and 83; 54 shared",
+   "risk": "Text at :747 ('303 to 301 to 199 ... 169 ... 80') and the 5.3/5.3/137.2 medians are read from the same json and move too (text dimension)."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 750,
+   "what": "Fig 16 \\includegraphics{media/media/image25.png}, caption :751 \"Hardware resource per qualifying pose. The two currencies are pooled aggregates and are never summed\", label fig:results-r24. md5 8ca0604e... matches TWO live files byte-identically: docking_effort_gnina_v2_charged/panels/resource_per_near_native_valid_pose.png and docking_effort_gnina_v2/panels/resource_per_near_native_valid_pose.png",
+   "depends_how": "Same near2 gate (`rmsd` <= 2 & pb_valid) divides pooled CPU-core-s and GPU-s by poses_near2 (effort_summary.csv: 311 / 1622 / 466 poses; cpu_core_s_per_near2 1752.8 / 2.93 / 165.3; gpu_s_per_near2 118.9 / 49.9 / 1.40).",
+   "change": "REGENERATE. Both stages bench_effort_charged and bench_effort_elapsed write it (the elapsed run omits --basis charged --cpu-threads 32). Caption has no number. Companion effort_summary.csv (Tables 6 and 10) recomputes; poses_near2 rises for every arm.",
+   "effort": "small",
+   "current_value": "poses_near2 311 / 1622 / 466; cpu_core_s_per_near2 1752.8 / 2.93 / 165.3",
+   "new_value": "recompute",
+   "risk": "yaml `figures.pairs.image25` points at the elapsed dir while REGENERATE.md section 5 prefers the charged copy; both must stay byte-identical after the rerun."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 188,
+   "what": "Fig 18 \\includegraphics{media/media/image44.png}, caption :189 \"Raw Vina ranking against gnina re-ranking of the identical pose pool, at the three rescored rungs. Re-ranking buys at rank-1 (A) what more searching cannot, whereas over the whole pool (B) it gains nothing on placement and gives a little back on the three-part gate ...\", label fig:appendix-exh-rescored. md5 a2793438... == posebusters_results/autodock_exhaustiveness_returns/figures/exh_raw_vs_rescored.png",
+   "depends_how": "autodock_exhaustiveness_returns.py:536-544 apply_gates: `out[\"rmsd2\"] = out[\"rmsd\"] <= RMSD_OK_A`, `kcol = \"bestfit_rmsd\"`, `out[\"kabsch1\"] = out[\"_kabsch\"] < FORM_OK_KABSCH_A`, `out[\"triple\"] = rmsd2 & pb_valid & kabsch1`. Arms discovered from the PoseBusters config (:328-365): autodock_mgltools_exh18, autodock_mgltools (exh32), _exh64, _exh92, _exh128 raw and the exh32/64/128 gnina rescorings. Companion exh_raw_vs_rescored_stats.txt: exh32 rmsd2 rank-1 86 -> 101 (+15), oracle 156 -> 157 (+1).",
+   "change": "REGENERATE. Stage bench_exhaustiveness_returns (autodock_exhaustiveness_returns.py --per-pose-csv .../per_pose_metrics.csv --out-dir posebusters_results/autodock_exhaustiveness_returns --n-boot 5000 --verify-input-parity). The probe CSV covers only autodock_mgltools_exh128 and _exh128_gnina, so nearest_copy_rescoring.py must first be run with --arms autodock_mgltools_exh18 autodock_mgltools autodock_mgltools_exh64 autodock_mgltools_exh92 autodock_mgltools_gnina autodock_mgltools_exh64_gnina (plus nearest-copy bestfit). Caption claims ('gains nothing on placement over the whole pool', 'gives a little back on the three-part gate') recompute. Companions: figures/exh_raw_vs_rescored_stats.txt, exh_raw_vs_rescored.csv, exh_returns_report.txt. Byte-compare gated (Case \"18, 19, 20, 21\").",
+   "effort": "medium",
+   "current_value": "exh32 rank-1 86 -> 101; oracle 156 -> 157",
+   "new_value": "recompute",
+   "risk": "Sidecar header `source: .../benchmark_full_protein_vina_scoring/dock/pose_comparison_report/per_pose_metrics.csv` names the PRE-matched tree although the registered stage passes the matched one; provenance of the shipped ladder figures should be confirmed before rebuilding."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 194,
+   "what": "Fig 19 \\includegraphics{media/media/image45.png}, caption :195 \"Complexes gained over the rung below, against the number of top-ranked poses inspected, on the near-nativeness gate (A) and on the three-part gate (B). Ringed markers carry an unadjusted McNemar p below 0.05. ... the top step is worth three complexes at rank-1 but does not become individually resolvable until about depth 22\", label fig:appendix-exh-depth. md5 c02e3b7d... == autodock_exhaustiveness_returns/figures/exh_depth_sweep.png",
+   "depends_how": "Same gates. Companion exh_depth_sweep_stats.txt: rmsd2 depth 1 exh92->exh128 k 92 -> 95, delta 3, n_discordant 9, p 0.508; exh64->exh92 delta -3.",
+   "change": "REGENERATE with Fig 18. Caption numbers 'three complexes at rank-1' and 'depth 22' recompute under nearest-copy gates for all five rungs. Companions exh_depth_sweep_stats.txt, exh_depth_sweep.csv, exh_yield_by_depth.csv.",
+   "effort": "medium",
+   "current_value": "top step +3 at rank-1; resolvable at about depth 22",
+   "new_value": "recompute",
+   "risk": "Ladder ordering is an AutoDock-internal comparison; the M2 memo did not test whether it is convention-invariant."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 234,
+   "what": "Fig 20 \\includegraphics{media/media/image46.png}, caption :235 \"Complexes with at least one qualifying pose against measured Vina search time, at rank-1 (A) and over the whole pool (B), with Wilson intervals. ... Exhaustiveness 92 is the most expensive rung on the ladder and buys nothing at rank-1\", label fig:appendix-exh-cost. md5 716dd6b3... == autodock_exhaustiveness_returns/figures/exh_yield_vs_cost.png",
+   "depends_how": "Same gates; companion exh_yield_vs_cost_stats.txt: rmsd2 rank-1 k = 73/86/95/92/95 for exh 18/32/64/92/128, oracle 126/156/183/194/202. Cost axis (Vina wall time) is convention-independent.",
+   "change": "REGENERATE with Fig 18. Caption claim 'buys nothing at rank-1' (92 < 95 at exh64) recompute. Companions exh_yield_vs_cost_stats.txt, exh_cost_per_arm.csv (unchanged), exh_yield_contrasts.csv.",
+   "effort": "medium",
+   "current_value": "rank-1 rmsd2 73/86/95/92/95; oracle 126/156/183/194/202",
+   "new_value": "recompute",
+   "risk": "none beyond the arm re-scoring prerequisite"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 240,
+   "what": "Fig 21 \\includegraphics{media/media/image47.png}, caption :241 \"Additional complexes recovered per extra wall-clock hour for each step up the ladder, at rank-1 (A) and over the whole pool (B), with paired complex-level bootstrap whiskers. ... The top step carries no bar because its measured cost delta is negative\", label fig:appendix-exh-return. md5 a7b009fe... == autodock_exhaustiveness_returns/figures/exh_marginal_return.png",
+   "depends_how": "Numerator (delta complexes on rmsd2 / triple gates) depends on `rmsd` and `bestfit_rmsd`; denominator (delta wall-h) does not. Companion exh_marginal_return_stats.txt: rank-1 rmsd2 +13/+9/-3/+3, oracle +30/+27/+11/+8; appendix :244 text prints +71.6, +35.9, +5.9 complexes per hour.",
+   "change": "REGENERATE with Fig 18. Caption sentence about the negative cost delta stays true (cost-only). Bar heights and bootstrap whiskers recompute. Companions exh_marginal_return_stats.txt, exh_marginal_return.csv, exh_diminishing_returns.csv.",
+   "effort": "medium",
+   "current_value": "rate per hour (triple, whole pool) +71.6 / +35.9 / +5.9",
+   "new_value": "recompute",
+   "risk": "5,000-resample bootstrap at a fixed seed: byte-identity requires the same seed and input row order."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 314,
+   "what": "Fig 1 \\includegraphics{media/media/image2.png}, caption :315 \"Post-hoc optimisation and PoseBusters validity. Significance brackets carry Holm-corrected p-values\", label fig:results-r1. md5 00d8cd95... == posebusters_results/benchmark_matched_equibind/dock/validity_report_mgltools/00_figure2_validity_yield.png",
+   "depends_how": "Does not depend on any crystal metric: figure2_validity_yield.py argparse (:280-282) takes only --csv posebusters_filtered_results.csv and --out; no per-pose-metrics input.",
+   "change": "UNCHANGED (validity only).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 602,
+   "what": "Fig 8 \\includegraphics{media/media/image13.png}, caption :603 \"PoseBusters-valid yield of produced poses on Orai\". md5 bbb5cf61... == posebusters_results/_orai_matched_root/orai_pbvalid_yield_compare/09f_pbvalid_yield_dominant_orai_benchmark_vs_experimental.png (also an identical copy under obsolete/posebusters_results/orai_pbvalid_yield_compare_matched/)",
+   "depends_how": "Orai is crystal-free (docking_effort_comparison.py:95 'there is NO crystal'; orai_pbvalid_yield_compare.py reads --results-root only).",
+   "change": "UNCHANGED (Orai).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 619,
+   "what": "Fig 9 \\includegraphics{media/media/image43.png}, caption :620 \"Usable pose yield per Orai frame-ligand unit\". md5 80b9a1b9... == _orai_matched_root/orai_pbvalid_tm_share_compare/fig_pbvalid_outside_tm_whisker.png",
+   "depends_how": "Orai, crystal-free; stage orai_tm_share_compare.",
+   "change": "UNCHANGED (Orai).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 631,
+   "what": "Fig 10 \\includegraphics{media/media/image15.png}, caption :632 \"Transmembrane loss of PoseBusters-valid poses\". md5 ecedeff7... == _orai_matched_root/orai_pbvalid_tm_share_compare/fig_tm_loss_relative_compare.png",
+   "depends_how": "Orai, crystal-free.",
+   "change": "UNCHANGED (Orai).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 646,
+   "what": "Fig 11 \\includegraphics{media/media/image16.png}, caption :647 \"Distribution of inter-tool consensus-site distances on Orai. The dotted vertical lines mark the per-pair medians\". md5 4f71289e... == _orai_matched_root/orai_jku/pose_clusters/panels/orai_cross_tool_agreement_compare.png",
+   "depends_how": "Orai, crystal-free (reference-free clustering).",
+   "change": "UNCHANGED (Orai).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 654,
+   "what": "Fig 12 \\includegraphics{media/media/image17.png}, caption :655 \"Cross-tool agreement on Orai\". md5 f1aafbb4... == _orai_matched_root/orai_jku/pose_clusters/panels/orai_tool_agreement_compare.png",
+   "depends_how": "Orai, crystal-free.",
+   "change": "UNCHANGED (Orai).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 677,
+   "what": "Fig 13 \\includegraphics{media/media/image21.png}, caption :678 \"Interaction-type profile on Orai\". md5 bafb0d00... == pandamap_results/orai_interaction_compare_matched/fig_type_profile_compare.png",
+   "depends_how": "Orai PandaMap compare; no crystal reference exists for Orai.",
+   "change": "UNCHANGED (Orai).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 689,
+   "what": "Fig 14 \\includegraphics{media/media/image23.png}, caption :690 \"Contact-fingerprint overlap between the two ligand sets\". md5 38f90f7b... == pandamap_results/orai_interaction_compare_matched/fig_fingerprint_overlap_compare.png",
+   "depends_how": "Orai PandaMap compare, crystal-free.",
+   "change": "UNCHANGED (Orai).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 34,
+   "what": "Fig 17 \\includegraphics{media/media/image1.png}, caption :35 \"Physics-based Docking Flow Chart. The figure is an original synthesis drawn by the author ...\". md5 fac7d011... == /home/manndo/master_dev/docking_workflow.png",
+   "depends_how": "Author-drawn schematic (Flow Charts.ipynb); no data dependence.",
+   "change": "UNCHANGED.",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 410,
+   "what": "Fig 22 \\includegraphics{media/media/image14.png}, caption :411 \"Orai Fr300 with docked ligands and transmembrane exclusion. The image is a one-off illustrative render prepared in PyMOL ... carries no measurement\". md5 5967dab8... matches NO file outside thesis_latex/media (REGENERATE.md \u00a75: 'no source on disk'; yaml `figures.unreproducible.image14`).",
+   "depends_how": "Hand-composed render, Orai (crystal-free); no data dependence.",
+   "change": "UNCHANGED. Listed as the first of the two md5-orphan assets; orphan by design, not stale.",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 422,
+   "what": "Fig 23 \\includegraphics{media/media/image18.png}, caption :423 \"Reference-free cluster quality per tool on Orai ... 163 outliers off-scale up to a maximum of 2,209,006\". md5 3346fc00... == _orai_matched_root/orai_jku/pose_clusters/panels/orai_cluster_quality_compare.png",
+   "depends_how": "Orai, reference-free by construction (yaml prose.figure_23 pins compactness/silhouette medians from cluster_quality_per_tool.csv).",
+   "change": "UNCHANGED (Orai).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 430,
+   "what": "Fig 24 \\includegraphics{media/media/image19.png}, caption :431 \"Effect of validity and placement filtering on cluster quality for the benchmark ligands ...\" (benchmark ligands ON ORAI). md5 6518b20c... == _orai_matched_root/orai_benchmark/pose_clusters/orai_cluster_quality_filtering.png",
+   "depends_how": "Orai control panel, crystal-free; 'placement filtering' here is the transmembrane slab, not an RMSD gate.",
+   "change": "UNCHANGED (Orai).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "Caption wording 'benchmark ligands' could be misread as the calibration benchmark; it is the Orai control panel."
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 438,
+   "what": "Fig 25 \\includegraphics{media/media/image20.png}, caption :439 \"Total protein-ligand contacts per pose on Orai\". md5 96bc8672... == pandamap_results/orai_interaction_compare_matched/fig_total_interactions_compare.png",
+   "depends_how": "Orai, crystal-free.",
+   "change": "UNCHANGED (Orai).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 478,
+   "what": "Fig 26 \\includegraphics{media/media/image22.png}, caption :479 \"Orai residue hot-spots ... over all 7,458 poses ... Asp110 at 28.8% ... Pro146 at 14.7%\". md5 06a624a7... == pandamap_results/orai_interaction_compare_matched/fig_residue_hotspots_compare.png",
+   "depends_how": "Orai, crystal-free.",
+   "change": "UNCHANGED (Orai).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 566,
+   "what": "Fig 27 \\includegraphics{media/media/image12.png}, caption :567 \"The docking receptor. Cartoon representation of the Fr300 molecular-dynamics snapshot ... one-off illustrative render prepared in PyMOL\". md5 a27b91c9... matches NO file outside thesis_latex/media (yaml `figures.unreproducible.image12`).",
+   "depends_how": "Hand-composed render; no data dependence.",
+   "change": "UNCHANGED. Second md5-orphan asset, orphan by design.",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 673,
+   "what": "Fig 28 \\includegraphics{media/media/image33.png}, caption :674 \"Univariate distributions of twelve physicochemical attributes across the 308 benchmark ligands\". md5 72d864aa... == PoseBusters_Benchmark_Analysis/figures/01_ligand_univariate_distributions.png",
+   "depends_how": "Ligand descriptors from PoseBusters_DataSet_Analysis.ipynb; no pose metric.",
+   "change": "UNCHANGED (descriptors).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 713,
+   "what": "Fig 29 \\includegraphics{media/media/image34.png}, caption :714 \"Drug-likeness of the benchmark ligands ...\". md5 571f9b67... == PoseBusters_Benchmark_Analysis/figures/02_druglikeness_ro5_qed.png",
+   "depends_how": "Descriptors only.",
+   "change": "UNCHANGED (descriptors).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 724,
+   "what": "Fig 30 \\includegraphics{media/media/image35.png}, caption :725 \"Elemental and charge composition. Prevalence of selected elements and features (A), formal-charge distribution (B) and heteroatom counts (C)\". md5 74eb70db... == PoseBusters_Benchmark_Analysis/figures/03_elemental_charge_composition.png",
+   "depends_how": "Panel (A) already plots the flag `\"Multi-instance\": df.n_instances>1` (PoseBusters_DataSet_Analysis.ipynb line 1510) where n_instances is counted from `<d>_ligands.sdf` (line 546 `n_inst = sum(1 for _ in Chem.SDMolSupplier(str(folder / f\"{d}_ligands.sdf\")))`). This is the one existing display of the 143/308 (46%) multi-copy count; it does not depend on any pose metric.",
+   "change": "UNCHANGED, but the plan can cross-reference this panel when introducing the nearest-copy convention instead of adding a new figure.",
+   "effort": "trivial",
+   "current_value": "Multi-instance share 46 % (143/308)",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 735,
+   "what": "Fig 31 \\includegraphics{media/media/image36.png}, caption :736 \"Pairwise Pearson correlation of the sixteen ligand descriptors\". md5 e05c638d... == PoseBusters_Benchmark_Analysis/figures/04_ligand_correlation_heatmap.png",
+   "depends_how": "Descriptors only.",
+   "change": "UNCHANGED (descriptors).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 741,
+   "what": "Fig 32 \\includegraphics{media/media/image37.png}, caption :742 \"Two-dimensional attribute mappings with points coloured by QED ...\". md5 429a8a25... == PoseBusters_Benchmark_Analysis/figures/05_2d_attribute_mappings.png",
+   "depends_how": "Descriptors only.",
+   "change": "UNCHANGED (descriptors).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 747,
+   "what": "Fig 33 \\includegraphics{media/media/image38.png}, caption :748 \"Pairwise joint distributions of six core descriptors ...\". md5 564613ef... == PoseBusters_Benchmark_Analysis/figures/06_pairplot_core_descriptors.png",
+   "depends_how": "Descriptors only.",
+   "change": "UNCHANGED (descriptors).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 758,
+   "what": "Fig 34 \\includegraphics{media/media/image39.png}, caption :759 \"Principal component analysis of the standardised ligand descriptors ...\". md5 48e296ea... == PoseBusters_Benchmark_Analysis/figures/09_pca_scree_loadings.png",
+   "depends_how": "Descriptors only.",
+   "change": "UNCHANGED (descriptors).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 764,
+   "what": "Fig 35 \\includegraphics{media/media/image40.png}, caption :765 \"PCA biplot with descriptor loadings (A) and PC scores coloured by conformer-generation difficulty (B) ...\". md5 7dabec72... == PoseBusters_Benchmark_Analysis/figures/10_pca_biplot.png",
+   "depends_how": "Panel (B) colours by startconf_rmsd (start conformer vs `<d>_ligand.sdf`, notebook lines 542-549), a dataset descriptor, not a pose metric.",
+   "change": "UNCHANGED (descriptors); see Fig 37 note on the start-conformer reference.",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 775,
+   "what": "Fig 36 \\includegraphics{media/media/image41.png}, caption :776 \"Receptor profile. Resolved residues, chains per complex, distinct cofactor types and ligand-versus-receptor size\". md5 eee2efd0... == PoseBusters_Benchmark_Analysis/figures/07_receptor_profile.png",
+   "depends_how": "Receptor descriptors (n_chains from the protein PDB, notebook line 290/2243); no pose metric.",
+   "change": "UNCHANGED (descriptors).",
+   "effort": "trivial",
+   "current_value": "n/a",
+   "new_value": "n/a",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 786,
+   "what": "Fig 37 \\includegraphics{media/media/image42.png}, caption :787 \"Conformer-generation difficulty. The best-fit start-conformer-to-crystal RMSD distribution (A) and its dependence on rotatable bonds (B) and heavy-atom count (C)\". md5 a2a97c23... == PoseBusters_Benchmark_Analysis/figures/08_startconf_rmsd.png",
+   "depends_how": "PoseBusters_DataSet_Analysis.ipynb line 542 `mol = Chem.MolFromMolFile(str(folder / f\"{d}_ligand.sdf\"))`, line 549 `row[\"startconf_rmsd\"] = startconf_rmsd(start, mol)` (symmetry-corrected GetBestRMS, superposed). References the single deposited instance, but the object measured is the supplied start conformer, not a docked pose.",
+   "change": "UNCHANGED under the stated scope (per-pose nearest copy). If the plan extends 'every crystal-referenced metric' to dataset descriptors, this would become min over copies (recompute); flagged as a judgement call.",
+   "effort": "trivial",
+   "current_value": "median 1.72 \u00c5 over 306/308 ligands (notebook output line 1274)",
+   "new_value": "n/a (or recompute if scope is widened)",
+   "risk": "Widening the scope here would also touch Fig 35(B) colouring and Table 16 summary_statistics.csv."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 903,
+   "what": "`figures:` block, `media_dir: thesis_latex/media/media`, `pairs:` image2..image47 -> source paths (lines 906-960) plus `unreproducible: image12, image14` (lines 966-984). thesis_assertions.py check_figures (:684-693) compares md5 of media/<image>.png to md5 of the paired source.",
+   "depends_how": "After any REGENERATE figure is rebuilt, the shipped media copy must be replaced by the new source file or check_figures reports a finding for every pair listed.",
+   "change": "No path edits needed (paths stay); the 14 REGENERATE media files must be re-copied from their listed sources after the reruns (hand-copy, match by md5 never timestamp). image25 is paired to the elapsed dir here and to the charged dir in REGENERATE.md \u00a75; both must be regenerated so they stay byte-identical.",
+   "effort": "small",
+   "current_value": "37/39 pairs byte-identical",
+   "new_value": "37/39 after re-copy",
+   "risk": "Copying only one of the two effort dirs' image25 leaves the other stale; the harness only checks the elapsed one."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 1071,
+   "what": "`prose.figure_39:` input pandamap_results/.../10b_contact_decomposition_by_rank.csv; `autodock_spurious_rank1: 15.3`, `diffdock_spurious_rank1: 14.1`, `autodock_spurious_rank5: 17.6`, `equibind_matched_rank1: 16.7`, `equibind_missed_rank1: 18.9`, `equibind_spurious_min: 12.0`, `equibind_spurious_max: 12.6`",
+   "depends_how": "All seven values derive from the single-copy, chain-keyed native fingerprint (Fig 39 dependence).",
+   "change": "Recompute and update after the PandaMap copies run; a mismatch is a harness finding by design.",
+   "effort": "small",
+   "current_value": "15.3 / 14.1 / 17.6 / 16.7 / 18.9 / 12.0-12.6",
+   "new_value": "recompute",
+   "risk": "Also `prose.audit` (yaml :1093-1108: profiled_poses 4253, median_rmsd 7.57, within_2a_pct 21.3, crude_f1, standardised_f1, site_filtered_*) is read from interaction_pose_basis_audit.csv and moves with the per-pose rmsd column."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/validate_regeneration.py",
+   "line": 67,
+   "what": "CASES registry: Case \"1\" image2; \"4\" image5; \"7, 39\" image9/image11; \"15\" image24/image25; \"18, 19, 20, 21\" image44-47; Orai cases image13/43/15/16/17/18/21/23/20/22. DECLARED (lines 165-179): \"2, 3\" posebusters_pose_comparison re-render, \"5, 6, 38\" pose_cluster_crystal_pocket_report ('analysis cache is keyed to the out-dir signature'), \"28-37\" dataset notebook.",
+   "depends_how": "Defines which REGENERATE figures have a byte-compare harness after the switch: Figs 4, 7, 15, 16, 18-21, 39 are gated; Figs 2, 3, 5, 6, 38 are not.",
+   "change": "No code change required, but the plan must run this validator after the reruns for the gated nine and rely on md5 hand-matching for the five declared ones. The cluster case's analysis_cache.pkl must be invalidated (out-dir signature) or the old single-copy geometry is reused.",
+   "effort": "small",
+   "current_value": "gated: 1,4,7,8-16,18-21,23,25,26,39",
+   "new_value": "same set",
+   "risk": "Stale analysis_cache.pkl in the cluster out-dir silently reproduces single-copy results."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/nearest_copy_probe/nearest_copy_rescoring.py",
+   "line": 1,
+   "what": "Probe README: 'Columns added per pose: n_copies, rmsd_ref_re (must equal rmsd), rmsd_nearest_copy, nearest_copy_is_ref, cd_ref, cd_min_alt, rmsd_min_alt'; regenerate command lists --arms autodock_mgltools_exh128_gnina autodock_mgltools_exh128 diffdock_smina diffdock equibind_unguided_gnina unidock2.",
+   "depends_how": "Figures 18-21 need six further arms (autodock_mgltools_exh18, autodock_mgltools, autodock_mgltools_exh64, autodock_mgltools_exh92, autodock_mgltools_gnina, autodock_mgltools_exh64_gnina) and Figures 3, 4 and 18-21 need a nearest-copy Kabsch/bestfit column that the probe does not compute.",
+   "change": "Extend the probe (or the hub) with the six ladder arms and a bestfit-vs-nearest-copy column before any of those figures can be regenerated.",
+   "effort": "medium",
+   "current_value": "6 arms, no nearest-copy bestfit",
+   "new_value": "12 arms + bestfit_nearest_copy",
+   "risk": "none"
+  }
+ ],
+ "decisions": [
+  {
+   "question": "How does the cluster report (Figs 5, 6, 38, Table 3) define the 'correct' crystal cluster when a complex has several ligand copies?",
+   "options": [
+    "Union: any cluster whose centre lies within 4 \u00c5 of ANY copy is correct; reach = >=1 top-N pose in any such cluster; precision@1 hit if the rank-1 pocket is within 4 \u00c5 of any copy",
+    "Per-pose nearest copy: keep one correct cluster per copy and credit a pose against the copy nearest to it",
+    "Keep the single-instance definition for the cluster figures and disclose the confound in the caption"
+   ],
+   "recommendation": "Union. It is the only definition consistent with 'RMSD to the nearest of all copies' at the pose level, it is what pose-level 4 \u00c5 reach already measures (183->241 rank-1), and it needs one code change (crystal_centroid returning a list) plus min-over-copies in _dist calls at :1107, :553, :579, :584, :614, :624, :944, :966."
+  },
+  {
+   "question": "How are the native interaction fingerprints for Figs 7 and 39 (and Table 4) re-referenced?",
+   "options": [
+    "Run PandaMap once per record of <ID>_ligands.sdf against the canonical hetatm_cleaned receptor and join each pose to its nearest copy's fingerprint (new crystal tasks in run_pandamap.py build_crystal_tasks :948-970)",
+    "Drop `chain` from the fingerprint key so same-numbered residues on another chain match the chain-A reference",
+    "Leave the interaction figures on the single instance and state it in the caption"
+   ],
+   "recommendation": "Per-copy PandaMap tasks. The chain-agnostic key would credit all poses, not only multi-copy ones, and 4/143 alternate copies do not share the pocket residues. Cost is about 138 extra crystal profiles, cheap compute, but the report join and the pose-basis audit both need code."
+  },
+  {
+   "question": "Is the form endpoint (bestfit / Kabsch RMSD: Figs 3, 4, 18-21 triple gate, Table 27) re-referenced to the nearest copy?",
+   "options": [
+    "Yes: compute Kabsch RMSD against the nearest copy's conformer as a new column and swap it into `bestfit_rmsd`",
+    "No: keep bestfit against the single instance, since form is conformer-only and copies differ little"
+   ],
+   "recommendation": "Yes, for internal consistency with 'every crystal-referenced metric', but measure the shift first; if no pose crosses the 1 \u00c5 form gate the figures can be re-rendered without a caption change."
+  },
+  {
+   "question": "Do the AutoDock-only exhaustiveness figures (18-21) switch convention?",
+   "options": [
+    "Regenerate under nearest-copy after re-scoring the six additional ladder arms",
+    "Keep them single-instance with one caption clause, on the ground that the ladder ordering is an internal AutoDock comparison"
+   ],
+   "recommendation": "Regenerate. Table 8 and Figs 18-21 are read from the same per_pose_metrics.csv as Table 1; two conventions in one file is the Gen A / Gen B trap again."
+  },
+  {
+   "question": "Where do the nearest-copy values live in per_pose_metrics.csv?",
+   "options": [
+    "Overwrite `rmsd`, `bestfit_rmsd`, `centroid_dist`, `contact_recovery`, `plif_recovery` with nearest-copy values and add `*_refcopy` secondary columns, so downstream scripts (effort :256-257, exhaustiveness :536-537, cluster :863, filmstrip via hub) need no flag changes",
+    "Add `rmsd_nearest_copy` etc. and point every downstream script at them via flags (effort has --rmsd-column/--kabsch-column; exhaustiveness, cluster and filmstrip hardcode `rmsd`)"
+   ],
+   "recommendation": "Overwrite with secondary columns. Three of the five downstream producers hardcode the column names, and the yaml column roles ('rmsd gates every <=2 \u00c5 number') stay true."
+  }
+ ],
+ "open_questions": [
+  "The exhaustiveness sidecars (figures/exh_*_stats.txt line 4) record `source: .../benchmark_full_protein_vina_scoring/dock/pose_comparison_report/per_pose_metrics.csv`, the PRE-matched tree, while stage bench_exhaustiveness_returns passes the matched tree. Were the shipped Figs 18-21 built from the matched table? Not re-derived here.",
+  "Does posebusters_results/benchmark/dock/hetatm_cleaned/<ID>_protein.pdb (the canonical PandaMap receptor, config 07) retain every chain, so that alternate-copy crystal tasks can be profiled against it?",
+  "For the four complexes whose alternate copy does not share the pocket residues (7A9E_R4W, 7TUO_KL9, 7VKZ_NOJ, 7Z1Q_NIO), should the cluster 'correct site' union include those copies?",
+  "body_main_short.tex:476 prints a pooled three-tool 4 \u00c5 reach of 97.7 % at median 0.34 \u00c5 while summary.json gives ensemble_clusters oracle 0.9472 and the canonical per-pose file gives 98.0 %; the M2 memo notes the pose-basis mismatch is pre-existing. Under nearest-copy the pooled figure becomes 99.7 %, but the generating script for that sentence must be traced first.",
+  "Whether image25 should keep two byte-identical sources (charged and elapsed effort dirs): yaml pairs it to the elapsed dir, REGENERATE.md \u00a75 to the charged dir.",
+  "Whether the dataset-chapter start-conformer RMSD (Fig 37, Fig 35 panel B, Table 16 summary_statistics.csv) is inside the 'every crystal-referenced metric' scope; it references <d>_ligand.sdf but measures a supplied conformer, not a pose."
+ ],
+ "artifacts_written": [
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/png_md5_index.txt"
+ ]
+}

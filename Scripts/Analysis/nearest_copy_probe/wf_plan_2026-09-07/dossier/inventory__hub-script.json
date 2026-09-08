@@ -1,0 +1,458 @@
+{
+ "dimension": "Downstream consumers of per_pose_metrics.csv (rmsd / pb_rmsd / bestfit_rmsd / centroid_dist / contact_recovery / plif_recovery) and direct loaders of <ID>_ligand.sdf / <ID>_ligands.sdf under Scripts/ and the notebooks, excluding the hub process_pair itself and thesis_assertions.py",
+ "summary": "Twenty-one scripts read per_pose_metrics.csv and seven scripts or notebook cells open <ID>_ligand.sdf directly. They fall into three classes. (1) Pure re-readers that gate on the column named `rmsd` (and `bestfit_rmsd` / `centroid_dist`): posebusters_validity_report, docking_effort_comparison, topk_recovery_gnina_arm, thesis_endpoint_diagnostics, optimization_benefit_stats, rank_success_analysis, ligand/receptor_docking_difficulty, diffdock_gnina_rerank_analysis (+chemotype), autodock_exhaustiveness_returns, filmstrip_rank1_top5_top15, interaction_pose_basis_audit (fig-14 join in pandamap_interaction_report too), boxed308_arm_compare. These need NO code change and re-run automatically IF the hub keeps the primary column named `rmsd` and moves rmsd, pb_rmsd, pb_kabsch_rmsd, bestfit_rmsd and centroid_dist to the SAME nearest copy (autodock_exhaustiveness_returns.py:570 asserts bestfit_rmsd == pb_kabsch_rmsd and the filmstrip pairs inplace=rmsd with form=bestfit, so a split convention breaks them). (2) Scripts with their OWN crystal logic that must be rewritten: pose_cluster_crystal_pocket_report.py (crystal_centroid at :921 loads the single instance; the \"correct cluster\" at :1109-1111 is the cluster nearest ONE crystal point within 4 A; every reach / co-reach / homogeneity / rank-in-cluster / precision@1 figure hangs on it; Table 3, Figs 5, 6, 38), run_pandamap.py (:963 fingerprints the single crystal instance on the reference chain; native recovery of a pose on another chain is 0 by construction because the key carries chain), pandamap_interaction_report.py (:1181, :1716, :2044 one native fingerprint per (protein, ligand); Table 4, Fig 7, figs 04-14), pocket_comparison_report.py (:1141 fpocket/p2rank DCC/DCA to the single crystal centroid), boxed308_raw_arm_metrics.py (:123, :67-84 duplicate scoring engine; measured inert at rank-1 on the boxed run). (3) Inert sites that only look relevant: run_posebusters.py :3522-3523 and Master_Docking cell[99] L81 use _ligand.sdf as a bond-order TEMPLATE (copy-invariant); Master_Docking cells [9] L221 / [13] L222 use it to define the OLD boxed search box (docking side, do not re-dock); _build_xray_control_notebook.py:283 busts the crystal ligand reference-free; rebust_hydrogen_normalised.py:254 reads only pb_valid; stats_utils.py, method_filter.py, pymol_pose_cluster_scene.py and all orai_* scripts carry no crystal reference. PoseBusters_DataSet_Analysis.ipynb cell[5] L12 already writes `n_instances` from _ligands.sdf into ligand_protein_features.csv, a ready-made single-/multi-copy stratifier. Derived new values from the six-arm nearest-copy table: docking_effort near2 pose counts 311->442 / 1622->2068 / 466->483 (AutoDock*/DiffDock*/EquiBind*); endpoint gate cost at rank-1 2/4/2 -> 2/5/2 complexes; difficulty-script single-arm oracle <=2 A 202->217 / 173->186 / 83->86 of 303; filmstrip 8 A trim keeps 190->249 / 164->224 / 143->155 PB-valid rank-1 poses; pose-level rank-1 4 A centroid reach 183->241 / 172->225 / 137->144. Everything cluster-level, PandaMap-level and form-level (bestfit vs the nearest copy) is \"recompute\".",
+ "sites": [
+  {
+   "file": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 921,
+   "what": "def crystal_centroid(benchmark_dir, cid): sdf = benchmark_dir / cid / f\"{cid}_ligand.sdf\" ... return centroid_from_mol(mol)",
+   "depends_how": "Loads the single deposited instance and returns ONE crystal centroid; every crystal-referenced quantity in the cluster report (correct cluster, per-rank centroid distance, purity, precision@1, reach curves, co-reach matrix, homogeneity stats) is measured against this point.",
+   "change": "Return the list of centroids of every record in <ID>_ligands.sdf (probe loader pattern, nearest_copy_rescoring.py:21,:35). All callers switch to min-over-copies or per-copy logic.",
+   "effort": "large",
+   "risk": "The module is imported by orai_pose_cluster_report.py:64; signature changes must keep the Orai (no-crystal) path working.",
+   "current_value": "one np.ndarray",
+   "new_value": "recompute"
+  },
+  {
+   "file": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 1109,
+   "what": "cp = min(pockets, key=lambda p: _dist(p[\"center\"], crystal)); correct_dist = round(_dist(cp[\"center\"], crystal), 3); correct_is_hit = bool(correct_dist <= thr)",
+   "depends_how": "The 'correct' (crystal-closest) cluster is the single cluster nearest the single crystal centroid, gated at --match-thr 4.0 A (:4299). With alternate copies 36 A away, a cluster sitting on another copy is never 'correct' and its poses count as misses in reach, co-reach, rank_in_correct_cluster and near-native composition.",
+   "change": "Redefine: a cluster is correct when its centre lies within thr of ANY copy (one correct cluster per copy possible), or nearest cluster to the nearest copy. Reach = tool has a pose in any correct cluster. correct_cluster_purity_rmsd / best_rmsd (:555-558, :1244-1246) become per-copy or min over copies.",
+   "effort": "large",
+   "current_value": "one correct_label per complex",
+   "new_value": "recompute (pose-level rank-1 4 A reach analogue: 183->241 / 172->225 / 137->144)"
+  },
+  {
+   "file": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 1020,
+   "what": "cd = _dist(C[idx], crystal) if (idx is not None and crystal is not None) else np.nan ; rm = float(file_rmsd.get(f, np.nan))",
+   "depends_how": "Per-rank centroid distance is recomputed locally against the single crystal centroid (not read from the CSV); rm is the CSV `rmsd`. Feeds per_rank_distance.csv (:4535) and top5_centroid_distance_by_rank / top5_rmsd_by_rank (:1899-1904).",
+   "change": "cd = min over copies. rm follows the hub automatically if the primary column stays `rmsd`.",
+   "effort": "small",
+   "new_value": "recompute"
+  },
+  {
+   "file": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 963,
+   "what": "def cdist(row): c = cents.get(row[\"pose_file\"]); if c is not None and crystal is not None: return _dist(c, crystal); return float(row.get(\"centroid_dist\", np.nan))",
+   "depends_how": "_tool_pose_stats computes top1/oracle centroid distance and oracle_centroid_hit (:975-977) against the single crystal centroid, falling back to the CSV centroid_dist.",
+   "change": "min over copies; the CSV fallback becomes nearest-copy automatically once the hub changes centroid_dist.",
+   "effort": "small",
+   "new_value": "recompute"
+  },
+  {
+   "file": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 980,
+   "what": "rmsd_le2=bool(valid_rm.min() <= 2.0) if valid_rm.size else np.nan",
+   "depends_how": "Per-tool oracle near-native flag from the CSV `rmsd` column.",
+   "change": "Automatic once the hub's `rmsd` is nearest-copy.",
+   "effort": "trivial",
+   "new_value": "recompute"
+  },
+  {
+   "file": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 3697,
+   "what": "oracle_all = pp.groupby(\"protein\")[\"rmsd\"].min(); oracle_valid = pp[pbv].groupby(\"protein\")[\"rmsd\"].min()",
+   "depends_how": "Descriptor-vs-quality figures recompute the oracle from per_pose_metrics `rmsd` (NEAR = 2.0 at :3684).",
+   "change": "Automatic once the hub's `rmsd` is nearest-copy.",
+   "effort": "trivial",
+   "new_value": "recompute"
+  },
+  {
+   "file": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 562,
+   "what": "def _precision_at_1(pockets, crystal, thr): ... dd = _dist(p[\"center\"], crystal); out[f\"p1_{name}_dist\"] = round(dd, 3)",
+   "depends_how": "Ranking-rule ablation (ranking_ablation.csv :4741) scores the rank-1 pocket against the single crystal point.",
+   "change": "min over copies.",
+   "effort": "small",
+   "new_value": "recompute"
+  },
+  {
+   "file": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 4064,
+   "what": "crystal = crystal_centroid(Path(args.benchmark_dir), cid) ... res = analyze_complex(cid, sub, cents, crystal, ..., args.match_thr, ...)",
+   "depends_how": "Main loop threads the single centroid into analyze_complex; has_crystal (:1242) is crystal is not None.",
+   "change": "Pass the copy list; has_crystal semantics unchanged.",
+   "effort": "small"
+  },
+  {
+   "file": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 4246,
+   "what": "ap.add_argument(\"--per-pose-csv\", default=\"posebusters_results/benchmark/dock/pose_comparison_report/per_pose_metrics.csv\")",
+   "depends_how": "Default points at the pre-whole-protein tree; the harness overrides it (bench_clusters, _build_reproduction_notebook.py:510-515).",
+   "change": "None required; note the default is stale and must remain overridden.",
+   "effort": "trivial"
+  },
+  {
+   "file": "Scripts/Analysis/run_pandamap.py",
+   "line": 963,
+   "what": "crystal = cfg.benchmark_dir / protein / f\"{protein}_ligand.sdf\" ... tasks.append({\"method\": \"crystal\", ..., \"pose_file\": str(crystal), \"pose_name\": f\"{protein}__{ligand}/crystal\", \"pose_rank\": 0, ...})",
+   "depends_how": "build_crystal_tasks fingerprints exactly one crystal instance per pair; crystal_interactions.csv is therefore the reference-chain fingerprint. The fingerprint key is (resname, resnum, chain) (:380), so a pose recovering an alternate copy on another chain scores zero native recovery today.",
+   "change": "Emit one crystal task per record of <ID>_ligands.sdf (pose_name .../crystal_k, copy index carried), so a per-copy native fingerprint exists for the report to select from.",
+   "effort": "medium",
+   "risk": "PandaMap must profile each copy against the same canonical receptor (canonical_receptor_dir posebusters_results/benchmark/dock/hetatm_cleaned, config 07 line 55); verify the copies are absent from that receptor file."
+  },
+  {
+   "file": "Scripts/Analysis/run_pandamap.py",
+   "line": 424,
+   "what": "if cfg.pb_valid_only and checks: df = df[df[\"_pb_valid\"]].copy()",
+   "depends_how": "Pose selection is PB-valid plus poses_per_combo=5 (config 07 lines 40, 61); no RMSD gate, so the docked-pose fingerprints do NOT change under nearest-copy. Only the crystal reference side changes.",
+   "change": "None on the pose side; re-run only the crystal tasks (or full run for a clean provenance).",
+   "effort": "trivial"
+  },
+  {
+   "file": "Scripts/Analysis/pandamap_interaction_report.py",
+   "line": 1181,
+   "what": "def native_recovery(inter, crystal, order, ...): for (method, p, l, pose), g in inter.groupby([...]) ... precision/recall/F1 vs the crystal row of (p, l)",
+   "depends_how": "Figs 04/04b/04c/05 (Table 4, Fig 7) compare every pose to the ONE crystal fingerprint per (protein, ligand). Under nearest-copy a pose that recovers copy k must be compared to copy k's fingerprint.",
+   "change": "Join per_pose_metrics to obtain each pose's nearest_copy_index (new hub column) and select the matching crystal_k row; same for build_recovery_detail (:1716), native_by_pair (:2044), plot_native_f1_oracle (:2175), union Jaccard (05).",
+   "effort": "large",
+   "new_value": "recompute"
+  },
+  {
+   "file": "Scripts/Analysis/pandamap_interaction_report.py",
+   "line": 2251,
+   "what": "need = {\"method\", \"protein\", \"ligand\", \"pose_name\", \"rmsd\"} ... mt = mt[key + [\"rmsd\"]].dropna(subset=[\"rmsd\"]).drop_duplicates(key); j = per_pose.merge(mt, on=key, how=\"inner\")",
+   "depends_how": "Fig 14 (RMSD-to-crystal vs native F1, Spearman per method) joins the CSV `rmsd`.",
+   "change": "Automatic once `rmsd` is nearest-copy, but semantically inconsistent unless F1 is also per nearest copy (site above).",
+   "effort": "trivial",
+   "new_value": "recompute"
+  },
+  {
+   "file": "Scripts/Analysis/pandamap_interaction_report.py",
+   "line": 599,
+   "what": "cand = benchmark_dir / protein / f\"{protein}_ligand.sdf\" ... d = ligand_descriptors(sdf)",
+   "depends_how": "Loads the single instance only to compute RDKit descriptors (same molecule in every copy).",
+   "change": "None; copy-invariant.",
+   "effort": "trivial"
+  },
+  {
+   "file": "Scripts/Analysis/pandamap_interaction_report.py",
+   "line": 371,
+   "what": "BEST_VARIANT_METRIC = \"oracle_pb_valid_and_rmsd2_%\"",
+   "depends_how": "--best-equibind-only ranks variants on the hub's oracle_summary(_all_variants).csv.",
+   "change": "Automatic once the hub rewrites oracle_summary under nearest-copy.",
+   "effort": "trivial"
+  },
+  {
+   "file": "Scripts/Analysis/interaction_pose_basis_audit.py",
+   "line": 206,
+   "what": "rm = metrics[POSE_KEY + [\"rmsd\", \"bestfit_rmsd\"]].drop_duplicates(POSE_KEY); inter = inter.merge(rm, on=POSE_KEY, how=\"left\")",
+   "depends_how": "Sections A-D band the fingerprinted pool by `rmsd` (BANDS :63, NEAR_NATIVE_A = 2.0 :75, SITE_FILTER_A = 10.0 :73) and Kabsch < 1 on `bestfit_rmsd` (:251). App. B quotes its output verbatim.",
+   "change": "Automatic in code. Semantics: with nearest-copy `rmsd`, poses on alternate copies move into the 0-2 A band while their F1 stays ~0 under a reference-chain fingerprint; section B's placement-share standardisation is only coherent once PandaMap is per-copy too.",
+   "effort": "trivial",
+   "risk": "Run after bench_pandamap_report; the --ids-file guard (harness notes) still applies.",
+   "new_value": "recompute"
+  },
+  {
+   "file": "Scripts/Analysis/pocket_comparison_report.py",
+   "line": 1141,
+   "what": "lig = bench / name / f\"{name}_ligand.sdf\"; cc = _sdf_centroid(lig) ... fp_ds = [norm(p[\"center\"] - cc) for p in fp_top] ... atoms = _sdf_heavy_atoms(lig); fp_da = [_dca(p[\"center\"], atoms) ...]",
+   "depends_how": "fpocket/p2rank pocket accuracy (DCC to the crystal centroid, DCA to crystal heavy atoms; crystal_hit_matrix_*, crystal_top1_distance_ecdf, crystal_success_rate_table.csv) uses the single instance. _sdf_centroid (:112) reads only the FIRST molecule of the file.",
+   "change": "Load every copy and take the min distance per pocket over copies (a predicted pocket on another chain's copy is a correct pocket).",
+   "effort": "small",
+   "risk": "Confirm whether these pocket-prediction figures appear in the short build before spending the effort.",
+   "new_value": "recompute"
+  },
+  {
+   "file": "Scripts/Analysis/boxed308_raw_arm_metrics.py",
+   "line": 123,
+   "what": "crystal = args.benchmark_dir / str(protein) / f\"{protein}_ligand.sdf\"",
+   "depends_how": "Standalone duplicate of the hub's scoring for the boxed-308 Meeko-vs-MGLTools A/B; _score_pair (:67-84) runs symmetry_rmsd / posebusters_rmsd / rigid_body_fit against crystal_h alone.",
+   "change": "Loop over load_all_mols(<ID>_ligands.sdf) and take the argmin copy for rmsd, then compute pb_rmsd / pb_kabsch / bestfit on that same copy (probe pattern). M2 measured 0 rank-1 flips on the boxed run, so numbers are expected inert.",
+   "effort": "small",
+   "current_value": "boxed AutoDock rank-1 near-native 175 (ref) = 175 (nearest)",
+   "new_value": "recompute for depths > 1; expected unchanged"
+  },
+  {
+   "file": "Scripts/Analysis/boxed308_arm_compare.py",
+   "line": 40,
+   "what": "df[\"rmsd2\"] = df[\"rmsd\"] <= 2.0; df[\"kabsch1\"] = df[\"bestfit_rmsd\"] <= 1.0",
+   "depends_how": "Reads the CSVs written by boxed308_raw_arm_metrics.py.",
+   "change": "Automatic after re-running boxed308_raw_arm_metrics.",
+   "effort": "trivial",
+   "new_value": "recompute; expected unchanged"
+  },
+  {
+   "file": "Scripts/Analysis/posebusters_validity_report.py",
+   "line": 748,
+   "what": "_RMSD_COLUMNS = (\"rmsd\", \"pb_rmsd\", \"pb_kabsch_rmsd\")",
+   "depends_how": "--rmsd-column choices (:2372, default \"rmsd\") for the --max-rmsd filter, the rmsd2_* summary columns (NEAR_NATIVE_RMSD_A = 2.0 at :2006) and the fig-08 sweep; _attach_rmsd_to_crystal (:751) joins the chosen column method-aware.",
+   "change": "None if the hub keeps `rmsd` as the primary name. If the hub instead ADDS `rmsd_nearest_copy`, extend the tuple and switch the default.",
+   "effort": "trivial",
+   "new_value": "recompute (Table 1 validity block rmsd2_* columns)"
+  },
+  {
+   "file": "Scripts/Analysis/docking_effort_comparison.py",
+   "line": 256,
+   "what": "DEFAULT_RMSD_COLUMN = \"rmsd\"; DEFAULT_KABSCH_COLUMN = \"bestfit_rmsd\"",
+   "depends_how": "near2 = pb_valid & rmsd <= 2 (:1108) and form1 = near2 & bestfit <= 1 (:1109) define the cost-per-qualifying-pose denominators (Table 6, Fig 15, Table 10, Fig 16; panels effort_by_quality_near2.png, resource_per_near_native_valid_pose.png).",
+   "change": "None in code. Pose-level near2 denominators change; form1 needs the hub's nearest-copy Kabsch.",
+   "effort": "trivial",
+   "current_value": "near2 pooled poses: AutoDock* 311, DiffDock* 1622, EquiBind* 466 (six-arm table, top-30)",
+   "new_value": "near2: 442 / 2068 / 483; form1: recompute"
+  },
+  {
+   "file": "Scripts/Analysis/docking_effort_comparison.py",
+   "line": 1596,
+   "what": "\"near2_rmsd_column\": _rc, \"near2_rmsd_threshold_A\": NEAR2_RMSD_A, ... \"matches_headline_accuracy_report\": bool(_rc == DEFAULT_RMSD_COLUMN ...",
+   "depends_how": "effort_by_quality_stats.json self-documents which column the tiers were scored on.",
+   "change": "Add the convention (nearest-copy) to this provenance block so the JSON states it.",
+   "effort": "trivial"
+  },
+  {
+   "file": "Scripts/Analysis/topk_recovery_gnina_arm.py",
+   "line": 130,
+   "what": "gated = pc._topn_within_frames(df, int(d), eq_df=eq_df, pb_valid_only=True, rmsd_col=\"rmsd\"); plain = ... rmsd_col=\"rmsd\"",
+   "depends_how": "Tables 2/18/25 sidecar (topk_recovery_validity_gnina_arm.csv); the helper accepts rmsd_col so a secondary column could be reported side by side.",
+   "change": "Automatic. Optionally emit a second block with rmsd_col=\"rmsd_refcopy\" for the sensitivity table.",
+   "effort": "trivial",
+   "current_value": "PB-valid & <=2 A rank-1 111/103/55, top-15 198/167/80, top-30 199/169/80",
+   "new_value": "149/132/57, 213/179/83, 214/183/83"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_endpoint_diagnostics.py",
+   "line": 77,
+   "what": "ok = x.rmsd <= 2.0 ; if require_valid: ok = ok & x.pb_valid ...",
+   "depends_how": "validity_gate_cost.csv (Table 22) and bounded_claim.csv read `rmsd` (docstring :18 insists on `rmsd`, not `pb_rmsd`).",
+   "change": "Automatic.",
+   "effort": "trivial",
+   "current_value": "rank-1 near/gated/cost: AD* 113/111/2, DD* 107/103/4, EB* 57/55/2; top-15 201/198/3, 170/167/3, 83/80/3; top-30 202/199/3, 173/169/4, 83/80/3",
+   "new_value": "rank-1 151/149/2, 137/132/5, 59/57/2; top-15 216/213/3, 182/179/3, 86/83/3; top-30 217/214/3, 186/183/3, 86/83/3"
+  },
+  {
+   "file": "Scripts/Analysis/optimization_benefit_stats.py",
+   "line": 115,
+   "what": "near = (pd.to_numeric(sub[\"rmsd\"], errors=\"coerce\") <= NEAR_THR).astype(float)",
+   "depends_how": "Paired McNemar / Cochran Q on the near-native endpoint across raw/smina/gnina (Tables 19, 20).",
+   "change": "Automatic.",
+   "effort": "trivial",
+   "new_value": "recompute"
+  },
+  {
+   "file": "Scripts/Analysis/rank_success_analysis.py",
+   "line": 139,
+   "what": "return cum_event_at_k(sub, sub[\"rmsd\"] <= HIT, K)  (and :286 sub[\"_hit\"] = sub[\"rmsd\"] <= HIT)",
+   "depends_how": "topk_success_per_tool.csv / rank_success_curves.png. Not registered in the reproduction harness; invoked only from Master_Docking_AD_Full_Protein.ipynb cell[123] L4.",
+   "change": "Automatic.",
+   "effort": "trivial",
+   "new_value": "recompute"
+  },
+  {
+   "file": "Scripts/Analysis/ligand_docking_difficulty.py",
+   "line": 99,
+   "what": "oracle = (met.groupby([\"tool\", \"protein\"])[\"rmsd\"].min() ... pct_success_le2=100 * (sub[\"oracle_rmsd\"] <= 2).mean()  (:112)",
+   "depends_how": "Best-N vs worst-N split by per-tool oracle RMSD-to-crystal (Cliff's delta; Discussion and appendix difficulty analysis).",
+   "change": "Automatic. The membership of best/worst N shifts because 15 AutoDock and 13 DiffDock complexes cross 2 A.",
+   "effort": "trivial",
+   "current_value": "single-arm oracle <=2 A of 303: AD* 202, DD* 173, EB* 83",
+   "new_value": "217 / 186 / 86 (pooled 'all' variants: recompute)"
+  },
+  {
+   "file": "Scripts/Analysis/receptor_docking_difficulty.py",
+   "line": 93,
+   "what": "oracle = (met.groupby([\"tool\", \"protein\"])[\"rmsd\"].min().reset_index() .rename(columns={\"protein\": \"entry\", \"rmsd\": \"oracle_rmsd\"})",
+   "depends_how": "Same split as the ligand script on receptor/pocket descriptors.",
+   "change": "Automatic. Consider adding `n_instances` from ligand_protein_features.csv as a stratifier (already computed by PoseBusters_DataSet_Analysis.ipynb cell[5] L12).",
+   "effort": "trivial",
+   "new_value": "same oracle counts as above"
+  },
+  {
+   "file": "Scripts/Analysis/diffdock_gnina_rerank_analysis.py",
+   "line": 220,
+   "what": "raw = d[d[\"method\"] == \"diffdock\"][[\"protein\", \"rank\", \"rmsd\"]].rename(columns={\"rmsd\": \"rmsd_raw\"}); opt = d[d[\"method\"] == f\"diffdock_{tool}\"][[..., \"rmsd\", \"pb_valid\"]]",
+   "depends_how": "Selection-benefit 2x2 (hit = RMSD <= --hit) for the DiffDock re-ranking counterfactual (appendix note that smina does not re-rank).",
+   "change": "Automatic; diffdock_gnina_rerank_chemotype.py (:100) reads its selection_per_complex_<tool>.csv and follows.",
+   "effort": "trivial",
+   "new_value": "recompute"
+  },
+  {
+   "file": "Scripts/Analysis/autodock_exhaustiveness_returns.py",
+   "line": 570,
+   "what": "add(\"bestfit_rmsd == pb_kabsch_rmsd\", gap == 0.0, f\"max |difference| = {gap}\")  (with :536-540 out[\"rmsd\"], kcol = \"bestfit_rmsd\" if present else \"pb_kabsch_rmsd\", out[\"rmsd2\"] = out[\"rmsd\"] <= RMSD_OK_A)",
+   "depends_how": "The --verify-input-parity pass asserts bestfit_rmsd equals pb_kabsch_rmsd row-for-row, and the ladder gates read `rmsd` and `bestfit_rmsd` (Table 8, Figs 18-21). The exploded-pose guard at :559 counts rmsd >= 1000.",
+   "change": "Automatic ONLY if the hub computes pb_kabsch_rmsd and bestfit_rmsd on the same nearest copy; the hub must rescore ALL ladder rungs (exh18/exh64/exh92/exh128 raw + gnina), not just the six probed arms.",
+   "effort": "trivial",
+   "risk": "A partial rescoring (headline arms only) fails this parity check and silently mixes conventions across rungs.",
+   "new_value": "recompute"
+  },
+  {
+   "file": "Scripts/Analysis/filmstrip_rank1_top5_top15.py",
+   "line": 133,
+   "what": "c = c[c[\"centroid_dist\"].le(P.FAR_FROM_RECEPTOR_CENTROID_A)].copy()  (via P._form_components(P._valid_topd_poses(df, d, None)))",
+   "depends_how": "Fig 4 / Table 27 cohort = PB-valid top-d poses trimmed to centroid_dist <= 8 A of the crystal site (hub constant at posebusters_pose_comparison.py:8265); inplace = `rmsd`, form = `bestfit_rmsd` (:156).",
+   "change": "Automatic once centroid_dist, rmsd and bestfit_rmsd all move to the nearest copy together.",
+   "effort": "trivial",
+   "current_value": "PB-valid poses kept by the 8 A trim, rank-1 / top-5 / top-15: AD* 190/882/2200, DD* 164/790/2139, EB* 143/673/1830",
+   "new_value": "AD* 249/1147/2832, DD* 224/1041/2801, EB* 155/723/1933"
+  },
+  {
+   "file": "Scripts/Analysis/validate_regeneration.py",
+   "line": 123,
+   "what": "stage=[(REPORT / \"per_pose_metrics.csv\", \"per_pose_metrics.csv\"), (REPORT / \"per_pose_metrics.manifest.json\", ...)]  and Cases 4 / 15 / 18-21 / 7,39 pointing --per-pose-csv / --per-pose-metrics at REPORT",
+   "depends_how": "Regression harness re-renders image5, image24/25, image44-47, image9/11 from per_pose_metrics and compares to media/.",
+   "change": "No code change; baselines (media/media/imageN.png md5s) must be re-copied after the nearest-copy regeneration; DECLARED entry '5, 6, 38 pose_cluster_crystal_pocket_report' (:167) stays declared.",
+   "effort": "small"
+  },
+  {
+   "file": "Scripts/Analysis/_build_reproduction_notebook.py",
+   "line": 390,
+   "what": "outputs=[f\"{BENCH_REPORT}/per_pose_metrics.csv\", f\"{BENCH_REPORT}/oracle_summary.csv\"], thesis=\"Table 1; the source table for nine downstream stages\"",
+   "depends_how": "bench_pose_comparison is the root; stages with needs=[\"bench_pose_comparison\"] (:424 validity_report, :452 filmstrip, :464 topk, :478 optimization_benefit, :488 endpoint_diagnostics, :506 clusters, :536 pandamap_report, :586/:600 effort, :610 exhaustiveness, :630 difficulty x2, :644 diffdock_rerank) re-run after it. bench_pandamap (:527) needs only bench_posebusters_matched but must be re-run for the per-copy crystal fingerprints. bench_figure1 (:438) has no RMSD dependence.",
+   "change": "Add a nearest_copy_sensitivity stage (bitexact, cheap, needs bench_pose_comparison), update the bench_pandamap note to say the crystal tasks cover every copy, and mirror in REGENERATE.md (:356-648 already list every per_pose_metrics-consuming command).",
+   "effort": "small"
+  },
+  {
+   "file": "Scripts/Analysis/nearest_copy_probe/nearest_copy_rescoring.py",
+   "line": 35,
+   "what": "copies = load_all_mols(cdir / f'{prot}_ligands.sdf')  (loader at :21: Chem.SDMolSupplier(str(sdf), removeHs=True, sanitize=False))",
+   "depends_how": "The only existing multi-copy loader in the repo; reproduces the hub `rmsd` to 4.7e-10 A.",
+   "change": "Lift into the hub (other agent) and reuse in boxed308_raw_arm_metrics.py, pose_cluster_crystal_pocket_report.py, pocket_comparison_report.py and run_pandamap.py rather than re-implementing four times.",
+   "effort": "trivial"
+  },
+  {
+   "file": "Scripts/Docking/Posebusters/rebust_hydrogen_normalised.py",
+   "line": 254,
+   "what": "pp = pd.read_csv(PER_POSE, low_memory=False) ... pp[\"pb_valid_published\"] = pp[\"pb_valid\"]; pp[\"pb_valid\"] = hit.fillna(pp[\"pb_valid\"])",
+   "depends_how": "Reads per_pose_metrics only to swap pb_valid for the hydrogen-normalised re-bust and rebuild the validity cascade.",
+   "change": "None; validity-only, inert under nearest-copy.",
+   "effort": "trivial"
+  },
+  {
+   "file": "Scripts/Docking/Posebusters/run_posebusters.py",
+   "line": 3522,
+   "what": "# _find_template_mol takes the first sorted glob hit, which is the CRYSTAL ``<id>_ligand.sdf``, whereas Strategy 0b uses the prepared",
+   "depends_how": "The crystal file serves as a bond-order TEMPLATE for loading poses, not as an RMSD reference; the battery receives no mol_true (installed redock.yml load_all: True is never exercised here).",
+   "change": "None; topology is identical across copies.",
+   "effort": "trivial"
+  },
+  {
+   "file": "Scripts/Analysis/_build_xray_control_notebook.py",
+   "line": 283,
+   "what": "lig  = BENCH / i / f\"{i}_ligand.sdf\"  (XRay_PoseBusters_Control.ipynb cell[5] L17 same line)",
+   "depends_how": "Busts the deposited single instance reference-free for the crystal-ceiling control; no RMSD involved.",
+   "change": "None required. Optional: bust all copies too, so the ceiling covers the instances that now count as correct.",
+   "effort": "trivial"
+  },
+  {
+   "file": "Master_Docking_AD_Full_Protein.ipynb",
+   "line": 221,
+   "what": "cell[9] id=ce11c3f1 L221: ligand_crystal = cdir / f\"{pdb_id}_ligand.sdf\"                 # crystal pose -> defines box   (cell[13] id=a3b4dd6c L222 identical)",
+   "depends_how": "Defines the 25 A crystal-centred box of the OLD boxed run; the whole-protein run ignores it. Docking side.",
+   "change": "None; do not re-dock. Documentation only (DOCKING_PROTOCOL.md:78 describes the same box).",
+   "effort": "trivial"
+  },
+  {
+   "file": "Master_Docking_AD_Full_Protein.ipynb",
+   "line": 81,
+   "what": "cell[99] id=8785def6 L81: sdf = cdir / f\"{pdb_id}_ligand.sdf\" ... _link(sdf, tpl_staging / f\"{ad_label}.sdf\")",
+   "depends_how": "Stages the crystal ligand as the PoseBusters bond-order template root; copy-invariant.",
+   "change": "None.",
+   "effort": "trivial"
+  },
+  {
+   "file": "Master_Docking_AD_Full_Protein.ipynb",
+   "line": 10,
+   "what": "cell[37] id=6b9fe31d L10: BENCH_POSES = \"posebusters_results/benchmark_full_protein_vina_scoring/dock/pose_comparison_report/per_pose_metrics.csv\"  (cell[33] L26-28 hub call on the same tree; cells [46] L13, [121], [122], [123] L4, [124] L41-59 likewise)",
+   "depends_how": "The notebook's analysis cells point at the benchmark_full_protein_vina_scoring tree, not the canonical benchmark_matched_equibind tree the harness uses; both hold a per_pose_metrics.csv.",
+   "change": "Decide which tree(s) the hub rescoring targets; if only the canonical tree is rescored these notebook cells will keep printing single-instance numbers.",
+   "effort": "small",
+   "risk": "Two trees with different conventions is the same class of drift as the Gen A / Gen B trap."
+  },
+  {
+   "file": "PoseBusters_DataSet_Analysis.ipynb",
+   "line": 12,
+   "what": "cell[5] id=bcdf27d8 L12: n_inst = sum(1 for _ in Chem.SDMolSupplier(str(folder / f\"{d}_ligands.sdf\")))  ; L15: row[\"startconf_rmsd\"] = startconf_rmsd(start, mol) with mol from _ligand.sdf",
+   "depends_how": "ligand_protein_features.csv already carries `n_instances` per entry (the multi-copy indicator); startconf_rmsd is a superposed GetBestRMS conformer distance to the single instance (Fig 08_startconf_rmsd, ligand_descriptors.py:39 label).",
+   "change": "None required. startconf_rmsd could take the min over copies but is conformer-only and nearly copy-invariant; `n_instances` is the free stratifier for a single-/multi-copy split in the difficulty scripts.",
+   "effort": "trivial"
+  },
+  {
+   "file": "Scripts/Analysis/stats_utils.py",
+   "line": 359,
+   "what": "def paired_2x2_association(a, b, min_margin=20, z=1.96): ... This is the co-reach / co-occurrence test.",
+   "depends_how": "Pure statistics on 0/1 reach indicators; consumed by the cluster report's co-reach matrix and the validity report.",
+   "change": "None; outputs move only through their inputs.",
+   "effort": "trivial"
+  },
+  {
+   "file": "Scripts/Analysis/tests/test_diffdock_sweep_gate.py",
+   "line": 56,
+   "what": "\"rmsd\": rmsd, \"bestfit_rmsd\": kabsch, \"pb_valid\": valid  (and Scripts/Docking/tests/test_downstream_variants.py:601-602 rmsd=rmsd, pb_rmsd=rmsd, centroid_dist=rmsd)",
+   "depends_how": "Synthetic rows keyed on the column NAMES rmsd / bestfit_rmsd / pb_rmsd / centroid_dist.",
+   "change": "None if the hub keeps the names; both test files break if the primary column is renamed.",
+   "effort": "trivial"
+  },
+  {
+   "file": "Scripts/Analysis/method_filter.py",
+   "line": 1,
+   "what": "(no rmsd / crystal / per_pose_metrics hits in the file)",
+   "depends_how": "Method-key filtering only.",
+   "change": "None; inert.",
+   "effort": "trivial"
+  },
+  {
+   "file": "Scripts/Analysis/pymol_pose_cluster_scene.py",
+   "line": 556,
+   "what": "df = pd.read_csv(csv, low_memory=False)  (--per-pose-csv default posebusters_results/orai_jku/pose_clusters/per_pose.csv, :42)",
+   "depends_how": "Orai scene builder; no crystal reference anywhere in the file.",
+   "change": "None; inert.",
+   "effort": "trivial"
+  }
+ ],
+ "decisions": [
+  {
+   "question": "Column naming in per_pose_metrics.csv: overwrite `rmsd` (and pb_rmsd / pb_kabsch_rmsd / bestfit_rmsd / centroid_dist / contact_recovery / plif_recovery) with the nearest-copy values and add `rmsd_refcopy` etc. as secondary columns, or add `rmsd_nearest_copy` and switch every consumer's default?",
+   "options": [
+    "Keep `rmsd` as the primary name, add *_refcopy secondaries plus nearest_copy_index and n_copies",
+    "Add rmsd_nearest_copy and change the default in ~12 consumer scripts and 2 test files"
+   ],
+   "recommendation": "Keep `rmsd` as the primary name. Fourteen consumers then re-run with no code change, _RMSD_COLUMNS (validity_report:748), DEFAULT_RMSD_COLUMN (docking_effort:256), rmsd_col=\"rmsd\" (topk:130) and the two synthetic tests stay valid. The one hard constraint is that every crystal-referenced column must use the SAME argmin copy per pose: autodock_exhaustiveness_returns.py:570 asserts bestfit_rmsd == pb_kabsch_rmsd and the filmstrip pairs inplace(rmsd) with form(bestfit)."
+  },
+  {
+   "question": "How should pose_cluster_crystal_pocket_report.py define the 'correct' cluster when a complex has several copies?",
+   "options": [
+    "Nearest cluster to the nearest copy (one correct cluster per complex, minimal code change)",
+    "Any cluster whose centre lies within --match-thr of ANY copy (several correct clusters; reach = a pose in any of them)",
+    "Keep single-instance clusters and report the nearest-copy reach as a separate column"
+   ],
+   "recommendation": "Option 2. It is the cluster-level analogue of per-pose min-over-copies and keeps reach, co-reach, homogeneity and rank_in_correct_cluster interpretable; purity and best_rmsd become per correct cluster. Option 1 would drop a tool's genuine recovery of copy B whenever another tool's cluster sits on copy A."
+  },
+  {
+   "question": "PandaMap native-interaction reference under nearest-copy?",
+   "options": [
+    "Fingerprint every copy in run_pandamap.py and select per pose the copy given by a new nearest_copy_index column from the hub (Table 4 and Fig 7 recomputed)",
+    "Keep the reference-chain fingerprint and restrict figs 04-14 to poses whose nearest copy is the reference, disclosing the subset",
+    "Leave the interaction analysis on the single instance and state it"
+   ],
+   "recommendation": "Option 1 for a consistent primary endpoint; it needs the hub to emit nearest_copy_index and PandaMap to profile the copies against the canonical hetatm_cleaned receptor. Option 2 is the cheap fallback if the copies cannot be profiled on that receptor. Option 3 leaves interaction_pose_basis_audit's placement-share section internally inconsistent."
+  },
+  {
+   "question": "Which per_pose_metrics trees to rescore?",
+   "options": [
+    "Canonical benchmark_matched_equibind only (harness)",
+    "Canonical plus benchmark_full_protein_vina_scoring (Master_Docking cells 33/37/46/121-124) and the boxed benchmark tree (boxed308 A/B)"
+   ],
+   "recommendation": "Canonical plus the full_protein tree the notebook reads, so the two do not diverge in convention; the boxed tree is measured inert at rank-1 and can be left with a note, or rescored by boxed308_raw_arm_metrics.py for completeness."
+  },
+  {
+   "question": "Should pocket_comparison_report.py (fpocket/p2rank DCC/DCA to the crystal) adopt min-over-copies?",
+   "options": [
+    "Yes, a predicted pocket on another copy is a correct pocket",
+    "No, pocket prediction is not a docking endpoint"
+   ],
+   "recommendation": "Yes if any of crystal_hit_matrix_*, crystal_top1_distance_ecdf or crystal_success_rate_table appears in the short build (check thesis_latex first); the change is a small loop and keeps 'crystal-referenced' consistent across the thesis."
+  }
+ ],
+ "open_questions": [
+  "Will the hub compute pb_rmsd / pb_kabsch_rmsd / bestfit_rmsd / centroid_dist / contact_recovery / plif_recovery against the SAME argmin copy chosen by symmetry_rmsd, rather than min-over-copies for each metric separately? autodock_exhaustiveness_returns.py:570 and the filmstrip depend on one coherent copy per pose.",
+  "Will the hub rescore all 27 method keys (including the exh18/exh64/exh92 ladder rungs and the guided EquiBind variants) or only the six probed arms? A partial rescoring breaks bench_exhaustiveness_returns and mixes conventions inside one table.",
+  "Will per_pose_metrics gain nearest_copy_index and n_copies columns? run_pandamap / pandamap_interaction_report and the single-/multi-copy stratification need them; ligand_protein_features.csv already has n_instances as an alternative.",
+  "Are the fpocket/p2rank crystal-accuracy figures of pocket_comparison_report.py present in the short build (grep thesis_latex for crystal_hit_matrix / crystal_top1_distance_ecdf / crystal_success_rate_table)?",
+  "Can PandaMap profile the alternate crystal copies against the canonical receptor posebusters_results/benchmark/dock/hetatm_cleaned/<ID>_protein.pdb, or are those copies still present as HETATM in that file?",
+  "The per_pose_metrics.manifest.json signature: does adding columns invalidate every --reuse-cache re-render, and does the cluster report's analysis cache (keyed to the out-dir signature, validate_regeneration.py:167) need a forced rebuild?",
+  "rank_success_analysis.py is invoked only from Master_Docking cell[123] and is not in the harness; does any thesis number come from PoseBusters_Benchmark_Analysis/rank_success/ (if so it needs a stage)?"
+ ],
+ "artifacts_written": []
+}

@@ -1,0 +1,117 @@
+{
+ "dimension": "figures-media",
+ "role": "COMPLETENESS AUDITOR",
+ "refuted": [],
+ "corrected": [],
+ "confirmed": 0,
+ "missing": [
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/run_pandamap.py",
+   "line": 1176,
+   "what": "Crystal-reference gate for the Fig 7 / Fig 39 natives: `if cfg.benchmark_dir and (cfg.overwrite or not crystal_csv.exists()):` (comment at :1174 'crystal references (always recomputed fresh unless present)'). Config 07 sets `overwrite: false` (Scripts/Docking/configs_thesis/07_benchmark_pandamap.yaml:67) and pandamap_results/benchmark_matched_equibind/crystal_interactions.csv already exists (dated Aug 14, older than pandamap_interactions.csv of Aug 31). A re-run of stage bench_pandamap after the 2.2 code change will therefore skip build_crystal_tasks entirely and keep the single-instance natives, and Figs 7/39 re-render on stale references with no error. `--overwrite` (:1161) would also re-profile every docked pose.",
+   "change": "Add an explicit step before 'PandaMap crystal tasks' in Phase 3.2: move crystal_interactions.csv and crystal_pose_summary.csv aside (or add a crystal-only overwrite switch to run_pandamap.py) so the per-copy crystal tasks actually run; assert afterwards that crystal_interactions.csv carries one crystal_k row set per record of _ligands.sdf.",
+   "effort": "S",
+   "current_value": "crystal CSV from 2026-08-14, single instance, gate skips rebuild",
+   "new_value": "crystal CSV rebuilt with per-copy tasks"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 3927,
+   "what": "`_CACHE_SCHEMA = 5`; `_analysis_signature` (:3942-3976) fingerprints per_pose_csv, ids_file, variants and CLI thresholds but contains no code fingerprint and no out_dir, and the docstring (:3947-3949) says crystal directories are keyed by path only, 'pass --force if you regenerate those'. The bench_clusters stage command (_build_reproduction_notebook.py:511-521) passes no --force. The D5 code change (crystal_centroid :920-921 returning all copies, min-over-copies in the _dist calls) alone does not invalidate analysis_cache.pkl (3.5 MB, Aug 31 21:10), so any run on an unchanged per-pose CSV, including the plan's own 2.1 check 'on the 165 single-copy complexes every value equals the frozen run', reuses the old analysis and passes vacuously.",
+   "change": "Bump `_CACHE_SCHEMA` to 6 in the same commit as D5 (mirror of D8 for the hub), or add --force to the bench_clusters stage for the switch run; state which in Phase 2.1.",
+   "effort": "S",
+   "current_value": "_CACHE_SCHEMA = 5, no --force in the stage",
+   "new_value": "_CACHE_SCHEMA = 6 or --force"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/validate_regeneration.py",
+   "line": 164,
+   "what": "DECLARED entry for Figs 5, 6, 38: 'same, and its analysis cache is keyed to the out-dir signature'. The signature at pose_cluster_crystal_pocket_report.py:3942-3976 has no out_dir key, so a scratch --out-dir simply finds no analysis_cache.pkl and recomputes. The declared reason is wrong and a byte gate is feasible: the stage is registered BITEXACT / MODERATE with fixed --stability-boot 25 (_build_reproduction_notebook.py:503-521).",
+   "change": "Add a Case('5, 6, 38', 'pose_cluster_crystal_pocket_report', 'moderate', <stage argv with --out-dir {out}>, {'image6': 'topN_crystal_cluster_matrix.png', 'image7': 'crystal_cluster_homogeneity.png', 'image8': 'cluster_quality_metrics.png'}) so three of the five ungated REGENERATE figures get a byte gate, and correct the DECLARED text; leave Figs 2, 3 declared (hub writes into its report directory).",
+   "effort": "M",
+   "current_value": "Figs 5, 6, 38 declared, not tested",
+   "new_value": "Figs 5, 6, 38 byte-gated"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 2566,
+   "what": "Companion sidecars of Figs 5, 6, 38 that the inventory does not list as sites: `topN_crystal_cluster_matrix_stats.txt` (:2566; harness input thesis_expected_values.yaml:115, parsed by thesis_assertions.py:855-905 check_table_3), `topN_crystal_cluster_matrix_caption.txt`, `crystal_cluster_homogeneity_stats.txt` (:3431) and `.json`, `cluster_quality_metrics_stats.txt` (:3639), `descriptor_reach_stats.json` (:1354), `summary.json`. Every reach / co-reach phi / permutation row in them recomputes under D5.",
+   "change": "List them in plan Section 4 as regenerated sidecars and name the harness reader for the _stats.txt (check_table_3) so the D5 wording of the header ('crystal-closest cluster') is kept regex-compatible.",
+   "effort": "S",
+   "current_value": "AutoDock* reach 59/79/81/83 %, all-three 89 obs / 42 exp at top-1",
+   "new_value": "recompute under D5"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/docking_effort_comparison.py",
+   "line": 2863,
+   "what": "Companion sidecars of Figs 15, 16 not listed by the inventory: `effort_stats.json` (:2863) and `effort_by_quality_stats.json` (:2876, paired cross-tool tests per tier per :29) in both docking_effort_gnina_v2_charged/ and docking_effort_gnina_v2/, plus effort_summary.csv (harness input yaml :177 and :855) and per_complex_effort.csv. All near2-tier statistics move with the 199/169/80 -> 214/183/83 cohort change.",
+   "change": "Add to plan Section 4 sidecar list; both effort stages must re-run (3.2 already lists them) and the yaml table blocks reading effort_summary.csv are re-transcribed.",
+   "effort": "S",
+   "current_value": "near2 cohort 199/169/80, shared 53",
+   "new_value": "214/183/83, shared 54"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/pandamap_interaction_report.py",
+   "line": 731,
+   "what": "Every report figure carries a companion `<stem>.txt` (:639-731, 'never stamped on the image'), so `05_fingerprint_similarity_top5.txt` and `10b_contact_decomposition_by_rank.txt` (and .csv, harness input yaml :1072) regenerate with Figs 7/39; also native_recovery_by_rank.csv (yaml :143) and interaction_pose_basis_audit.csv (yaml :1094). Not listed in the inventory or in plan Section 4.",
+   "change": "Add to plan Section 4 sidecar list under the PandaMap stage.",
+   "effort": "S",
+   "current_value": "autodock_spurious_rank1 15.3, diffdock 14.1 (yaml prose.figure_39)",
+   "new_value": "recompute after per-copy natives"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/autodock_exhaustiveness_returns.py",
+   "line": 2253,
+   "what": "Sidecar writer prints `source: {per_pose_path}` into exh_raw_vs_rescored_stats.txt, exh_depth_sweep_stats.txt, exh_marginal_return_stats.txt and exh_yield_vs_cost_stats.txt. The shipped sidecar line 4 names posebusters_results/benchmark_full_protein_vina_scoring/... (pre-matched tree) while the stage (_build_reproduction_notebook.py:614-617) and validate_regeneration.py Case '18, 19, 20, 21' pass the matched tree, and regeneration_check.json (2026-09-06, full, 20/20) records image44-47 IDENTICAL from the matched tree. This settles the inventory's first open question (AutoDock rows coincide across the two trees) and means the `source:` line of all four sidecars, plus exh_returns_report.txt and the exh_*.csv tables, change on the switch run.",
+   "change": "List the four exh_*_stats.txt, exh_returns_report.txt and exh_*.csv as regenerated sidecars in Section 4; drop the inventory's open question as resolved.",
+   "effort": "S",
+   "current_value": "source: .../benchmark_full_protein_vina_scoring/... (pre-matched)",
+   "new_value": "source: .../benchmark_matched_equibind/... (matched)"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Phase 5.2 (:286), Section 3.2 row ':715, 751' (:410) and Section 4 (:473-474)",
+   "claim": "image24 / image25 are 'Fig 10 / Fig 11' ('captions of Figs 2-7, 10, 11, 15, 16'; 'Fig 10 / Fig 11 captions: 199, 169, 80; 53 shared'; '10 (image24), 11 (image25)').",
+   "correction": "image24 and image25 are Figs 15 and 16: body_main_short.tex:715 caption 'Charged device-occupancy seconds per qualifying pose ... 199, 169 and 80' label fig:results-r23 and :751 'Hardware resource per qualifying pose' label fig:results-r24; REGENERATE.md section 5 rows 15 and 16; _build_reproduction_notebook.py:589 thesis='Table 6; Figure 15' and :603 'Figure 16'. Figs 10 and 11 are the Orai figures image15 (:632 'Transmembrane loss of PoseBusters-valid poses') and image16 (:647 consensus-site distances), which Section 7 correctly lists as unchanged. The plan's own 1.9 header (:206) says 'Figs 15, 16', so the plan is internally inconsistent and 5.2 would send an editor to two Orai captions.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 3.2 / Phase 2.2 'PandaMap crystal tasks then bench_pandamap_report'",
+   "claim": "The per-copy crystal fingerprints for Figs 7 / 39 are produced by re-running the PandaMap crystal tasks after the run_pandamap.py:963 code change.",
+   "correction": "run_pandamap.py:1176 only rebuilds crystal_interactions.csv when `cfg.overwrite` is true or the file is absent; config 07 sets overwrite: false (:67) and pandamap_results/benchmark_matched_equibind/crystal_interactions.csv exists (2026-08-14). Without a step that removes or renames the two crystal CSVs (or a crystal-only overwrite switch) the new tasks never run, bench_pandamap_report rebuilds Figs 7 and 39 on the single-instance natives, and nothing errors. `--overwrite` is not a fix because :1161 then re-profiles every docked pose.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 2.1 and Phase 3.2 bench_clusters; Risk 5",
+   "claim": "Risk 5 treats cache convention blindness as a hub-only problem (D8 bumps the hub schema 5 -> 6); Phase 2.1 checks that 'on the 165 single-copy complexes every reach / co-reach / purity value equals the frozen run'.",
+   "correction": "pose_cluster_crystal_pocket_report.py has its own analysis_cache.pkl with `_CACHE_SCHEMA = 5` (:3927) and a signature (:3942-3976) that fingerprints the per-pose CSV but not the code; the bench_clusters stage (_build_reproduction_notebook.py:511-521) passes no --force. The D5 code change alone does not invalidate the cache, so the 2.1 equality check run on an unchanged per-pose CSV passes because the old analysis is returned, not because D5 is correct. The plan needs a `_CACHE_SCHEMA` bump or --force for the cluster report, stated in 2.1.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 4 'Hub sidecars that change' (:484-491)",
+   "claim": "The section header promises 'figures, tables, sidecars and harness assertions', and the sidecar paragraph lists only hub outputs.",
+   "correction": "The non-hub figure companions are absent: topN_crystal_cluster_matrix_stats.txt (pose_cluster_crystal_pocket_report.py:2566; yaml :115; parsed by thesis_assertions.py:855), crystal_cluster_homogeneity_stats.txt/.json (:3431), cluster_quality_metrics_stats.txt (:3639), descriptor_reach_stats.json, summary.json; effort_stats.json and effort_by_quality_stats.json (docking_effort_comparison.py:2863, :2876) in both effort dirs, effort_summary.csv (yaml :177, :855); the PandaMap per-figure <stem>.txt files (pandamap_interaction_report.py:731), 10b_contact_decomposition_by_rank.csv (yaml :1072), native_recovery_by_rank.csv (yaml :143), interaction_pose_basis_audit.csv (yaml :1094); the four exh_*_stats.txt, exh_returns_report.txt and exh_*.csv (autodock_exhaustiveness_returns.py:2253). Several are harness inputs, so the omission understates 7.1.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 7.1 (:323) 'figures.pairs md5s'",
+   "claim": "figures.pairs md5s must be re-transcribed in thesis_expected_values.yaml.",
+   "correction": "The `figures.pairs` block (yaml :906-960) maps imageN to a source PATH; no md5 is stored anywhere in the yaml. thesis_assertions.py:684-693 computes md5(media) and md5(source) at run time and compares them. Nothing in the yaml changes for the 14 regenerated figures unless a source path moves; the only md5 record that goes stale is validate_regeneration.py's fingerprint in posebusters_results/_reproduction/regeneration_check.json (:189-199), which 7.3 already re-runs.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 6.2 and Risk 6",
+   "claim": "Figures 2, 3, 5, 6, 38 have no byte gate in validate_regeneration.py and rely on the md5 hand-check.",
+   "correction": "True as stated, but the plan accepts the gap without raising the decision it invites. The DECLARED reason for Figs 5, 6, 38 (validate_regeneration.py:164-166, 'analysis cache is keyed to the out-dir signature') is false: _analysis_signature has no out_dir key, so a scratch --out-dir recomputes from scratch and the stage is registered BITEXACT with fixed --stability-boot 25. A Case for the three cluster figures is feasible at moderate cost and would leave only Figs 2 and 3 ungated. The dimension should have raised 'add a cluster Case' as a decision.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 6.1 'confirm by md5 against the producing report file'",
+   "claim": "Each regenerated figure has one producing report file to confirm against.",
+   "correction": "image25 has two: thesis_expected_values.yaml:925 pairs it to posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2/panels/resource_per_near_native_valid_pose.png (elapsed stage), REGENERATE.md section 5 row 16 lists the charged dir '(+1 identical)', and validate_regeneration.py Case '15' checks image25 against the charged run. The inventory raised this as an open question; the plan neither decides which dir is canonical nor adds the check that the two re-runs stay byte-identical (the resource panel must be basis-invariant for the yaml pair and the validator to agree).",
+   "severity": "minor"
+  }
+ ],
+ "notes": "Section 7 verified for this dimension with no error found: Fig 1's generator figure2_validity_yield.py reads only posebusters_filtered_results.csv (no rmsd/crystal token in the file); Fig 30 panel A's 'Multi-instance ligands : 143 (46% of set)' is printed by PoseBusters_DataSet_Analysis.ipynb; Fig 24 (image19, orai_pose_cluster_report.py:1676) is Orai-receptor and crystal-free despite its 'benchmark ligands' caption at body_appendix_short.tex:431; Fig 36 caption :776 'ligand-versus-receptor size' and Fig 37 :787 are dataset descriptors kept under D13. Independent sweep of the 39 includegraphics (16 main, 23 appendix, 0 in Thesis_short.tex) matches the inventory count; media/media holds exactly 39 PNGs and thesis_assertions.py:718-726 asserts coverage from the tex. Fig 2/3 depth curves are written by the hub at posebusters_pose_comparison.py:14369-14385 on `rmsd` and `bestfit_rmsd`, consistent with D2. Fig 4's filmstrip cohorts come from P._valid_topd_poses / P._form_components with the centroid_dist trim (filmstrip_rank1_top5_top15.py:126-133), so it follows the hub columns and D8's new _CACHE_REQUIRED_COLS without code change. Regeneration state today: regeneration_check.json 2026-09-06 full run, 20/20 IDENTICAL. Side evidence for Risk 8 (receptor chains, not my dimension but cheap): comparing chain sets of Data/PoseBuster Benchmark Set/<ID>/<ID>_protein.pdb against posebusters_results/benchmark/dock/hetatm_cleaned/<ID>_protein.pdb for the 171 ids with n_records>1 in copies_inventory.csv gives 169 identical, 2 differ (7Q25_8J9 ABCDEF->AB, 7R6J_2I7 ABC->AB); table at /tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf2/hetatm_cleaned_chain_check.csv. The dropped chains may be non-protein; whether an alternate copy sits on them was not checked. No repository file was modified."
+}

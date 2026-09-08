@@ -58,11 +58,11 @@
 % The English abstract and its keywords occupy one page. The German translation is
 % embedded after an explicit page break because the shared twbook class otherwise
 % places \kurzfassung before \outline in an English-language master's thesis.
-\outline{Molecular docking predicts protein--ligand binding poses, but physics-based and artificial-intelligence (AI)-based tools differ in how they search, rank and represent molecular geometry. This thesis compares three configured blind whole-protein workflows, namely AutoDock Vina with gnina rescoring, DiffDock-L with smina optimisation and EquiBind with gnina optimisation. A calibration benchmark of 303 co-crystallised complexes permits assessment against known poses under a primary endpoint combining PoseBusters validity with a heavy-atom root-mean-square deviation of at most 2\angstrom{}. A reference-free case study additionally docks three modulators to four supplied molecular-dynamics snapshots of the Orai1 calcium channel. Workflow variants were selected and evaluated on the same benchmark, which makes the comparison descriptive and possibly optimistic for unseen targets.
+\outline{Molecular docking predicts protein--ligand binding poses, but physics-based and artificial-intelligence (AI)-based tools differ in how they search, rank and represent molecular geometry. This thesis compares three configured blind whole-protein workflows, namely AutoDock Vina with gnina rescoring, DiffDock-L with smina optimisation and EquiBind with gnina optimisation. A calibration benchmark of 303 co-crystallised complexes permits assessment against known poses under a primary endpoint combining PoseBusters validity with a heavy-atom root-mean-square deviation of at most 2\angstrom{}. A reference-free case study additionally docks three modulators to four supplied molecular-dynamics snapshots of a homology model of the Orai1 calcium channel. Workflow variants were selected and evaluated on the same benchmark, which makes the comparison descriptive and possibly optimistic for unseen targets.
 
-Raw poses from the learned workflows were largely unusable, at 24.4\% validity for DiffDock and 2.9\% for EquiBind against 99.6\% for AutoDock. Local optimisation repaired this almost categorically, lifting the median per-complex validity yield from 13.3\% to 93.3\% and from 0\% to 80.0\%. It corrected local geometry but recovered no binding mode that was unsampled or grossly misplaced. Rank-1 recovery of a pose both valid and within 2\angstrom{} reached 36.6\% of complexes for AutoDock, 34.0\% for DiffDock and 18.2\% for EquiBind, leaving the leading pair unresolved at 2.6 points with a 95\% interval of \ensuremath{-}4.2 to +9.4. Generation rather than ranking dominated failure, with about six in ten rank-1 failures for the leading pair containing no qualifying pose, though inspecting fifteen poses instead of one still raised recovery to 65.3\% and 55.1\%. On a single device-occupancy basis the configured AutoDock workflow was the most expensive per qualifying pose, and EquiBind's low cost was conditional on recovering only 80 of 303 complexes.
+Raw poses from the learned workflows were largely inadmissible, at 24.4\% pooled validity for DiffDock and 2.9\% for EquiBind against 99.6\% for AutoDock. Local optimisation repaired this almost categorically, lifting the median per-complex validity yield from 13.3\% to 93.3\% and from 0\% to 80.0\%. It corrected local geometry but recovered no binding mode that was unsampled or grossly misplaced. Rank-1 recovery of a pose both valid and within 2\angstrom{} reached 36.6\% of complexes for AutoDock, 34.0\% for DiffDock and 18.2\% for EquiBind, leaving the leading pair unresolved at 2.6 points with a 95\% interval of \ensuremath{-}4.2 to +9.4. Generation rather than ranking dominated failure, with about six in ten rank-1 failures for the leading pair containing no qualifying pose, though inspecting fifteen poses instead of one still raised recovery to 65.3\% and 55.1\%. Unlike the rank-1 contrast, the gaps at top-5 and top-15 are statistically resolved. On a single device-occupancy basis the configured AutoDock workflow was the most expensive per qualifying pose, and EquiBind's low cost was conditional on recovering only 80 of 303 complexes.
 
-On Orai1 the validity ordering held but the usable-yield ordering reversed, at a median 65\% for DiffDock, 60\% for AutoDock and 0\% for EquiBind. This small, correlated and reference-free panel compares their behaviour rather than validating a native pose or binding site. The results therefore favour joint accuracy-and-validity gating, local optimisation and explicit inspection of ranking depth. They apply to the configured pipelines and hardware rather than to physics-based and AI-based docking as method classes.
+On Orai1 the validity ordering held but the usable-yield ordering reversed, at a median 65\% for DiffDock, 60\% for AutoDock and 0\% for EquiBind. That reversal is a property of AutoDock's learned re-ranking rather than of its search, since restricting it to Vina modes one to ten puts it at 75\%. This small, correlated and reference-free panel compares their behaviour rather than validating a native pose or binding site. The results therefore favour joint accuracy-and-validity gating, local optimisation and explicit inspection of ranking depth. They apply to the configured pipelines and hardware rather than to physics-based and AI-based docking as method classes.
 
 \vfill\paragraph*{Keywords:}Molecular docking; Physics-based and AI-based methods;
 PoseBusters physical validity; Local pose optimisation; Orai1 calcium channel
@@ -71,40 +71,42 @@ PoseBusters physical validity; Local pose optimisation; Orai1 calcium channel
 \begin{otherlanguage}{ngerman}
 \chapter*{Kurzfassung}
 
-Molekulares Docking sagt Bindungsposen von Protein--Ligand-Komplexen voraus.
-Physikbasierte und auf künstlicher Intelligenz (KI) beruhende Werkzeuge unterscheiden
-sich jedoch in Suche, Reihung und Darstellung der Molekülgeometrie. Diese Arbeit vergleicht drei konfigurierte
-Arbeitsabläufe für blindes Ganzprotein-Docking, nämlich AutoDock Vina mit gnina-Rescoring, DiffDock-L mit smina-Optimierung und EquiBind mit
-gnina-Optimierung. Ein Kalibrierungsdatensatz aus 303 kokristallisierten
-Komplexen ermöglicht die Bewertung anhand bekannter Posen unter einem primären Endpunkt
-aus PoseBusters-Gültigkeit und einer Schweratom-RMSD von höchstens 2\angstrom{}.
-Eine referenzfreie Fallstudie untersucht zusätzlich drei Modulatoren an vier
-bereitgestellten Molekulardynamik-Schnappschüssen des Orai1-Kalziumkanals. Da die
-Varianten auf demselben Datensatz ausgewählt und bewertet wurden, ist der Vergleich
-deskriptiv und kann die Leistung auf unbekannten Zielproteinen überschätzen.
+Molekulares Docking sagt Bindungsposen von Protein--Ligand-Komplexen voraus, doch
+physikbasierte und auf künstlicher Intelligenz (KI) beruhende Werkzeuge unterscheiden
+sich in Suche, Reihung und Geometriedarstellung. Verglichen werden drei konfigurierte
+Arbeitsabläufe für blindes Ganzprotein-Docking, nämlich AutoDock Vina mit
+gnina-Rescoring, DiffDock-L mit smina- und EquiBind mit gnina-Optimierung. Ein
+Kalibrierungsdatensatz aus 303 kokristallisierten Komplexen erlaubt die Bewertung anhand
+bekannter Posen unter einem primären Endpunkt aus PoseBusters-Gültigkeit und
+Schweratom-RMSD von höchstens 2\angstrom{}. Eine referenzfreie Fallstudie dockt drei
+Modulatoren an vier bereitgestellte Molekulardynamik-Schnappschüsse eines
+Homologiemodells des Orai1-Kalziumkanals. Da Auswahl und Bewertung auf demselben
+Datensatz erfolgten, ist der Vergleich deskriptiv und möglicherweise zu optimistisch.
 
-Die Rohposen der lernenden Verfahren waren weitgehend unbrauchbar, mit 24,4\%
-Gültigkeit für DiffDock und 2,9\% für EquiBind gegenüber
-99,6\% für AutoDock. Lokale Optimierung behob dies nahezu vollständig und hob den
-medianen Gültigkeitsanteil pro Komplex von 13,3\% auf 93,3\% sowie von 0\% auf 80,0\%.
-Sie korrigierte lokale Geometrie, nicht jedoch fehlende oder grob fehlplatzierte
-Bindungsmodi. Am Rang 1 betrug die Wiederfindungsrate einer gültigen Pose innerhalb
-von 2\angstrom{} 36,6\% für AutoDock, 34,0\% für DiffDock und 18,2\% für EquiBind,
-womit das führende Paar bei 2,6 Prozentpunkten mit einem 95\%-Intervall von
-\ensuremath{-}4,2 bis +9,4 unaufgelöst blieb. Nicht die Reihung, sondern die
-Posenerzeugung dominierte das Versagen, denn etwa sechs von zehn Fehlschlägen am Rang 1
-enthielten bei den beiden führenden Verfahren keine qualifizierende Pose. Fünfzehn statt
-einer Pose erhöhten die Wiederfindungsrate dennoch auf 65,3\% und 55,1\%. In einer einheitlichen Belegungsrechnung war der konfigurierte
-AutoDock-Ablauf am teuersten pro qualifizierender Pose, und EquiBinds niedrige Kosten
-galten nur für 80 von 303 Komplexen.
+Die Rohposen der lernenden Verfahren waren physikalisch weitgehend unzulässig, mit
+gepoolter Gültigkeit von 24,4\% für DiffDock und 2,9\% für EquiBind gegenüber 99,6\% für
+AutoDock. Lokale Optimierung hob den medianen Gültigkeitsanteil pro Komplex von 13,3\%
+auf 93,3\% sowie von 0\% auf 80,0\%. Sie korrigierte lokale Geometrie, nicht jedoch
+fehlende oder grob fehlplatzierte Bindungsmodi. Am Rang 1 lag die Wiederfindung gültiger
+Posen innerhalb von 2\angstrom{} bei 36,6\% für AutoDock, 34,0\% für DiffDock und 18,2\%
+für EquiBind, womit das führende Paar bei 2,6 Prozentpunkten unaufgelöst blieb,
+95\%-Intervall
+\ensuremath{-}4,2 bis +9,4. Nicht die Reihung, sondern die Posenerzeugung dominierte das
+Versagen, denn etwa sechs von zehn Fehlschlägen am Rang 1 enthielten beim führenden Paar
+keine qualifizierende Pose. Fünfzehn statt einer Pose erhöhten die Wiederfindungsrate
+dennoch auf 65,3\% und 55,1\%. Anders als am Rang 1 sind die Abstände bei fünf und
+fünfzehn Posen statistisch gesichert. In einheitlicher Belegungsrechnung war der
+AutoDock-Ablauf am teuersten pro qualifizierender Pose, EquiBinds niedrige Kosten galten
+nur für 80 von 303 Komplexen.
 
-Für Orai1 blieb die Rangfolge der Gültigkeit erhalten, während sich die Rangfolge der
-nutzbaren Ausbeute umkehrte, im Median 65\% für DiffDock, 60\% für AutoDock und 0\%
-für EquiBind. Das kleine, korrelierte und referenzfreie Panel vergleicht ihr Verhalten, validiert jedoch weder eine native Pose noch eine Bindungsstelle.
-Die Ergebnisse sprechen daher für eine gemeinsame Beurteilung von Genauigkeit und
-Gültigkeit, für lokale Optimierung und für die explizite Untersuchung der Rangtiefe.
-Sie gelten für die konfigurierten Pipelines und die verwendete Hardware, nicht
-allgemein für physikbasierte oder KI-basierte Dockingmethoden.
+Für Orai1 blieb die Rangfolge der Gültigkeit erhalten, die der nutzbaren Ausbeute kehrte
+sich dagegen um, im Median 65\% für DiffDock, 60\% für AutoDock und 0\% für EquiBind.
+Diese Umkehr stammt aus AutoDocks gelernter Neureihung, nicht aus seiner Suche, deren
+erste zehn Modi 75\% erreichen. Dieses kleine, korrelierte und referenzfreie Panel
+validiert weder eine native Pose noch eine Bindungsstelle. Die Ergebnisse sprechen daher
+für gemeinsame Beurteilung von Genauigkeit und Gültigkeit, lokale Optimierung und
+explizite Untersuchung der Rangtiefe. Sie gelten für die konfigurierten Pipelines und die
+Hardware, nicht allgemein für physikbasierte oder KI-basierte Dockingmethoden.
 
 \vfill\paragraph*{Schlagworte:}Molekulares Docking; Physikbasierte und KI-basierte
 Methoden; Physikalische PoseBusters-Gültigkeit; Lokale Posenoptimierung;

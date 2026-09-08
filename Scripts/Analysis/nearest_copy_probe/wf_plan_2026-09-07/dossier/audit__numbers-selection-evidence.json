@@ -1,0 +1,138 @@
+{
+ "dimension": "numbers-selection",
+ "role": "EVIDENCE AUDITOR",
+ "refuted": [
+  {
+   "site": "PLAN Section 1.5, sentence 'The AutoDock gnina-versus-raw rank-1 step (:843, App. H :945): 31.4 -> 37.3 % becomes 43.2 -> 49.8 % on the top-k table basis, discordant 39/20, uncorrected p 0.018 (was 0.040)'",
+   "reason": "Two bases are mixed. Recomputed from nearest_copy_alldepths.csv + nearest_copy_ladder_arms.csv with stats_utils.mcnemar_exact: on the top-k table basis (near-native WITHOUT the validity gate, the basis of body_appendix_short.tex:945 which prints '31.4 -> 37.3 & 21 / 39 & 0.0273') the nearest-copy pair is raw-only 19 / opt-only 39, p = 0.0119, and the current value is 0.0273, not 0.040. The quoted 39/20, p 0.0183 (was 0.0396) is the VALIDITY-GATED contrast 94->111 / 130->149, which is what body_main_short.tex:843 prints as 31.0 -> 36.6 %. The plan's own Section 3 row '945-962' gives the right pair (19 / 39, p 0.012), so Section 1.5 contradicts Section 3."
+  },
+  {
+   "site": "PLAN Section 1.4: '26 of the 90 Table 26 Kabsch cells move by 0.3-0.7 pp'",
+   "reason": "Table 26 (tab:results-near-native-form, body_appendix_short.tex:1285) prints Kabsch rows for 3 tools x 3 depths x 10 thresholds 0.25..2.5 A, identical to the columns of wf_plan_2026-09-07/kabsch_recovery_depths_two_conventions.csv. Diffing reference vs nearest_follow in that CSV changes 47 of the 90 percentage cells (range 0.3-0.7 pp is correct). 26 is wrong."
+  },
+  {
+   "site": "PLAN Section 1.3 table row 'Uni-Dock2 | 81 / 117 / 1.4 -> 95 / 162 / 1.9 ...' presented as a Table 1 pose-level row",
+   "reason": "Table 1 (body_main_short.tex:293-302) has ten rows and no Uni-Dock2 row; body_main_short.tex:240 comment reads 'unidock2 row deliberately omitted per supervisor request', and thesis_expected_values.yaml table_1 rows (:71-80) carry no unidock2 entry. The numbers themselves reproduce (recomputed 81/117/1.4 -> 95/162/1.9, 196/2729 -> 196/2715, 65/85 -> 82/125) but they are not a thesis edit."
+  }
+ ],
+ "corrected": [
+  {
+   "site": "PLAN Section 1.5 attribution ':843' for '31.4 -> 37.3 %'",
+   "correction": "body_main_short.tex:843 prints the validity-gated step 'from 31.0% to 36.6% at rank-1' (94 -> 111 of 303), which becomes 42.9 -> 49.2 % (130 -> 149; discordant 39/20, exact p 0.0183, was 0.0396). The 31.4 -> 37.3 % pair lives only at body_appendix_short.tex:945 (no validity gate) and becomes 43.2 -> 49.8 %, 19 / 39, p 0.0119 (Holm over the within-tool family of sixteen to recompute)."
+  },
+  {
+   "site": "PLAN Section 1.5: 'still leads at every depth from 3 to 22'",
+   "correction": "True but understated. Under the nearest convention exh128+gnina strictly beats all seven alternatives at every depth 1..25 (first non-lead at depth 26, 214 vs 214 raw exh128); under the reference convention it ties at depth 2 (146 vs 146) and 23 (199 vs 199), which is why the thesis says 3 to 22. The sentence at body_appendix_short.tex:182 can be rewritten as 'at every depth from rank-1 to top-25'."
+  },
+  {
+   "site": "PLAN Section 1.1 'App. H :1194' and Section 1.10 'App. I :1072' and Section 1.2 'App. H.9 :1258' (power/equivalence)",
+   "correction": "The 'at most four' paragraph starts at body_appendix_short.tex:1196 ('What that requirement costs the headline endpoint has an exact answer'); the ITT paragraph is :1074 ('Five of the 308 source entries'); :1072 is the \\section line. The Newcombe paragraph is :1258 but the discordant-112 / MDD 9.8 / power 0.12 / 4,200 / 8.2 / TOST sentences are at :1260 ('At rank-1 both pipelines recover 51 of the 303 complexes'). Section 3 row ':869' (34.0 % and 34.3 %) is at :871."
+  },
+  {
+   "site": "PLAN Section 1.2 table header 'Exact McNemar p' for d = 5, 15, 30",
+   "correction": "Values are right (recomputed 7.63e-4, 0.00903 -> 0.00363, 0.0113 -> 0.00752) but body_main_short.tex:382 and App. H :1258 print them as p_holm. They coincide only because AutoDock-DiffDock is the largest p in each three-pair family (Holm multiplier 1); recomputed Holm under nearest: 0.159 / 7.63e-4 / 0.00363 / 0.00752."
+  }
+ ],
+ "missing": [
+  {
+   "file": "thesis_latex/body_appendix_short.tex",
+   "line": 182,
+   "what": "'At rank-1 only two of the seven contrasts survive correction and the arm ties with exhaustiveness 64 rescored, at 111 against 110.' The plan fixes the tie (149 vs 141) but not the 'only two of the seven' count.",
+   "change": "Recomputed with stats_utils.holm over the seven rank-1 exact McNemar contrasts against exh128+gnina (validity-aware gate, nearest): Holm p = 2.98e-9 (exh18), 2.04e-5 (exh32), 0.0078 (exh64), 0.0078 (exh92), 0.0367 (raw exh128), 0.0234 (32+gnina), 0.152 (64+gnina). Six of seven survive; only 64+gnina does not. Reference convention reproduces the printed two (exh18, exh32).",
+   "effort": "S",
+   "current_value": "only two of the seven contrasts survive correction",
+   "new_value": "six of the seven contrasts survive correction; only the contrast with exhaustiveness 64 rescored does not"
+  },
+  {
+   "file": "thesis_latex/body_appendix_short.tex",
+   "line": 1260,
+   "what": "'Even the 428 entries of the earlier preprint release of this benchmark would leave the minimum detectable difference near 8.2 points' depends on the discordance rate 112/303, which becomes 129/303. Plan Section 3 row 1256-1258 lists the current 8.2 but gives no replacement.",
+   "change": "MDD at n = 428 with psi = 129/303: (1.960 + 0.842) * sqrt(0.4257/428) = 8.8 pp (reference 8.2 reproduces).",
+   "effort": "S",
+   "current_value": "near 8.2 points",
+   "new_value": "near 8.8 points"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 781,
+   "what": "'Dropping either the validity or the form term leaves the two arms exactly level, and gnina is level or ahead on every component taken alone.' Plan 1.5 covers the form-drop (double gate 179 vs 177) but not the validity-drop, and not the 'level or ahead on every component' clause.",
+   "change": "Recomputed top-15 near-native only (no validity, no form): smina 182 vs gnina 180, so both drops leave smina ahead by two. On Table 1 components under nearest: near-native 186 vs 186 (level, was 176 vs 173 gnina ahead), form 236 vs 235 smina ahead, validity 87.1 vs 84.5 gnina ahead. 'Exact McNemar separates them at no depth' still holds (no depth 1..30 with p < 0.05 on the double gate).",
+   "effort": "S",
+   "current_value": "exactly level ... gnina is level or ahead on every component taken alone",
+   "new_value": "smina ahead by two on both reduced gates (179 vs 177, 182 vs 180); gnina level on near-native (186 each) and ahead only on validity"
+  },
+  {
+   "file": "thesis_latex/body_appendix_short.tex",
+   "line": 1074,
+   "what": "ITT margin sentence 'holding at 2.6 percentage points at rank-1 and going from 10.2 to 10.1 at top-15' is not given a new value in Section 1.10 (only the counts 149/308, 213/308 vs 132, 179 are).",
+   "change": "On 308: rank-1 (149-132)/308 = 5.5 pp against 5.6 on 303; top-15 (213-179)/308 = 11.0 pp against 11.2. Also verified from itt_dropped_ids_nearest_copy.csv: rank-1 closest 6.26 A (7FRX_O88, alternate copy 3; reference 80.75 A), top-15 closest 2.14 A (7FRX_O88 optimized_rank 5), 8F4J_PHO 1.54 A at optimized_rank 28 (copy 3), 2.05 A at rank 22.",
+   "effort": "S",
+   "current_value": "holding at 2.6 percentage points at rank-1 and going from 10.2 to 10.1 at top-15",
+   "new_value": "going from 5.6 to 5.5 percentage points at rank-1 and from 11.2 to 11.0 at top-15"
+  },
+  {
+   "file": "thesis_latex/body_appendix_short.tex",
+   "line": 1196,
+   "what": "'three to four for DiffDock + smina ... That is a span of 0.66 to 1.32 percentage points.' Plan 1.1 says only 'at most FIVE'; Section 3 row 1186-1194 gives DiffDock 5/4/3/3/3 but not the span.",
+   "change": "Recomputed no-gate minus gated per depth (nearest): AutoDock 2/4/3/3 (d=1/5/15/30), DiffDock 5/4/3/3, EquiBind 2/3/3/3. Span becomes 2/303 = 0.66 to 5/303 = 1.65 pp.",
+   "effort": "S",
+   "current_value": "three to four for DiffDock + smina ... span of 0.66 to 1.32 percentage points",
+   "new_value": "three to five for DiffDock + smina ... span of 0.66 to 1.65 percentage points"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 866,
+   "what": "'the winning margins were eight complexes for AutoDock Vina, one for DiffDock and nine for EquiBind ... The largest of those margins is 3.0 percentage points'. Plan 1.5 marks this 'recompute on the new ladder' although the against-own-raw part is derivable.",
+   "change": "Triple gate top-15 (nearest): AutoDock 175 vs raw exh128 166 = 9; DiffDock 144 vs 143 = 1; EquiBind 57 vs 48 = 9. Largest margin 9/303 = 3.0 pp, unchanged. Caveat: the AutoDock margin over the OTHER six ladder arms on the triple gate cannot be derived because nearest_copy_ladder_arms.csv carries no kabsch_nearest column; only the raw-exh128 contrast is checkable.",
+   "effort": "S",
+   "current_value": "eight complexes for AutoDock Vina, one for DiffDock and nine for EquiBind; 3.0 percentage points",
+   "new_value": "nine, one and nine; still 3.0 percentage points (pending the six other ladder arms' Kabsch-to-nearest values)"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Section 1.5, paragraph after the ladder table ('The AutoDock gnina-versus-raw rank-1 step (:843, App. H :945) ...')",
+   "claim": "31.4 -> 37.3 % becomes 43.2 -> 49.8 % on the top-k table basis, discordant 39/20, uncorrected p 0.018 (was 0.040)",
+   "correction": "Top-k table basis (body_appendix_short.tex:945, no validity gate): currently 21 / 39, p 0.0273; becomes 19 / 39, p 0.0119. Validity-gated basis (body_main_short.tex:843): 31.0 -> 36.6 % becomes 42.9 -> 49.2 %, 39/20, p 0.0183 (was 0.0396). The plan glued the gated discordant pair and p-values onto the ungated percentages; an implementer following 1.5 would print 39/20 into Table :945. Section 3 row '945-962' has the correct pair.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 1.4, sentence '26 of the 90 Table 26 Kabsch cells move by 0.3-0.7 pp'",
+   "claim": "26 of 90 cells change",
+   "correction": "47 of 90 cells change in kabsch_recovery_depths_two_conventions.csv (reference vs nearest_follow), shifts 0.3-0.7 pp; e.g. AutoDock d=15 1 A cell 71.9 -> 71.6, DiffDock d=1 2 A cell 82.5 -> 82.2.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 1.3 table, last row 'Uni-Dock2'",
+   "claim": "Uni-Dock2 is a Table 1 pose-level row",
+   "correction": "Table 1 (body_main_short.tex:293-302) has no Uni-Dock2 row; :240 says it is deliberately omitted. Harmless but misleading about the edit set.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 1.5, citation ':843' beside '31.4 -> 37.3 %'",
+   "claim": ":843 carries 31.4 -> 37.3 %",
+   "correction": ":843 carries the gated 31.0 -> 36.6 %; the 31.4 -> 37.3 % pair is at App. H :945 only.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 1.5, 'still leads at every depth from 3 to 22'",
+   "claim": "the depth-lead range is unchanged",
+   "correction": "Under nearest the arm leads strictly at every depth 1..25 (ties first at 26); the reference convention's ties at depths 2 and 23 disappear. Not false, but the thesis sentence at App. C :182 can and should be strengthened.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 1.1 'App. H :1194'; Section 1.10 'App. I :1072'; Section 1.2 'App. H.9 :1258' for the power/equivalence sentences; Section 3 row ':869'",
+   "claim": "line numbers of the quoted sentences",
+   "correction": "Paragraphs start at :1196, :1074, :1260 and :871 respectively (the cited lines are the section headers or the preceding paragraph).",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 1.5, 'At rank-1 ... tie ... becomes a lead, 149 against 141' and Phase 4.1",
+   "claim": "the rank-1 ladder sentence at App. C :182 is fully covered by the tie fix",
+   "correction": "The same sentence says 'only two of the seven contrasts survive correction'; recomputed Holm gives six of seven under nearest (64+gnina 0.152 is the only survivor of the null). Phase 4.1's check list does not include this sentence, so a rebuild would not catch it.",
+   "severity": "minor"
+  }
+ ],
+ "confirmed": 61,
+ "notes": "Method: recomputed every derivable Section 1 and Phase 4 number from the per-pose CSVs (nearest_copy_alldepths.csv, wf/nearest_copy_ladder_arms.csv, wf/nearest_copy_extra_arms.csv, wf/per_pose_two_conventions*.csv, itt_dropped_ids_nearest_copy.csv) using Scripts/Analysis/stats_utils.py (mcnemar_exact, mcnemar_power, tost_paired_proportions, wilson_ci, newcombe_paired_diff_ci, cochran_q, holm). Scripts and outputs in scratchpad/wf2/audit.py, audit2.py, *_out.txt. Nothing under the repo was written.\n\nConfirmed to the digit (61 items): Section 1.1 all nine headline cells and the raw exh128 / DiffDock raw / Uni-Dock2 arms at d=1/5/15/30 under both conventions; gains +87->+64 (21.1, Wilson 16.9-26.1), +64->+47 (15.5, 11.9-20.0), +25->+26 (8.6, 5.9-12.3); 15->30 +1/+4/+0 with DiffDock b=4 c=0 p=0.125; no-gate rank-1 113/107/57 -> 151/137/59 and 'at most five' (DiffDock rank-1); rank-1 failures with nothing anywhere 54.2/67.0/89.9 -> 57.8/70.2/89.4; raw exh128 31.0/61.1/66.7 -> 42.9/65.3/71.6 and 217 vs 214. Section 1.2 all seven table rows (margins, Newcombe 95 %, discordant, p), discordant 112->129, MDD 9.8->10.5, power 0.12->0.32, n_needed 4162->1062, TOST 90 % -3.1..+8.3 -> -0.5..+11.7 (not equivalent within 10, equivalent within 12), Cochran Q rank-1 p 2.0e-17; Section 3's 76/98/129 (42.6 %) also reproduces. Section 1.3 all ten Table 1 arms under nearest_follow (near-native, Form with the bestfit<=1 AND rmsd<1000 guard, Combined) including the Form LOSSES (225->224, 237->236, 200->199) and fpocket/P2Rank cells. Section 1.4 74.3/74.6, 95.4/97.0, 52.5/52.1/33.3 unchanged; EquiBind 54.1->53.8 (gain 20.5); form McNemar 48/47, 30/32, 25/26. Section 1.5 triple gate 160->175, 133/132->144/143 (834/828 -> 1031/1022, discordant 9->7, gnina-only 4->3), 55/46 -> 57/48; double 167/167 -> 179/177; 164/160 -> 178/175; all eight ladder rungs at d=1/15/30; McNemar 1.05e-20 (exh18), 2.6e-3 (own raw), 4.43e-3 (64+gnina); 185->198 gaining 17 losing 4 becomes 198->213 gaining 19 losing 4; 154->198 becomes 170->213; 111 vs 110 becomes 149 vs 141. Section 1.9 qualifying poses 311/1622/466 -> 442/2068/483, Vina-only 302->431, complexes 199/169/80 -> 214/183/83, all-three shared 53->54, AutoDock median qualifying poses per succeeding complex 1->2. Section 1.10 every stated distance and rank (6.26 A rank-1, 2.14 A top-15, 1.54 A at rank 28, 150 poses, CNNaffinity order). Section 1.11 Abstract :61-63 and Kurzfassung :91-100 current values and the +1/+11 character deltas. Phase 4.1 BEST_VARIANT_METRIC at hub :2136, 213 beats all seven, 144 vs 143 / 179 vs 177; Phase 4.2 _TOPK_TEST_PAIRS at :9764, AutoDock* vs DiffDock raw k=1 77/58 p 0.121 on the near-native (no-gate) basis matching the current 62/51 at :1031, significant from k=5.\n\nNot verifiable from the CSVs (plan correctly marks recompute): metal stratum margins (+6.7/+20.5; no per-complex stratum file found), timing-based cost medians, winner's-curse figures, Holm over the within-tool family of sixteen. The AutoDock triple-gate margin over the six non-raw ladder arms cannot be derived because the ladder CSV lacks kabsch_nearest.\n\nSide observation outside the plan: body_main_short.tex:781 'gnina is level or ahead on every component taken alone' already contradicts :199 (form 237 vs 235 smina ahead) under the reference convention."
+}

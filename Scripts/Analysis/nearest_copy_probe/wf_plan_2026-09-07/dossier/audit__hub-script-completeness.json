@@ -1,0 +1,90 @@
+{
+ "dimension": "hub-script",
+ "role": "COMPLETENESS AUDITOR",
+ "refuted": [],
+ "corrected": [],
+ "missing": [
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/filmstrip_rank1_top5_top15.py",
+   "line": 313,
+   "what": "`df = P._read_cached_per_pose(CACHE)` \u2014 the filmstrip reads its cache through the hub's validator, whose `_CACHE_REQUIRED_COLS` the plan tightens (1.9). Its DEFAULT_REPORT (:38-39) is `posebusters_results/benchmark_full_protein_vina_scoring/dock/pose_comparison_report`, a cache the plan never rebuilds; after 1.9 that default returns None (\"lack required columns\") and the script proceeds into `mf.apply_method_filter(None, ...)`. The harness (`_build_reproduction_notebook.py:455-456`) and `validate_regeneration.py:120-121` pass `--report-dir`, so only the bare invocation dies, but plan 2.5 calls the filmstrip a pure re-reader that re-runs automatically.",
+   "change": "Either move DEFAULT_REPORT to the matched tree or make the script exit with the hub's message when `_read_cached_per_pose` returns None; add to Phase 2.5 and to the D8 rationale (the tightened column set also retires every older cache for hub-based readers).",
+   "effort": "S",
+   "current_value": "DEFAULT_REPORT = benchmark_full_protein_vina_scoring/.../pose_comparison_report; None passed on downstream",
+   "new_value": "DEFAULT_REPORT = benchmark_matched_equibind/.../pose_comparison_report, or sys.exit on None"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 13386,
+   "what": "argparse help for `--pocket-cutoff` (:13387-13390) reads \"Centroid distance (\u00c5) to the crystal ligand within which a pose counts as being in the experimentally validated pocket\". Plan 1.13 redefines \"validated pocket\" as the pose's nearest copy but lists only `:10998-11044` and `:733`; this help string, the module docstring at :163-167 (\"validated (crystal) pocket ... --pocket-cutoff \u00c5 of the crystal ligand centroid\"), the aggregate docstrings at :11005, :11114, :11152, the report header at :11139 (\"in-pocket \u2264 \u2026 \u00c5 from crystal ligand centroid\") and the main() comment at :14432-14433 are not listed.",
+   "change": "Add these lines to plan step 1.13 (doc-only: 'nearest deposited copy').",
+   "effort": "T",
+   "current_value": "crystal ligand centroid",
+   "new_value": "centroid of the pose's nearest deposited copy"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 503,
+   "what": "Module docstring 'Per-pose cache' paragraph (:503-508) enumerates what the manifest fingerprints: \"PB CSV signature, --ids-file, --split-equibind, --limit-pairs \u2014 NOT --top-n\". Plan 1.9 adds `reference_convention` to `_per_pose_signature` (:13224) but the docstring list, and the usage examples at :510-528 (no `--reference-convention` example), are not among the docstring sites the plan names (:46-55, :661, :723-732).",
+   "change": "Add :503-508 and :510-528 to plan step 1.10.",
+   "effort": "T",
+   "current_value": "PB CSV signature, --ids-file, --split-equibind, --limit-pairs",
+   "new_value": "\u2026 , --limit-pairs, --reference-convention"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 9470,
+   "what": "`_write_receptor_context_pdbs` (:9470-9540) writes the 20g receptor-context PDBs and .pml with the crystal coordinates from `_example_geometry` (`c_xyz`) and labels them \"crystal (original) ligand\" at :9471, :9513, :9540; `_write_real_example_pdbs` REMARK/pml strings at :9390, :9406, :9418; the figure legend at :9608 (`label=\"crystal (original) ligand\"`); main() comment :14071. Plan 1.10 covers only `:9313-9330` (the exemplar loader). Once `_example_geometry` loads record `nearest_copy_index`, these strings describe the wrong molecule for any exemplar whose nearest copy is an alternate.",
+   "change": "Extend plan 1.10 to the 20g writers and legend: print the copy index / 'nearest deposited copy' instead of 'crystal (original)'.",
+   "effort": "T",
+   "current_value": "chain A = crystal (original) ligand",
+   "new_value": "chain A = nearest deposited ligand copy (record k of <ID>_ligands.sdf)"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1391,
+   "what": "`compute_plif_recovery` returns all-NaN for the whole pair when the single crystal fails `_ligand_for_plif` (:1391-1393 `if crystal_lig is None: return [nan]*n`). Plan 1.4 turns this into an (n_poses \u00d7 n_copies) matrix but does not say what happens when ONE copy's ProLIF ligand fails while others succeed (per-column NaN, or fall back to the reference column), nor how bitvector index k maps back to copies when some are dropped from `valid_ligs`.",
+   "change": "Specify in 1.4: copies that fail `_ligand_for_plif` get a NaN column; `valid_ligs = [copies that loaded] + poses`, with an explicit copy-index map for the first block of bitvectors.",
+   "effort": "S",
+   "current_value": "single crystal_lig, whole-pair NaN on failure",
+   "new_value": "per-copy columns, per-copy NaN on failure"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/nearest_copy_probe/wf_plan_2026-09-07/kabsch_nearest.py",
+   "line": 1,
+   "what": "Five helper scripts under `wf_plan_2026-09-07/` (kabsch_nearest.py, kabsch_nearest_pass.py, kabsch_nearest_extra_arms.py, itt_dropped_ids.py, pb_loadall_replicate.py) import `symmetry_rmsd`/`load_first_mol`/`posebusters_rmsd`/`reassign_template` from the hub (grep over Scripts/). Plan 2.7 retires or registers only `nearest_copy_rescoring.py`; these importers, which produced the two-convention CSVs the plan's numbers rest on, are not mentioned and will keep working against the OLD single-instance semantics of their own loops after the hub changes.",
+   "change": "List them in 2.7: archive under the new `bench_reference_convention` stage or mark read-only evidence in the probe README.",
+   "effort": "T",
+   "current_value": "unmentioned",
+   "new_value": "archived / registered"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Section 2, Phase 1 step 1.3 / 1.4 and Section 5 risk 8",
+   "claim": "Contact recovery and PLIF recovery are simply re-evaluated per copy (1.3, 1.4); the only chain-coverage question raised is for PandaMap's `hetatm_cleaned/<ID>_protein.pdb` (risk 8, step 2.2).",
+   "correction": "The hub's own contact and PLIF references use `cdir / f\"{pdb_id}_protein.pdb\"` (hub :1521, :1530, :1534), a different file from the PandaMap receptor, and the plan never states that this file (a) contains the chains of every alternate copy and (b) does not retain the alternate copies as HETATM (which `load_protein_heavy_atoms` :1125-1146 would read as protein and count as native contacts / clashes). I verified both with /tmp/.../wf2/copy_coverage.py over all 171 multi-copy dirs (418 copies): 0 copies with zero protein heavy atoms within 4 \u00c5 (minimum 9, for 7Z1Q_NIO copy 1), 0 copies with any protein-file atom within 0.3 \u00c5 of a copy atom. The precondition holds, but it is a decision/verification the hub dimension should record next to 1.3 and 1.4 rather than leave implied.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 2, Phase 1 step 1.11",
+   "claim": "assert `rmsd`, `pb_rmsd`, `bestfit_rmsd`, `centroid_dist` equal the frozen table to 1e-9 \u00c5 on all 241,914 rows and `oracle_summary.csv` is byte-identical apart from the new columns",
+   "correction": "The frozen table has 241,913 data rows: `per_pose_metrics.manifest.json` says `\"n_rows\": 241913` and `wc -l` gives 241914 lines including the header. And `oracle_summary.csv` gains no new columns \u2014 the new PoseRecord fields (1.7) land in `per_pose_metrics.csv` only; `aggregate_oracle` (:1684-1716) emits per-method aggregates. The regression criterion should read: per_pose_metrics.csv equal on the existing columns for all 241,913 rows; oracle_summary.csv byte-identical, full stop. (Supporting fact for the same step: record 0 of `_ligands.sdf` is atom-order and coordinate identical to `_ligand.sdf` in 428/428 dirs and `AssignBondOrdersFromTemplate(crystal_h, copy0)` preserves order, coordinates and SMILES in 428/428 \u2014 /tmp/.../wf2/ref_identity.csv \u2014 so evaluating instance mode at `copies_h[ref_copy_index]` as 1.8 prescribes can be bit-exact; the probe's `rmsd_ref_re` and `rmsd_refcopy` agree to 0.0 on all 53,651 rows.)",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 2, Phase 1 step 1.11 (unit tests) and D8",
+   "claim": "Add a unit test \u2026 that a single-copy id yields `rmsd == rmsd_ref_instance` and `nearest_copy_is_ref` True. Check: both pass.",
+   "correction": "D8's load-bearing safety property \u2014 `--reuse-cache` refuses a cache whose manifest `reference_convention` differs from the flag, and `_read_cached_per_pose` refuses a schema-5 cache \u2014 has no test in the plan. Today `_load_cached_per_pose` under `--reuse-cache` never opens the manifest at all (hub :13262-13267 read `per_pose_csv` only), so the refusal is entirely new code. Add a test that writes a minimal CSV + manifest with the other convention and asserts the refusal message, and one that a schema-5 CSV (missing `rmsd_ref_instance`) is rejected by `_read_cached_per_pose`.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 2, Phase 2 step 2.5",
+   "claim": "Pure re-readers need no code change and re-run automatically: \u2026 `filmstrip_rank1_top5_top15.py:133` \u2026",
+   "correction": "The filmstrip is not a pure CSV re-reader: it calls `P._read_cached_per_pose(CACHE)` (filmstrip :313) and so inherits the tightened `_CACHE_REQUIRED_COLS` from 1.9. Its module default report dir (filmstrip :38-39) is the unrebuilt `benchmark_full_protein_vina_scoring` cache, which will fail the new column check and return None into `apply_method_filter`. Automatic only under the harness's explicit `--report-dir` (`_build_reproduction_notebook.py:456`); the plan should say so or fix the default.",
+   "severity": "minor"
+  }
+ ],
+ "confirmed": 0,
+ "notes": "Independent sweep of Scripts/Analysis/posebusters_pose_comparison.py (crystal loading, per-pose metrics, cache, CLI, exemplar writers) plus its hub-function importers. The inventory is essentially complete on code paths: `_ligand.sdf` is read at exactly :1520, :9323, :9351 and `load_first_mol` is called at :1525, :1543, :9352 (grep), all listed. Section 7 entries touching this dimension were re-derived from /tmp/.../scratchpad/nearest_copy_alldepths.csv with the thesis_endpoint_diagnostics.py:72-78 rule: AutoDock* validity-gate cost is 2/4/3/3 at d=1/5/15/30 under BOTH conventions (near 151/204/216/217 vs gated 149/200/213/214 under nearest), EquiBind gnina 2/3/3/3 under both, and the top-5 triple-gate AutoDock*-vs-DiffDock* discordant counts are 88/48 under both (totals 184/144 \u2192 200/160) \u2014 so no Section 7 claim in this dimension is wrong. DiffDock* gate cost does move (4/4/3/4 \u2192 5/4/3/3), consistent with the plan listing the DiffDock raw row of Table 22 as changing. Kabsch headline 74.3/74.6 (1 \u00c5) and 95.4/97.0 (2 \u00c5) hold at depth 30 in kabsch_recovery_depths_two_conventions.csv; depth-1 and depth-15 Kabsch cells shift by \u00b11 complex, as Section 4 already says for Table 26. Other verified facts for the planner: `_per_pose_signature` (:13216-13231) does not fingerprint `--benchmark-dir`, so the `_ligands.sdf` inputs are covered only via the new convention field; adding it to the signature makes the ordinary non-`--reuse-cache` path recompute on its own (manifest mismatch at :13274), so `--force` in 3.1 is belt-and-braces. `pb_rmsd_within_2A` (PoseRecord :1469) has no consumer outside the hub (repo grep), so its silent move to copy j* is harmless. `strain_energy` (uff_strain :1233) and `n_clashes` are reference-free and correctly absent from the change list. The probe's `load_all_mols` does not template-reassign copies while plan 1.2 does; the reassignment is invariant for record 0 (428/428) so the two are consistent for the regression test. No file under /home/manndo/master_dev was modified; scratch outputs are in /tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf2/ (copy_coverage.csv, ref_identity.csv, gate_cost.py)."
+}

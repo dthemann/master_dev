@@ -1,0 +1,84 @@
+{
+ "dimension": "form-axis",
+ "role": "COMPLETENESS AUDITOR",
+ "refuted": [],
+ "corrected": [],
+ "missing": [
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 422,
+   "what": "Interpretive paragraph under Figure 4, absent from the inventory (:408/:410/:412/:419) and from plan Section 3.2 (:408, :410-414, :419): 'In the near-site cohort, deeper ranks add valid but misplaced AutoDock and EquiBind poses and few for DiffDock. ... DiffDock appears more form-limited only because its low in-place RMSD inflates the form-to-in-place ratio. Its absolute form RMSD is lowest.' Every number behind it moves (filmstrip_table27_two_conventions.csv: DiffDock rank-1 coverage 54.1 -> 73.9 %, poses 164 -> 224, top-15 2,139 -> 2,801). 'Its absolute form RMSD is lowest' is false at rank-1 under BOTH conventions (AutoDock form median 0.845 vs DiffDock 0.885 today; 0.824 vs 0.890 under follow) and true only at depths 5 and 15.",
+   "change": "Add :422 to Section 3.2 as W. Re-read against the regenerated 20d sidecar; qualify 'lowest' to the top-5 and top-15 columns or drop it.",
+   "effort": "T",
+   "current_value": "few for DiffDock; absolute form RMSD is lowest",
+   "new_value": "re-derive from the nearest-copy filmstrip sidecar; 'lowest' holds at depths 5 and 15 only"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 1387,
+   "what": "Table 27 footnote (plan row '1375-1385 ... W footnote' names no values; the inventory site 1376 lists only the 117 cells). It prints the PoseBusters-vs-thesis in-place comparison: 'rank-1 medians of 1.490 against 1.543 A for AutoDock Vina + gnina and 1.467 against 1.566 A for DiffDock + smina', 'moves two of the 909 tool-by-complex decisions', 'Rank-1 recovery would then read 37.0% ... and 18.5% ... against an unchanged 34.0%', and 'crystal-ligand site'. Recomputed from wf/per_pose_two_conventions.csv: the reference values reproduce exactly (1.490/1.543, 1.467/1.566, 2 of 909, 37.0/18.5/34.0). Under nearest-follow: AutoDock 1.376 against 1.491, DiffDock 1.532 against 1.585, still two of 909 (one AutoDock, one EquiBind, both missed -> recovered), recovery would read 49.5 % and 19.1 % against an unchanged 43.6 %.",
+   "change": "List these seven numbers in Section 3.3 as derived (not 'W footnote' only) and replace 'crystal-ligand site' with the nearest-copy wording. Note the current line is 1387, not inside 1375-1385.",
+   "effort": "S",
+   "current_value": "1.490/1.543; 1.467/1.566; two of 909; 37.0 / 18.5 / 34.0",
+   "new_value": "1.376/1.491; 1.532/1.585; two of 909; 49.5 / 19.1 / 43.6"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 396,
+   "what": "Two p-value clauses the plan row for :396 does not list. (1) 'AutoDock and DiffDock exceed EquiBind at every depth (p_holm <= 4e-10)' contradicts the current companion report 18_topn_within_thresholds_kabsch_pbvalid_depths_report.txt:49-50 (rank-1 p_holm 8.997e-09) and stays 9.0e-09 under follow (form_mcnemar_two_conventions.csv rank-1 79/21 and 76/19 are unchanged). (2) 'the AutoDock--DiffDock comparison is a tie throughout, at p_holm = 1.000 with ... 30 against 31 at top-15' becomes 30/32 at top-15, exact p 0.899; Holm within the depth's three-test family (stats_utils.paired_proportions :352, which reproduces the report's 1.634e-11 for the reference) leaves it at 0.899, not 1.000.",
+   "change": "Add both clauses to Section 3.2 row 396: correct '<= 4e-10' to the regenerated value (about 9e-09) and reword the tie as 'p_holm 1.000, 0.899 and 1.000' or 'ns at every depth'.",
+   "effort": "T",
+   "current_value": "p_holm <= 4e-10; p_holm = 1.000 at all three depths",
+   "new_value": "p_holm about 9e-09 at rank-1; tie p_holm 1.000 / 0.899 / 1.000 (follow)"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 279,
+   "what": "Glossary carries the Table 27 footnote comparison ('against 1.543 A for AutoDock, 1.467 against 1.566 A for DiffDock. Substituting the PoseBusters implementation into the 2 A rank-1 gate moves two of 909'), plus :233-235 'Kabsch RMSD <= 2 A at rank-1: AutoDock 78.9 %, DiffDock 82.5 %' (follow: 78.9 / 82.2 per kabsch_recovery_depths_two_conventions.csv) and :257 '47.9 -> 65.1 -> 77.8 %' (follow 46.6 -> 63.7 -> 77.3). Plan 7.4 says 'a new glossary version' without listing these form-axis entries.",
+   "change": "Add the form-axis glossary entries (:151-159, :233-239, :243-260, :276-282) to the new-version checklist so the numbers are re-derived rather than copied.",
+   "effort": "T",
+   "current_value": "1.543 / 1.566 / two of 909; 78.9 / 82.5; 47.9 -> 65.1 -> 77.8",
+   "new_value": "1.491 / 1.585 / two of 909; 78.9 / 82.2; 46.6 -> 63.7 -> 77.3 (follow)"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Section 1.4 line 143 and Section 7 line 568 ('form tie p_holm 1.000')",
+   "claim": "Form McNemar AutoDock vs DiffDock 47/46, 30/31, 25/26 -> 48/47, 30/32, 25/26, Holm p stays 1.000; Section 7 lists 'form tie p_holm 1.000' under What does NOT change.",
+   "correction": "At top-15 under follow the discordant pair is 30/32 (form_mcnemar_two_conventions.csv, p_exact_uncorrected 0.899). The hub adjusts within each depth's three-pair family (posebusters_pose_comparison.py:6560 -> stats_utils.paired_proportions, holm at :352); recomputing that family gives 0.899 for the AutoDock-DiffDock pair (the same recomputation reproduces the printed reference 1.634e-11 at :53-54 of the report). The tie verdict (ns) holds, but the literal 'p_holm = 1.000 ... at top-15' at body_main_short.tex:396 changes and must not sit in Section 7.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Risk 2 (line 503) versus Phase 5 / D9 (line 38)",
+   "claim": "Risk 2 says three arms lose one Form complex under D2 and the M2 sentence must not be copied to Form; D9 makes the single-instance convention a sensitivity table with near-native columns only.",
+   "correction": "No Phase 5 step, no Section 3 row and neither draft (:109, :664) discloses the Form loss in the thesis, and the D9 table carries no Form or Combined column. body_main_short.tex:205-214 provenance comments and Table 1 (:293-303) will print 224 / 236 / 199 where the text nowhere says the nearest copy can lower a Form cell. Add a Form (and Combined) column to the D9 sensitivity table or one disclosure sentence beside the :664 draft (149 poses lost, 91 gained; DiffDock raw 225 -> 224, DiffDock + smina 237 -> 236, EquiBind + gnina 200 -> 199 per the inventory).",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Risk 11 (line 518) and Phase 0.4 (line 244)",
+   "claim": "Two pre-existing discrepancies must be traced before overwrite: :476 reach and :408 clip count.",
+   "correction": "The form-axis inventory's open question about body_main_short.tex:396 'p_holm <= 4e-10' versus the companion report's 8.997e-09 (18_topn_within_thresholds_kabsch_pbvalid_depths_report.txt:49) was dropped. It is a third pre-existing drift that the rebuild would otherwise carry forward unexplained (follow rank-1 EquiBind contrasts stay 79/21 and 76/19, Holm 9.0e-09).",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 3.3 rows 664, 1186-1194, 1256-1258, 1263, 1319-1338, 1375-1385",
+   "claim": "Appendix line numbers for the convention sentence, H.4 strata, Table 26 Kabsch rows and Table 27.",
+   "correction": "In the working tree (git diff hunks at body_appendix_short.tex ~460 and ~553 add two lines) these sites sit two lines lower: 'Where a structure contains multiple' is :666, 'Intermolecular failure for DiffDock falls' :1188, the Table 26 lead-in :1265, the Kabsch multirow :1321, Table 27 rows :1377-1385 and its footnote :1387. Lines below 460 (:230, :267) still match. Phase 5 should anchor edits by text, not by these numbers.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Step 1.12 (line 259)",
+   "claim": "Record pb_rmsd_loadall once to show parity with redock.yml load_all; expected: <= 2 A verdicts agree 100 %, values differ only by terminal-group symmetrisation.",
+   "correction": "The parity check is silent on the copy INDEX and on kabsch, which is where D2 can break if CalcRMS-argmin and symmetry_rmsd-argmin pick different copies. Measured on wf/per_pose_two_conventions.csv: only 3 of 24,486 multi-copy poses (2 equibind_unguided_gnina, 1 diffdock_smina) have pb_rmsd_min_all below pb_rmsd_nearest (max gap 0.008 A), kabsch differs on 2 of them, no <= 2 A or <= 1 A verdict flips, none at rank-1. Add 'nearest_copy_index equals the PoseBusters argmin on all but <= 3 poses and kabsch verdicts agree 100 %' as the acceptance criterion, which also retires the inventory's 'up to 1.295 A' concern.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 1.4 header ('glossary :151-159') and Section 3.2",
+   "claim": "The form axis touches 'glossary :151-159'.",
+   "correction": "body_main_short.tex:150-160 is the Clustering subsection, not a glossary; the reference is to DEFENCE_NOTES_NUMBER_GLOSSARY.md:151-159 ('52.5 %, 52.1 %, 33.3 % (rank-1 form)'). Section 3.2 has no rows for 151-159 and Section 7.4 lists the glossary only generically; state the file explicitly so the form-axis glossary entries (:151-159, :233-239, :243-260, :276-282) are re-derived in the new version.",
+   "severity": "minor"
+  }
+ ],
+ "confirmed": 0,
+ "notes": "Sweep method: fresh greps for kabsch|best-fit|superpos|placement|form over body_main_short.tex, body_appendix_short.tex, Thesis_short.tex, thesis_expected_values.yaml, thesis_assertions.py, all Scripts/Analysis/*.py, the notebook builders and the defence glossary, then reading every hit not already in the 42 inventory sites. Independent recomputations (vina env, pandas) from /tmp/.../wf/per_pose_two_conventions.csv: (1) the Table 27 footnote numbers reproduce exactly on the reference convention (1.490/1.543, 1.467/1.566, 2 of 909, 37.0/18.5/34.0) and move to 1.376/1.491, 1.532/1.585, 2 of 909, 49.5/19.1/43.6 under follow; (2) Holm within the per-depth three-pair family (stats_utils.paired_proportions :352) reproduces the printed report (1.634e-11 at top-15, 8.997e-09 at rank-1) and gives 0.899 for the top-15 AutoDock-DiffDock form pair under follow; (3) CalcRMS-argmin and symmetry_rmsd-argmin disagree on the copy for 3 of 24,486 multi-copy poses, never at rank-1, never flipping a verdict. Verified that the Kabsch depth curve (hub :1862-1960, rmsd_col=bestfit_rmsd) has no rmsd<1000 guard but is gated by pb_valid, so exploded poses cannot enter it; the cascade (:4648) and autodock_exhaustiveness_returns.py:541 use a STRICT '<' kabsch gate while thesis_assertions.py:123/:615 use '<=' (pre-existing, convention-independent, only matters at exactly 1.000). Out-of-dimension observations not filed: plan Section 1.5 ladder table omits the d=5 column printed at body_appendix_short.tex:218-225 (108/130/144/145/169/150/153/184); Scripts/Analysis/tests/test_diffdock_sweep_gate.py pins a triple gate inside DiffDock_Parameter_Sweep.ipynb, which no longer exists at the repo root, so D6's 'two test files untouched' counts one dead test; torsion/twist-turn outputs (tfd, rot_angle_deg, twist_turn_summary.csv) are computed against the crystal and are covered by plan 1.6 but appear nowhere in the short thesis. No file under /home/manndo/master_dev was modified."
+}

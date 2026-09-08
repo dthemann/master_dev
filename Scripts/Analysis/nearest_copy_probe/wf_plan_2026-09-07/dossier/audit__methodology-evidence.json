@@ -1,0 +1,128 @@
+{
+ "dimension": "methodology",
+ "role": "EVIDENCE AUDITOR",
+ "confirmed": 26,
+ "refuted": [
+  {
+   "site": "Site 33: /home/manndo/master_dev/thesis_latex/Thesis_short.tex:61 \u2014 'no rank-1 rates printed in Abstract or Kurzfassung, grep for 36.6/34.0/18.2/65.3 returns nothing'; depends_how 'Definitional only; no numeric abstract site moves'",
+   "reason": "grep hits Thesis_short.tex:63: '...recovery of a pose both valid and within 2\\angstrom{} reached 36.6\\% of complexes for AutoDock, 34.0\\% for DiffDock and 18.2\\%' and '...selecting fifteen poses instead of one still raised recovery to 65.3\\% and 55.1\\%'. The Abstract prints the rank-1 and top-15 valid-near-native rates, which under nearest-copy become 149/132/57 of 303 = 49.2/43.6/18.8 % and 213/179 of 303 = 70.3/59.1 % (recomputed from per_pose_two_conventions.csv, gate rmsd_nearest_copy<=2 AND pb_valid, eff_rank<=d). :61 itself is definitional as stated, but the site's claim that no abstract number moves is false."
+  }
+ ],
+ "corrected": [
+  {
+   "site": "Site 5: posebusters_paper_results.csv '428 rows per method, 308 ids overlap'",
+   "correction": "The archived CSV (/home/manndo/master_dev/Scripts/Analysis/nearest_copy_probe/wf_plan_2026-09-07/posebusters_paper_results.csv, byte-identical to the scratchpad copy) has 1,026 rows per method (513 complexes x two 'post-processing' arms, 'none' and 'energy minimization'; crystal_structures 513) and 616 rows per method after restricting to the 308 ids. The quoted percentages reproduce only on the post-processing == 'none' rows: Vina 59.7/58.1, Gold 58.1/54.5, DiffDock 38.0/12.7, EquiBind 1.9/0.0, Uni-Mol 21.8/1.9, TankBind 15.9/3.2, DeepDock 19.5/5.2; DiffDock 31.5 % multi-copy vs 43.6 % single-copy. State the row filter."
+  },
+  {
+   "site": "Site 13: posebusters_pose_comparison.py:1581-1585 \u2014 'measured on rank-1 flips: Kabsch moves median 0.001 A, max 0.25/0.68/0.03 A, form verdict changes 0/2/0'",
+   "correction": "Recomputed from per_pose_two_conventions.csv on the rank-1 flipped poses (rmsd>2, rmsd_nearest_copy<=2): |kabsch_nearest - bestfit_rmsd| median is 0.014 (AutoDock*, 38 flips), 0.012 (DiffDock*, 30 flips), 0.021 (EquiBind*, 2 flips); maxima 0.25/0.68/0.03 and form-verdict changes 0/2/0 are correct. The 'median 0.001' is the median over ALL 138 rank-1 multi-copy poses per arm in pb_loadall_rank1.csv (0.001/0.004/0.003), most of which never change copy, not over the flips."
+  },
+  {
+   "site": "Site 17: pose_cluster_crystal_pocket_report.py:920 new_value 'pooled oracle 99.7 % (M2 measurement)' and Site 25 body_main_short.tex:476 new_value '99.7'",
+   "correction": "99.7 % = 302/303 holds only under a per-metric minimum centroid over copies (cd_min_all<=4 for any pose of the three headline arms). Under the plan's adopted D2 rule (centroid from the argmin-RMSD copy, cd_nearest) the pooled oracle is 301/303 = 99.3 %; reference gives 297/303 = 98.0 %. The :476 sentence is produced by pose_cluster_crystal_pocket_report.py::_tool_pose_stats (:958-979, 'centroid distance to crystal from our own centroids (fallback to CSV col)' against crystal_centroid()), so it follows the D5 any-copy rule and prints 99.7, while the hub's oracle_centroid_le_4A_% at :1699 follows D2 and prints 99.3. The inventory must name which rule the printed value uses."
+  },
+  {
+   "site": "Site 21 / summary: 'with load_all its rmsd is lower than the probe's nearest symmetry_rmsd in 52/414 poses (max 1.02 A)'",
+   "correction": "pb_loadall_rank1.csv gives pbN_rmsd < probe_nearest in 150/414 poses at any tolerance below 1e-4 A, 144 at 1e-3, 110 at 0.01 and 52 only at >0.05 A (pb_loadall_replicate.py:39 prints 'n differing >0.05 A'). Max difference 1.02 A, 7TM6_GPJ diffdock_smina 1.62 vs 0.60, and 0/414 <=2 A verdict differences are confirmed. Quote the 0.05 A tolerance."
+  },
+  {
+   "site": "Site 28: body_appendix_short.tex:662 footnote 'the single chosen crystal instance that serves as the ground-truth answer pose'",
+   "correction": "Line 662 is '\\section{Composition and Provenance}\\label{composition-and-provenance}}'. The footnote is at :664 in the current working tree (git diff shows +2 lines inserted at hunk @@ -460,31 +460,33 @@ after the inventory was taken). Text otherwise verbatim."
+  },
+  {
+   "site": "Site 29: body_appendix_short.tex:664 'Where a structure contains multiple crystallographic copies of the same ligand, the comparison is made against the single deposited reference instance rather than against the closest copy...'",
+   "correction": "That sentence is at :666 ('...The symmetry correction therefore resolves symmetry within that one instance and not equivalence between copies.'). :664 is the four-files footnote paragraph."
+  },
+  {
+   "site": "Site 30: body_appendix_short.tex:1072 intention-to-treat check",
+   "correction": "Line 1072 is '\\section{Cohort and Exclusions}'. The ITT paragraph ('Five of the 308 source entries, namely 7B2C\\_TP7, 7D6O\\_MTE, 7FRX\\_O88, 7M31\\_TDR and 8F4J\\_PHO ... the closest pose in either pool sitting at 6.4\\angstrom{} ... 111 of 308 ... 198 of 308, against 103 and 167') is at :1074. Also the open question 'not computed' is already answered by wf_plan_2026-09-07/itt_dropped_ids_nearest_copy.csv (150 AutoDock* poses): rank-1 min nearest-copy RMSD 6.26 A (7FRX_O88), top-15 min 2.14 A (7FRX_O88), so ITT bases become 149/308 and 213/308 and the 'closest pose in either pool' becomes 2.14 A; 8F4J_PHO has a pose at 1.54 A to an alternate copy only beyond rank 15."
+  },
+  {
+   "site": "Site 31: body_appendix_short.tex:1201 '25\\angstrom{} cube ... 15,625'",
+   "correction": "That sentence is at :1203 ('The benchmark this study calibrates against gave Vina a 25\\angstrom{} cube centred on the crystal-ligand heavy atoms \\cite{ref035}, a volume of 15,625\\angstrom{}\\textsuperscript{3}.'); :1201 is the box-volume paragraph ('Box volume varies by a factor of 56 ...')."
+  }
+ ],
+ "missing": [
+  {
+   "file": "/home/manndo/anaconda3/envs/vina/lib/python3.12/site-packages/posebusters/tools/loading.py",
+   "line": 160,
+   "what": "_load_and_combine_mols reads 'mol = next(supplier)' then 'for mol_next in supplier:' \u2014 RDKit's SDMolSupplier restarts iteration, so record 0 is added a second time as a conformer. Verified: 7A9E_R4W_ligands.sdf has 2 records -> 3 conformers with conformers 0 and 1 identical; 6TW5_9M2 3 -> 4; 5S8I_2LY (single copy) 1 -> 2; pb_loadall_rank1.csv shows n_conf - n_records == 1 in 414/414 rows. Harmless for argmin (the duplicate is the reference) but any code that derives n_copies or nearest_copy_idx from mol_true.GetNumConformers()/argmin index, or that loops 'per copy' over the combined mol_true (Site 12 change, D1 '(b)'), inherits an off-by-one and a duplicated reference.",
+   "change": "Build the combined mol_true for posebusters_rmsd from the thesis's own per-record loader (Chem.SDMolSupplier over _ligands.sdf, RemoveHs keeps conformers, verified) and take n_copies/nearest index from that list; do not use PoseBusters' load_all loader for the copy count. Document in the Methods that the upstream loader duplicates record 0.",
+   "effort": "small",
+   "current_value": "n_conf = n_records + 1 (414/414)",
+   "new_value": "n_copies = n_records"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 9323,
+   "what": "cry = bdir / str(row[\"protein\"]) / f\"{row['protein']}_ligand.sdf\" and :9351 cpath = Path(benchmark_dir) / str(prot) / f\"{prot}_ligand.sdf\" (PyMOL pose/cluster scene and region export) also open only the single instance; the inventory summary states every crystal-referenced quantity in the hub is anchored at :1520-1585.",
+   "change": "Add both to the hub inventory; the scene/region exports should draw the copy each pose was scored against (or all copies) so the visual matches the new gate.",
+   "effort": "small",
+   "current_value": "_ligand.sdf only",
+   "new_value": "copy k (argmin) or all copies"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/Thesis_short.tex",
+   "line": 63,
+   "what": "'reached 36.6\\% of complexes for AutoDock, 34.0\\% for DiffDock and 18.2\\%' and 'raised recovery to 65.3\\% and 55.1\\%' \u2014 printed rank-1 and top-15 valid-near-native rates the inventory says do not exist.",
+   "change": "Recompute under nearest-copy: 149/303 = 49.2 %, 132/303 = 43.6 %, 57/303 = 18.8 % at rank-1; 213/303 = 70.3 %, 179/303 = 59.1 % at top-15 (from per_pose_two_conventions.csv, rmsd_nearest_copy<=2 AND pb_valid).",
+   "effort": "small",
+   "current_value": "36.6 / 34.0 / 18.2 ; 65.3 / 55.1",
+   "new_value": "49.2 / 43.6 / 18.8 ; 70.3 / 59.1"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/nearest_copy_probe/wf_plan_2026-09-07/dossier/inventory__methodology.json",
+   "line": 1,
+   "what": "Summary 'the files carry no hydrogens (675/675 records)' and 'Seven ids carry a second copy on the same chain id (6Z5Z_BDF, ...)' are computed on all 428 folders of copies_inventory.csv (675 records), not on the 308-id set (519 records). 6Z5Z_BDF is not in posebusters_pdb_ccd_ids.txt.",
+   "change": "Restate on the 308: 519/519 records without hydrogens; six same-chain ids (7A9E_R4W, 7P2I_MFU, 7TUO_KL9, 7VKZ_NOJ, 7WL4_JFU, 7Z1Q_NIO). All other data facts (143 = 111x2+7x3+22x4+1x5+1x6+1x12, 211 alternates, 138 in 303, 8 stereo-tag alternates, 0/0/6/8/203 centroid bins, median 35.98 A, max 119.52 A, ITT record counts 2/2/4/4/4) reproduce on the 308.",
+   "effort": "trivial",
+   "current_value": "675/675 ; seven ids",
+   "new_value": "519/519 ; six ids"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Section 0, D9 ('single-copy stratum row (165 complexes: 54.5 / 50.9 / 32.7 % rank-1)')",
+   "claim": "54.5 / 50.9 / 32.7 % are the rank-1 rates of the 165 single-copy complexes for the sensitivity table beside the primary endpoint",
+   "correction": "Those are RMSD<=2 A ONLY counts (90/84/54 of 165, per_pose_two_conventions.csv eff_rank==1, rmsd<=2 without pb_valid). Under the thesis's headline valid-near-native gate (body_main_short.tex:115 'requires both RMSD <= 2 A and PB-validity') the stratum rates are 88/80/53 of 165 = 53.3 / 48.5 / 32.1 %. M2_REVALIDATION_2026-09-07.md:103-105 uses the same RMSD-only basis for its multi-copy figures (16.7/16.7/2.2 and 44.2/38.4/3.6 = 23/23/3 and 61/53/5 of 138). Label the row RMSD-only or recompute with the validity gate before it is printed next to valid-near-native columns.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 0, D2 rationale ('4 A reach differs from the per-metric minimum by <=2 complexes (239 vs 241 AutoDock*)') together with Section 1.7 / inventory Sites 17 and 25 ('pooled oracle 99.7 %')",
+   "claim": "The pooled three-tool oracle 4 A reach at body_main_short.tex:476 becomes 99.7 % under the plan",
+   "correction": "99.7 % (302/303) is the per-metric minimum centroid (cd_min_all). Under D2's argmin-RMSD copy (cd_nearest) the pooled oracle is 301/303 = 99.3 %. :476 is generated by pose_cluster_crystal_pocket_report.py::_tool_pose_stats (:958-979), which computes its own pose-centroid to crystal_centroid() distance and would follow D5's any-copy rule (99.7), whereas the hub's oracle_centroid_le_4A_% (:1699, from centroid_dist) would follow D2 (99.3). The plan adopts two different 'crystal-site reach' definitions for the same 4 A statistic; state which one :476 prints and reconcile with D2.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 5 draft for :664 ('Its 25 A cube centred on the reference kept the other copies outside Vina's search') and D11 rejected-alternative text ('its Vina anchor was inert only because the 25 A cube excluded the copies')",
+   "claim": "The published Vina search cube excluded every other copy",
+   "correction": "copies_inventory.csv on the 308 shows eight alternates whose centroid lies inside a 25 A cube centred on the reference (half-side 12.5 A): 7A9E_R4W 4.92, 7CD9_FVR 5.01, 7JY3_VUD 5.80, 7VKZ_NOJ 6.04, 7Z1Q_NIO 6.22, 6YYO_Q1K 7.76, 7O0N_CDP 10.46, 7WL4_JFU 11.19 A. The only empirical support for inertness is the thesis's own boxed raw-Vina arm (M2 :54, 175 -> 175, 0 flips); the paper's poses were not released (inventory summary), so inertness of the PUBLISHED Vina anchor is inferred, not measured. Reword to 'kept almost every other copy outside' and attribute the 0-flip evidence to the thesis's boxed arm.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 0, D1 adopted text ('PoseBusters check_rmsd argmin on a combined multi-conformer mol_true ...') and inventory Site 12 change ('Pass a combined mol_true built from all records')",
+   "claim": "Passing PoseBusters' load_all-combined mol_true yields one conformer per deposited copy",
+   "correction": "Installed posebusters 0.6.3 tools/loading.py:160-165 re-adds record 0 (SDMolSupplier iteration restarts after next()), giving n_records + 1 conformers with conformer 0 duplicated (verified on 7A9E_R4W, 6TW5_9M2, 5S8I_2LY; pb_loadall_rank1.csv n_conf - n_records == 1 in 414/414 rows). Argmin verdicts are unaffected, but n_copies, nearest_copy_idx and any per-conformer loop over that object are off by one. Build the combined mol_true with the thesis's own loader.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 0, 'External convention, confirmed' paragraph and Phase 5.4 (':662-664 rewrite', ':1072 ITT', ':1201 regime clause')",
+   "claim": "The footnote calling _ligand.sdf 'the ground-truth answer pose' is at body_appendix_short.tex:662; the convention sentence at :664; ITT at :1072; the 25 A cube sentence at :1201",
+   "correction": "Current working tree (body_appendix_short.tex modified after the inventory, git diff hunk @@ -460,31 +460,33 @@): footnote at :664, 'Where a structure contains multiple crystallographic copies ...' at :666, ITT paragraph at :1074, cube sentence at :1203. :662 and :1072 are \\section lines; :1201 is the box-volume paragraph.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 0, 'Data facts' ('Seven ids carry the second copy on the same chain id')",
+   "claim": "Seven of the 308 ids have an alternate on the reference chain",
+   "correction": "Six within the 308 (7A9E_R4W, 7P2I_MFU, 7TUO_KL9, 7VKZ_NOJ, 7WL4_JFU, 7Z1Q_NIO); the seventh in the inventory, 6Z5Z_BDF, is one of the 428 folders but not in posebusters_pdb_ccd_ids.txt.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 0, 'External convention' ('Recomputed from the Zenodo results CSV on the 308 ids: Vina 59.7 %, DiffDock 38.0 %; DiffDock 31.5 % multi vs 43.6 % single')",
+   "claim": "The values are the CSV's per-method rates on the 308 ids",
+   "correction": "Values reproduce, but only on the post-processing == 'none' rows (the CSV carries 616 rows per method on the 308: 'none' and 'energy minimization'; the minimised DiffDock rows give 39.6 % / 35.0 vs 43.6). The filter must be stated wherever the anchor is quoted.",
+   "severity": "minor"
+  }
+ ],
+ "notes": "Verified by opening every cited file. Installed posebusters 0.6.3 / RDKit 2025.09.1: redock.yml:301 and :307 load_all True with the quoted comment; loading.py:159 warning comment and :165 AddConformer; rmsd.py:31 choose_by default, :33/:37 docstring, :61 argmin, :68-70 rmsd/kabsch/centroid from one copy; robust_rmsd symmetrizeConjugatedTerminalGroups=True (:91). Atom-count mismatch raises 'Pre-condition Violation Number of atom mismatch' and safe_load_mol returns None; permuted order silently accepted; RemoveHs keeps conformers \u2014 all as claimed. v0.2.2 rmsd.py and redock.yml fetched from raw.githubusercontent.com: argmin over conformers, CalcRMS for in-place, GetBestRMS for kabsch, load_all True on mol_true. arXiv 2308.05777v3 Section 2.3 quote and Table 3 (Vina 25 A cube, Gold 25 A sphere, Uni-Mol 8 A residues) confirmed verbatim. Dataset README.txt:55-59 quotes correct; README dated 2023-08-24 (:32) but carries no Zenodo record id. Hub lines 727, 733, 1150-1161, 1187-1200, 1459-1487, 1520-1532, 1557-1588, 1699, 1732 all match; cluster report :131 and :920-927, run_pandamap.py:963, pandamap_interaction_report.py:599, probe script :45/:53/:56 and README:21 match. Tex sites body_main_short.tex:88, :109-115, :140 footnote, :476, :792, :868 (+6.7/+20.5) and body_appendix_short.tex:165, :551 match. Headline counts reproduce exactly from per_pose_two_conventions.csv and ladder_selection_two_conventions.csv: rank-1 111/103/55 -> 149/132/57, top-15 198/167/80 -> 213/179/83, top-30 199/169/80 -> 214/183/83; gains 38/29/2 and 15/12/3; 4 A reach 183/172/137 -> 239/225/143 (argmin) or 241/225/144 (min); on the 138: valid-near 23->61, 23->52, 2->4, reach 47->103, 42->95, 11->17; rmsd_ref_re reproduces rmsd exactly; no pose has nearest > reference. Low-Jaccard four: no headline arm gains at d=1/15/30 (min alternate RMSD 2.13-2.63 A for the adjacent three, 7TUO >=17.1 A in every headline arm, 11.47 A in unidock2). D12 selection numbers (160->175, 133->144 vs 132->143, 1031 vs 1022, 7 discordant/3 gnina-only, 55->57 vs 46->48) reproduce from triple_gate_depths_two_conventions.csv and selection_contrasts_top15_two_conventions.csv. D2 code refs (_form_components :7043-7051; autodock_exhaustiveness_returns.py:570 'bestfit_rmsd == pb_kabsch_rmsd'), D8 (_CACHE_REQUIRED_COLS :13187, schema 5 :13225), D7 precedent (pose_comparison_report.bak-preexh128rerun-20260830 exists under benchmark_full_protein_vina_scoring/dock), D10 (:230 +65.6, +32.1 to +137.2) all verified. Metal-stratum generator: grep of Scripts/Analysis, thesis_assertions.py, thesis_expected_values.yaml and the four notebooks finds no 'within 5 A of a metal' computation, consistent with the inventory. Effort classes are defensible; medium for Sites 8/10/17 and large for Site 18 are reasonable given chain-keyed fingerprints. Scratch files under scratchpad/wf2 only; repository untouched."
+}

@@ -1,0 +1,693 @@
+{
+ "dimension": "Hub script Scripts/Analysis/posebusters_pose_comparison.py: crystal-reference loading, crystal-referenced per-pose metrics, gates/aggregations on those metrics, sidecar outputs, cache and CLI threading",
+ "summary": "The single-instance convention enters the hub at exactly one place, process_pair (:1513-1633): the reference is loaded once from <ID>_ligand.sdf (:1520, :1525) and every crystal-referenced per-pose quantity is computed against that one mol (rmsd :1566, centroid_dist :1567, pb_rmsd/pb_kabsch :1572, rot_angle/self_bestfit :1581, bestfit :1584, tfd/torsions :1585, contact_recovery :1531-1532 and :1588, plif_recovery :1560-1562). No aggregation, gate or figure in the remaining ~13,000 lines reads the crystal; they all read the cached columns rmsd / pb_rmsd / bestfit_rmsd / centroid_dist / contact_recovery / plif_recovery from per_pose_metrics.csv. So the nearest-copy switch is a contained code change (load all records of <ID>_ligands.sdf, template-reassign each copy onto the reference topology, per pose take j* = argmin symmetry_rmsd over copies, evaluate every other metric at copy j*, append n_copies / ref_copy_index / nearest_copy_index / nearest_copy_is_ref / *_ref_instance secondary columns / reference_convention to PoseRecord), plus cache invalidation (schema bump at :13224, new required columns at :13187, manifest field at :13290, --reference-convention flag near :13346 threaded through the work tuple at :13494) and docstring updates. The cost is not in code but in the rebuild: the whole per-pose cache (241,913 rows, schema 5, manifest n_rows 241913) must be recomputed with --force (stage bench_pose_comparison, cost class moderate = \"minutes to about an hour\" on 24 workers per repro_harness.py:66-72), after which every downstream table changes automatically: ~60 CSV/TXT/JSON sidecars enumerated below, the pb_valid/ re-derivations, nine dependent harness stages that read per_pose_metrics.csv, and the yaml assertions. Verified facts that shape the design: all 428 benchmark dirs carry <ID>_ligands.sdf with no record failing to load; copies never differ in heavy-atom count; 10 ids (8 in the 303) have copies whose canonical SMILES differ by charge/stereo tags, but the reference topology substructure-matches every copy (>=1 match, useChirality=False) and AssignBondOrdersFromTemplate(ref, copy) succeeds for all, so symmetry_rmsd's identity fallback at :1185-1188 is never triggered; the probe found 0 NaN per-copy RMSDs over 53,651 poses; in 317 of 24,486 multi-copy rows the nearest copy by centroid differs from the nearest by RMSD, so the derived-metric copy must be defined once (recommend argmin RMSD) and used for all metrics, otherwise _form_components (:7049-7051, inplace from pb_rmsd, form from bestfit) mixes copies. PoseBusters' own path (check_rmsd rmsd.py:30-61 argmin over conformers; redock.yml:307 load_all: True; loading.py:156-166 combines records \"without checking identity or atom order\") confirms the convention is upstream-standard but requires template reassignment first. Instance-vs-nearest facts already measured translate directly into top1_summary / topk_recovery_validity new values (given per site); everything else is recompute.",
+ "sites": [
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1520,
+   "what": "process_pair: `crystal_sdf = cdir / f\"{pdb_id}_ligand.sdf\"` (and :1522 existence check `if not crystal_sdf.exists() or not protein_pdb.exists(): return out`)",
+   "depends_how": "The ONLY reference-ligand path the scorer opens; the single deposited instance is the sole crystal for every metric.",
+   "change": "Also resolve `copies_sdf = cdir / f\"{pdb_id}_ligands.sdf\"`; if present load every record (new `load_all_mols`), else fall back to [crystal] with n_copies=1. Verified: all 428 dirs have the file; the single instance's centroid matches one record in all 308.",
+   "effort": "small",
+   "current_value": "<ID>_ligand.sdf only",
+   "new_value": "<ID>_ligand.sdf (identity of the reference instance) + <ID>_ligands.sdf (all copies)",
+   "risk": "None for existence; the 428-dir tree includes non-benchmark ids so the loader must not assert n_copies>1."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1525,
+   "what": "`crystal = load_first_mol(crystal_sdf)`; :1528 `crystal_h = Chem.RemoveHs(crystal)`",
+   "depends_how": "crystal_h is the reference for all nine crystal-referenced metrics in the loop below.",
+   "change": "Keep crystal_h as the single-instance reference (template + secondary columns). Add `copies_h = [AssignBondOrdersFromTemplate(crystal_h, c) or c for c in load_all_mols(copies_sdf)]` and `ref_copy_index = argmin centroid distance (copy, crystal_h)` (probe recipe nearest_copy_rescoring.py:35-38). Template reassignment verified to succeed on all 10 topology-variant ids.",
+   "effort": "small"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1149,
+   "what": "`def load_first_mol(sdf_path)`: iterates SDMolSupplier and `return m` on the first loadable record (:1152-1162)",
+   "depends_how": "Encodes the single-instance choice for any multi-record SDF; also used at :1541 (poses) and :9352 (exemplars).",
+   "change": "Add sibling `load_all_mols(sdf_path) -> list[Chem.Mol]` (same sanitize/fallback logic per record, as nearest_copy_rescoring.py:19-28). Leave load_first_mol untouched for poses.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1531,
+   "what": "`_, native_contacts = clash_and_contacts(crystal_h, prot_xyz, prot_elem, prot_resid)`; :1532 `n_native = len(native_contacts) or 1`",
+   "depends_how": "Native contact set (residue ids = (chain, resseq), :1118-1146) is taken from the single instance; an alternate copy sits on another chain so its contacts never intersect (contact_recovery ~0 for poses that recover an alternate copy).",
+   "change": "Compute `native_contacts[j]`, `n_native[j]` for every copy; use index j* per pose at :1588.",
+   "effort": "small"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1557,
+   "what": "`pose = reassign_template(pose, crystal_h) or pose`",
+   "depends_how": "Bond orders are assigned from the single instance; harmless under nearest-copy because the reference topology substructure-matches every copy (verified for the 10 SMILES-variant ids).",
+   "change": "No change. Copies must be reassigned onto crystal_h (site :1525) so pose and every copy share one topology.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1560,
+   "what": "`plif_vals = compute_plif_recovery(crystal_h, [p for _, p, _ in loaded], prot_plif)`; function :1383-1415 builds `valid_ligs = [crystal_lig] + poses` (:1397), `crystal_bv = bvs[0]` (:1408), Tanimoto per pose (:1412)",
+   "depends_how": "plif_recovery is Tanimoto against the single instance's ProLIF IFP (92.3% of canonical rows carry a value).",
+   "change": "Pass all copies as the first n_copies ligands of the one ProLIF run, return a (n_poses x n_copies) Tanimoto matrix, and pick column j* per pose in the loop. Extra cost is <=11 ligands per run against ~800 poses per pair.",
+   "effort": "medium",
+   "risk": "ProLIF run is the per-pair hotspot; keep one run per pair, not one per copy."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1566,
+   "what": "`rmsd = symmetry_rmsd(pose, crystal_h)` (function :1173-1200; identity-mapping fallback when no substructure match at :1185-1188)",
+   "depends_how": "This value becomes the `rmsd` column that gates every <=2 A number in the thesis.",
+   "change": "`r = [symmetry_rmsd(pose, c) for c in copies_h]; j_star = nanargmin(r); rmsd = r[j_star]; rmsd_ref_instance = r[ref_copy_index]` (probe :44-53 reproduced the current column to 4.7e-10 A). Under --reference-convention instance set j_star = ref_copy_index.",
+   "effort": "small",
+   "current_value": "rank-1 <=2 A (no validity gate): 113 / 107 / 57 (AutoDock*/DiffDock*/EquiBind*)",
+   "new_value": "151 / 137 / 59",
+   "risk": "Identity fallback verified never triggered on any copy (>=1 substructure match for all 143 multi-copy ids)."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1567,
+   "what": "`cdist = centroid_distance(pose, crystal_h)` (function :1203-1207)",
+   "depends_how": "centroid_dist vs the single instance drives CENTROID_THRESHOLD (4 A reach) and POCKET_CENTROID_CUTOFF (pocket localisation) and the filmstrip trim.",
+   "change": "`cdist = centroid_distance(pose, copies_h[j_star])`; keep `centroid_dist_ref_instance`; optionally add `centroid_dist_min` (min over copies). Decision: 317 of 24,486 multi-copy rows have a different nearest copy by centroid than by RMSD.",
+   "effort": "trivial",
+   "current_value": "rank-1 4 A reach 183 / 172 / 137",
+   "new_value": "241 / 225 / 144 (probe: min over copies; at j* recompute, differs on <=317 rows)"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1572,
+   "what": "`pb_rmsd, pb_kabsch, pb_within = posebusters_rmsd(pose, crystal_h)` (wrapper :1210-1230 calls posebusters.modules.rmsd.check_rmsd with a single-conformer mol_true)",
+   "depends_how": "pb_rmsd and pb_kabsch_rmsd (== bestfit_rmsd exactly, verified on all 241,913 rows) are vs the single instance. Upstream PoseBusters scores a multi-conformer mol_true and takes argmin (rmsd.py:30-61); redock.yml:307 sets load_all: True; loading.py:156-166 AddConformer's records 'without checking identity or atom order'.",
+   "change": "Two options: (i) call posebusters_rmsd(pose, copies_h[j_star]) so pb_rmsd/pb_kabsch are at the SAME copy as rmsd (required for _form_components consistency :7049-7051); (ii) build a multi-conformer mol_true from the template-reassigned copies and let check_rmsd choose. Recommend (i) as primary and optionally record (ii) as `pb_rmsd_loadall` to prove upstream parity.",
+   "effort": "small",
+   "risk": "check_rmsd's robust_rmsd argmin may pick a different copy than symmetry_rmsd on near-ties; mixing copies breaks placement = sqrt(inplace^2 - form^2)."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1581,
+   "what": "`rot_angle, self_bestfit = rigid_body_fit(pose, crystal_h)` (function :1250-1293)",
+   "depends_how": "rot_angle_deg and the Kabsch fallback are vs the single instance.",
+   "change": "Evaluate at copies_h[j_star].",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1584,
+   "what": "`bestfit = pb_kabsch if not math.isnan(pb_kabsch) else self_bestfit`",
+   "depends_how": "bestfit_rmsd drives the 1 A form gate (FORM_OK_KABSCH_A :726), the cascade's Kabsch stage, the triple gate and figs 20*/18 Kabsch.",
+   "change": "Falls out of :1572/:1581 at copy j*. Copies differ conformationally, so form values shift for poses whose nearest copy changes.",
+   "effort": "trivial",
+   "current_value": "Of the 38 AutoDock* rank-1 flips, 34 have bestfit(ref)<=1 (30/22 DiffDock raw/smina... probe: diffdock_smina 23 of 30)",
+   "new_value": "recompute (bestfit vs copy j*)"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1585,
+   "what": "`tfd, max_td, mean_td, n_flip, n_rot = torsion_metrics(pose, crystal_h)` (function :1296-1348; requires full substructure match at :1310-1312)",
+   "depends_how": "TFD and torsion deviations are vs the single instance's conformation.",
+   "change": "Evaluate at copies_h[j_star]. Template-reassigned copies keep the match requirement satisfiable.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1588,
+   "what": "`recov = len(native_contacts & contacts) / n_native`",
+   "depends_how": "contact_recovery vs the single instance's contact residues.",
+   "change": "`recov = len(native_contacts[j_star] & contacts) / n_native[j_star]`.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1459,
+   "what": "`@dataclass class PoseRecord` (:1459-1511) with fields rmsd, pb_rmsd, pb_kabsch_rmsd, pb_rmsd_within_2A, centroid_dist, contact_recovery, plif_recovery, rot_angle_deg, bestfit_rmsd, tfd, ...",
+   "depends_how": "Field order = per_pose_metrics.csv column order; no field records which copy was used.",
+   "change": "Append (at the END to keep existing column positions): `reference_convention: str`, `n_copies: int`, `ref_copy_index: int`, `nearest_copy_index: int`, `nearest_copy_is_ref: bool`, `rmsd_ref_instance: float`, `centroid_dist_ref_instance: float`, `pb_rmsd_ref_instance: float`, `bestfit_rmsd_ref_instance: float`. Keep `rmsd` as the primary-convention column name so the 14 downstream readers need no rename.",
+   "effort": "small"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1592,
+   "what": "`out.append(asdict(PoseRecord(method=..., rmsd=rmsd, pb_rmsd=pb_rmsd, pb_kabsch_rmsd=pb_kabsch, ... centroid_dist=cdist, contact_recovery=float(recov), plif_recovery=float(plif_val), ... bestfit_rmsd=float(bestfit), tfd=..., )))` (:1592-1631)",
+   "depends_how": "Wires the single-instance values into the record.",
+   "change": "Wire the j*-evaluated values plus the new secondary fields.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1513,
+   "what": "`def process_pair(args)`: `pair_key, group_records, benchmark_dir, root = args` (:1514); caller builds `work = [((p, l), recs, str(args.benchmark_dir.resolve()), root) ...]` at :13494",
+   "depends_how": "No convention parameter reaches the worker.",
+   "change": "Add a 5th tuple element `reference_convention` (and read it in process_pair) so `--reference-convention instance` reproduces today's table bit-exactly and `nearest` produces the new primary.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 9323,
+   "what": "`_select_real_mechanism_examples._files_ok`: `cry = bdir / str(row[\"protein\"]) / f\"{row['protein']}_ligand.sdf\"`; and `_example_geometry` :9351-9352 `cpath = Path(benchmark_dir) / str(prot) / f\"{prot}_ligand.sdf\"; pose, crystal = load_first_mol(pf), load_first_mol(cpath)`",
+   "depends_how": "Second crystal-load site: fig 20g exemplars and the PyMOL PDBs (:9411, :9518) are drawn against the single instance even when the pose's metrics were (under nearest-copy) computed against another copy.",
+   "change": "Read `nearest_copy_index` from the exemplar row and load that record of <ID>_ligands.sdf (load_all_mols(...)[idx]). Also :9313-9316 `inplace = pb_rmsd else rmsd; form = bestfit` picks exemplars from the new columns automatically.",
+   "effort": "small"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 661,
+   "what": "Comment `# Canonical docking-success line (A): the in-place RMSD-to-crystal below which a pose is \"near-native\"`; :663 `NEAR_NATIVE_RMSD_A = 2.0`",
+   "depends_how": "Threshold unchanged; wording defines 'crystal' as the single instance.",
+   "change": "Doc only: 'RMSD to the nearest deposited copy of the crystal ligand'.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 726,
+   "what": "`FORM_OK_KABSCH_A = 1.0`; :727 `CENTROID_THRESHOLD = 4.0`; :733 `POCKET_CENTROID_CUTOFF = 6.0`, comments :723-732 'RMSD to the crystal ligand', 'within this distance of the crystal ligand centroid'",
+   "depends_how": "Thresholds applied to columns that will change meaning.",
+   "change": "Doc only; values unchanged. Decide whether pocket localisation uses centroid_dist (copy j*) or centroid_dist_min.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1642,
+   "what": "`_oracle_per_pair`: `idx = valid.groupby([...])[\"rmsd\"].idxmin()` (:1647)",
+   "depends_how": "Oracle pose = min single-instance RMSD; for multi-copy complexes the oracle pose changes under nearest-copy.",
+   "change": "No code change; re-derives from the rebuilt column. Feeds aggregate_oracle, figs 01/02/06/07/08/15, _stats_oracle_rmsd_paired, within2, form selectors, pocket 'oracle_on'.",
+   "effort": "trivial",
+   "new_value": "recompute"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1662,
+   "what": "`_best_topn_per_pair`: lowest-RMSD pose among rank<=top_n (:1671-1675 `groupby(...)[\"rmsd\"].idxmin()`)",
+   "depends_how": "Generation-A picker (min-RMSD pose THEN validity) used by the 17b/17c/17c2 waterfalls.",
+   "change": "No code change; recompute. Gen A and Gen B (existence gate) diverge differently under nearest-copy because the min-RMSD pose itself changes.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1684,
+   "what": "`aggregate_oracle` (:1684-1716): `oracle_rmsd_le_{thr}A_%` (:1695), `oracle_centroid_le_4A_%` (:1699), `oracle_pb_valid_and_rmsd2_%` (:1702, = BEST_VARIANT_METRIC), `median_pb_rmsd_oracle` / `oracle_pb_rmsd_le_*` (:1707-1715)",
+   "depends_how": "All from rmsd / centroid_dist / pb_rmsd / pb_valid.",
+   "change": "No code change; recompute. Written to oracle_summary.csv (:13691), oracle_summary_all_variants.csv (:13588), pb_valid/oracle_summary.csv (:14740).",
+   "effort": "trivial",
+   "new_value": "recompute (pooled 4 A oracle reach 98.0% -> 99.7% per M2)"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1719,
+   "what": "`aggregate_top1` (:1719-1745): `top1_rmsd_le_{thr}A_%` (:1727), `top1_centroid_le_4A_%` (:1730), `top1_pb_valid_and_rmsd2_%` (:1733), `median_pb_rmsd_top1`, `top1_pb_rmsd_le_*` (:1738-1742)",
+   "depends_how": "Rank-1 pose's single-instance metrics.",
+   "change": "No code change; recompute. top1_summary.csv (:13696), top1_summary_all_variants.csv (:13589).",
+   "effort": "trivial",
+   "current_value": "collapsed frame n=303: top1_pb_valid_and_rmsd2_% 36.634 / 33.993 / 18.152; top1_rmsd_le_2.0A_% 37.294 / 35.314 / 18.812; top1_centroid_le_4A_% 60.396 / 56.766 / 45.215 (AutoDock*/DiffDock*/EquiBind*)",
+   "new_value": "49.175 / 43.564 / 18.812; 49.835 / 45.215 / 19.472; 79.538 / 74.257 / 47.525 (from 149/132/57, 151/137/59, 241/225/144 over 303; centroid values at min-over-copies, recompute at j*)"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1748,
+   "what": "`aggregate_by_rank` (:1748-1789): per-rank `success_pct_rmsd_*` and `oracle_top_k_pct_rmsd_*` from `at_k[\"rmsd\"]` / `oracle_k[\"rmsd\"]`",
+   "depends_how": "rmsd column.",
+   "change": "No code change; recompute per_rank_metrics.csv (:13702, :14748) and figs 04/05.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1792,
+   "what": "`aggregate_ifp_by_rank` (:1792-1854): mean/median plif_recovery and contact_recovery at rank k",
+   "depends_how": "Both columns are vs the single instance's IFP / contacts.",
+   "change": "No code change; recompute per_rank_ifp_recovery.csv (:13705, :14749) and fig 04b once sites :1560 and :1588 are per copy.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1857,
+   "what": "`aggregate_topn_within_thresholds(..., rmsd_col=\"rmsd\")` (:1857-1947) and its exact mirror `_topn_within_frames` (:1953-2002)",
+   "depends_how": "Fig 18 sweeps and the per-complex frames imported by topk_recovery_gnina_arm.py:130-132 (Tables 2/18/25) read rmsd_col.",
+   "change": "No code change; recompute topn_within_thresholds*.csv (:14231, :14259, :14324, :6402) and topk_recovery_validity_gnina_arm.csv.",
+   "effort": "trivial",
+   "current_value": "best-of-top-15 valid&<=2 A: 198 / 167 / 80",
+   "new_value": "213 / 179 / 83 (top-30: 214 / 183 / 83)"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 2005,
+   "what": "`_stats_topn_within` (:2005-2133): Cochran's Q + pairwise McNemar on rank-1 and best-of-top-N hits at 1 A / 2 A, Wilson headroom",
+   "depends_how": "Hits from `frame[col] <= t` on rmsd-derived frames.",
+   "change": "No code change; recompute; feeds posebusters_pose_comparison_stats.json (:14422) and the 18_*_report.txt files (:5625, :5690).",
+   "effort": "trivial",
+   "current_value": "rank-1 AutoDock* vs DiffDock* discordant 60/52, p 0.51 (collapsed frame)",
+   "new_value": "73/56, p 0.16; top-15 82/51 -> 82/48"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 2136,
+   "what": "`BEST_VARIANT_METRIC = \"oracle_pb_valid_and_rmsd2_%\"` used by `_select_best_equibind` (:2151-2175, aggregate_oracle at :2163), `_select_best_diffdock` (:2178-2226, :2200), `_oracle_variant_specs` (:3483-3535, `_best` at :3490-3493), `_best_equibind_gnina_pocket` (:12152-12171, inline `(orc[\"rmsd\"] <= 2.0) & pb_valid` at :12167-12169)",
+   "depends_how": "Variant winners are chosen on the single-instance oracle metric. The canonical run pins DiffDock (--collapse-diffdock-variant diffdock_smina) and AutoDock (autodock_mgltools_exh128_gnina) but NOT EquiBind.",
+   "change": "No code change. Verify after rebuild that the EquiBind winner is still equibind_unguided_gnina and that 09b/09e/17c/17d pocket choice is unchanged; if a winner flips, pin it on the CLI.",
+   "effort": "trivial",
+   "risk": "An unpinned winner flip silently changes the EquiBind* arm in every collapsed figure."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 2360,
+   "what": "`_stats_oracle_rmsd_paired` (:2360-2390): Friedman/Kendall W + Wilcoxon on per-complex oracle rmsd",
+   "depends_how": "rmsd column.",
+   "change": "No code change; recompute (figs 01/02 annotations, stats JSON).",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 2413,
+   "what": "`_stats_success_paired`: `_succ` = `sub[\"rmsd\"] <= 2.0` (:2422), `& pb_valid` when valid (:2424)",
+   "depends_how": "Figs 03/10 oracle-vs-top1 McNemar and cross-tool Cochran's Q.",
+   "change": "No code change; recompute.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 786,
+   "what": "`POSEBUSTERS_PAPER_BENCHMARK` (:786-808) with comment :803-804 'This is a DIFFERENT experiment ... treat the numbers as a literature sanity-check'; consumed by `_stats_vs_paper` (:2548-2601, `sel_df[\"rmsd\"] <= 2.0` at :2586-2588) and plot_vs_posebusters_paper -> comparison_vs_posebusters_paper.csv (:3025)",
+   "depends_how": "The paper's rates were produced by PoseBusters with load_all: True (redock.yml:307), i.e. nearest-copy; today's comparison is instance-vs-nearest across studies.",
+   "change": "No code change to the test; add one comment line that the reference convention now matches the paper's. Recompute fig 11 / CSV.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 3162,
+   "what": "`within2_validity_comparison`: `w2 = sub[sub[\"rmsd\"] <= thr]` (:3186), oracle idxmin (:3187); `_stats_within2_gap` (:3210-3272)",
+   "depends_how": "Near-native pool membership on rmsd.",
+   "change": "No code change; recompute within2_validity_comparison.csv (:13567) and fig 19.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 3686,
+   "what": "`_stats_pb_valid_variants`: `_succ` = `reps[\"rmsd\"] <= thr` (:3703)",
+   "depends_how": "09e per-variant success.",
+   "change": "No code change; recompute.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 3850,
+   "what": "`aggregate_optimization_raw_vs_best`: `near = reps[\"rmsd\"] <= thr` (:3909), `valid = near & pb_valid` (:3910)",
+   "depends_how": "09c bars.",
+   "change": "No code change; recompute optimization_raw_vs_best.csv (:13790).",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 4578,
+   "what": "`aggregate_pose_validity_cascade`: `le2 = rmsd <= 2.0` (:4630), `kab = bestfit_rmsd < kabsch_thr` (:4639), `both = le2 & pbv`, `triple = both & kab` (:4640-4641)",
+   "depends_how": "Pooled pose-level cascade (all 27 variants) on rmsd and bestfit.",
+   "change": "No code change; recompute pose_validity_cascade.csv (:13612) and pose_validity_cascade_report.txt (:4827). Also imported by Scripts/Docking/Posebusters/rebust_hydrogen_normalised.py:267-270.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 5071,
+   "what": "`_best_of_top_d`: `cand.groupby(...)[\"rmsd\"].idxmin()` (:5080) then `_av_from_reps` (:5052-5068, `near = reps[\"rmsd\"] <= thr`, `valid = near & pb_valid`) -> `aggregate_rank1_vs_topn` (:5113-5166)",
+   "depends_how": "Generation A (min-RMSD pose then validity) -> rank1_vs_topn.csv (:13885), figs 09d.",
+   "change": "No code change; recompute. Trap: never diff these against Tables 5-7 (Gen B).",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 6006,
+   "what": "`aggregate_refinement_gain_vs_depth`: `best = gg.groupby(...)[rmsd_col].min(); (best <= thr).sum()` (:6053-6056) with `_REFINE_GAIN_PAIRS` (:5976-5986)",
+   "depends_how": "Fig 18 raw-vs-refined companions.",
+   "change": "No code change; recompute refinement_gain_vs_depth_pbvalid.csv (:14282), _kabsch_pbvalid.csv (:14350), reports (:6199).",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 6211,
+   "what": "`aggregate_within_thresholds_by_depth` (:6211-6231) and `_stats_within_by_depth` (:6511-6606, `best_rmsd <= threshold` at :6541)",
+   "depends_how": "Thesis Figures image3/image4 (18_topn_within_thresholds_pbvalid_depths.png, yaml :907-908) and their CSV (:6402) / report (:6508).",
+   "change": "No code change; recompute; hand-copy the regenerated PNGs into media/ (match by md5).",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 6609,
+   "what": "`plot_top1_vs_oracle_scatter` (rmsd pivots :6619-6624), `plot_oracle_rank_histogram` :6663, `plot_cross_tool_pairwise` :6714 (rmsd pivot :6722), `aggregate_oracle_rank_distribution` :9627-9652 (oracle rank bins)",
+   "depends_how": "Oracle identity/rank per pair changes with the column.",
+   "change": "No code change; recompute figs 06/07/08/15 and oracle_rank_distribution.csv (:14097), oracle_rmsd_per_pair.csv (:13710).",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 6780,
+   "what": "`TWIST_TURN_MEASURES` (:6780-6791): centroid_dist, rot_angle_deg, bestfit_rmsd, tfd, max/mean_torsion_dev_deg, n_torsions_flipped, strain_energy; `_twist_top1_per_pair` :6794, `_twist_best_topn_per_pair` :6821 (rmsd idxmin :6845), `aggregate_twist_turn` :6848",
+   "depends_how": "Every 'turned/twisted' measure except strain is vs the single instance.",
+   "change": "No code change; recompute twist_turn_summary.csv (:13930, :14777) and fig 14.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 7043,
+   "what": "`_form_components`: `form = bestfit_rmsd` (:7048), `inplace = pb_rmsd.where(notna, rmsd)` (:7049), `placement = sqrt(clip(inplace^2 - form^2, 0))` (:7051-7052)",
+   "depends_how": "Assumes rmsd, pb_rmsd and bestfit_rmsd are all vs the SAME reference; the quadrature identity in-place^2 = placement^2 + form^2 only holds per copy.",
+   "change": "No code change here, but this is the constraint that forces sites :1572/:1581/:1584 to evaluate at the same copy j* as :1566 (not at check_rmsd's own argmin).",
+   "effort": "trivial",
+   "risk": "If pb_rmsd is taken from a multi-conformer check_rmsd whose argmin differs from j*, placement is clipped to 0 for those poses and the mechanism labels (:7283-7288) are wrong."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 6977,
+   "what": "Form selectors: `_near_native_valid_reps` (:6977-6990, `oracle[\"rmsd\"] <= rmsd_thr`), `_best_valid_near_native_reps` (:6994-7011), `_top1_valid_reps` (:7014-7032); `aggregate_form_fidelity` :7056-7101; `aggregate_oracle_selection_comparison` :8993-9021",
+   "depends_how": "Population = <=2 A & PB-valid on the single-instance rmsd; form stats on bestfit.",
+   "change": "No code change; recompute form_fidelity_summary*.csv (:13949), oracle_selection_comparison.csv (:14062), figs 20/20b/20c/20d/20e.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 7370,
+   "what": "`_valid_topd_poses`: `keep_mask &= rmsd <= rmsd_gate` (:7384); `aggregate_form_fidelity_by_depth` :7393-7442; `_mechanism_region` :7283-7288 (r = form^2/inplace^2); `_stats_form_fidelity_gate_vs_rank` :7771 (`_near = rmsd <= rmsd_gate` :7822)",
+   "depends_how": "Depth cohorts gated on rmsd; mechanism share on form/inplace.",
+   "change": "No code change; recompute form_fidelity_summary__rank_depth*.csv (:14020), stats JSON (:14056), figs 20_*rank_depth*.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 8265,
+   "what": "`FAR_FROM_RECEPTOR_CENTROID_A = 8.0` ('farther than this from the crystal-ligand site is treated as ejected'); `_filmstrip_cohorts` trims `c[\"centroid_dist\"].le(centroid_max)` (:8589); `aggregate_filmstrip_statistics` :8598; `plot_form_vs_placement_depth_filmstrip` :8273 (`centroid_max` doc :8307-8315)",
+   "depends_how": "Poses that recovered an alternate copy are currently trimmed as 'away from the crystal site'; under nearest-copy they stay in the cohort.",
+   "change": "No code change; recompute filmstrip_stats__*.csv (:13990), 20d filmstrip PNGs, and (via filmstrip_rank1_top5_top15.py:133 which uses P.FAR_FROM_RECEPTOR_CENTROID_A) thesis Figure 4 / Table 27.",
+   "effort": "trivial",
+   "current_value": "probe, eff_rank<=15, share of poses with centroid <=6 A of reference: 45.2% / 51.2% / 45.9% (AutoDock*/DiffDock*/EquiBind*)",
+   "new_value": "58.4% / 66.9% / 48.7% at min-over-copies (indicative; hub uses dedup and RANKING_TOOLS, recompute)"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 9807,
+   "what": "`_topk_recovery_ranks`: `near = sub[\"rmsd\"] <= thr` (:9830), `valid = near & pb_valid` (:9831), min rank per complex (Generation B existence gate); `aggregate_topk_recovery` :9844-9870; `topk_recovery_stats` :9873-9947 with `_TOPK_RECOVERY_SPECS` (:9707-9726) and `_TOPK_TEST_PAIRS` (:9764-9797: within-tool pairs plus AutoDock (gnina-opt) vs DiffDock (raw) / DiffDock (gnina-opt) / EquiBind (gnina-opt))",
+   "depends_how": "Source of topk_recovery_validity.csv (:14107) and topk_recovery_stats.csv (:14128), i.e. Tables 21/25 (yaml :268, :706, :795, :817).",
+   "change": "No code change; recompute. Note the between-tool pairs here compare AutoDock gnina-opt with DiffDock RAW and gnina-opt, not with diffdock_smina, so the measured 60/52 -> 73/56 McNemar does not map onto this family directly.",
+   "effort": "trivial",
+   "current_value": "valid_k at k=1: 111/103/55 (AutoDock gnina-opt / DiffDock + smina / EquiBind gnina-opt); k=15: 198/167/80; k=30: 199/169/80; near_k k=1: 113/107/57",
+   "new_value": "149/132/57; 213/179/83; 214/183/83; 151/137/59; DiffDock raw +12/+9/+9, Uni-Dock2 +14 at every depth; p-values recompute"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 10109,
+   "what": "`_rank_quality_badness`: crystal = rmsd (:10120-10121), kabsch = bestfit_rmsd (:10123), combined = rmsd + bestfit + invalid penalty (:10128-10132); `aggregate_rank_quality_tau` :10136; `aggregate_rank_position_concordance` :10219 (`(\"crystal\",\"rmsd\"),(\"kabsch\",\"bestfit_rmsd\")` :10240); `_RVO_CRITERIA` :10404-10408; `aggregate_rank_vs_oracle` :10419-10462",
+   "depends_how": "Ranking-quality oracle order defined on the single-instance metrics.",
+   "change": "No code change; recompute rank_quality_tau*.csv, rank_quality_stats.csv, rank_position_concordance.csv, rank_validity_by_rank.csv, rank_vs_oracle.csv (:14141-14170), rank_quality_report.txt (:10667), figs 21/21a-d/22.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 10696,
+   "what": "`aggregate_optimization_benefit`: `near = rmsd <= thr` (:10725), `_both = near & pbv` (:10727); `_OPT_BENEFIT_CRITERIA` :10687-10690",
+   "depends_how": "Per-rank optimisation benefit on rmsd.",
+   "change": "No code change; recompute optimization_benefit_by_rank.csv (:14207; Tables 19/20, yaml :238). Also imported by optimization_benefit_stats.py:323.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 10998,
+   "what": "`aggregate_pocket_localization`: `on_pocket = cd <= pocket_cutoff` (:11035), `oracle_on = gr.loc[gr[\"rmsd\"].idxmin(), \"on_pocket\"]` (:11044); `aggregate_pocket_localization_by_rank` :11066-11103",
+   "depends_how": "'Validated pocket' = within cutoff of the single instance's centroid.",
+   "change": "No code change if 'validated pocket' is redefined as the pose's nearest copy (centroid_dist at j*); if the intent is 'any deposited site', read the new centroid_dist_min column instead (one-line change at :11033). Recompute pocket_localization.csv / _by_rank.csv (:14439-14441), figs 16a/16b.",
+   "effort": "trivial",
+   "risk": "Decision needed; 317 multi-copy rows differ between the two definitions."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 11252,
+   "what": "`_pb_cascade_from_rep`: `rep = rep[[\"method\",\"protein\",\"ligand\",\"pose_name\",\"rmsd\"]]` (:11267); RMSD gate `rmsd_ok = rmsd <= 2.0` (:11290) as cascade step 'RMSD > 2 A'; join on pose identity not method (:11271-11279)",
+   "depends_how": "Every waterfall (17, 17b, 17c, 17c2, 17c3, 17d, 17f, 17g, 17h) gates its representative on the single-instance rmsd; reps come from `_top1_per_pair`/`_best_topn_per_pair` (:11360-11365), `_rank1_rep` (:12140-12150), `_best_topn_rep` (:12261-12271, rmsd idxmin), `_equibind_gnina_rank_headroom` (:12209-12233, idxmin :12232), `_equibind_raw_gnina_ranked_headroom` (:12274-12301), `_positions_native` (:12567-12592)",
+   "depends_how_note": "",
+   "change": "No code change; the rebuilt column flows through the existing join. Recompute pb_test_waterfall*.csv (:11384), pb_waterfall_top1_vs_top*.csv (:11584), pb_top30_recovery_by_test*.csv (:11867), pb_top{15,30}_recovery_raw_vs_refined.csv, 17h report (:12043), raw_vs_best summaries (:12552). 17e (gate_rmsd=False, :12408) and 17i (:12678, gate-free) are unaffected except through the EquiBind pocket choice at :12152.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 11621,
+   "what": "`_stats_top30_recovery` (:11621-11667) McNemar on pass_all maps; `_emit_pb_recovery_raw_vs_refined` :12064-12129; `aggregate_pb_waterfall_raw_vs_best` :12359-12430; `aggregate_pb_rank_depth_added_pool` :12678-12737",
+   "depends_how": "Consume the cascades above.",
+   "change": "No code change; recompute (stats JSON keys top30_recovery_*, top15/30_recovery_raw_vs_refined at :14621).",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 13309,
+   "what": "`_write_rmsd_vs_pbvalid_table` (:13309-13337) -> rmsd_vs_pbvalid_all_variants.csv (:13590); `plot_pbvalid_filter_influence` -> pbvalid_filter_influence.csv (:3144)",
+   "depends_how": "Derived from oracle_sum/top1_sum columns.",
+   "change": "No code change; recompute.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 14707,
+   "what": "pb_valid/ block: `df_valid = df[df[\"pb_valid\"]]` (:14709), attrition (:14729), oracle/top1/rank/ifp/twist re-derivations (:14740-14777) and figs 01-08/14",
+   "depends_how": "Same aggregators on the valid subset.",
+   "change": "No code change; recompute.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 13813,
+   "what": "PB-valid yield outputs: pbvalid_yield_per_complex.csv (:13813), pbvalid_yield_by_variant.csv (:13815), _all.csv (:13852), 09f report (:4436); `_PBVALID_YIELD_SPECS` :4042-4054",
+   "depends_how": "Validity-only (pb_valid); no crystal reference.",
+   "change": "None; values unchanged. Listed to bound the scope.",
+   "effort": "trivial",
+   "new_value": "unchanged"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 13187,
+   "what": "`_CACHE_REQUIRED_COLS = {\"method\",\"protein\",\"ligand\",\"pose_name\",\"rank\",\"rmsd\",\"centroid_dist\",\"pb_valid\",\"optimizer\",\"autodock_rank\",\"optimized_rank\"}` checked by `_read_cached_per_pose` (:13235-13246)",
+   "depends_how": "A single-instance cache satisfies the check, so `--reuse-cache` (which skips the signature, :13262-13267) would silently re-render the OLD convention.",
+   "change": "Add `\"reference_convention\", \"n_copies\", \"nearest_copy_index\", \"rmsd_ref_instance\"` so any pre-switch cache is refused with the existing 'lack required columns' message. This is the only guard that also protects the --reuse-cache --collapse-plots-only re-render path.",
+   "effort": "trivial",
+   "risk": "Load-bearing: without it the documented re-render command produces stale figures with no error."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 13216,
+   "what": "`_per_pose_signature`: `\"schema\": 5` (:13224) plus pb_csv fingerprint, ids_file, split_equibind, diffdock_variant, best_diffdock_only, limit_pairs (:13224-13231); canonical manifest currently {schema 5, top_n 15, n_rows 241913}",
+   "depends_how": "Signature does not encode the reference convention; a `nearest` run against an `instance` cache would be reused as 'inputs unchanged' (:13277-13284).",
+   "change": "Bump to `\"schema\": 6` and add `\"reference_convention\": args.reference_convention`. `_write_per_pose_cache` (:13287-13298) then records it in per_pose_metrics.manifest.json (:13290); consider printing it in the 'Reusing cached per-pose metrics' message (:13282).",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 13249,
+   "what": "`_load_cached_per_pose`: `if getattr(args, \"reuse_cache\", False): df = _read_cached_per_pose(...)` (:13262-13267) bypasses signature and --force",
+   "depends_how": "Convention-blind by design ('you are responsible for the cache matching').",
+   "change": "Under --reuse-cache, still read the manifest and refuse (or loudly warn) when its reference_convention differs from the flag. Update help text at :13373-13380 and :13367-13372 (--force).",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 13346,
+   "what": "argparse: `--benchmark-dir` (:13346-13347); no convention flag exists among :13343-13440",
+   "depends_how": "CLI cannot express the convention.",
+   "change": "Add `ap.add_argument(\"--reference-convention\", choices=(\"instance\",\"nearest\"), default=\"nearest\")` next to --benchmark-dir; thread via `sig` (:13454), the work tuple (:13494) and process_pair (:1514). Mirror the flag in REGENERATE.md:359-368 and _build_reproduction_notebook.py:393-400 stage cmd.",
+   "effort": "trivial",
+   "risk": "Default choice decides whether an unflagged run reproduces today's tables; see decisions."
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 13541,
+   "what": "`df = mf.apply_method_filter(df, \"method\", args, ...)` after the cache write; comment :13530-13540 'the cache keeps every variant'",
+   "depends_how": "Presentation-time; independent of the reference convention.",
+   "change": "None.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 46,
+   "what": "Module docstring 'Metrics computed per pose' (:46-55: 'Symmetry-corrected heavy-atom RMSD vs. crystal ligand', 'Centroid distance to crystal ligand', ...), header :1-2 'crystallographic reference poses', per_pose_metrics/oracle CSV docs (:452-455), 'Per-pose cache' manifest key list (:494-500)",
+   "depends_how": "Documents the single-instance semantics and an incomplete manifest key list.",
+   "change": "State the convention ('nearest of all deposited copies in <ID>_ligands.sdf; single-instance value kept as *_ref_instance'), list the new columns, add --reference-convention to the cache paragraph and Quick usage (:503-522).",
+   "effort": "small"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 13289,
+   "what": "`_write_csv(df, per_pose_csv, index=False)` and :13290 manifest write; then the sidecar writers: within2 :13567, all-variants :13588-13590, cascade :13612, oracle :13691, top1 :13696, per_rank :13702, ifp :13705, oracle pivot :13710, 09c :13790, rank1_vs_topn :13885, stats JSON :13917/:14056/:14422/:14621, twist :13930, form :13949, filmstrip :13990, form-depth :14020, selection :14062, oracle rank :14097, topk :14107/:14128, rank quality :14141-14170, opt benefit :14207, fig18 CSVs :14231/:14259/:14282/:14324/:14350, pocket :14439-14441, pb_valid :14729-14777, paper :3025, filter influence :3144, waterfalls :11384/:11584/:11867/:12552/:12852/:12916, text reports :4827/:5625/:5690/:6199/:6402/:6508/:10667/:12043, mechanism PDB/PML/manifest :9269/:9272/:9411/:9442/:9451/:9518/:9544",
+   "depends_how": "Every one of these is a function of the rebuilt columns (except the yield family and 17e/17i, which are validity-only).",
+   "change": "No per-writer code change. One full `--force` run regenerates all of them; then `--reuse-cache --collapse-plots-only` for re-renders (both flags, per the trap).",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/nearest_copy_probe/nearest_copy_rescoring.py",
+   "line": 19,
+   "what": "`load_all_mols` (:19-28) and `work` (:30-57): loads copies from `_ligands.sdf` (:35), `ref_idx` by centroid (:38), `reassign_template(pose, crystal_h)` (:44), `r = [ppc.symmetry_rmsd(pose, c) for c in copies]` (:45), `rmsd_nearest_copy = nanmin(r)` (:53), `nearest_copy_is_ref` (:54)",
+   "depends_how": "Reference implementation of the nearest-copy engine, already validated to reproduce `rmsd` to 4.7e-10 A and centroid_dist to 4.5e-13 A.",
+   "change": "Port :19-28 and :35-57 into process_pair; note the probe does NOT template-reassign copies (relies on ref-in-copy substructure match, which was verified to hold), while the hub version should.",
+   "effort": "small"
+  },
+  {
+   "file": "/home/manndo/anaconda3/envs/vina/lib/python3.12/site-packages/posebusters/modules/rmsd.py",
+   "line": 52,
+   "what": "`check_rmsd`: `rmsds = [robust_rmsd(mol_true, mol_pred, conf_id_probe=i, ...) for i in range(num_conf)]` (:52), kabsch per conformer (:53-55), centroid per conformer (:56-58), `i = np.argmin(...)` by choose_by (:60-61); docstring :37-38 'If multiple conformers are present, the lowest RMSD will be reported'",
+   "depends_how": "Upstream nearest-copy path the hub's `posebusters_rmsd` (:1210) never exercises because it passes a single-conformer mol_true.",
+   "change": "Either call per copy at j* (recommended) or pass a multi-conformer mol_true built from template-reassigned copies; the chosen conformer index is not returned, so parity with j* must be re-derived.",
+   "effort": "small"
+  },
+  {
+   "file": "/home/manndo/anaconda3/envs/vina/lib/python3.12/site-packages/posebusters/config/redock.yml",
+   "line": 307,
+   "what": "`load_all: True # important to set if there are multiple ligands that could be correct` under mol_true; loading.py:156-166 `_load_and_combine_mols` 'combines molecules without checking identity or atom order' (:159)",
+   "depends_how": "Justification that nearest-copy is the upstream-standard convention; also the reason copies must be template-reassigned before combining.",
+   "change": "Cite in the appendix; enforce reassignment in the hub.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/topk_recovery_gnina_arm.py",
+   "line": 130,
+   "what": "`gated = pc._topn_within_frames(df, int(d), eq_df=eq_df, pb_valid_only=True, rmsd_col=\"rmsd\")` (:130-132), `vk = (best_rmsd <= thr).sum()` (:134) -> topk_recovery_validity_gnina_arm.csv (Tables 2, 18, 25; yaml :94)",
+   "depends_how": "Imports the hub helper and reads the `rmsd` column of the rebuilt cache.",
+   "change": "No code change if `rmsd` stays the primary column name; re-run stage bench_topk (cheap).",
+   "effort": "trivial",
+   "new_value": "rank-1 149/132/57, top-15 213/179/83, top-30 214/183/83"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/thesis_endpoint_diagnostics.py",
+   "line": 18,
+   "what": "Docstring :18 'Near-nativeness uses the `rmsd` column, NOT `pb_rmsd`'; :77 `ok = x.rmsd <= 2.0` -> validity_gate_cost.csv (Table 22)",
+   "depends_how": "Reads the primary column.",
+   "change": "No code change; re-run bench_endpoint_diagnostics (cheap).",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/filmstrip_rank1_top5_top15.py",
+   "line": 133,
+   "what": "`c = c[c[\"centroid_dist\"].le(P.FAR_FROM_RECEPTOR_CENTROID_A)].copy()` (import at :50)",
+   "depends_how": "Trims on the single-instance centroid; Figure 4 / Table 27.",
+   "change": "No code change; re-run bench_filmstrip (cheap); re-copy media/media/image5.png by md5.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/optimization_benefit_stats.py",
+   "line": 323,
+   "what": "`from posebusters_pose_comparison import (aggregate_optimization_benefit, ...`",
+   "depends_how": "Re-aggregates per-rank near/both rates from the cache.",
+   "change": "No code change; re-run bench_optimization_benefit (cheap).",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/rank_success_analysis.py",
+   "line": 139,
+   "what": "`return cum_event_at_k(sub, sub[\"rmsd\"] <= HIT, K)`; :286 `sub[\"_hit\"] = sub[\"rmsd\"] <= HIT` (import :46)",
+   "depends_how": "Reads the primary column.",
+   "change": "No code change; re-run.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/boxed308_raw_arm_metrics.py",
+   "line": 37,
+   "what": "`from posebusters_pose_comparison import (PB_CRITICAL_CHECKS, _to_bool, load_first_mol, posebusters_rmsd, reassign_template, rigid_body_fit, symmetry_rmsd)` (:37-45)",
+   "depends_how": "Re-implements the single-instance scoring for the OLD boxed arm (where the convention is inert: 0 flips).",
+   "change": "Optional: add the same nearest-copy branch for parity; values unchanged on the boxed run.",
+   "effort": "small"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Docking/Posebusters/rebust_hydrogen_normalised.py",
+   "line": 267,
+   "what": "`import posebusters_pose_comparison as P; specs = P._all_variant_yield_specs(pp); casc = P.aggregate_pose_validity_cascade(pp, specs)` (:267-270), header text :277-279 'RMSD/Kabsch columns are the published values'",
+   "depends_how": "Cascade over the cached rmsd/bestfit columns.",
+   "change": "No code change; re-run to refresh its cascade; header wording should name the convention.",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_validity_report.py",
+   "line": 748,
+   "what": "`_RMSD_COLUMNS = (\"rmsd\", \"pb_rmsd\", \"pb_kabsch_rmsd\")` for the --max-rmsd join (:70 'within 5 A of the crystal')",
+   "depends_how": "Optional RMSD filter reads the primary columns.",
+   "change": "No code change; re-run bench_validity_report (cheap).",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Docking/tests/test_downstream_variants.py",
+   "line": 622,
+   "what": "`pose_comparison._select_best_equibind(frame)`, `_select_best_diffdock`, `_select_presentation_tools` (:622-624), `aggregate_oracle(frame)` (:635) on synthetic frames",
+   "depends_how": "Tests selectors on frames that carry only the current columns.",
+   "change": "No change unless `_CACHE_REQUIRED_COLS` or PoseRecord is asserted; add a unit test that a single-copy id yields rmsd == rmsd_ref_instance and n_copies == 1.",
+   "effort": "small"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/_build_reproduction_notebook.py",
+   "line": 386,
+   "what": "Stage `bench_pose_comparison` (:386-400): `determinism=BITEXACT, cost=MODERATE`, cmd `--pb-csv ... --out-dir ... --top-n 15 --diffdock-variant all --collapse-plots-only --collapse-diffdock-variant diffdock_smina --collapse-autodock-variant autodock_mgltools_exh128_gnina --exclude-preset meeko --workers 24`; notes :401-403 on the --reuse-cache trap; :556 `--ids-file {BENCH_REPORT}/analysed_cohort_ids.txt` derived from per_pose_metrics",
+   "depends_how": "Registers the canonical command that shaped the cache; no convention flag.",
+   "change": "Add `--reference-convention nearest` to cmd (and to REGENERATE.md:359-368 mirror); the rebuild is a `--force` run of this stage (cost class moderate = 'minutes to about an hour', repro_harness.py:66-72) followed by the nine dependent stages (bench_validity_report, bench_filmstrip, bench_topk, bench_optimization_benefit, bench_endpoint_diagnostics cheap; bench_clusters, bench_pandamap moderate; bench_interaction_audit; bench_ligand/receptor_difficulty) and the yaml re-pin.",
+   "effort": "small"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 56,
+   "what": ":56-58 gate definitions 'near-native rmsd <= 2.0', 'form bestfit_rmsd <= 1.0 AND rmsd < 1000', 'triple pb_valid AND rmsd <= 2.0 AND bestfit_rmsd <= 1.0'; inputs pointing at per_pose_metrics.csv (:65, :299, :322, :641, :877, :988, :1010), topk_recovery_validity*.csv (:94, :268, :795), topk_recovery_stats.csv (:706, :817), optimization_benefit_by_rank.csv (:238), analysed_cohort_ids (:1095)",
+   "depends_how": "194 asserted numbers computed from the hub's outputs under the single-instance convention ('a mismatch is a finding').",
+   "change": "Outside this dimension to edit, but every assertion reading these inputs must be re-pinned after the rebuild; add `reference_convention: nearest` as a documented input parameter.",
+   "effort": "medium"
+  }
+ ],
+ "decisions": [
+  {
+   "question": "Which copy defines the derived metrics for a pose (pb_rmsd, bestfit, centroid, torsions, contacts, PLIF)?",
+   "options": [
+    "j* = argmin symmetry_rmsd over copies (one copy for every metric)",
+    "per-metric minimum (min centroid, min pb_rmsd, ...)",
+    "PoseBusters check_rmsd's own argmin on a multi-conformer mol_true"
+   ],
+   "recommendation": "j* = argmin symmetry_rmsd, used for every metric. _form_components (:7049-7051) needs rmsd, pb_rmsd and bestfit from the same copy or placement^2 = inplace^2 - form^2 is clipped; 317 of 24,486 multi-copy rows already differ between RMSD-nearest and centroid-nearest. Optionally add centroid_dist_min as an extra column for the pocket-localisation reading."
+  },
+  {
+   "question": "How should the hub call PoseBusters check_rmsd under nearest-copy?",
+   "options": [
+    "Per-copy call at j* (posebusters_rmsd(pose, copies_h[j*]))",
+    "Multi-conformer mol_true built from template-reassigned copies, let check_rmsd pick",
+    "Both: per-copy at j* as the columns, multi-conformer result as a parity check column"
+   ],
+   "recommendation": "Per-copy at j* for the columns (consistency), and record the multi-conformer result once as pb_rmsd_loadall during the first rebuild to show parity with the upstream load_all: True path (redock.yml:307); drop it if identical."
+  },
+  {
+   "question": "Column naming for the primary and secondary values",
+   "options": [
+    "Keep `rmsd` etc. as the primary (whatever convention) and add *_ref_instance secondaries plus a reference_convention column",
+    "Rename primary to rmsd_nearest and keep rmsd as the instance value"
+   ],
+   "recommendation": "Keep `rmsd`, `pb_rmsd`, `bestfit_rmsd`, `centroid_dist`, `contact_recovery`, `plif_recovery` as the primary names; add rmsd_ref_instance, centroid_dist_ref_instance, pb_rmsd_ref_instance, bestfit_rmsd_ref_instance, n_copies, ref_copy_index, nearest_copy_index, nearest_copy_is_ref, reference_convention. None of the ~14 downstream readers (topk_recovery_gnina_arm.py:130, thesis_endpoint_diagnostics.py:77, rank_success_analysis.py:139, filmstrip_rank1_top5_top15.py:133, posebusters_validity_report.py:748, ...) then needs a rename."
+  },
+  {
+   "question": "Default of --reference-convention",
+   "options": [
+    "default nearest (the new primary)",
+    "default instance (bit-exact with today's cache until the thesis text flips)",
+    "no default, required argument"
+   ],
+   "recommendation": "Land the code with default instance first and verify the rebuilt cache reproduces the current 241,913-row table (rmsd to ~1e-9 A, as the probe did), then flip the default to nearest in the same commit that updates REGENERATE.md:359-368 and the stage cmd at _build_reproduction_notebook.py:393-400. Schema bump (:13224) and _CACHE_REQUIRED_COLS (:13187) make the old cache unusable either way, including under --reuse-cache."
+  },
+  {
+   "question": "Pocket-localisation 'validated pocket' semantics (aggregate_pocket_localization :11035, POCKET_CENTROID_CUTOFF :733)",
+   "options": [
+    "centroid within 6 A of the pose's nearest copy (centroid_dist at j*, automatic)",
+    "centroid within 6 A of ANY deposited copy (centroid_dist_min)"
+   ],
+   "recommendation": "Use centroid_dist at j* for consistency with every other metric; the two agree on all but 317 multi-copy rows."
+  },
+  {
+   "question": "Should --reuse-cache refuse a cache whose manifest convention differs from the flag?",
+   "options": [
+    "Refuse (error like the missing-cache case at :13460-13464)",
+    "Warn only"
+   ],
+   "recommendation": "Refuse. --reuse-cache --collapse-plots-only is the documented re-render path and is convention-blind today (:13262-13267); the new required columns catch pre-switch caches, the manifest check catches post-switch caches built under the other convention."
+  }
+ ],
+ "open_questions": [
+  "Runtime of the full --force rebuild: no wall-time log exists in the report dir; the stage is classed moderate ('minutes to about an hour', repro_harness.py:66-72) on 24 workers, and the multi-copy work adds only RMSD/Kabsch/torsion/centroid calls for 138 complexes (2-12 copies) plus <=11 extra ProLIF ligands per pair (ProLIF ran for 92.3% of rows), so expect the same class; measure on the first run.",
+  "Does the unpinned EquiBind winner (_select_best_equibind :2151, BEST_VARIANT_METRIC :2136) stay equibind_unguided_gnina under nearest-copy? The probe only re-scored six arms; the other EquiBind variants are unmeasured. If it flips, pin it on the CLI.",
+  "Do the fig-15b _TOPK_TEST_PAIRS (:9764-9797: AutoDock gnina-opt vs DiffDock RAW / gnina-opt / EquiBind gnina-opt) keep their significance pattern? The measured 60/52 -> 73/56 McNemar is AutoDock* vs DiffDock-smina on the collapsed frame, which is a different family (fig 18 _stats_topn_within / fig 03/10); recompute.",
+  "Form gate shift: 34 of the 38 AutoDock* rank-1 flips have bestfit(ref) <= 1 A, but bestfit must be re-evaluated against copy j*; the triple-gate counts, Table 4 Form block and the 20* mechanism labels are recompute.",
+  "Which downstream stages beyond the nine registered readers of per_pose_metrics.csv hand-copy figures into media/media/imageN.png (image3, image4, image5 at yaml :907-909 are hub outputs) and need an md5-matched re-copy after the rebuild.",
+  "Whether the boxed-arm reimplementation (boxed308_raw_arm_metrics.py:37-45) should gain the same branch for symmetry, given the convention is inert there (0 flips).",
+  "Sidecar text reports (:4827, :5625, :5690, :6199, :6402, :6508, :10667, :12043) print 'RMSD to crystal' wording; whether each should print the convention string from the manifest so a reader can tell which cache produced it."
+ ],
+ "artifacts_written": []
+}

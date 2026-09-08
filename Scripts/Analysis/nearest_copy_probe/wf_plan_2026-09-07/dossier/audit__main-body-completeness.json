@@ -1,0 +1,87 @@
+{
+ "dimension": "main-body \u2014 thesis_latex/body_main_short.tex plus Abstract/Kurzfassung in thesis_latex/Thesis_short.tex",
+ "role": "COMPLETENESS AUDITOR",
+ "refuted": [],
+ "corrected": [],
+ "missing": [
+  {
+   "file": "thesis_latex/Thesis_short.tex",
+   "line": 63,
+   "what": "Abstract clause not in the inventory's :63 entry (which lists only five number swaps and the six-in-ten wording): 'It corrected local geometry but recovered no binding mode that was unsampled or grossly misplaced.' This is the Abstract form of the :843 fixed-rank band claim ('0.1--0.7 percentage points for DiffDock'), which the plan marks recompute at :843 but never connects to the Abstract.",
+   "change": "Verify only. From per_pose_two_conventions.csv, DiffDock raw -> smina rank-1 near-native without the validity gate moves 132 -> 137 of 303 under the nearest copy (102 -> 107 under the reference); rank-band rates (1-5, 6-10, 11-15, 16-30) change by +0.8/+0.2/+0.9/+0.5 pp against +0.9/+0.3/+0.6/+0.1 on the reference, so the clause holds and no edit is needed, but the plan should list it as a verified-holds site.",
+   "effort": "trivial",
+   "current_value": "recovered no binding mode that was unsampled or grossly misplaced",
+   "new_value": "unchanged (holds under nearest copy: DiffDock raw->smina rank-1 132->137, bands +0.2 to +0.9 pp)"
+  },
+  {
+   "file": "thesis_latex/Thesis_short.tex",
+   "line": 89,
+   "what": "Kurzfassung :89-90 'Sie korrigierte lokale Geometrie, nicht jedoch fehlende oder grob fehlplatzierte Bindungsmodi.' is the German twin of the Abstract clause above; the inventory lists Kurzfassung lines 80, 91, 92, 94, 95, 97, 100 only.",
+   "change": "Verify only, same basis as Thesis_short.tex:63; no character change, so no Kurzfassung slack is consumed.",
+   "effort": "trivial",
+   "current_value": "nicht jedoch fehlende oder grob fehlplatzierte Bindungsmodi",
+   "new_value": "unchanged (holds)"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 422,
+   "what": "Near-site cohort paragraph not in the inventory or in plan Section 3.2 (which jumps from :419 to :427-435): 'In the near-site cohort, deeper ranks add valid but misplaced AutoDock and EquiBind poses and few for DiffDock. In-place RMSD deteriorates with depth. DiffDock appears more form-limited only because its low in-place RMSD inflates the form-to-in-place ratio. Its absolute form RMSD is lowest.' Every clause rests on the 8 A crystal-site trim and the in-place RMSD, both of which move to the nearest copy (plan 1.6: pool 6,169 -> 7,565, rank-1 coverage 62.7/54.1/47.2 -> 82.2/73.9/51.2 %).",
+   "change": "Re-read against the regenerated Table 27 / Fig 4 sidecar; the 'few for DiffDock' and 'appears more form-limited only because' statements must be re-confirmed on the nearest-copy cohort (DiffDock in-place drift +0.46 -> +0.53 per plan 1.6).",
+   "effort": "small",
+   "current_value": "qualitative, derived from the reference-instance near-site cohort",
+   "new_value": "recompute (wording re-check on the nearest-copy cohort)"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 697,
+   "what": "Section 4.2 (Orai1 Results) sentence that is crystal-referenced despite plan Section 7 declaring Section 4.2 untouched: 'Calibration point estimates show the same ordering, although not a statistically separable difference.' It refers to the AutoDock-over-DiffDock valid-near-native contrast on the calibration benchmark.",
+   "change": "Holds if read at rank-1 (nearest: +5.6 pp, exact McNemar p 0.159) but was already false from top-5 onward under both conventions (+13.2 pp, p_holm 7.6e-4); state the depth ('at rank-1') when the surrounding numbers are rewritten.",
+   "effort": "trivial",
+   "current_value": "although not a statistically separable difference",
+   "new_value": "although not a statistically separable difference at rank-1 (p = 0.159)"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 768,
+   "what": "The inventory and plan list :768 only for the interval ('4.2 / 9.4 -> 1.7-point DiffDock lead to 12.8-point AutoDock lead'). The same sentence also states 'led DiffDock on near-native recovery and native-pocket reach at every depth' and 'reach never separated them', which are the Table 6 cluster-reach statements that plan 1.7 marks recompute under D5.",
+   "change": "Add the reach clauses of :768 to the D5 recompute list beside :792 and :435; confirm after the cluster report is re-run that AutoDock still has the higher reach point estimate at every depth and that no paired reach test separates the pair.",
+   "effort": "small",
+   "current_value": "led DiffDock on ... native-pocket reach at every depth ... reach never separated them",
+   "new_value": "recompute (D5 cluster-level reach)"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Section 7 'What does NOT change', first bullet ('Orai1 panels ... Sections 4.2 and 5.2: no crystal ligand exists, nothing is crystal-referenced')",
+   "claim": "Sections 4.2 and 5.2 contain nothing crystal-referenced and do not change.",
+   "correction": "Thesis_short.toc:43 gives Section 5.2 as 'Physical Validity and Post-Docking Optimisation' (body_main_short.tex:775-783), which holds :777 'Requiring validity removes at most four of 303 complexes at any depth' (four -> five per plan 1.1), :779 'its fixed-rank near-native rate barely changed' and :781 '133 complexes to 132 ... 83 near-native complexes at top-15 against 61' (144/143 and 86/64 per plan 1.5), all of which the plan itself lists as changing in Section 3.2. The Orai1 discussion is Section 5.5 (toc:46, body :804). Section 4.2 also carries the crystal-referenced sentence at :697 'Calibration point estimates show the same ordering, although not a statistically separable difference.' The bullet should read 'Sections 4.2 (except :697) and 5.5'.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 3.2 row ':113' and Section 1 preamble ('recompute means the quantity needs the rebuilt pipeline')",
+   "claim": "The :113 sentence 'Substituting the fully symmetrised value into the rank-1 gate adds three recovered complexes across the three tools and removes none' is recompute because (inventory) 'the fully symmetrised PoseBusters value against the nearest copy is not in the probe CSV; pb_rmsd is reference-only'.",
+   "correction": "scratchpad/wf/per_pose_two_conventions.csv already carries pb_rmsd_nearest and pb_rmsd_min_all. On its rank-1 PB-valid rows the fully symmetrised gate adds AutoDock* +1 (7PGX_FMN), DiffDock* 0, EquiBind* +1 (6XBO_5MC) and removes none under the nearest copy, i.e. 'adds two'. The same CSV gives +1/0/+1 = two on the reference convention as well, against the printed 'three', and no appendix passage was found by grep for 'symmetris', 'terminal', 'GetBestRMS', 'CalcRMS' or 'adds three' in body_appendix_short.tex, so the printed derivation is untraced. Add :113 to Phase 0.4's pre-existing-discrepancy trace alongside :476 and :408, and mark the value derived rather than recompute. The companion claim 'never smaller than a fully symmetrised RMSD on any of the poses analysed here' holds on all rows of the six arms (0 violations of rmsd_nearest_copy >= pb_rmsd_nearest and >= pb_rmsd_min_all).",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 3.2 row ':191-199' (new values '186 vs 186; 236 vs 235; footnote recompute (basis: without validity 35.3 -> 45.2 %)')",
+   "claim": "The :197 sentence needs only number substitution (no W flag): 'Table ... gives gnina higher pooled validity and near-native recovery (176 versus 173 complexes), but smina higher form recovery (237 versus 235), i.e. components also conflict.'",
+   "correction": "Recomputed from nearest_copy_extra_arms.csv and nearest_copy_alldepths.csv, whole-pool near-native complexes are diffdock_gnina 186 and diffdock_smina 186, so 'gnina higher ... near-native recovery' becomes false (level) and the sentence needs a W flag. Separately, the footnote's printed 33.7 % 'under DiffDock confidence ranking on those same coordinates' equals the RAW DiffDock rank-1 near-native count without validity (102/303 = 33.7 %), not the smina-refined coordinates (107/303 = 35.3 %) that the plan names as the basis; this basis mismatch is a pre-existing discrepancy the plan should trace in Phase 0.4 before writing 43.6/45.2 into the footnote.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 5 step 5.5 and Risk 7 ('pay the +12 German characters with a cut on the same page')",
+   "claim": "The Kurzfassung edits are executable as listed.",
+   "correction": "Neither 5.5, 1.11, 3.1 nor Risk 7 names the sentence to cut, and the page has zero slack (Thesis_short.tex:74-113 fills the page). The step is not executable until a specific compensating cut is chosen and its meaning-neutrality argued; add a decision (candidate cut, or drop the 'sechs bis sieben' wording in German only and keep 'etwa sechs von zehn' with a footnote-free tolerance) to Section 0 or to 5.5.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 5 (5.1-5.5) and Phase 8.4 ('Re-read Discussion and Conclusions for claims whose direction could have moved')",
+   "claim": "The text pass covers every sentence whose truth depends on the convention.",
+   "correction": "8.4 excludes the Abstract, Kurzfassung and the Results chapter; the Abstract/Kurzfassung optimisation clause (Thesis_short.tex:63, :89-90) and the Results near-site paragraph (body_main_short.tex:422) are qualitative sentences whose basis moves and appear in no phase. Extend 8.4 to 'Abstract, Kurzfassung, Results 4.1 prose and Discussion/Conclusions' and list :422 and :63/:89 explicitly.",
+   "severity": "minor"
+  }
+ ],
+ "confirmed": 0,
+ "notes": "Independent sweep method: read body_main_short.tex :1-876 and Thesis_short.tex :40-240 in full, then regex-swept for crystal|native|reference|qualifying|within 2|RMSD|pocket|reach|recover|in-place|Kabsch|form and diffed the hit lines against the inventory's 90 body lines; the residue after discarding headers, literature, Methods definitions already listed and Orai-only lines is the five missing sites filed. Verified with /home/manndo/anaconda3/envs/vina/bin/python on scratchpad/wf/per_pose_two_conventions.csv, nearest_copy_alldepths.csv and nearest_copy_extra_arms.csv: (1) Section 7 Kabsch headline holds exactly (PB-valid & Kabsch<=1 A best-of-top-30: AutoDock* 225/303 = 74.3 %, DiffDock* 226/303 = 74.6 % under both bestfit_rmsd and kabsch_nearest; 289/294 at 2 A; EquiBind 164 -> 163), (2) validity-gate cost AutoDock* 2/4/3/3 and DiffDock* 5/4/3/3, EquiBind* 2/3/3/3 at d = 1/5/15/30, (3) top-5 AutoDock-only/DiffDock-only 88/48 under both conventions, (4) DiffDock smina vs gnina whole-pool near-native 186/186 and top-15 valid-near-native 179/177; EquiBind gnina vs smina top-15 86/64 (plan 1.5 values reproduce). Section 7 items I could test in this dimension are otherwise correct; the one error is the 4.2/5.2 section attribution. The inventory itself was thorough (99 sites); the misses are qualitative clauses whose basis moves rather than printed numbers. Scratch directory used: /tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf2 (created, no files written). No file under /home/manndo/master_dev was modified."
+}

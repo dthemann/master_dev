@@ -1,0 +1,110 @@
+{
+ "dimension": "downstream-scripts (inventory file misnamed inventory__hub-script.json; 45 sites)",
+ "role": "EVIDENCE AUDITOR",
+ "refuted": [],
+ "corrected": [
+  {
+   "site": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py:1109 (site 1) new_value 'pose-level rank-1 4 A reach analogue 183->241 / 172->225 / 137->144'",
+   "correction": "Those are min-over-ALL-copies centroid distances (cd_min_all). Under the plan's own D2 (centroid follows the argmin-RMSD copy j*) the pose-level rank-1 cd<=4 counts from per_pose_two_conventions.csv are 239 / 225 / 143 (cd_nearest), as D2 itself concedes ('239 vs 241'). The 241/225/144 figures are only the right analogue for the D5 cluster rule (within 4 A of ANY copy). The site should state which rule it quotes; code at :1107-1109 verified (cp = min(pockets, key=... crystal); correct_dist; correct_is_hit)."
+  },
+  {
+   "site": "Scripts/Analysis/pocket_comparison_report.py:1141 (site 16)",
+   "correction": "Code verified (:1141 lig = bench / name / f\"{name}_ligand.sdf\"; :112 docstring 'Centroid of the first molecule'). But the inventory's own risk item is answerable now: grep of Thesis_short.tex, body_main_short.tex and body_appendix_short.tex for crystal_hit_matrix / crystal_top1_distance_ecdf / crystal_success_rate_table / pocket_comparison returns nothing; the only fpocket/P2Rank hits are the EquiBind pocket-guided rows (body_main_short.tex:229-232, :303-304). Change class should be 'none required for the short build (optional consistency edit)', not 'small, recompute'."
+  },
+  {
+   "site": "Scripts/Analysis/filmstrip_rank1_top5_top15.py:133 (site 30) new_value EB* top-15 = 1933",
+   "correction": "Recomputed from per_pose_two_conventions.csv (PB-valid, eff_rank<=15, dropna form/inplace): EB* top-15 kept by the 8 A trim is 1932 with cd_nearest (the D2 convention) and 1933 with cd_min_all. AD* 249/1147/2832 and DD* 224/1041/2801 agree under both. Reference counts 190/882/2200, 164/790/2139, 143/673/1830 confirmed."
+  },
+  {
+   "site": "Master_Docking_AD_Full_Protein.ipynb cell[9] L221 (site 37) 'Defines the 25 A crystal-centred box'",
+   "correction": "Cell[9] L42 reads box_padding = float(base_cfg.get(\"box_padding\", 10.0)), L89 def box_from_sdf(sdf_path, padding=10.0), L102 size = extent + padding per axis, L265 comment '10 A padding'; Scripts/Analysis/DOCKING_PROTOCOL.md:78 says box_from_sdf(<id>_ligand.sdf, padding=10.0). The box is ligand extent + 10 A per axis, not a fixed 25 A cube (that figure belongs to the PoseBusters paper's Vina protocol quoted in plan D11). Conclusion 'docking side, do not re-dock' stands."
+  }
+ ],
+ "missing": [
+  {
+   "file": "thesis_latex/PLAN_nearest_copy_primary_endpoint_2026-09-07.md",
+   "line": 275,
+   "what": "Phase 3.2 re-run order omits bench_ligand_difficulty and bench_receptor_difficulty, both registered with needs=[\"bench_pose_comparison\"] (Scripts/Analysis/_build_reproduction_notebook.py:627-633, loop over ligand_docking_difficulty.py / receptor_docking_difficulty.py) and both gating on met.groupby([\"tool\",\"protein\"])[\"rmsd\"].min() (ligand_docking_difficulty.py:99, receptor_docking_difficulty.py:93). Their single-arm oracle counts move 202/173/83 -> 217/186/86 (recomputed), so the Discussion/appendix difficulty split changes.",
+   "change": "Add bench_ligand_difficulty and bench_receptor_difficulty to the 3.2 list (after bench_exhaustiveness_returns); correct the count to 15 of 19 section-3 stages.",
+   "effort": "trivial",
+   "current_value": "13 stages named, '14 of the 19 section-3 stages plus 3 new'",
+   "new_value": "15 stages (13 named + 2 difficulty stages), plus 3 new"
+  },
+  {
+   "file": "thesis_latex/PLAN_nearest_copy_primary_endpoint_2026-09-07.md",
+   "line": 265,
+   "what": "Step 2.2 leaves 'confirm that receptor retains every chain' OPEN. Measured now: for every alternate copy of the 138 multi-copy ids in the 303 (395 copy records across the 161 multi-copy ids present in posebusters_results/benchmark/dock/hetatm_cleaned), more than 50% of ligand heavy atoms lie within 4.5 A of an ATOM record of hetatm_cleaned/<ID>_protein.pdb (0 failures), and 0 copies coincide (<0.5 A) with any HETATM record. The canonical receptor keeps the chains around every copy and does not carry the copies as heteroatoms, so the per-copy crystal task (option 1) is feasible.",
+   "change": "Record the check as done in 2.2 and drop the fallback branch to a footnote; scratch table at /tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf2/alt_copy_receptor_coverage.csv.",
+   "effort": "trivial",
+   "current_value": "OPEN CHECK FIRST",
+   "new_value": "checked: 395/395 copies covered by ATOM records, 0 HETATM overlaps"
+  },
+  {
+   "file": "thesis_latex/PLAN_nearest_copy_primary_endpoint_2026-09-07.md",
+   "line": 33,
+   "what": "D4 says 'verify once that membership agrees when tested against every copy'. Concrete counter-case found: 7JHQ_VAJ (4 copies). In Data/PoseBuster Benchmark Set/7JHQ_VAJ/7JHQ_VAJ_protein.pdb a Na ion (NA A 302) sits 2.42 A from copy 0 (the reference) while copies 1-3 are 21.8, 22.5 and 39.5 A from any metal. The AutoDock* rank-1 pose of 7JHQ_VAJ flips 42.73 A -> 1.49 A against copy 3 (per_pose_two_conventions.csv, nearest_idx=3), so under the new endpoint this complex is counted near-native on a copy with no metal while the stratum label stays 'metal-adjacent'. Whether 7JHQ_VAJ is in the 78 depends on whether sodium counts (an element-based 5 A rule including Na/K/Ca reproduces 77, not 78, from the reference instance), which only the unregistered generator can settle.",
+   "change": "Make the D4 verification explicit: list the ids whose metal-adjacency differs across copies and state how the stratum is assigned when a pose's nearest copy has no metal; the 78-complex generator (2.6) must emit a per-copy flag.",
+   "effort": "small",
+   "current_value": "membership assumed to agree",
+   "new_value": "at least one id (7JHQ_VAJ) disagrees under an element-based rule"
+  },
+  {
+   "file": "Scripts/Analysis/docking_effort_comparison.py",
+   "line": 1109,
+   "what": "Inventory site 20 leaves form1 as 'recompute'. It is derivable now: form1 = pb_valid & rmsd<=2 & bestfit<=1 pooled over all poses (:1108-1109).",
+   "change": "Fill in the new values.",
+   "effort": "trivial",
+   "current_value": "form1 AD*/DD*/EB* = 221 / 1227 / 282 (reference instance)",
+   "new_value": "form1 = 325 / 1516 / 289 (rmsd_nearest_copy, kabsch_nearest); near2 442 / 2068 / 483 confirmed"
+  },
+  {
+   "file": "thesis_latex/PLAN_nearest_copy_primary_endpoint_2026-09-07.md",
+   "line": 264,
+   "what": "Step 2.1's check 'on the 165 single-copy complexes every reach / co-reach / purity value equals the frozen run' cannot be run for co-reach from the standard outputs: co-reach is a pooled paired 2x2 statistic over all analysed complexes (stats_utils.py:359 paired_2x2_association, consumed by the cluster report's co-reach matrix), not a per-complex column, and the report's analysis cache is keyed to the out-dir signature (validate_regeneration.py:167-168).",
+   "change": "Restate the check as: per-complex columns (reach, correct_cluster_purity_*, rank_in_correct_cluster, has_crystal) identical for the 165 single-copy ids in cluster_summary; co-reach checked by a scratch --ids-file run of the 165 under both conventions into separate out-dirs.",
+   "effort": "small",
+   "current_value": "single check over reach / co-reach / purity",
+   "new_value": "per-complex diff plus a restricted scratch run for co-reach"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Phase 3, step 3.2 (line 275)",
+   "claim": "Re-run list 'bench_validity_report, bench_filmstrip, bench_topk, bench_endpoint_diagnostics, bench_optimization_benefit, bench_exhaustiveness_returns, bench_clusters, bench_effort_charged, bench_effort_elapsed, PandaMap crystal tasks then bench_pandamap_report, bench_interaction_audit, bench_diffdock_rerank ... (14 of the 19 section-3 stages plus 3 new)'",
+   "correction": "Only 13 stages are named and two consumers are missing: bench_ligand_difficulty and bench_receptor_difficulty (Scripts/Analysis/_build_reproduction_notebook.py:627-633, needs=[\"bench_pose_comparison\"]; rmsd oracle at ligand_docking_difficulty.py:99 and receptor_docking_difficulty.py:93). Their outputs change (oracle <=2 A 202/173/83 -> 217/186/86, recomputed). Section 3 has 19 stages (awk over name=/section=\"3.\" lines: posebusters, posebusters_matched, pose_comparison, validity_report, figure1, filmstrip, topk, optimization_benefit, endpoint_diagnostics, clusters, pandamap, pandamap_report, interaction_audit, effort_charged, effort_elapsed, exhaustiveness_returns, ligand_difficulty, receptor_difficulty, diffdock_rerank), so the correct count is 15 of 19 plus 3 new.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Decision D9 (line 38) as referenced by step 2.7 (line 270)",
+   "claim": "single-copy stratum row (165 complexes: 54.5 / 50.9 / 32.7 % rank-1)",
+   "correction": "Those percentages are rank-1 rmsd<=2 WITHOUT the PB-valid gate (90/84/54 of 165, recomputed from per_pose_two_conventions.csv). The M2 table the row is to sit beside and the headline endpoint are PB-valid AND <=2 A, for which the single-copy rank-1 values are 88/80/53 of 165 = 53.3 / 48.5 / 32.1 %. The sensitivity table would mix two endpoints in one row unless the gate is stated.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 2, step 2.5 (line 268)",
+   "claim": "`optimization_benefit_stats.py:323`",
+   "correction": "Line 323 is `from posebusters_pose_comparison import (aggregate_optimization_benefit, ...` inside a lazy import block. The rmsd gate is at :115 (`near = (pd.to_numeric(sub[\"rmsd\"], errors=\"coerce\") <= NEAR_THR)`), as the inventory (site 24) has it.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 2, step 2.5 (line 268)",
+   "claim": "`boxed308_raw_arm_metrics.py:37` optional parity branch",
+   "correction": "Line 37 is `from posebusters_pose_comparison import (` (import block :37-41). The single-instance crystal load is at :123 (`crystal = args.benchmark_dir / str(protein) / f\"{protein}_ligand.sdf\"`) and the duplicate scoring engine at :65-86 (_score_pair: load_first_mol, symmetry_rmsd, posebusters_rmsd, rigid_body_fit). Boxed inertness confirmed from nearest_copy_boxed_rank1.csv: AutoDock rank-1 <=2 A 175 = 175 (PB-valid 168 = 168); DiffDock-smina on the same file moves 107 -> 137.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 2, step 2.5 (line 268)",
+   "claim": "`rebust_hydrogen_normalised.py:254-267` listed among 'pure re-readers [that] re-run automatically'",
+   "correction": "Lines 254-267 read per_pose_metrics only to swap pb_valid (`pp[\"pb_valid_published\"] = pp[\"pb_valid\"]; pp[\"pb_valid\"] = hit.fillna(pp[\"pb_valid\"])` at :263-264) and import P for the validity cascade; it never touches rmsd, is not a harness stage, and the inventory (site 34) classes it inert. Listing it as an automatic re-run implies a rebuild that is neither needed nor registered.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Decision D2 (line 31)",
+   "claim": "Kabsch median shift 0.001 A, form verdict changes on 0/2/0 of the 38/29/2 flipped rank-1 poses",
+   "correction": "From per_pose_two_conventions.csv: flipped rank-1 poses (rmsd>2, rmsd_nearest_copy<=2, eff_rank==1) are 38 / 30 / 2 (29 for DiffDock* only if PB-valid is required, which the sentence does not say); form verdicts (<1 A) change on 0 / 2 / 0 (confirmed); |kabsch_nearest - bestfit_rmsd| has median 0.0 over all rows and 0.014 / 0.012 / 0.021 A on the flipped poses, so '0.001 A' matches neither basis.",
+   "severity": "minor"
+  }
+ ],
+ "confirmed": 41,
+ "notes": "Every one of the 45 sites was opened at the stated line (+-5) and the quoted code is present in 45/45; four carry wrong or under-specified values (listed under corrected), none is refuted. Effort classes are defensible throughout: the two 'large' items (cluster report crystal logic :921/:1107-1109, PandaMap per-copy fingerprints :963/:1181/:1716/:2044) are genuine rewrites, everything else keys on the column name `rmsd`. Derived numbers recomputed from /tmp/.../scratchpad/wf/per_pose_two_conventions.csv and matched exactly: docking_effort near2 311/1622/466 -> 442/2068/483; endpoint gate table (rank-1 113/111/2 -> 151/149/2, 107/103/4 -> 137/132/5, 57/55/2 -> 59/57/2; top-15 and top-30 rows all match site 23); topk PB-valid&<=2 111/103/55 -> 149/132/57, top-15 198/167/80 -> 213/179/83, top-30 199/169/80 -> 214/183/83; difficulty oracle 202/173/83 -> 217/186/86; filmstrip trims (one EB* cell differs by the cd convention). The CSV columns satisfy rmsd == rmsd_refcopy == rmsd_ref_re (max diff 0.0) and rmsd_nearest_copy == min(rmsd_refcopy, rmsd_min_alt); cd_nearest differs from cd_min_all on 346 rows and kabsch_nearest from kabsch_min_all on 13,248 rows, which is why the D2 'one copy j* for all metrics' choice matters and why site 1 / site 30 numbers need the convention named. Plan step 2.4 is sound: the harness stage command already passes --verify-input-parity (_build_reproduction_notebook.py:619-620) so autodock_exhaustiveness_returns.py:570 will actually assert bestfit_rmsd == pb_kabsch_rmsd. Plan 2.6 claims verified: no script under Scripts/ produces the 78-complex metal stratum (PoseBusters_DataSet_Analysis.ipynb cell 4 has_metal is a LIGAND-element flag, not receptor-within-5 A); nearest_copy_rescoring.py:30 def work exists and Dockings/vina_results_full_protein_vina_scoring_mgltools_exh128/7B2C_TP7/mgl_tools/docking/optimized_gnina/ holds 60 files. D5 supported: cluster report pocket_radius default 8.0 (:302). D2's PoseBusters citation verified at installed posebusters/modules/rmsd.py:52-70 (choose_by=\\\"rmsd\\\" argmin, kabsch and centroid taken from that conformer). Inventory table numbers checked against Thesis_short.lot (T3 clusters, T4 native interactions, T6 cost, T8 ladder, T10 pooled cost, T22, T26, T27) and are right; outside my sections, plan 1.7 calls the cluster table 'Table 6' and 1.9 calls the cost table 'Table 8', which the .lot contradicts (Table 3 and Table 6). Scratch files: /tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf2/ (site_NN.txt split of the inventory, alt_copy_receptor_coverage.csv). No file under /home/manndo/master_dev was modified."
+}

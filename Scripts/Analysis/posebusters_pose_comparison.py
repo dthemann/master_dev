@@ -9776,10 +9776,17 @@ _TOPK_TEST_PAIRS = [
     ("DiffDock (raw)",       "DiffDock (gnina-opt)"),      # refinement effect (DiffDock)
     ("EquiBind (raw)",       "EquiBind (gnina-opt)"),      # refinement effect (EquiBind)
     # -- the four above are WITHIN-tool; the rest are BETWEEN-tool. --
-    ("AutoDock Vina",        "DiffDock (raw)"),            # physics vs raw DL
-    ("AutoDock Vina",        "DiffDock (gnina-opt)"),      # physics vs refined DL
+    # CORRECTED 2026-09-03. The cross-tool baseline is the gnina-rescored AutoDock
+    # arm, not raw Vina. Appendix C declares the cross-tool family is "computed on
+    # the gnina-rescored AutoDock Vina arm that the recovery tables below display",
+    # and Table 21 prints that arm's rates (37.3/62.0/65.0/66.3). This list carried
+    # raw Vina (31.4/50.8/58.7/61.1) in every commit of its history, so the script
+    # tested a contrast the thesis never reported and never reproduced Table 21.
+    # Restoring the declared arm reproduces the printed note exactly.
+    ("AutoDock (gnina-opt)", "DiffDock (raw)"),            # physics vs raw DL
+    ("AutoDock (gnina-opt)", "DiffDock (gnina-opt)"),      # physics vs refined DL
     ("DiffDock (gnina-opt)", "EquiBind (gnina-opt)"),      # DL vs DL (matched refinement)
-    ("AutoDock Vina",        "EquiBind (gnina-opt)"),      # physics vs EquiBind
+    ("AutoDock (gnina-opt)", "EquiBind (gnina-opt)"),      # physics vs EquiBind
 ]
 
 # Two Holm families, not one, changed 2026-09-02.

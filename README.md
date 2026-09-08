@@ -24,6 +24,7 @@ and is opt-in per stage.
 | Path | What it holds |
 | --- | --- |
 | `Thesis_Reproduction.ipynb` | the pipeline |
+| `XRay_PoseBusters_Control.ipynb` | standalone control: the PoseBusters battery run on the deposited crystal ligands |
 | `Scripts/Analysis/` | analysis, statistics, the stage registry and the assertion harness |
 | `Scripts/Docking/` | the docking drivers |
 | `Scripts/Docking/configs_thesis/` | one documented config per reported arm |

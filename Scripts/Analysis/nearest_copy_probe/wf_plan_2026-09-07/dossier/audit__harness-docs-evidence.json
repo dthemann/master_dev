@@ -1,0 +1,173 @@
+{
+ "dimension": "harness-docs",
+ "role": "EVIDENCE AUDITOR",
+ "confirmed": 62,
+ "refuted": [
+  {
+   "site": "inventory site 36, Scripts/Analysis/thesis_assertions.py:808 \u2014 sub-claim that the 1,364 total 'is what README.md:15-16/:67 and the notebook cell quote'",
+   "reason": "Thesis_Reproduction.ipynb stores 0 cell outputs and no cell source quotes any count (grep of every cell for 257|1,364|1364|194|58 stages|60 stages finds only variable names such as `checks = H.check_environment()`); cell 31 only does `import thesis_assertions as TA`. Only README.md:15-16 ('recomputing 257 numbers') and :67 ('# 257 checks against the thesis') quote a count. The 1,364 figure itself holds: I ran `python Scripts/Analysis/thesis_assertions.py` read-only and it printed '1364/1364 checks reproduce.' (scratch wf2/harness_run.txt:150), and run_all at :808-841 lists 28 check_* calls."
+  }
+ ],
+ "corrected": [
+  {
+   "site": "site 2, thesis_expected_values.yaml:71-80 (table_1 rows)",
+   "correction": "The five derived near-column triples are confirmed from per_pose_two_conventions.csv (exh128 raw 217/437/4.9, exh128_gnina 217/451/5.0, diffdock 161/2118/23.5, diffdock_smina 186/2169/24.1, equibind_unguided_gnina 86/515/5.7; the old values 202/307/3.4 etc. reproduce exactly from the same file). Two 'recompute' claims are wrong: (a) the four other arms ARE in wf/nearest_copy_extra_arms.csv \u2014 diffdock_gnina 176/1716/19.1 -> 186/2171/24.1; equibind_unguided_smina 64/453/5.0 -> 67/465/5.1; equibind_unguided_raw 19/103/1.1 and equibind_fpocket_raw 0/0/0.0 UNCHANGED; equibind_p2rank_raw 0/0/0.0 -> 1/2/0.0 (two 8FAV_4Y5 poses at 1.89/1.92 A to an alternate copy, 70.6 A to the reference); (b) 'Kabsch vs the nearest copy is not in the probe CSV' is false \u2014 wf/per_pose_two_conventions.csv carries kabsch_nearest for the six arms, giving form/triple: exh128 raw form 225/2848/31.7 -> 225/2829/31.5, triple 164/221/2.5 -> 178/324/3.6; exh128_gnina form 227/2836/31.6 -> 227/2823/31.5, triple 160/221/2.5 -> 175/325/3.6; diffdock form 225/4012/44.5 -> 224/4016/44.6, triple 83/722/8.0 -> 92/869/9.6; diffdock_smina form 237/3903/43.4 -> 236/3887/43.2, triple 138/1227/13.6 -> 148/1516/16.9; equibind_unguided_gnina form 200/2661/29.3 -> 199/2661/29.3, triple 55/282/3.1 -> 57/289/3.2 (the 175/144/57 triple counts match plan D12). Only the form/triple cells of the four extra arms remain 'recompute'."
+  },
+  {
+   "site": "site 8, thesis_expected_values.yaml:241-246 (table_20)",
+   "correction": "The DiffDock near-native row is derivable, not 'recompute': diffdock_gnina is in wf/nearest_copy_extra_arms.csv. Fixed-rank pooled near-% gain by rank band reproduces the old row [0.6, 0.7, 0.1, 0.1, 0.5, 0.4] and gives [0.6, 0.6, 0.4, 0.3, 0.8, 1.0] under nearest-copy. The EquiBind rows stay 'recompute' (rank==999 sentinel; the band assignment the script uses for EquiBind is not reproducible from the probe CSVs)."
+  },
+  {
+   "site": "site 9, thesis_expected_values.yaml:278-284 (table_22)",
+   "correction": "'DiffDock (gnina-opt) and EquiBind (raw): recompute' is wrong on both. DiffDock (gnina-opt) is derivable from the extra-arms CSV and COINCIDES with the printed [[1.3,0.5,3.3],[1.0,0.3,2.9],[1.0,0.3,2.9],[1.0,0.3,2.9]]. EquiBind (raw) is UNCHANGED by construction: for all 9,090 equibind_unguided_raw rows (rmsd<=2)==(rmsd_nearest_copy<=2) holds (103 near poses either way), so every depth-dependent count is identical whatever the ordering. The derived DiffDock raw row [[21.5,17.2,26.4],[19.8,15.7,24.7],[19.5,15.4,24.3],[18.8,14.8,23.6]] and the three coinciding rows are confirmed (old rows reproduce exactly with stats_utils.wilson_ci). Net: only the DiffDock (raw) row changes, as plan 7.1 states."
+  },
+  {
+   "site": "site 11, thesis_expected_values.yaml:331-359 (table_26)",
+   "correction": "RMSD half: all 90 derived cells confirmed (old cells reproduce exactly). Kabsch half is NOT 'recompute' \u2014 derivable from kabsch_nearest (copy chosen by in-place argmin, D2): AutoDock d1 [10.6,25.1,41.6,52.5,60.7,66.7,74.9,78.9,81.5,84.8], d15 [18.5,35.0,55.8,71.6,81.2,87.1,91.4,93.4,96.0,97.4], d30 [19.5,36.6,58.7,74.3,82.8,88.4,92.7,95.4,97.7,97.7]; DiffDock d1 [11.6,24.4,38.9,52.1,62.0,70.3,75.9,82.2,86.1,88.4], d15 [21.1,39.9,57.4,72.3,80.9,88.1,94.4,95.4,96.0,96.4], d30 [22.8,41.9,59.7,74.6,84.5,93.1,96.0,97.0,97.7,98.0]; EquiBind d1 [5.6,15.2,21.8,33.3,42.9,48.5,53.5,62.0,67.0,71.0], d15 [14.9,27.4,39.9,51.5,62.4,71.0,76.2,80.2,82.8,85.1], d30 [16.8,30.7,43.6,53.8,64.7,72.6,77.9,82.5,83.8,85.5]. The 1 A rank-1 cells (52.5/52.1/33.3) and the d30 1 A and 2 A headline cells (74.3/74.6, 95.4/97.0) are unchanged, consistent with plan Section 7."
+  },
+  {
+   "site": "site 13, thesis_expected_values.yaml:675-683 (table_24 near_native)",
+   "correction": "The 'three arms not in the CSV' are in wf/nearest_copy_extra_arms.csv: DiffDock + gnina 1716/94.5 -> 2171/95.4; EquiBind (raw) 103/20.4 UNCHANGED; EquiBind + smina 453/91.6 -> 465/91.0. The five given pairs are confirmed (437/98.6, 451/98.0, 2118/50.2, 2169/95.3, 515/93.8). Group-share cells still need the PB table (recompute)."
+  },
+  {
+   "site": "site 14, thesis_expected_values.yaml:711-714 (table_21)",
+   "correction": "Derived rates/wins/raw-p for the two given contrasts confirmed on the UNCONDITIONED near gate (the table's own basis; the old rows and the old Holm values 0.6938/0.0001176/... reproduce exactly). 'Holm p and the two DiffDock (gnina-opt) contrasts: recompute' is over-broad: all 16 raw p-values are derivable, hence Holm too. New Holm p: AutoDock->DiffDock raw [0.242, 1.21e-4, 6.47e-5, 3.84e-5]; AutoDock->DiffDock gnina [0.294, 0.00418, 0.00418, 0.00712]; DiffDock gnina->EquiBind gnina [2.51e-13, 1.33e-13, 5.26e-14, 1.16e-16]; AutoDock->EquiBind gnina [6.39e-16, 5.10e-25, 1.10e-25, 3.71e-27]. The two DiffDock (gnina-opt) contrasts: AutoDock(gnina)->DiffDock(gnina) [[49.8,45.5,72,59],[67.3,54.1,89,49],[70.0,57.1,87,48],[71.3,59.4,85,49]]; DiffDock(gnina)->EquiBind(gnina) [[45.5,19.5,97,18],[54.1,26.1,107,22],[57.1,28.4,109,22],[59.4,28.4,112,18]]."
+  },
+  {
+   "site": "site 15, thesis_expected_values.yaml:798-804 (table_18)",
+   "correction": "Five derived variants confirmed. 'DiffDock (gnina-opt) and EquiBind (raw): recompute' is wrong: DiffDock (gnina-opt) derives to [[45.5,44.2],[54.1,53.1],[57.1,56.1],[59.4,58.4]]; EquiBind (raw) is UNCHANGED at every depth because its near-pose set is identical under both conventions (all rows (rmsd<=2)==(rmsd_nearest_copy<=2)), so [[1.3,0.7],[3.0,0.7],[4.0,0.7],[5.9,0.7]] stands. Caveat: the extra-arms CSV eff_rank does NOT reproduce the hub's raw-EquiBind order (my old at k5/k10 gives 3.3/5.3 vs printed 3.0/4.0), so nothing depth-dependent about the raw arm should be derived from that file \u2014 the unchanged verdict rests on set identity, not on ordering."
+  },
+  {
+   "site": "site 16, thesis_expected_values.yaml:822-825 (table_19)",
+   "correction": "Both derived contrasts confirmed on the unconditioned basis. Of 'the two gnina contrasts: recompute', DiffDock (raw) -> DiffDock (gnina-opt) is derivable: [[43.6,45.5,6,12],[50.2,54.1,5,17],[52.1,57.1,5,20],[52.8,59.4,5,25]]. EquiBind (raw) -> EquiBind (gnina-opt) must stay recompute: its wins depend on the raw arm's pose order, which the extra-arms CSV eff_rank does not reproduce (old k1 gives 3/56 vs printed 2/55)."
+  },
+  {
+   "site": "site 19, thesis_expected_values.yaml:880-887 (table_8)",
+   "correction": "The two exh128 rows are confirmed, but 'the six other rungs are not in the probe CSV: recompute' is wrong \u2014 wf/nearest_copy_ladder_arms.csv holds them and reproduces every old count exactly. New: autodock_mgltools_exh18 [92,127,138,143]; autodock_mgltools (exh32) [109,147,161,170]; exh64 [123,162,190,201]; exh92 [123,164,194,209]; autodock_mgltools_gnina (exh32) [129,160,170,170]; exh64_gnina [141,187,200,200]. exh128_gnina 213 at top-15 still beats every rung."
+  },
+  {
+   "site": "site 22, thesis_expected_values.yaml:1003-1007 (prose.refiner_contrasts)",
+   "correction": "The three derived cells (86, 179, 182) confirmed. Additional derivable cells wrongly left as 'recompute': equibind_near_top15 smina 61 -> 64; diffdock_double_top15 gnina 167 -> 177; diffdock_near_top15 gnina 170 -> 180; equibind_selection_top15 gnina 55 -> 57; diffdock_triple_top15 smina 133 -> 144 (all matching plan D12's 144/177/57). Still recompute: smina-EquiBind and gnina-DiffDock triple counts (no kabsch_nearest for those arms) and the McNemar p-values."
+  },
+  {
+   "site": "site 38, Scripts/Analysis/_build_reproduction_notebook.py:345-347",
+   "correction": "'14 stages declare needs bench_pose_comparison' is off by one: 13 stages declare it (reg.add sites at :424, :452, :464, :478, :488, :506, :536, :586, :600, :610, :630 (loop registering two), :644); bench_interaction_audit at :549 declares needs=[\"bench_pandamap_report\"] and depends only transitively. 'fourteen downstream stages' is right as a dependents count, wrong as a declaration count. Also :392 (thesis=\"Table 1; the source table for nine downstream stages\") repeats the stale 'nine' and is not in the inventory."
+  },
+  {
+   "site": "site 40, Scripts/Analysis/_build_reproduction_notebook.py:523-530 (bench_pandamap 'does NOT re-run')",
+   "correction": "Contradicts the inventory's own decision 3 (recommend YES: fingerprint every copy of <ID>_ligands.sdf) and plan step 2.2 (run_pandamap.py:963 emits one crystal task per record). Under the adopted plan bench_pandamap must at least re-run its crystal tasks before bench_pandamap_report; listing it as untouched leaves the crystal fingerprints single-instance while Table 4's n counts poses that recovered another copy. Lines :523-530 and needs=[\"bench_posebusters_matched\"] verified."
+  },
+  {
+   "site": "site 52, thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md:151-159",
+   "correction": "'recompute (Kabsch vs nearest copy not derivable)' is wrong: kabsch_nearest in per_pose_two_conventions.csv gives rank-1 form at 1 A UNCHANGED at 52.5 / 52.1 / 33.3 (Table 26 Kabsch d1 fourth cell for all three arms). Only the discordant tie counts (47/46, 30/31, 25/26) remain to recompute."
+  },
+  {
+   "site": "site 57, thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md:233-240",
+   "correction": "'recompute all' is over-broad for the first entry: Kabsch <= 2 A rank-1 AutoDock 78.9 UNCHANGED, DiffDock 82.5 -> 82.2 (lead 3.6 -> 3.3 points); at 1.75 A 74.6 -> 74.9 and 76.2 -> 75.9 (DiffDock ahead by 1.0 not 1.6); 1 A cells 52.5/52.1 unchanged. Filmstrip medians (:242-271) and the symmetry caveat (:273-282) stay recompute."
+  }
+ ],
+ "missing": [
+  {
+   "file": "Scripts/Analysis/thesis_assertions.py",
+   "line": 1583,
+   "what": "Comment hard-codes the old power: '# observed_power is printed to two places and is only 0.12, so the generic one-decimal window would accept anything from 0.07 to 0.17.' Under nearest-copy observed_power is 0.32 (derived; stats_utils.mcnemar_power on the rank-1 AutoDock*/DiffDock* vectors).",
+   "change": "Rewrite the comment to state the current value or drop the number; the 0.005 tolerance at :1585 stays.",
+   "effort": "trivial",
+   "current_value": "0.12",
+   "new_value": "0.32"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_assertions.py",
+   "line": 1596,
+   "what": "rep.add note string \"printed as 'roughly 4,200'; compared to the nearest hundred\" and comment :1598-1599 \"the MDE near 8.2 points\"; :1608-1609 comment \"only rank-1 is equivalent, within 10 points\". All three quote single-instance values that flip: n_needed 1062 -> printed 'roughly 1,100' (round(-2) = 1100), mde_at_428 8.8, equivalent_within_10pp all false.",
+   "change": "Update the note string and the two comments; the n_needed check compares int(round(n,-2)) so the yaml value must be 1100, not 1060.",
+   "effort": "trivial",
+   "current_value": "'roughly 4,200'; 8.2; 'only rank-1 is equivalent'",
+   "new_value": "'roughly 1,100'; 8.8; no depth equivalent within 10 points"
+  },
+  {
+   "file": "Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 1032,
+   "what": "n_needed: 4200. check_prose_appendix_h9 (:1592-1593) compares int(round(pw['n_needed'], -2)) == yaml value; derived n_needed is 1062, so the yaml must carry 1100. The plan's Section 3 entry at PLAN:461 writes '~1,060', which cannot be transcribed literally under Risk 15.",
+   "change": "Set n_needed: 1100 and print 'roughly 1,100' in the appendix.",
+   "effort": "trivial",
+   "current_value": "4200",
+   "new_value": "1100"
+  },
+  {
+   "file": "Scripts/Analysis/_build_reproduction_notebook.py",
+   "line": 392,
+   "what": "thesis=\"Table 1; the source table for nine downstream stages\" in the bench_pose_comparison Stage; mirrored verbatim into REGENERATE.md:354 ('supports Table 1; the source table for nine downstream stages'). Same stale count as the :345-347 markdown the inventory lists.",
+   "change": "Change to 'fourteen downstream stages' (thirteen declare the need, bench_interaction_audit depends transitively) alongside the :345 edit.",
+   "effort": "trivial",
+   "current_value": "nine downstream stages",
+   "new_value": "fourteen downstream stages"
+  },
+  {
+   "file": "THESIS_REPRODUCTION.md",
+   "line": 382,
+   "what": "'**225 of 225 thesis numbers reproduce.**' \u2014 a third stale count next to the :380 '58 stages' the inventory lists (harness returns 1,364 today).",
+   "change": "Update with the post-switch harness total in the same pass as :57/:76/:380.",
+   "effort": "trivial",
+   "current_value": "225 of 225",
+   "new_value": "new harness total"
+  },
+  {
+   "file": "thesis_latex/DEFENCE_NOTES_NUMBER_GLOSSARY.md",
+   "line": 566,
+   "what": "Depth-gain Wilson intervals 'AutoDock +28.7 points (Wilson 23.9\u201334.0), DiffDock +21.1 (16.9\u201326.1), EquiBind +8.3 (5.7\u201311.9)': site 61 gives the new gains (+21.1/+15.5/+8.6) but not the intervals, which also move. wilson_ci reproduces the old ones from 87/64/25 of 303.",
+   "change": "New intervals from 64/47/26 of 303: 16.9\u201326.1, 11.9\u201320.0, 5.9\u201312.3.",
+   "effort": "trivial",
+   "current_value": "23.9\u201334.0; 16.9\u201326.1; 5.7\u201311.9",
+   "new_value": "16.9\u201326.1; 11.9\u201320.0; 5.9\u201312.3"
+  },
+  {
+   "file": "Scripts/Analysis/nearest_copy_probe/README.md",
+   "line": 5,
+   "what": "'The reference-copy value reproduces the rmsd column of per_pose_metrics.csv to 1e-9 \u00c5, so the nearest-copy column is the only new quantity.' After the switch the rmsd column IS the nearest-copy value and rmsd_ref_re no longer equals it; the README's sensitivity framing inverts. Plan 7.4 mentions the README but the inventory has no site for it.",
+   "change": "Re-word (rmsd_ref_re now reproduces rmsd_ref_instance) or retire the probe under bench_reference_convention as plan 2.7 proposes.",
+   "effort": "trivial",
+   "current_value": "rmsd_ref_re must equal rmsd",
+   "new_value": "rmsd_ref_re must equal rmsd_ref_instance"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Phase 3, step 3.2 (PLAN:275)",
+   "claim": "Lists the stages to re-run 'in order' and calls them '14 of the 19 section-3 stages plus 3 new'.",
+   "correction": "Only 12 existing stages are named (validity_report, filmstrip, topk, endpoint_diagnostics, optimization_benefit, exhaustiveness_returns, clusters, effort_charged, effort_elapsed, pandamap_report, interaction_audit, diffdock_rerank). bench_ligand_difficulty and bench_receptor_difficulty are omitted although both declare needs=[\"bench_pose_comparison\"] (_build_reproduction_notebook.py:630) and read the crystal column (ligand_docking_difficulty.py:99 and receptor_docking_difficulty.py:93: groupby(['tool','protein'])['rmsd'].min() -> oracle_rmsd). Their outputs (PoseBusters_Benchmark_Analysis/ligand_difficulty, receptor_difficulty; thesis='Discussion; the appendix difficulty analysis') have NO yaml assertion, so step 8.3's harness run would not catch them staying single-instance. Add both to 3.2 (and to FORCE_STAGES).",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 7, step 7.1 (PLAN:323)",
+   "claim": "Re-transcribe '... figures.pairs md5s'.",
+   "correction": "thesis_expected_values.yaml holds no md5 values: figures.pairs (:905-929) maps image name to a pipeline path, and check_figures computes both hashes at run time (thesis_assertions.py:689-690). Nothing in the yaml changes for the 14 figures; the only action is copying the exact regenerated PNGs into thesis_latex/media/media (site 21). The word 'md5' appears in the yaml only in comments (:933, :965).",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 7, step 7.4 (PLAN:335-336) and Risk 16 (PLAN:527)",
+   "claim": "README.md:15 'stage and assertion counts are already stale: 60 stages, 1,364 checks'.",
+   "correction": "The stage count is NOT stale today: the registry has 60 stages (44 direct reg.add calls plus 16 from the loops at :255 (5), :275 (3), :623 (2), :844 (2), :858 (2), :927 (2); REGENERATE.md:17 '60 registered stages' and the section counts at :103-115 sum to 60). Only '257 numbers/checks' (README:16, :67) is stale against the 1,364 the harness prints. 60 becomes stale only once the three new stages land (63). Risk 16's wording is accurate; 7.4's is not.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 3.3 table row 1256-1258 (PLAN:461) against Risk 15 (PLAN:525-526)",
+   "claim": "New value for the H.9 sample-size sentence written as '~1,060'.",
+   "correction": "check_prose_appendix_h9 compares int(round(pw['n_needed'], -2)) to the yaml (thesis_assertions.py:1592-1596, note 'compared to the nearest hundred'); the derived n_needed is 1062, so the yaml must read 1100 and, under the transcribe-from-the-printed-thesis rule the plan adopts, the appendix must print 'roughly 1,100'. Writing 1,060 in the text makes the yaml value untranscribable from the thesis.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 7, step 7.2 (PLAN:327-329)",
+   "claim": "thesis_assertions.py needs only the docstring :12-30 edit plus new check registrations; 'no gate-line change under D6'.",
+   "correction": "Gate lines are indeed untouched under D6 (verified :122-124, :393, :426, :611, :615, :1432, :1457 all read rmsd/bestfit_rmsd). But the module also hard-codes single-instance values in a rep.add note and comments that 7.2 omits: :1583-1584 ('is only 0.12'), :1596 (\"printed as 'roughly 4,200'\"), :1598-1599 ('MDE near 8.2 points'), :1608-1609 ('only rank-1 is equivalent, within 10 points'). Trivial, but a verification grep for old values (8.2) scoped to the short build would not find them.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 2 step 2.6-2.7 / Section 4 (PLAN:269-270, :493-494) versus inventory sites 41, 45, 46",
+   "claim": "Three new stages take the registry from 60 to 63.",
+   "correction": "Internally consistent, but the inventory it rests on says 60 -> 61 and REGENERATE.md \u00a73 '19 -> 20 stages'. With three new section-3 stages REGENERATE.md:105 will read 22 stages and :17 will read 63. The plan should state the 22 so the regenerated guide is checked against the right number.",
+   "severity": "minor"
+  }
+ ],
+ "notes": "Method. Every one of the 77 inventory sites was opened at the cited line (yaml, thesis_assertions.py, thesis_endpoint_diagnostics.py, the notebook builder, REGENERATE.md, the glossary, README.md, thesis_latex/README.md, THESIS_REPRODUCTION.md, REPRODUCTION_COVERAGE_2026-09-03.md, the X-ray builder and notebook, the hub, the cluster/pandamap/topk/validity/effort/optimization/exhaustiveness/difficulty/rerank/audit/filmstrip scripts, regenerate_guide.py, validate_regeneration.py, M2_REVALIDATION, the probe, installed posebusters/modules/rmsd.py). All quoted text and line numbers were present (site 18's note sits at :861-863, within tolerance). I ran the harness read-only: 1364/1364 checks reproduce (wf2/harness_run.txt), and a tally of Report rows by block (wf2/tally2.py) gives table_1 130, table_2 9, table_3 28, table_4 60, table_6 12, table_8 32, table_18 56, table_19 65, table_20 36 (24 near/both + 12 pbv), table_21 81, table_22 24, table_24 122 (near half 48 + 8 join-to-Table-1), table_25 24, table_26 186, table_27 117, prose refiners 15, h9 44, fig39 7, audit 12, fig23 6, fig24 5, figures 39+1. Summing the crystal-referenced blocks gives an upper bound of about 900 moving rows, so the plan's 'about 850 of 1,364' is a fair estimate.\n\nRecomputation (wf2/recompute.py, t21.py, holm.py) over per_pose_two_conventions.csv + nearest_copy_ladder_arms.csv + nearest_copy_extra_arms.csv. Under the single-instance columns (rmsd, bestfit_rmsd) every printed old value reproduced exactly for Tables 1, 2, 6, 8 (all eight rungs), 18, 19, 21 (unconditioned basis, including Holm), 22, 24 near half, 25, 26 (both halves), the refiner contrasts and the whole H.9 block (diff/CI95/CI90/McNemar/margins/TOST/both/neither/discordant/MDE/power/n_needed/mde_at_428), so the derivation method is sound. Every derived new value the inventory gives for sites 2, 3, 4, 9, 10, 11 (RMSD half), 13, 14, 15, 16, 17, 19, 20, 22, 23, 51, 53, 55, 56, 61, 62, 63 was confirmed to the digit; site 17's seconds derive from effort_summary.csv totals (151.4192 cpu-core-h x 3600 / 311 = 1752.76 reproduces the printed 1752.8; /442 = 1233; gpu 10.2699 h -> 83.65 s). The systematic defect of the inventory is over-use of 'recompute': the ladder and extra-arm CSVs plus kabsch_nearest make Table 8 (all rungs), Table 1 form/triple (six arms), Table 26 Kabsch half, Table 18/19/21/22 DiffDock gnina-opt rows, Table 20 DiffDock near rows, Table 24's three extra arms, Table 21 Holm and the glossary Kabsch entries derivable now. One genuine limitation found: the extra-arms CSV eff_rank does NOT reproduce the hub's ordering for equibind_unguided_raw (old k5/k10 near rates 3.3/5.3 vs printed 3.0/4.0), so depth-dependent raw-EquiBind quantities must not be derived from it; the raw arm is nevertheless provably unchanged in every Table 18/22 cell because its near-pose set is identical under both conventions (all 9,090 rows agree on rmsd<=2). Table 21 also confirmed the plan's Phase 4.2 expectation (77/58 at k=1, raw p 0.121). Table 26 Kabsch at 1 A d30 stays 74.3/74.6 and at 2 A 95.4/97.0, matching plan Section 7. Plan D12's 175/144/143?/57 triple counts: 175, 144 and 57 reproduced; 143 (gnina) and 48 (EquiBind smina) need kabsch for arms outside the two-conventions file and were not checked. Not verified: the yaml line ranges inside site 26 other than cohort/determinism/unreproducible (the harness passing today is the evidence they hold), site 12/24/25 'recompute' claims (no filmstrip or PandaMap inputs recomputed), and validate_regeneration's runtime. Scratch files under /tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf2/ (recompute_out.txt holds every derived table). No repository file was modified."
+}

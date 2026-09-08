@@ -1,0 +1,426 @@
+{
+ "dimension": "Methodological definition and external convention (what \"nearest copy\" means upstream, what the published benchmark did, data integrity of the copies, and the decision record for the endpoint switch)",
+ "summary": "UPSTREAM DEFINITION (read from installed posebusters 0.6.3 and paper-era v0.2.2). redock.yml:301-307 sets load_all: True on mol_pred and mol_true. tools/loading.py:156-166 (_load_and_combine_mols) reads every SDF record and AddConformer()s each later record onto the FIRST record's topology, with the comment \"warning: combines molecules without checking identity or atom order\". Verified in RDKit 2025.09.1: a record with a different atom count raises \"Pre-condition Violation Number of atom mismatch\", safe_load_mol returns None and the whole RMSD module is skipped for that complex (no silent partial minimum); a record with permuted atom order is silently accepted and its coordinates are misassigned. modules/rmsd.py:52-70 (check_rmsd): per conformer it computes CalcRMS in place (symmetrizeConjugatedTerminalGroups=True), GetBestRMS (Kabsch) and centroid distance, takes i = argmin(rmsd) (choose_by=\"rmsd\", nan->inf) and reports rmsd, kabsch_rmsd AND centroid_distance from that ONE copy. So upstream \"nearest\" = argmin in-place symmetry-aware heavy-atom RMSD, and the minimum is taken only for rmsd; the other two outputs follow the chosen copy. The v0.2.2 code (https://raw.githubusercontent.com/maabuu/posebusters/v0.2.2/posebusters/modules/rmsd.py) already iterated conformers, used CalcRMS for rmsd and GetBestRMS for kabsch, and v0.2.2 redock.yml already had load_all: True on mol_true; tags run v0.2.2..v0.6.5 (https://api.github.com/repos/maabuu/posebusters/tags).\n\nPUBLISHED CONVENTION. Confirmed from the Chem Sci full text via Europe PMC (PMC10901501, https://www.ebi.ac.uk/europepmc/webservices/rest/PMC10901501/fullTextXML) and arXiv v3 HTML (https://arxiv.org/html/2308.05777v3), Section 2.3 \"Quality of fit\", verbatim: \"PoseBusters calculates the minimum heavy-atom symmetry-aware root-mean-square deviation (RMSD) between the predicted ligand binding mode and the closest crystallographic ligand using the RDKit's GetBestRMS function.\" Table 3 of the paper: Vina \"Cube with side length 25 A centered on the geometric centre of crystal ligand heavy atoms\", Gold \"Sphere of radius 25 A\", Uni-Mol residues within 8 A. The dataset README shipped in the Zenodo zip and present locally (Data/PoseBuster Benchmark Set/README.txt:55-59) documents *_ligands.sdf as \"All instances of the ligand of interest\" and *_ligand.sdf as \"One of the instances of the ligand of interest. This crystal pose marks the binding site for those docking methods that require a binding site.\" The published numbers are therefore nearest-copy for every method, and the thesis footnote calling _ligand.sdf \"the ground-truth answer pose\" is not what the source documents. Recomputed from the Zenodo results CSV (posebusters_paper_results.csv, 428 rows per method, restricted to the 308 ids): Vina 59.7 % RMSD<=2 / 58.1 % PB-valid, Gold 58.1 / 54.5, DiffDock 38.0 / 12.7, EquiBind 1.9 / 0.0, Uni-Mol 21.8 / 1.9, TankBind 15.9 / 3.2, DeepDock 19.5 / 5.2 (PB-valid figures reproduce the paper's Figure 1 values 58/55/12). Even under nearest-copy scoring the published DiffDock rate is 31.5 % on the 143 multi-copy ids against 43.6 % on the 165 single-copy ids. Note one wording conflict: the paper says GetBestRMS (which superposes) while the code of every tag uses CalcRMS for the in-place value; the code is authoritative. Could NOT fetch: pubs.rsc.org article HTML (403), the ESI PDF at rsc.org/suppdata (404), arXiv PDF (size limit), CHANGELOG.md (404); the GitHub README and readthedocs pages contain no statement about multiple copies. The Zenodo zip contains only the benchmark inputs, not the predicted poses, so the convention could not be re-derived empirically from their poses.\n\nDATA CHECKS (Data/PoseBuster Benchmark Set, 308 ids). 143 multi-copy ids (111x2, 7x3, 22x4, one each x5, x6, x12), 138 in the 303, 211 alternate copies. The reference is record 0 of _ligands.sdf in 308/308 (and in all 428 folders). All 211 alternates have the same heavy-atom count, molecular formula, element sequence (atom order), total formal charge and all-atom count as the reference, substructure-match the reference in both directions, and the files carry no hydrogens (675/675 records). 8 alternates (6XHT_V2V, 6YJA_2BA, 7B94_ANP, 7FHA_ADX, 7LJN_GTP, 7O0N_CDP, 7PT3_3KK, 8G0V_YHT, all nucleotide/phosphate ligands) differ only in 3D-perceived stereo tags (non-stereo SMILES identical), irrelevant to symmetry_rmsd (useChirality=False) and to substructure matching. No incomplete copy exists, so the \"silent drop-out\" risk is nil on this dataset. Centroid separation of alternates from the reference: 0 within 2 A, 0 within 4 A, 6 within 8 A (7A9E_R4W 4.92, 7CD9_FVR 5.01, 7JY3_VUD 5.80, 7VKZ_NOJ 6.04, 7Z1Q_NIO 6.22, 6YYO_Q1K 7.76), 8 within 12 A (+7O0N_CDP 10.46, 7WL4_JFU 11.19), 203 beyond 12 A; nearest-alternate median 35.98 A, max 119.52 A. There are no same-site alternates, so no pose can be within 2 A of two copies and the argmin is unambiguous; the six within 8 A are adjacent second molecules in one groove and fall inside the thesis's 8 A clustering radius. Seven ids carry a second copy on the same chain id (6Z5Z_BDF, 7A9E_R4W, 7P2I_MFU, 7TUO_KL9, 7VKZ_NOJ, 7WL4_JFU, 7Z1Q_NIO). The four low-Jaccard ids: 7TUO_KL9 (C23H27N5OS, 30 heavy atoms, chain A only) has its alternate 26.4 A away with ZERO shared 4.5 A residues (Asn649/Asp395/Gln581/Lys358/Tyr399..., 22 protein atoms within 4 A vs 38 for the reference), a genuinely distinct second site on the same protomer; no pose of any arm comes within 17 A of it. 7A9E_R4W (C3H8O2S, 6 heavy atoms, alternate 4.9 A, Jaccard 0.33, shares Gly46/Thr47/Ala53/Leu54/Val59), 7VKZ_NOJ (C6H13NO4, 11 heavy atoms, 6.0 A, Jaccard 0.25, shares Arg349/Asp309/Glu176/Ile311/Leu100) and 7Z1Q_NIO (C6H5NO2, 9 heavy atoms, 6.2 A, Jaccard 0.23, shares Arg153/Phe196/Val200, only 9 protein atoms within 4 A) are small fragments bound side by side in one extended pocket, the alternate being the shallower of the two. None of the four contributes a single gained complex at d=1, 15 or 30 for any headline arm (min RMSD to the alternate 2.1-2.6 A for the adjacent three), so the include/restrict decision is currently inert.\n\nREPLICATION OF THE UPSTREAM RULE ON THESIS POSES. Feeding the redock.yml-loaded _ligands.sdf into installed check_rmsd for the 414 rank-1 poses of the three headline arms on the 138 multi-copy complexes: with the single reference it reproduces the CSV's pb_rmsd to 7e-15 and bestfit_rmsd to 9e-16; with load_all its rmsd is lower than the probe's nearest symmetry_rmsd in 52/414 poses (max 1.02 A, e.g. 7TM6_GPJ 1.62 vs 0.60) because CalcRMS symmetrises conjugated terminal groups and symmetry_rmsd does not (the difference the thesis already discloses at body_main_short.tex:113), yet the <=2 A verdict never differs (0/414). Valid-and-near rank-1 on the 138: 23->61 AutoDock*, 23->52 DiffDock*, 2->4 EquiBind* by either engine. Kabsch RMSD taken from the argmin copy instead of the reference moves by a median 0.001 A (max 0.25 A AutoDock, 0.68 A DiffDock, 0.03 A EquiBind) and changes the 1 A form verdict for 0/2/0 of the 38/29/2 flipped poses. Rank-1 4 A reach with the argmin-RMSD copy's centroid: 47->103 / 42->95 / 11->17 on the 138 (i.e. 239/225/143 on 303), against 241/225/144 with a per-metric minimum centroid, a <=2-complex difference that the \"which copy\" decision settles.\n\nTHESIS SITES. The short build states the single-instance convention only at body_appendix_short.tex:664 and the mis-described file role at :662; the Methods definition is at body_main_short.tex:109-115; comparability wording at :868 and body_appendix_short.tex:1201; the short build prints NO published Vina/DiffDock percentage anywhere (grep for 58/38/52/55 %), and \"Figure 11\" in the short build is the Orai consensus-site figure (fig:results-r15), so the \"Figure 11 calibration\" premise does not match this build. Every crystal-referenced quantity in posebusters_pose_comparison.py is anchored on crystal_h from _ligand.sdf at lines 1520-1585, the cluster reach on pose_cluster_crystal_pocket_report.py:920-927 and the interaction fingerprint on run_pandamap.py:963 and pandamap_interaction_report.py:599. The 78-complex metal-adjacent stratum (body_main_short.tex:88, :868, body_appendix_short.tex:165) has no generator under Scripts/, in the harness or in the two notebooks.",
+ "sites": [
+  {
+   "file": "/home/manndo/anaconda3/envs/vina/lib/python3.12/site-packages/posebusters/config/redock.yml",
+   "line": 307,
+   "what": "\"load_all: True # important to set if there are multiple ligands that could be correct\" under loading: mol_true (mol_pred at :301 also load_all: True)",
+   "depends_how": "The upstream redock battery loads every record of the true-ligand file; the thesis never passes _ligands.sdf here (no reference is supplied to the battery, body_main_short.tex:140) and loads a single record in its own comparison code",
+   "change": "Cite as the upstream convention the new primary endpoint follows; no code change in the package",
+   "effort": "trivial",
+   "current_value": "load_all: True (unused by the thesis for mol_true)",
+   "risk": "none"
+  },
+  {
+   "file": "/home/manndo/anaconda3/envs/vina/lib/python3.12/site-packages/posebusters/tools/loading.py",
+   "line": 159,
+   "what": "_load_and_combine_mols: \"# warning: combines molecules without checking identity or atom order\" then mol.AddConformer(mol_next.GetConformer(), assignId=True) at :165",
+   "depends_how": "Upstream nearest-copy scoring assumes identical atom order across records; verified: an atom-count mismatch raises RuntimeError and safe_load_mol returns None (RMSD module skipped for the complex), a permuted order is accepted silently with misassigned coordinates",
+   "change": "If the thesis reuses PoseBusters for pb_rmsd with a combined mol_true, keep its own per-record loader for rmsd (substructure-matched per copy) so atom order cannot bias the gate; the data check shows 211/211 alternates have identical element order and count, so both routes agree on this dataset",
+   "effort": "small",
+   "risk": "Latent only: no benchmark record triggers either failure mode"
+  },
+  {
+   "file": "/home/manndo/anaconda3/envs/vina/lib/python3.12/site-packages/posebusters/modules/rmsd.py",
+   "line": 61,
+   "what": "\"i = np.argmin(np.nan_to_num(rmsds, nan=np.inf))\" with rmsd = rmsds[i], kabsch_rmsd = kabsch_rmsds[i], centroid_dist = intercentroids[i] at :68-70; choose_by defaults to \"rmsd\" (:31)",
+   "depends_how": "Defines upstream \"nearest\": the copy with the lowest in-place CalcRMS (symmetrizeConjugatedTerminalGroups=True) is chosen once per pose and supplies rmsd, Kabsch and centroid together; the minimum is taken over rmsd only",
+   "change": "Adopt the same one-copy rule in the thesis (argmin in-place symmetry RMSD drives centroid, form, contacts, PLIF); document that pb_rmsd/pb_kabsch_rmsd/pb_rmsd_within_2A become nearest-copy automatically when a multi-conformer mol_true is passed",
+   "effort": "trivial",
+   "risk": "Per-metric minima (probe's cd_min_alt) differ from this rule by <=2 complexes at rank-1 4 A reach"
+  },
+  {
+   "file": "/home/manndo/anaconda3/envs/vina/lib/python3.12/site-packages/posebusters/modules/rmsd.py",
+   "line": 37,
+   "what": "Docstring: \"mol_true: Ground truth molecule (crystal ligand) with at least one conformer. If multiple conformers are present, the lowest RMSD will be reported.\" (:33 \"closest ground truth molecule\"); identical wording in v0.2.2",
+   "depends_how": "Documents that the paper-era tool already reported the minimum over copies",
+   "change": "Quote in the Methods/appendix justification for the switch",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Data/PoseBuster Benchmark Set/README.txt",
+   "line": 55,
+   "what": "\"2. SDF file PDB_CCD_ligands.sdf: All instances of the ligand of interest.\" and :57-59 \"3. SDF file PDB_CCD_ligand.sdf: One of the instances of the ligand of interest. This crystal pose marks the binding site for those docking methods that require a binding site.\"",
+   "depends_how": "The single-instance file is documented as a box marker, not as the answer pose; the thesis footnote at body_appendix_short.tex:662 calls it \"the single chosen crystal instance that serves as the ground-truth answer pose\"",
+   "change": "Correct the footnote to the documented roles and cite this README (dated 2023-08-24, Zenodo record 8278563 v1)",
+   "effort": "trivial",
+   "current_value": "thesis: ground-truth answer pose",
+   "new_value": "documented: binding-site marker; all instances are the answer set"
+  },
+  {
+   "file": "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/posebusters_paper_results.csv",
+   "line": 1,
+   "what": "Header \"dataset,method,post-processing,pdb_id,ccd_id,...,rmsd_within_threshold,rmsd\" (Zenodo 8278563, 428 rows per method, 308 ids overlap posebusters_pdb_ccd_ids.txt)",
+   "depends_how": "Published per-method values were produced under the paper's closest-copy rule; recomputed on the 308: Vina 59.7 % RMSD<=2 / 58.1 % PB-valid, Gold 58.1/54.5, DiffDock 38.0/12.7, EquiBind 1.9/0.0; DiffDock 31.5 % on the 143 multi-copy vs 43.6 % on the 165 single-copy ids",
+   "change": "Use these as the like-for-like external anchors once the thesis endpoint is nearest-copy; state that the Vina anchor is effectively single-instance because the 25 A cube excluded the copies (thesis boxed arm: 0 flips)",
+   "effort": "trivial",
+   "current_value": "not quoted in the short build",
+   "new_value": "optional one-sentence anchor in Discussion or appendix"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1520,
+   "what": "crystal_sdf = cdir / f\"{pdb_id}_ligand.sdf\"",
+   "depends_how": "Only the single deposited instance is ever opened; every crystal-referenced column descends from it",
+   "change": "Also open f\"{pdb_id}_ligands.sdf\" and load every record (a new load_all_mols; load_first_mol at :1150-1162 returns record 0 only, which is always the reference)",
+   "effort": "small"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1525,
+   "what": "crystal = load_first_mol(crystal_sdf); crystal_h = Chem.RemoveHs(crystal) at :1528",
+   "depends_how": "crystal_h is the single reference passed to every metric below",
+   "change": "Keep crystal_h as the reference copy for the *_ref columns and the bond-order template; add copies = [RemoveHs(m) for m in all records] (reference is record 0 in 308/308)",
+   "effort": "small"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1531,
+   "what": "_, native_contacts = clash_and_contacts(crystal_h, prot_xyz, prot_elem, prot_resid); n_native = len(native_contacts) or 1 at :1532",
+   "depends_how": "contact_recovery (:1588) is the fraction of the REFERENCE copy's 4 A residue set; a pose on copy B's chain shares almost none of chain A's residues, so recovery is ~0 for every flipped pose",
+   "change": "Compute native_contacts per copy and score recovery against the argmin-RMSD copy's set for each pose; keep contact_recovery_ref",
+   "effort": "medium",
+   "risk": "Residue identifiers differ by chain, so a nearest-copy recovery cannot be derived from the existing column"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1557,
+   "what": "pose = reassign_template(pose, crystal_h) or pose",
+   "depends_how": "Bond orders come from the reference record; all 211 alternates share formula, element order and non-stereo SMILES with the reference, so the template is valid for every copy",
+   "change": "None needed; note in the Methods that copies share the reference topology (8 differ only in stereo tags, irrelevant with useChirality=False)",
+   "effort": "trivial",
+   "risk": "none on this dataset"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1560,
+   "what": "plif_vals = compute_plif_recovery(crystal_h, [p for _, p, _ in loaded], prot_plif)",
+   "depends_how": "PLIF recovery is against the reference copy's ProLIF fingerprint (residue keys on the reference chain)",
+   "change": "Compute the crystal fingerprint per copy and score each pose against its argmin-RMSD copy; keep plif_recovery_ref",
+   "effort": "medium",
+   "risk": "ProLIF cost scales with the number of copies (211 extra crystal fingerprints)"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1566,
+   "what": "rmsd = symmetry_rmsd(pose, crystal_h); cdist = centroid_distance(pose, crystal_h) at :1567",
+   "depends_how": "This rmsd is THE gate for every <=2 A number and cdist feeds CENTROID_THRESHOLD/POCKET_CENTROID_CUTOFF",
+   "change": "rmsd_by_copy = [symmetry_rmsd(pose, c) for c in copies]; k = nanargmin; rmsd = rmsd_by_copy[k]; cdist = centroid_distance(pose, copies[k]); rmsd_ref = rmsd_by_copy[0]; centroid_dist_ref = centroid_distance(pose, crystal_h)",
+   "effort": "small",
+   "current_value": "rank-1 valid-near 111/103/55, top-15 198/167/80, top-30 199/169/80",
+   "new_value": "149/132/57, 213/179/83, 214/183/83 (verified against the probe and against installed check_rmsd, 0 verdict differences at rank-1)"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1572,
+   "what": "pb_rmsd, pb_kabsch, pb_within = posebusters_rmsd(pose, crystal_h)",
+   "depends_how": "PoseBusters' check_rmsd receives a one-conformer reference; passing the combined multi-conformer mol_true makes it apply the upstream argmin rule itself",
+   "change": "Pass a combined mol_true built from all records (RemoveHs keeps conformers, verified); pb_rmsd/pb_kabsch_rmsd/pb_rmsd_within_2A then become nearest-copy and pb_kabsch feeds bestfit at :1584",
+   "effort": "small",
+   "risk": "pb value is lower than symmetry_rmsd in 52/414 rank-1 multi-copy poses (terminal-group symmetrisation) but never crosses 2 A at rank-1"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1581,
+   "what": "rot_angle, self_bestfit = rigid_body_fit(pose, crystal_h); bestfit = pb_kabsch if not math.isnan(pb_kabsch) else self_bestfit (:1584); tfd, max_td, mean_td, n_flip, n_rot = torsion_metrics(pose, crystal_h) (:1585)",
+   "depends_how": "Form (1 A Kabsch gate of the triple selection gate), rotation angle and torsion metrics use the reference conformer",
+   "change": "Use copies[k] (argmin-RMSD copy) for all three; measured on rank-1 flips: Kabsch moves median 0.001 A, max 0.25/0.68/0.03 A, form verdict changes 0/2/0 poses",
+   "effort": "small",
+   "risk": "Selection gate (top-15 triple gate) could shift by a handful of poses; recompute before re-running variant selection"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1187,
+   "what": "symmetry_rmsd: matches = pose.GetSubstructMatches(ref, uniquify=False, useChirality=False) then minimum coordinate RMSD over matchings (:1192-1200)",
+   "depends_how": "Engine reused per copy; it does not symmetrise conjugated terminal groups, the difference disclosed at body_main_short.tex:113 (\"adds three recovered complexes\")",
+   "change": "No change to the function; recompute the :113 disclosure under nearest-copy at all depths (0 rank-1 verdict differences on the 138 multi-copy set; full-set value: recompute)",
+   "effort": "small"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 1459,
+   "what": "@dataclass class PoseRecord with rmsd, pb_rmsd, pb_kabsch_rmsd, pb_rmsd_within_2A, centroid_dist, contact_recovery, plif_recovery, bestfit_rmsd, rot_angle_deg, tfd ... (:1466-1487)",
+   "depends_how": "Column contract read by every downstream table/figure script; no field records which copy was used",
+   "change": "Redefine rmsd/centroid_dist/bestfit_rmsd/contact_recovery/plif_recovery as nearest-copy; add rmsd_ref, centroid_dist_ref, bestfit_rmsd_ref, contact_recovery_ref, plif_recovery_ref, n_copies, nearest_copy_idx, nearest_copy_is_ref (naming precedent: probe README lines 21-23 uses n_copies, rmsd_nearest_copy, nearest_copy_is_ref)",
+   "effort": "small",
+   "risk": "Silent semantic change of rmsd for any consumer; mitigate by writing to a new report directory (deliverables are never overwritten)"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/posebusters_pose_comparison.py",
+   "line": 727,
+   "what": "CENTROID_THRESHOLD = 4.0 (used with centroid_dist at :1699 and :1732) and POCKET_CENTROID_CUTOFF = 6.0 at :733",
+   "depends_how": "Reach and pocket-localisation shares are computed from centroid_dist to the reference copy",
+   "change": "Inherit the nearest-copy centroid_dist (argmin-RMSD copy); rank-1 4 A reach 183->239/172->225/137->143 with the argmin-copy centroid, 241/225/144 with a per-metric minimum",
+   "effort": "trivial",
+   "current_value": "183 / 172 / 137",
+   "new_value": "239 / 225 / 143 (argmin-copy rule) or 241 / 225 / 144 (min-centroid rule)"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 920,
+   "what": "def crystal_centroid(benchmark_dir, cid): sdf = benchmark_dir / cid / f\"{cid}_ligand.sdf\" ... return centroid_from_mol(mol) (:921-927; load_heavy_atom_mol at :131 uses MolFromMolFile, first record only)",
+   "depends_how": "Crystal-cluster reach, the crystal-closest cluster, Figures 5/6 and Table \"Crystal-Cluster Reach\" (body_main_short.tex:427-476) use one crystal site",
+   "change": "Return the list of copy centroids; a cluster reaches the crystal site if within 4 A of ANY copy centroid (nearest crystal site), and the crystal-closest cluster is chosen by the nearest copy; the six ids with an adjacent copy 4.9-7.8 A away fall inside the 8 A clustering radius and need a tie rule",
+   "effort": "medium",
+   "current_value": "pooled oracle 4 A reach 97.7 % printed at :476 (98.0 % on the canonical file)",
+   "new_value": "99.7 % (M2 measurement); 16 non-reach complexes at :427 and 95 % at :792: recompute"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/run_pandamap.py",
+   "line": 963,
+   "what": "crystal = cfg.benchmark_dir / protein / f\"{protein}_ligand.sdf\" in build_crystal_tasks (\"One crystal-ligand task per (protein, ligand) pair\")",
+   "depends_how": "The native interaction fingerprint (crystal_interactions.csv, Jaccard/precision/recall/F1 at body_main_short.tex:165) is profiled from the reference copy on the reference chain; keys include chain identifiers (body_appendix_short.tex:551), so a pose on copy B's chain can never match",
+   "change": "Profile every copy (one task per record) and compare each pose with the fingerprint of its argmin-RMSD copy; same for pandamap_interaction_report.py:599 (cand = benchmark_dir / protein / f\"{protein}_ligand.sdf\")",
+   "effort": "large",
+   "risk": "Interaction analysis is PB-valid top-5 only and has its own pose basis; re-profiling 211 extra crystal tasks is cheap but the join logic and Figure 7 change"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/nearest_copy_probe/nearest_copy_rescoring.py",
+   "line": 53,
+   "what": "'rmsd_nearest_copy': float(np.nanmin(r)) with r = [ppc.symmetry_rmsd(pose, c) for c in copies] (:45) and 'cd_min_alt': min([cd[i] for i in alt]) (:56)",
+   "depends_how": "The probe defines nearest as a per-metric minimum (RMSD minimum and centroid minimum taken independently), unlike PoseBusters' one-copy argmin rule",
+   "change": "Promote to the production stage with the one-copy rule: k = nanargmin(r); centroid, Kabsch, contacts and PLIF from copies[k]; keep rmsd_ref_re as the reproduction check (reproduces rmsd to 4.7e-10 A)",
+   "effort": "small",
+   "risk": "Reach counts differ by <=2 complexes between the two rules; the RMSD gate is identical"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 109,
+   "what": "\"Near-nativeness is the symmetry-corrected heavy-atom root-mean-square deviation (RMSD) between a docked pose and the crystallographic ligand:\" (formula at :111, :113 \"d_i is the Euclidean distance between the i-th corresponding atoms in the docked and crystallographic positions. RMSD is computed in place without superposition onto the crystal ligand.\")",
+   "depends_how": "Defines the endpoint on one crystallographic ligand",
+   "change": "Redefine: the RMSD to the nearest of all crystallographic copies deposited with the structure, chosen per pose by the lowest in-place RMSD, that copy also supplying centroid, form, contact and interaction references; single-copy complexes (165) unaffected; cite the source benchmark's identical rule (redock.yml load_all, check_rmsd minimum) and move the single-instance value to a named sensitivity arm",
+   "effort": "small"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 113,
+   "what": "\"Substituting the fully symmetrised value into the rank-1 gate adds three recovered complexes across the three tools and removes none (Appendix~\\ref{supplementary-statistics}).\"",
+   "depends_how": "Measured against the single reference; under nearest-copy the terminal-group symmetrisation lowers 52/414 rank-1 multi-copy values without crossing 2 A, but the full-set count must be redone",
+   "change": "Recompute the sentence and its appendix entry under nearest-copy",
+   "effort": "small",
+   "current_value": "three",
+   "new_value": "recompute"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 115,
+   "what": "\"The headline crystal-referenced criterion, valid-near-native, requires both RMSD \\ensuremath{\\leq} 2\\angstrom{} and PB-validity.\"",
+   "depends_how": "Criterion wording survives; its RMSD term changes meaning",
+   "change": "Add \"to the nearest deposited copy\" once here or rely on :109; no other edit",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 140,
+   "what": "Footnote: \"Providing a co-crystallised reference was measured post hoc across all poses of the whole-protein benchmark run. Applying them only reduces DiffDock recovery in Table~\\ref{tab:results-depth-recovery} by one complex at rank-1 and by two at top-15 and top-30. AutoDock and EquiBind remain unchanged.\"",
+   "depends_how": "That post-hoc reference-supplied battery included PoseBusters' own RMSD check; if mol_true was _ligand.sdf its RMSD term was single-instance and the counts change under nearest-copy",
+   "change": "Re-run the post-hoc battery with _ligands.sdf as mol_true (redock loading) or restate which file was supplied; recompute the one/two",
+   "effort": "small",
+   "current_value": "1 / 2 / 2",
+   "new_value": "recompute"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 88,
+   "what": "\"78 of the 303 analysed complexes place a metal within 5\\angstrom{} of the crystal ligand, so the rates reported for those two arms are apo-like rates\"",
+   "depends_how": "Stratum defined by proximity to the reference copy; alternates share the pocket residues in 139/143 so metal adjacency is expected to hold, but it is untested and the count has no registered generator",
+   "change": "Keep as a complex-level property of the reference copy, verify once that every alternate of the 78 (and none of the 225) also lies within 5 A of a metal, register the computation",
+   "effort": "small",
+   "current_value": "78 / 225",
+   "new_value": "recompute (expected unchanged)"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 476,
+   "what": "\"the pooled three-tool oracle places a pose within 4\\angstrom{} of the crystal site for 97.7\\% of complexes, at a median distance of 0.34\\angstrom{}. AutoDock alone reaches 88.1\\% at 0.53\\angstrom{} and DiffDock 84.5\\% at 0.56\\angstrom{}.\"",
+   "depends_how": "Crystal site = reference centroid",
+   "change": "Nearest-copy centroid: pooled 99.7 % (M2 measurement); per-tool shares and medians: recompute (the sentence is already one complex off its source, see M2 doc)",
+   "effort": "small",
+   "current_value": "97.7 / 88.1 / 84.5",
+   "new_value": "99.7 / recompute / recompute"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 792,
+   "what": "\"Pooling all tools placed the crystal pocket somewhere in the pose cloud for 95\\% of complexes, but the best inexpensive cluster rule ranked it first in only 57\\%.\"",
+   "depends_how": "Cluster-based crystal-site reach on the single reference site",
+   "change": "Recompute under the nearest-crystal-site cluster rule",
+   "effort": "small",
+   "current_value": "95 / 57",
+   "new_value": "recompute"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 868,
+   "what": "\"Post-2021 release does not exclude leakage, and blind whole-protein AutoDock results are not comparable with published site-centred cognate re-docking.\" and \"A metal ion or metal-containing cofactor lies within 5\\angstrom{} of the crystal ligand in 78 of the 303 calibration complexes ... +6.7 percentage points on the 225 metal-free complexes against +20.5 on the 78 metal-adjacent ones\"",
+   "depends_how": "Comparability statement omits the scoring axis; the source benchmark scored every method against the closest copy, so on that axis the switch restores like-for-like while the box axis stays different; the +6.7/+20.5 contrast is a top-15 near-native contrast that moves",
+   "change": "Add one sentence that the source benchmark scored against the closest deposited copy and this study now does the same, leaving only the search-space difference; recompute the stratum contrast",
+   "effort": "small",
+   "current_value": "+6.7 / +20.5",
+   "new_value": "recompute"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 662,
+   "what": "Footnote: \"all crystallographic instances of the ligand of interest (*\\_ligands.sdf), the single chosen crystal instance that serves as the ground-truth answer pose (*\\_ligand.sdf)\"",
+   "depends_how": "Asserts a role for _ligand.sdf that the dataset README does not give (README:57-59: it \"marks the binding site for those docking methods that require a binding site\")",
+   "change": "Rewrite to the documented roles and state that the source battery scores against every instance",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 664,
+   "what": "\"Where a structure contains multiple crystallographic copies of the same ligand, the comparison is made against the single deposited reference instance rather than against the closest copy. The symmetry correction therefore resolves symmetry within that one instance and not equivalence between copies.\"",
+   "depends_how": "The only statement of the current convention; becomes false under the switch",
+   "change": "Invert: comparison is against the closest copy as in the source benchmark (143 of 308 entries multi-copy, 138 of 303, median nearest-copy separation 36.0 A, no alternate within 4 A of the reference, four low-Jaccard copies named); the single-instance value is reported as a sensitivity arm",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 1072,
+   "what": "Intention-to-treat check: \"AutoDock Vina + gnina places none of the five within 2\\angstrom{} of the crystal ligand at rank-1 and none within its top-15 pool, the closest pose in either pool sitting at 6.4\\angstrom{}. ... recovery stays at 111 of 308 at rank-1 and 198 of 308 at top-15, against 103 and 167 for DiffDock + smina ... 2.6 percentage points at rank-1 and going from 10.2 to 10.1 at top-15.\"",
+   "depends_how": "All five dropped complexes are multi-copy (7B2C_TP7 2, 7D6O_MTE 2, 7FRX_O88 4, 7M31_TDR 4, 8F4J_PHO 4 records); the 6.4 A closest pose is to the reference only",
+   "change": "Re-score the five against their copies; base counts become 149/213 vs 132/179 of 308 plus any alternate-copy hits; margins recompute",
+   "effort": "small",
+   "current_value": "111/198 vs 103/167; closest 6.4 A",
+   "new_value": "recompute (>=149/213 vs 132/179)"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 1201,
+   "what": "\"The benchmark this study calibrates against gave Vina a 25\\angstrom{} cube centred on the crystal-ligand heavy atoms \\cite{ref035}, a volume of 15,625\\angstrom{}\\textsuperscript{3}.\"",
+   "depends_how": "Correct (paper Table 3) but silent on the fact that the cube is centred on the single _ligand.sdf instance, which kept the other copies outside the search and made the source benchmark's closest-copy scoring inert for Vina (thesis boxed arm 175->175, 0 flips) yet active for the blind AI methods",
+   "change": "Add the regime clause so the reader sees why the published Vina anchor is single-instance in effect and the published DiffDock anchor is nearest-copy",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 165,
+   "what": "\"In 78 of the 303 analysed entries a metal ion or a metal-containing cofactor lies within 5\\angstrom{} of a crystal-ligand heavy atom ... Rank-1 recovery is 37.8\\% for AutoDock and 39.6\\% for DiffDock on the 225 metal-free complexes, against 33.3\\% and 17.9\\% on the 78 metal-adjacent ones.\"",
+   "depends_how": "Stratum membership is defined on the reference copy; the stratum recovery rates are the endpoint that moves",
+   "change": "Keep the stratum definition (decision), recompute the per-stratum rates under nearest-copy",
+   "effort": "small",
+   "current_value": "37.8/39.6 vs 33.3/17.9",
+   "new_value": "recompute"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/Thesis_short.tex",
+   "line": 61,
+   "what": "Abstract outline: \"a primary endpoint combining PoseBusters validity with a heavy-atom root-mean-square deviation of at most 2\\angstrom{}\" (no rank-1 rates printed in Abstract or Kurzfassung, grep for 36.6/34.0/18.2/65.3 returns nothing)",
+   "depends_how": "Definitional only; no numeric abstract site moves",
+   "change": "Optional two words (\"to the nearest deposited ligand copy\"); the Kurzfassung page is full so make no German addition",
+   "effort": "trivial"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/nearest_copy_probe/README.md",
+   "line": 21,
+   "what": "\"Columns added per pose: n_copies, rmsd_ref_re (must equal rmsd), rmsd_nearest_copy, nearest_copy_is_ref, cd_ref, cd_min_alt (centroid distance to the nearest alternate copy), rmsd_min_alt.\"",
+   "depends_how": "Existing naming precedent for the new columns",
+   "change": "Reuse n_copies and nearest_copy_is_ref verbatim; rename the production gate column to rmsd (nearest) with rmsd_ref as the secondary, so downstream consumers keep reading rmsd",
+   "effort": "trivial"
+  }
+ ],
+ "decisions": [
+  {
+   "question": "Definition of \"nearest\" for the primary endpoint",
+   "options": [
+    "(a) Per pose, the minimum over all records of <ID>_ligands.sdf of the thesis's own in-place symmetry_rmsd (substructure-matched per copy, no superposition), NaN treated as +inf, reference record 0 as tie-breaker",
+    "(b) PoseBusters check_rmsd on a combined multi-conformer mol_true (CalcRMS with symmetrizeConjugatedTerminalGroups=True, argmin over conformers)",
+    "(c) Nearest by centroid distance, RMSD then read off that copy"
+   ],
+   "recommendation": "(a). It is the same engine as today (reproduces the rmsd column to 4.7e-10 A on the reference copy), it matches PoseBusters' argmin rule on every rank-1 verdict tested (0/414 differences), and it keeps the terminal-group disclosure at body_main_short.tex:113 valid. Keep (b) as the pb_rmsd family by passing the combined mol_true, which is what the source benchmark did. Reject (c): centroid-nearest and RMSD-nearest can disagree only for the six adjacent-copy ids and RMSD is the gate."
+  },
+  {
+   "question": "Which copy drives centroid distance, form (Kabsch), rotation/torsion metrics, contact recovery and PLIF recovery",
+   "options": [
+    "(a) The single argmin-RMSD copy for every metric of that pose (PoseBusters rmsd.py:61-70 rule)",
+    "(b) Per-metric minimum over copies (the probe's cd_min_alt style)",
+    "(c) RMSD nearest-copy, everything else still against the reference"
+   ],
+   "recommendation": "(a). One coherent copy per pose is the upstream rule and is what \"every crystal-referenced metric derived from that nearest copy\" means. Measured cost is small (Kabsch median shift 0.001 A, 0/2/0 form-verdict changes among flips; 4 A reach differs from (b) by <=2 complexes). Reject (c): a pose on copy B's chain would score ~0 contact and PLIF recovery against chain A's residues, contradicting its near-native status."
+  },
+  {
+   "question": "Treatment of the four low-Jaccard copies (7A9E_R4W, 7TUO_KL9, 7VKZ_NOJ, 7Z1Q_NIO)",
+   "options": [
+    "(a) Include every deposited instance, as PoseBusters and the dataset README (\"All instances of the ligand of interest\") do, and disclose the four",
+    "(b) Restrict to pocket-equivalent copies (residue Jaccard >= 0.6), dropping the four alternates",
+    "(c) Include all but report a sensitivity row without them"
+   ],
+   "recommendation": "(a). It is the external convention and the decision is inert on the present data: no headline arm gains any complex from these four at d = 1, 15 or 30; 7TUO's alternate is a genuine second site 26 A away that no pose approaches within 17 A, and the other three are adjacent fragment copies 4.9-6.2 A from the reference with minimum alternate RMSD 2.1-2.6 A. A Jaccard threshold would add an arbitrary parameter for zero effect; one appendix sentence naming the four suffices."
+  },
+  {
+   "question": "Metal-adjacent stratum (78 of 303 within 5 A of a metal)",
+   "options": [
+    "(a) Keep as a complex-level property defined on the reference copy, verify once that the alternates agree, register the (currently unregistered) generator",
+    "(b) Recompute per pose from the copy the pose is scored against",
+    "(c) Define as any copy within 5 A of a metal"
+   ],
+   "recommendation": "(a). The stratum is a receptor-preparation property of the complex, not of the pose; 139/143 alternates share the reference pocket so the count is expected to hold, and a one-off per-copy check confirms it. Only the stratum recovery rates (body_main_short.tex:868, body_appendix_short.tex:165) are recomputed. Register the computation in the harness because no script under Scripts/ produces the 78."
+  },
+  {
+   "question": "Crystal-cluster reach when several crystal sites exist",
+   "options": [
+    "(a) Nearest crystal site: a cluster reaches if its centroid is within 4 A of ANY copy centroid; the crystal-closest cluster is defined by the nearest copy",
+    "(b) Reference site only (status quo)",
+    "(c) Count each crystal site separately (multi-site recovery, co-reach per site)"
+   ],
+   "recommendation": "(a). It is the cluster-level analogue of the per-pose rule, moves the pooled oracle to 99.7 % consistent with :476, and leaves the definitions of Figures 5/6 intact. Add a tie rule for the six ids whose adjacent copy sits 4.9-7.8 A from the reference and therefore inside the 8 A clustering radius (both copies may fall in one cluster; count once). Reject (c) as a new analysis the thesis does not need."
+  },
+  {
+   "question": "Column naming and backward compatibility in per_pose_metrics.csv",
+   "options": [
+    "(a) Redefine rmsd, centroid_dist, bestfit_rmsd, contact_recovery, plif_recovery in place as nearest-copy; add *_ref twins, n_copies, nearest_copy_idx, nearest_copy_is_ref; write to a new report directory",
+    "(b) Keep rmsd as single-instance and add rmsd_nearest etc., switching every consumer script to the new names",
+    "(c) Two parallel CSVs, one per convention"
+   ],
+   "recommendation": "(a). Every consumer already reads rmsd as the gate, so redefining in place changes one producer instead of 14+ consumers; the *_ref twins preserve the old values for the sensitivity arm, and the new directory (e.g. pose_comparison_report_nearest or _v2) respects the never-overwrite rule and lets the harness diff old against new. pb_rmsd/pb_kabsch_rmsd/pb_rmsd_within_2A become nearest-copy automatically through the combined mol_true and need no rename."
+  },
+  {
+   "question": "Does the single-instance convention become the appendix sensitivity arm",
+   "options": [
+    "(a) Yes: M2 Option B table with the columns inverted (nearest = primary, reference copy = sensitivity), plus the single-copy stratum row (Option D)",
+    "(b) No sensitivity arm, a one-sentence disclosure only",
+    "(c) Keep single-instance primary and add nearest-copy as the sensitivity arm (M2's original recommendation)"
+   ],
+   "recommendation": "(a). The plan has already chosen nearest-copy as primary; the reference-copy column then serves as the conservative bound the M2 note valued, and the single-copy stratum (165 complexes: 54.5/50.9/32.7 % rank-1) shows the ordering where no copy exists. Register it as one bitexact stage with yaml assertions (143/138 ids, gains 38/29/2 and 15/12/3)."
+  },
+  {
+   "question": "How the Methods should describe the endpoint",
+   "options": [
+    "(a) Redefine at body_main_short.tex:109-115 as RMSD to the nearest of all deposited copies chosen per pose by lowest in-place RMSD, that copy supplying every crystal reference for the pose, with the source benchmark's identical rule cited (README all instances, redock.yml load_all, check_rmsd minimum) and the single-instance value named as the sensitivity arm",
+    "(b) Leave :109 unchanged and describe the convention only in the appendix at :664",
+    "(c) Describe it as a correction for the blind box (a whole-protein-specific fix)"
+   ],
+   "recommendation": "(a). The endpoint definition belongs in the Methods, and the justification is external convention rather than box repair, so (c) would misstate it: the paper scored every method this way and its Vina anchor was inert only because the 25 A cube excluded the copies. Draft, house style: \"Near-nativeness is the symmetry-corrected heavy-atom RMSD between a docked pose and the nearest of all crystallographic copies of the ligand deposited with the structure, computed in place without superposition. The copy with the lowest RMSD is chosen for each pose and supplies the centroid, form, contact and interaction references for that pose. This is the convention of the source benchmark, whose validity battery loads every deposited instance and reports the lowest RMSD. The 165 single-copy complexes are unaffected. The single-instance value is retained and reported as a sensitivity arm in Appendix ...\""
+  },
+  {
+   "question": "Comparability with the PoseBusters paper's published Vina and DiffDock numbers",
+   "options": [
+    "(a) State that the published values (Vina 58 % PB-valid, DiffDock 12 %, RMSD<=2: 59.7/38.0 % on the 308) were computed against the closest copy, so the switch aligns the scoring axis and only the search-space axis (25 A cube vs whole protein) still separates the studies; keep the :868 non-comparability sentence for the box axis",
+    "(b) Treat the published numbers as single-instance and keep the current text",
+    "(c) Quote no external numbers"
+   ],
+   "recommendation": "(a). The paper's Section 2.3 quote and the paper-era code settle the convention. Add the regime clause at body_appendix_short.tex:1201 (the cube centred on _ligand.sdf made closest-copy scoring inert for Vina and Gold but active for the blind AI methods, exactly as the thesis's own boxed arm shows with 0 flips). The short build currently prints no published percentage, and its Figure 11 is the Orai consensus-site figure, so no numeric site changes; if an anchor is added, use the values recomputed from the Zenodo CSV and flag that the paper text says GetBestRMS while its code uses CalcRMS for the in-place value."
+  }
+ ],
+ "open_questions": [
+  "The task premise names \"Figure 11 and the calibration text\" as quoting the paper's Vina and DiffDock numbers; in the short build Figure 11 is fig:results-r15 (Orai consensus-site distances) and no published percentage appears in body_main_short.tex, body_appendix_short.tex or Thesis_short.tex. Which build or deck was meant (presentation/build_deck_v*.py were not inspected beyond the metal sentences)?",
+  "The post-hoc reference-supplied PoseBusters run behind the footnote at body_main_short.tex:140 (DiffDock -1 at rank-1, -2 at top-15/30): which file was passed as mol_true? If _ligand.sdf, its RMSD term was single-instance and the footnote must be re-run with _ligands.sdf.",
+  "The 78-complex metal-adjacent stratum has no generator under Scripts/, in _build_reproduction_notebook.py, thesis_assertions.py, Thesis_Reproduction.ipynb or PoseBusters_DataSet_Analysis.ipynb (whose has_metal is a ligand-element flag). Where was it computed, and can it be registered before the stratum rates are recomputed?",
+  "The five intention-to-treat complexes (body_appendix_short.tex:1072) are all multi-copy (2/2/4/4/4 records). Does any AutoDock or EquiBind pose fall within 2 A of an alternate copy there? Not computed because the all-depths CSV holds only the 303.",
+  "The paper's wording \"using the RDKit's GetBestRMS function\" (superposing) conflicts with the code at every tag (CalcRMS for the in-place value, GetBestRMS only for kabsch). The code is authoritative for the published CSV, but a sentence citing the paper's definition should not repeat GetBestRMS as if it were the in-place metric.",
+  "Adjacent-copy ids (7A9E_R4W 4.9 A, 7CD9_FVR 5.0, 7JY3_VUD 5.8, 7VKZ_NOJ 6.0, 7Z1Q_NIO 6.2, 6YYO_Q1K 7.8) sit inside the 8 A clustering radius: the crystal-cluster reach rule needs an explicit tie/merge statement for them.",
+  "Interaction fingerprints (run_pandamap.py:963, pandamap_interaction_report.py:599) key on chain identifiers, so nearest-copy contact/PLIF/Jaccard recovery requires profiling every copy and re-joining per pose; the cost is small for the crystal tasks but Figure 7 and the interaction pose basis (PB-valid top-5) will move, and this was outside my measurement.",
+  "Per-stratum, ITT, depth-table and discordance numbers marked \"recompute\" above depend on the argmin-copy rule being adopted; if the per-metric minimum is chosen instead, the 4 A reach values change by up to two complexes and the M2 document's 241/225/144 apply verbatim."
+ ],
+ "artifacts_written": [
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/copy_checks.py",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/copy_checks_308.py",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/copies_inventory.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/pb_loadall_replicate.py",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/pb_loadall_rank1.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/posebusters_paper_results.csv",
+  "/tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf/posebusters_paper_data.zip"
+ ]
+}

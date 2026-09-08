@@ -14,7 +14,7 @@
 > been retired and its paths predated the matched-EquiBind migration. That
 > drift is what this generator exists to prevent. See [`FINDINGS_2026-09-02.md`](FINDINGS_2026-09-02.md).
 
-Generated 2026-09-03 00:23 from 60 registered stages.
+Generated 2026-09-03 01:14 from 60 registered stages.
 
 Float numbers are the SHORT build's, read from the figure environments of
 `body_main_short.tex` and `body_appendix_short.tex` in document order.
@@ -370,6 +370,7 @@ Re-refines from the committed __refRAW.sdf, which is the exact input the origina
 
 --top-n 15 and --diffdock-variant all shaped the cached table. A re-render with --reuse-cache omits them, so dropping the cache after changing the input silently rebuilds at --top-n 5 on the raw diffdock key.
 CORRECTED 2026-09-02: the pin was --collapse-autodock-variant autodock_gnina, which the meeko preset cancels, because autodock_gnina is IN that preset. The two flags together dropped the whole AutoDock family and Figures 2 and 3 rendered with two tools instead of three. No error was raised. The dominant arm must be named in full.
+CORRECTED 2026-09-03: the cross-tool baseline in _TOPK_TEST_PAIRS was raw Vina, while Appendix C declares the family is computed on the gnina-rescored arm and Table 21 prints that arm's rates. The script carried raw Vina in every commit of its history, so it tested 31.4 against DiffDock's 33.7 instead of the printed 37.3, and reported ns at three of the four depths where the thesis reports significance. Table 21 had no assertion behind it, which is why the drift survived. check_table_21 now pins it.
 
 #### `bench_validity_report` — Validity report per tool and complex
 
@@ -1016,10 +1017,20 @@ The two --*-posebusters-csv paths are REQUIRED and their defaults are wrong for 
     --diffdock-variant smina \
     --equibind-variant gnina \
     --per-unit-csv posebusters_results/_orai_matched_root/orai_pbvalid_tm_share_compare/pbvalid_tm_share_per_unit.csv \
+    --exp-quality-csv posebusters_results/_orai_matched_root/orai_jku/pose_clusters/cluster_quality_per_tool.csv \
+    --bench-quality-csv posebusters_results/_orai_matched_root/orai_benchmark/pose_clusters/cluster_quality_per_tool.csv \
+    --exp-pair-csv posebusters_results/_orai_matched_root/orai_jku/pose_clusters/per_pair.csv \
+    --bench-pair-csv posebusters_results/_orai_matched_root/orai_benchmark/pose_clusters/per_pair.csv \
+    --pandamap-totals-csv pandamap_results/orai_interaction_compare_matched/pandamap_pose_totals.csv \
+    --pandamap-exp-dir pandamap_results/orai_jku_matched \
+    --pandamap-bench-dir pandamap_results/orai_benchmark_matched \
+    --exp-posebusters-csv posebusters_results/_orai_matched_root/orai_jku/dock/posebusters_filtered_results.csv \
+    --bench-posebusters-csv posebusters_results/_orai_matched_root/orai_benchmark/dock/posebusters_filtered_results.csv \
     --out-dir posebusters_results/_orai_matched_root/orai_pbvalid_tm_share_compare
 ```
 
 The effective number of independent experimental observations is three ligands, so this is what keeps the frame-ligand tests from being read as more powered than they are.
+CORRECTED 2026-09-03: the stage passed only --per-unit-csv and the three variant flags. The script takes nine input paths and the other eight default to the superseded plain trees, so the registered command silently re-derived the sensitivity analysis from one generation back. It did not error and the output landed under the canonical out-dir, which is what made it invisible. The divergence is material rather than cosmetic: EquiBind's cluster-quality contrasts move from 6 frame-ligand units to 4, Compactness/EquiBind flips from -0.09 ns to +0.39, and adjusted p-values move across the whole file. This is the same defect already documented for orai_pandamap_compare, which was fixed there and left standing here. Verified 2026-09-03: with the paths above the script reproduces the shipped sidecar exactly, byte for byte apart from its own generated-on timestamp line.
 
 #### `orai_region_consensus` — Consensus binding-region analysis
 
@@ -1117,9 +1128,22 @@ Tables whose printed values are recomputed and asserted on every run by
 | Table | Source | Location in the thesis |
 | --- | --- | --- |
 | 1 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv` | body_main_short.tex:261, tab:results-pose-production |
+| 10 | `posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/effort_summary.csv` | body_appendix_short.tex, tab:appendix-cost-per-pose |
+| 12 | `pandamap_results/orai_interaction_compare_matched/orai_pandamap_interaction_compare_stats.txt` | body_appendix_short.tex, tab:appendix-orai-interaction |
+| 14 | `` | body_appendix_short.tex, tab:appendix-frame-geometry |
+| 16 | `PoseBusters_Benchmark_Analysis/summary_statistics.csv` | body_appendix_short.tex, tab:appendix-ligand-distribution |
 | 18 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_validity.csv` | body_appendix_short.tex, tab:appendix-top-k-recovery |
 | 19 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_stats.csv` | body_appendix_short.tex, tab:appendix-refinement-mcnemar |
 | 2 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_validity_gnina_arm.csv` | body_main_short.tex:336, tab:results-depth-recovery |
+| 20 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/optimization_benefit_by_rank.csv` | body_appendix_short.tex, tab:appendix-refinement-bands |
+| 21 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_stats.csv` | body_appendix_short.tex, tab:appendix-cross-tool-mcnemar |
+| 22 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_validity.csv` | body_appendix_short.tex, tab:appendix-accurate-invalid |
+| 24 | `` | body_appendix_short.tex, tab:appendix-pb-decomposition-full |
+| 25 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv` | body_appendix_short.tex, tab:results-depth-gain |
+| 26 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv` | body_appendix_short.tex, tab:results-near-native-form |
+| 27 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__stats_per_tool_depth.csv` | body_appendix_short.tex, tab:results-placement-form |
+| 3 | `posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/topN_crystal_cluster_matrix_stats.txt` | body_main_short.tex, tab:results-cluster-recovery |
+| 4 | `pandamap_results/benchmark_matched_equibind/report/native_recovery_by_rank.csv` | body_main_short.tex, tab:results-native-recovery-rank |
 | 5 | `posebusters_results/_orai_matched_root/orai_pbvalid_tm_share_compare/pbvalid_tm_share_pooled.csv` | body_main_short.tex, tab:results-orai-yield |
 | 6 | `posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/effort_summary.csv` | body_main_short.tex, tab:results-cost-per-qualifying-pose |
 | 8 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv` | body_appendix_short.tex, tab:appendix-exhaustiveness-ladder |

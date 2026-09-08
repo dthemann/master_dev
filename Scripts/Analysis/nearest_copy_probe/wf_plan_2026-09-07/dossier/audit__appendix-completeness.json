@@ -1,0 +1,92 @@
+{
+ "dimension": "appendix (thesis_latex/body_appendix_short.tex)",
+ "role": "COMPLETENESS AUDITOR",
+ "refuted": [],
+ "corrected": [
+  {
+   "site": "PLAN Section 3.3 and Phase 5.4, every appendix line number >= 560",
+   "correction": "The working-tree file is 1415 lines (wc -l), not the 1,413 the inventory read. `git diff -U0` shows a two-line insertion at hunk `@@ -558 +560,3 @@` (Orai1 receptor-model chapter), so every inventory/plan anchor from the dataset chapter onward is stale by +2: 'all crystallographic instances' is at :664 (plan says :662), 'Where a structure contains multiple crystallographic copies' at :666 (plan :664), 'The median is 1.56' at :784 (plan :782), 'places none of the five within' at :1074 (plan :1072), 'Near-native poses are those within' at :1181 (plan :1179), 'trimmed of poses whose centroid' at :1387 (plan :1385), 'At rank 1 AutoDock Vina + gnina invents' at :1415 (plan :1413). Anchors up to :551 (Vinardo :77, metal :165, :182, :230, :246, :267, :276, :487, :543, :549, :551) still match."
+  }
+ ],
+ "missing": [
+  {
+   "file": "thesis_latex/body_appendix_short.tex",
+   "line": 167,
+   "what": "Box-construction paragraph: 'The box is constructed per receptor rather than set to a fixed size. Its centre is the midpoint of the axis-aligned bounding box over every atom record of the prepared receptor, and each edge is that axis's span plus 1 A on either side.' The plan's :664 draft asserts 'the whole-protein box used here contains every one of them', but neither Section 3.3 nor Phase 5.4 lists :167, the only place that defines the box; the inventory summary named :167 as the pointer site and the plan dropped it.",
+   "change": "Add one clause after 'No further padding is applied.' stating that every deposited copy of the ligand lies inside this box (M2 sub-claim 3: 143/143 alternates inside bounding box + 1 A), with a cross-reference to the convention paragraph in the Dataset chapter.",
+   "effort": "trivial",
+   "current_value": "no mention of ligand copies in the box paragraph",
+   "new_value": "clause + \\ref to composition-and-provenance"
+  },
+  {
+   "file": "thesis_latex/body_appendix_short.tex",
+   "line": 722,
+   "what": "Prose for Figure 30 (media/media/image35.png, fig:appendix-dataset-3): 'Roughly a quarter of the ligands contain phosphorus (25%) or sulfur (24%), 22% carry at least one halogen, and metal atoms are essentially absent...'. Panel (A) of the rendered image carries a fifth bar 'Multi-instance 46%' (verified by opening image35.png) that the text never mentions; `grep -niE 'multi-instance|multi-copy|multiple copies'` on the file returns nothing. Plan Section 7 leans on this panel ('Fig 30 panel A already shows the 46% multi-instance share') while the only prose describing the panel omits the bar that becomes load-bearing under the new convention.",
+   "change": "Add one sentence naming the 46% (143 of 308) multi-instance share and pointing to the convention paragraph; keep the figure unchanged.",
+   "effort": "trivial",
+   "current_value": "bar present in figure, absent from text",
+   "new_value": "'and 46% of the entries (143 of 308) deposit more than one instance of the ligand, the property Section~\\ref{composition-and-provenance} scores against'"
+  },
+  {
+   "file": "thesis_latex/body_appendix_short.tex",
+   "line": 165,
+   "what": "Metal-stratum paragraph tail (read at :165, chars 1500+): 'On the metal-free stratum 53.6% of AutoDock and 65.4% of DiffDock rank-1 failures hold no qualifying pose at any depth, and on the metal-adjacent stratum the shares are 55.8% and 70.3%' and 'a 4 A rule classes 73 complexes as metal-adjacent and a 6 A rule 81, with stratum contrasts of -7.4 and -19.2 points and of -6.3 and -21.0 points'. Plan Section 3.3 row 165 lists only '37.8/39.6/33.3/17.9%; 134 vs 149 of 225; 33 vs 49 of 78; p 0.142/0.020'; the four failure-diagnosis shares and the four 4 A/6 A sensitivity contrasts are crystal-referenced recovery quantities the row does not enumerate, and the 73/81 memberships are themselves reference-instance distances that D4 must explicitly cover.",
+   "change": "Extend the :165 row to the failure-diagnosis shares and the 4 A/6 A contrasts (all recompute on nearest) and state that D4's reference-instance definition also fixes the 73 and 81 counts.",
+   "effort": "small",
+   "current_value": "53.6/65.4/55.8/70.3%; 73/81; -7.4/-19.2; -6.3/-21.0",
+   "new_value": "recompute (memberships 78/73/81 kept under D4)"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Section 3.3 row ':246' and Section 1.5 (no discussion)",
+   "claim": "':246 95; 113; \"exactly 113\" -> 131 raw exh128, 151 rescored (near-native without validity)' is treated as a number substitution.",
+   "correction": "The paragraph at :246 makes two structural claims that collapse, not just three numbers: 'raw rank-1 recovery tops out at 95 complexes anywhere above exhaustiveness 64' and 'doubling the pool beneath the rescorer leaves it at exactly 113', supporting the sentence 'The ceiling that remains is also a ranking ceiling rather than a sampling one.' Computed from nearest_copy_ladder_arms.csv + nearest_copy_alldepths.csv (rank-1, rmsd_nearest_copy <= 2, no validity gate): exh64 raw 124, exh92 raw 124, exh128 raw 131 (reference 95/92/95, a plateau); 64+gnina 144 vs 128+gnina 151 (reference 113 vs 113). The plateau becomes a +7 rise and the 'exactly' equality becomes a 7-complex gap, so the ranking-versus-sampling argument at :246 has to be re-argued, not re-numbered. The plan lists no wording decision for this.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 3.3 row ':1256-1258' (maps '8.2' to '11.7')",
+   "claim": "'MDD 9.8; power 0.12; 4,200; 8.2; \"within 10 points\" -> 10.5; 0.32; ~1,060; 11.7; \"within 12 points\"'",
+   "correction": "At :1260 the 8.2 is 'Even the 428 entries of the earlier preprint release ... would leave the minimum detectable difference near 8.2 points'; 11.7 is the inventory's rank-1 90% upper bound / smallest passing margin, a different quantity. The inventory's own new_value gives '428 entries would leave the MDD near 8.8' (10.5 x sqrt(303/428) = 8.83). The plan row also omits the other :1260 numbers the inventory lists as changing: McNemar p 0.009/0.011 -> 0.0036/0.0075, smallest passing values 19.4/16.4/16.0 -> 19.3/17.2/16.2, and the 90% intervals at top-5/15/30 (+5.1 to +17.2, +4.2 to +16.2). An executor following the row would print 11.7 where 8.8 belongs.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 3.3 row ':230' and D10; conflict with Section 1.5 and Section 4 (image46/47 regenerate)",
+   "claim": "':230 +71.6 / +35.9 / +5.9 per hour; +65.6 (+32.1..+137.2) -> keep confirmatory on instance (D10), print nearest beside' covers the whole paragraph.",
+   "correction": "D10 protects only the pre-specified cell (+65.6, interval +32.1..+137.2). The same paragraph at :230 also prints descriptive triple-gate-over-pool values '98, 128, 149, 159 and 164 complexes' and the three per-hour returns, while :182 ('160 complexes against 152 for its own raw search') and Section 1.5 ('164 vs 160 -> 178 vs 175') move the identical exh128 triple-gate pool count to the nearest convention, and Figures 20-21 (image46/image47, captions :235/:241, 'Hatching separates the two gates') are scheduled for regeneration on nearest. Under the row as written the reader meets 164 (instance) at :230 and 178 (nearest) at :182 for the same rung, and per-hour text on instance beside bars drawn on nearest. The plan must say which cells of :230 stay on instance (only +65.6, per D10's own wording) and that the descriptive cells and both figures move; risk 12 names the contradiction without resolving its scope.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 3.3 row ':182' ('top-3 to top-22 ... holds') and Section 1.5 ('still leads at every depth from 3 to 22')",
+   "claim": "The depth range over which the selected rung leads every alternative is unchanged.",
+   "correction": "Scanned d = 1..30 on PB-valid & RMSD <= 2 against all seven alternatives (ladder CSV + alldepths CSV). Reference convention: strict lead at d = 1 and 3-22 (tie at d = 2, 146 vs 146; behind from 24), matching the printed 'top-3 to top-22'. Nearest convention: strict lead at every depth 1-25 (d = 1: 149 vs 141; d = 2: 172 vs 167; d = 25 last lead; d = 30: 214 vs 217 raw exh128). 'It leads at every depth from top-3 to top-22' is therefore stale under nearest and must be re-derived over the full 1..30 range (the memory trap 'at any depth false over 1..30' applies), not kept.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 3.3 row ':1375-1385' ('all 117 cells ...; W footnote')",
+   "claim": "The Table 27 footnote needs wording only.",
+   "correction": "The footnote (now :1387) carries six numbers that move: rank-1 medians '1.490 against 1.543 A for AutoDock Vina + gnina and 1.467 against 1.566 A for DiffDock + smina', 'moves two of the 909 tool-by-complex decisions', and 'Rank-1 recovery would then read 37.0% for AutoDock Vina + gnina and 18.5% for EquiBind + gnina against an unchanged 34.0% for DiffDock + smina'. From per_pose_two_conventions.csv at rank-1 under nearest: own (rmsd_nearest_copy) vs PoseBusters (pb_rmsd_nearest) gated on pb_valid gives AutoDock 149 -> 150 (49.5%), EquiBind 57 -> 58 (19.1%), DiffDock 132 unchanged (43.6%), all pb-only flips, so 'two of 909' survives but the three percentages and the two median pairs recompute. The inventory's site 1385 says 'wording plus five numbers'; the plan row dropped the numbers.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 5 (risks) and Phase 0/1: no step for M2 sub-claim 8",
+   "claim": "The plan carries no decision or audit step for the flips that may be symmetry artefacts.",
+   "correction": "M2_REVALIDATION_2026-09-07.md:35 records 'Four flips per arm have nearest-copy RMSD in (1.5, 2.0] A, consistent with the verifier's symmetry handling being incomplete'; reproduced from per_pose_two_conventions.csv: AutoDock* 38 rank-1 flips with 4 in (1.5, 2.0], DiffDock* 30 with 4. The inventory's open question ('if those are artefacts the derived counts 149/132/57 drop by up to four each') is not answered anywhere in the plan (grep for '(1.5', 'incomplete symmetry', 'automorphism' finds only D1 and risk 4, which concerns pb_rmsd not these poses). Every appendix table in Section 3.3 inherits the 149/132 figures; the plan needs a Phase 0 step that inspects those eight poses (e.g. against pb_rmsd_nearest, which is <= rmsd) before any appendix number is asserted.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 3.3 rows ':173' and ':184'; Phases 1-3",
+   "claim": "':173 ... 112 (37.0%) / 90 (29.7%); 31 = 15 + 16 -> recompute' and ':184 93/183 vs 94/185 -> recompute' with no producing stage named.",
+   "correction": "The three alternative orderings at :173 (gnina default CNNscore 112, minimised Vina energy 90, 15/16 discordant split) and the parent-Vina-order carry at :184 (93 at rank-1, 183 at top-15) are not columns of per_pose_metrics.csv or of the probe CSVs (headers: method, protein, pose_file, rank, eff_rank, rmsd, pb_rmsd, pb_valid, centroid_dist, bestfit_rmsd, n_copies, rmsd_ref_re, rmsd_refcopy, rmsd_nearest_copy, ...). They require a join to the gnina optimiser output (CNNscore, minimizedAffinity, original Vina rank). No phase step names that join or its script, so 'recompute' has no executor. The memory trap on the gnina optimisation log being stale (orai-jku-gnina-optimization-log-stale) makes the source choice non-trivial.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 3.3 (whole appendix table) and Phase 5.4",
+   "claim": "Line anchors :662-664, :782, :869, :891-918, :945-962, :990-997, :1024-1029, :1054-1060, :1072, :1170-1194, :1201, :1205, :1245-1258, :1263, :1301-1338, :1375-1385, :1392-1413.",
+   "correction": "All are +2 in the current working tree (file is 1415 lines; `git diff -U0` hunk `@@ -558 +560,3 @@` inserted two lines): e.g. the convention sentence is at :666, ITT at :1074, Table 27 footnote at :1387, contact decomposition at :1415. The plan should anchor on quoted strings or refresh the numbers before Phase 5.",
+   "severity": "minor"
+  }
+ ],
+ "confirmed": 0,
+ "notes": "Sweep method: fresh grep over body_appendix_short.tex (1415 lines) for crystal|near-native|nearest|kabsch|centroid|deposited|instance|copy|copies|ligands.sdf|fingerprint|F1|metal|intention|winner|bias|recover|reference|pocket|box|cube|placement|drift|form|threshold|site, excluding the 55 inventory lines (with the +2 shift applied from :560), then reading Appendix A (:5-15), C (:146-250, :263-270, :485-490, :512-514), F (:657-668, :722, :784-790), G (:871), H/I (:1074-1130, :1186-1224, :1228-1262, :1265, :1337-1345, :1385-1415) in full. Section 7 claims in this dimension checked against per_pose_two_conventions.csv and hold: AutoDock* validity-gate cost 2/4/3/3 at d=1/5/15/30 (also 3 at d=10); DiffDock* 5/4/3/3/3; EquiBind* 2/3/3/3/3 so the Table 22 (Accurate-but-Invalid, Thesis_short.lot) EquiBind row coincides; Kabsch<=1 A PB-gated at d=30 74.3/74.6% identical with kabsch_nearest (kabsch_min_all would give 75.2 for DiffDock, so D2's argmin-RMSD copy is what keeps it fixed); Fig 30 panel A does carry a 'Multi-instance 46%' bar (image35.png opened); Table 23 design-to-test has no numbers. Also verified plan 1.5 pool counts 217 vs 214 and the :235 caption clause 'buys nothing at rank-1' survives under nearest (exh64 and exh92 both 123 valid rank-1). Scratch files under scratchpad/wf2/sweep_hits.txt. No repository file was modified."
+}

@@ -1,0 +1,72 @@
+{
+ "dimension": "methodology",
+ "role": "COMPLETENESS AUDITOR",
+ "refuted": [],
+ "corrected": [],
+ "missing": [
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/pocket_comparison_report.py",
+   "line": 1141,
+   "what": "`lig = bench / name / f\"{name}_ligand.sdf\"` then `cc = _sdf_centroid(lig)` (:1142) and `atoms = _sdf_heavy_atoms(lig)` (:1155): fpocket/P2Rank pocket-centre accuracy (DCC and DCA) is measured against the single reference instance only. The hub-script inventory lists this site but the plan never mentions the script (grep of PLAN for `pocket_comparison` returns nothing; Phases 1-2 and Section 3 omit it). No short-build consumer was found (grep of body_main_short.tex, body_appendix_short.tex, REGENERATE.md, _build_reproduction_notebook.py for `pocket_comparison`, `DCC`, `DCA` returns nothing), so it is a scope decision the plan must record rather than a thesis number.",
+   "change": "Either add to Phase 2 as a crystal-referenced consumer that takes the minimum over copies (a predicted pocket on another chain's copy is a correct pocket), or list it in Section 7 explicitly as a non-thesis diagnostic left on the single instance.",
+   "effort": "small",
+   "current_value": "single instance _ligand.sdf",
+   "new_value": "min over all records of _ligands.sdf, or documented as out of scope"
+  },
+  {
+   "file": "/home/manndo/master_dev/Data/PoseBuster Benchmark Set/README.txt",
+   "line": 47,
+   "what": "\"1. PDB file PDB_CCD_protein.pdb: The protein structure without the ligand of interest without solvents and with all cofactors.\" (:47-49). Every copy of the ligand of interest is removed from the receptor, so every copy's site is vacant in the docking receptor and reachable by a whole-protein search. The inventory cites README :55-59 for the two SDF roles but not :47-49, which is the premise that makes nearest-copy scoring fair for a blind box (and the reason the paper's 25 A cube did not fully suppress it, see plan_errors).",
+   "change": "Cite README :47-49 beside :55-59 in the D11 justification and in the :664 rewrite.",
+   "effort": "trivial",
+   "current_value": "not cited",
+   "new_value": "cited as the vacancy premise"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Section 0 D11 rejected-alternatives cell (:40), Phase 5 draft for :664 (:302-303), Section 3.3 row 1201 (:458 \"W: add the regime clause (cube excluded the copies)\")",
+   "claim": "\"Its 25 \u00c5 cube centred on the reference kept the other copies outside Vina's search\" and \"its Vina anchor was inert only because the 25 \u00c5 cube excluded the copies\".",
+   "correction": "False as a universal statement. Recomputed from Data/PoseBuster Benchmark Set/<id>/<id>_ligands.sdf (scratch /tmp/.../wf2/copies_datacheck.csv): 16 of the 143 multi-copy ids have an alternate with at least one heavy atom inside the 25 \u00c5 cube centred on the reference centroid (6YJA_2BA, 6YYO_Q1K, 7A9E_R4W, 7AFX_R9K, 7CD9_FVR, 7ED2_A3P, 7JY3_VUD, 7KM8_WPD, 7O0N_CDP, 7ODY_DGI, 7TSF_H4B, 7UJ5_DGL, 7UXS_OJC, 7VKZ_NOJ, 7WL4_JFU, 7Z1Q_NIO), 8 of them with the alternate centroid inside. The paper's own Vina rows (posebusters_paper_results.csv, post-processing none, 308 ids) score 57.3 % RMSD<=2 on multi-copy ids against 61.8 % on single-copy ids. The drafted thesis sentence must be softened to \"kept most other copies outside\" or quantified (16 of 143 reachable), and the D11 rationale should not rest on the cube making the convention inert.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 0 D4 (:33) \"verify once that membership agrees when tested against every copy\"; Section 7 \"Metal-adjacent stratum size 78 (D4)\"",
+   "claim": "Stratum membership is expected to agree across copies, so a single verification step suffices and the 78 is unchanged.",
+   "correction": "The verification was run here (element-based metal set, 5 \u00c5 from any heavy atom of the copy, protein.pdb HETATM records) and membership does NOT agree for two analysed ids. 7JHQ_VAJ: reference copy 2.42 \u00c5 from a metal, its three alternates 21.8 / 22.5 / 39.5 \u00c5 away (centroid separations 37.1 / 28.8 / 42.9 \u00c5). 7TB0_UD1: reference 9.04 \u00c5 from the nearest metal (outside the stratum), alternate 1 sits 3.17 \u00c5 from a Na+ (HETATM NA in 7TB0_UD1_protein.pdb). Both ids carry headline-arm poses within 2 \u00c5 of an alternate in nearest_copy_alldepths.csv (7JHQ_VAJ: 5 autodock_mgltools_exh128 + 5 autodock_mgltools_exh128_gnina + 3 unidock2 poses; 7TB0_UD1: 3 diffdock + 3 diffdock_smina poses). The plan needs a recorded decision on how a pose scored against a copy in the other stratum is counted in the stratum rates at body_main_short.tex:868 and body_appendix_short.tex:165, not a presumed-to-pass check. Note the element-based definition yields 77 of 303 (79 of 308), not 78, so the unregistered generator's exact rule is still unknown; borderline reference distances: 7CL8_TES 4.63, 7MSR_DCA 4.53, 7TOM_5AD 4.86, 8HO0_3ZI 4.64, 7OP9_06K 5.26, 7LOU_IFM 5.37 \u00c5.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 0 \"External convention, confirmed\" paragraph (:62-64) and inventory site posebusters_paper_results.csv:1",
+   "claim": "\"Recomputed from the Zenodo results CSV on the 308 ids: Vina 59.7 % RMSD \u2264 2 \u00c5, DiffDock 38.0 %\" presented as the like-for-like anchors.",
+   "correction": "Those are the `post-processing == none` rows. The CSV (columns dataset, method, post-processing, ...) also carries `energy minimization` rows for every method: Vina 54.9 %, DiffDock 39.6 %, Gold 54.2 %, EquiBind 5.5 % on the 308, with 7-9 NaN rmsd values each. The thesis's DiffDock* is smina-minimised and AutoDock* is gnina-minimised, so the like-for-like published anchor is a decision (raw vs minimised row) the plan should state wherever a published percentage is quoted; the plan is silent on the row.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 5 draft for :664 (:299-300) and 5.3 (:287) \"median 36.0 \u00c5\"",
+   "claim": "\"138 of them among the 303 analysed complexes, and the nearest other copy lies a median 36.0 \u00c5 from the reference.\"",
+   "correction": "36.0 \u00c5 is the per-id nearest-alternate median over the 143 multi-copy ids of the 308 (recomputed 35.98). Over the 138 analysed ids it is 36.3 \u00c5, and over all 211 alternates 40.4 \u00c5. The sentence pairs the 303 denominator with the 308-basis median; state the basis or use 36.3 \u00c5.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 7 \"Dataset descriptors\" bullet (:565) and Phase 6 (:313)",
+   "claim": "\"Fig 30 panel A already shows the 46 % multi-instance share\".",
+   "correction": "Not verifiable in the short build. grep for \"instanc\" in body_appendix_short.tex hits only :664, :666 and :1218; the receptor-profile caption at :778 (fig:appendix-dataset-9) reads \"Resolved residues, chains per complex, distinct cofactor types and ligand-versus-receptor size\" and no dataset caption (:676-:789) names ligand instances or copies. The 46 % (143/308) appears only in the notebook builder cell (PoseBusters_DataSet_Analysis.ipynb cell bcdf27d8, `n_inst = sum(1 for _ in Chem.SDMolSupplier(... _ligands.sdf))`). If the figure is to carry the disclosure, its caption needs the words; otherwise drop the claim.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 7 \"X-ray crystal control\" bullet (:559-561)",
+   "claim": "The X-ray control is unaffected because it busts the deposited ligand with no reference and no RMSD.",
+   "correction": "The control busts only `<id>_ligand.sdf` (_build_xray_control_notebook.py:283 `lig = BENCH / i / f\"{i}_ligand.sdf\"`, :503 `_buster.bust(lig, None, prot, ...)`), one instance per entry. Under the new endpoint 211 alternate instances become admissible references that the control never busted, so the control's ceiling no longer covers every reference the endpoint can select. The hub-script inventory itself flags \"Optional: bust all copies too, so the ceiling covers the instances that now count as correct\". Section 7 should either move this to Phase 7 as an extension or record a scope caveat.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 0 \"External convention, confirmed\" paragraph (:63-64)",
+   "claim": "\"under that same nearest-copy scoring the published DiffDock rate is 31.5 % on the 143 multi-copy ids against 43.6 % on the 165 single-copy ids\" (offered as evidence the convention is live for blind methods).",
+   "correction": "The paper's Vina rows show the same direction under the 25 \u00c5 cube the plan calls inert: 57.3 % on multi-copy against 61.8 % on single-copy ids. Part of the multi/single gap is therefore a difficulty confound (multi-copy entries are larger oligomers), not a convention effect. If the DiffDock gap is quoted, the Vina gap should be quoted beside it or the inference dropped.",
+   "severity": "minor"
+  }
+ ],
+ "confirmed": 0,
+ "notes": "Fresh sweep angles: (1) grep of all `_ligand(s).sdf` consumers under Scripts/ found hub :9323/:9351 (covered by plan 1.10), pocket_comparison_report.py:1141 (NOT in plan), boxed308_raw_arm_metrics.py:123 (plan :268), _build_xray_control_notebook.py:283 (Section 7). (2) Installed PoseBusters re-read from a different angle: redock.yml :296-312 sets load_all: True on mol_pred as well as mol_true and sanitize False on both; rmsd.py :83-128 robust_rmsd falls back through charge/tautomer stripping and AssignBondOrdersFromTemplate before returning NaN, so a per-conformer NaN is rare; identity.py:29 and sucos.py:141 also consume mol_true (sucos iterates conformers too). run_posebusters.py never sets mol_true (only in _METADATA_COLS :606 and _EXCLUDE_COLS :637), so the footnote battery at body_main_short.tex:140 was produced elsewhere; the inventory's open question stands. (3) Data checks not in the inventory: no alternate has fewer than 9 protein heavy atoms within 4 \u00c5 (7Z1Q_NIO alt 9 vs 14 for the reference; 7RZL_NPO alt 10 vs 11) and no alternate has under half the reference's contact count, so the 'copy on an absent symmetry mate' risk is nil and the `n_native = len(native_contacts) or 1` denominator (hub :1532) stays well-defined per copy. copies_inventory.csv covers all 428 folders (675 records), not 308; the 308 list is Data/PoseBuster Benchmark Set/posebusters_pdb_ccd_ids.txt. The paper CSV's `crystal_structures` rows give rmsd 0.0 for all 308 ids, consistent with (but not discriminating for) load_all scoring. (4) The D11 :109 draft's '165 single-copy complexes' is correct on both bases (308-143 and 303-138). Scratch outputs: /tmp/claude-1000/-home-manndo-master-dev/55d7a717-f5e7-4353-8e73-45c4a49f6d87/scratchpad/wf2/datacheck.py and copies_datacheck.csv. No file under /home/manndo/master_dev was modified."
+}

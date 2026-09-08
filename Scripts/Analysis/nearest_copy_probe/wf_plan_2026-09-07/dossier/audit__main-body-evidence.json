@@ -1,0 +1,81 @@
+{
+ "confirmed": 94,
+ "refuted": [],
+ "corrected": [
+  {
+   "site": "thesis_latex/body_main_short.tex:197 (footnote: 32.7% / 33.7% / 32.3%)",
+   "correction": "The new-value clause 'the 33.7% confidence-rank rate becomes about 43.6% under nearest-copy without validity' mislabels the basis. In the probe CSV DiffDock-smina rank-1 near-native WITHOUT validity is 107/303 = 35.3% (reference) and 137/303 = 45.2% (nearest copy); WITH validity it is 103 = 34.0% and 132 = 43.6%. The printed 33.7% matches neither basis (33.7% of 303 = 102.1, of 300 = 101.1), so the footnote's cohort is untraced. Whole footnote = recompute; do not write 43.6% as the unvalidated rate."
+  },
+  {
+   "site": "thesis_latex/body_main_short.tex:388 ('202 complexes against 199')",
+   "correction": "New values 217 against 214 are right, but the depends_how 'same mixed basis as printed' is wrong. The raw exh128 arm has identical top-30 counts with and without the validity gate (202/202 reference, 217/217 nearest copy; gate removes 0 at d=15 and d=30), so the printed 202 is the valid-and-near-native count on the same basis as the 199. No basis mix exists to preserve."
+  },
+  {
+   "site": "thesis_latex/body_main_short.tex:408 (footnote 6,169 / 2,329)",
+   "correction": "6,169 -> 7,566 confirmed (PB-valid, top-15, three arms, centroid <= 8 A to nearest copy). The clipping rule 'in-place > 5 or best-fit > 5' gives 2,337 on the reference basis against the printed 2,329, so the figure script's rule differs; under nearest copy the same rule gives 2,864 (all on the in-place axis, bestfit never alone). Keep 'recompute' but the expected new value is about 2,860, not near 2,329."
+  },
+  {
+   "site": "thesis_latex/body_main_short.tex:476 (97.7% / 88.1% / 84.5%)",
+   "correction": "Canonical any-pose 4 A reach on the probe CSV is AutoDock 268/303 = 88.4% and DiffDock 258/303 = 85.1%, so the printed DiffDock 84.5% is TWO complexes off, not one as the site (and the M2 note) imply. New values confirmed: pooled 302/303 = 99.7%, AutoDock 280 = 92.4%, DiffDock 273 = 90.1%, AutoDock+DiffDock also 302 (EquiBind adds nothing still holds). Generating script must still be traced before editing."
+  },
+  {
+   "site": "thesis_latex/body_main_short.tex:414 ('rank-1 median in-place RMSD of 2.9 A')",
+   "correction": "Basis resolved: the printed 2.9 A is the near-site (centroid <= 8 A), PB-valid, rank-1 EquiBind cohort (2.98 A per pose and per complex alike); the untrimmed PB-valid rank-1 median is 8.73 A, so the trim is load-bearing. Under nearest copy the same cohort gives 3.28 A (untrimmed 6.91 A). The value RISES because the cohort admits poses near alternate copies, so the wording 'already exceeds the near-native threshold' stays true. Change 'confirm basis' to 3.3 A, effort trivial."
+  }
+ ],
+ "missing": [
+  {
+   "file": "thesis_latex/Thesis_short.tex",
+   "line": 63,
+   "what": "Abstract, final sentence: 'On a single device-occupancy basis the configured AutoDock workflow was the most expensive per qualifying pose'",
+   "current_value": "AutoDock most expensive per qualifying pose (median charged 137.2 s vs 49.4 s DiffDock)",
+   "new_value": "recompute",
+   "depends_how": "Per-complex charged cost divided by qualifying poses (PB-valid & rmsd<=2 vs single instance); under nearest copy the median AutoDock succeeding complex yields 2 qualifying poses instead of 1 (mean 1.56 -> 2.07) while DiffDock's median rises 5 -> 7 (mean 9.60 -> 11.30), so the AutoDock median roughly halves and DiffDock's falls less",
+   "change": "WORDING only if the charged-median ordering flips; the inventory's :63 site lists five number swaps but omits this sixth clause",
+   "effort": "trivial",
+   "risk": "If AutoDock's charged median falls below DiffDock's the Abstract, Kurzfassung :98-99, :744, :758, :817, :824, :848 and :850 all change wording"
+  },
+  {
+   "file": "thesis_latex/Thesis_short.tex",
+   "line": 98,
+   "what": "Kurzfassung :98-99: 'In einheitlicher Belegungsrechnung war der AutoDock-Ablauf am teuersten pro qualifizierender Pose'",
+   "current_value": "AutoDock am teuersten",
+   "new_value": "recompute",
+   "depends_how": "Same charged-median ordering as Abstract :63",
+   "change": "WORDING only if the ordering flips; any German rewording must be length-neutral on the full page",
+   "effort": "trivial",
+   "risk": "Kurzfassung page has zero slack"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 850,
+   "what": "RQ3 conclusion: 'Configured AutoDock was most expensive per qualifying pose in charged, CPU-core and GPU seconds. This does not apply to Vina alone. Removing gnina puts its charged and GPU cost below DiffDock, although Vina retains the highest CPU-core cost.'",
+   "current_value": "most expensive in all three currencies; Vina-only charged and GPU below DiffDock",
+   "new_value": "CPU-core and GPU orderings hold by arithmetic (AutoDock about 1,233 CPU-s and 83.6 GPU-s per qualifying pose vs DiffDock about 2.30 and 39.1, EquiBind about 159.5 and 1.35; Vina-only about 1,264.7 CPU-s, 0 GPU); the charged-median ordering is recompute",
+   "depends_how": "Pooled currencies divide fixed campaign totals (about 545,112 CPU-core-s, 36,972 GPU-s) by the qualifying-pose count, which rises 311 -> 442 (Vina-only 302 -> 431)",
+   "change": "Numbers implicit; WORDING only if the charged median flips; not listed in the inventory",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 754,
+   "what": "'AutoDock nevertheless has the highest GPU cost per qualifying pose because its qualifying yield is low.'",
+   "current_value": "118.9 GPU-s per qualifying pose vs 49.9 DiffDock",
+   "new_value": "about 83.6 vs about 39.1, ordering holds",
+   "depends_how": "GPU-seconds divided by qualifying poses vs single instance",
+   "change": "None to wording; the inventory's :754 site covers only the 311 / 1,622 / 466 clause",
+   "effort": "trivial"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 744,
+   "what": "'The configured AutoDock pipeline is the most expensive route to a qualifying pose under blind whole-protein search.'",
+   "current_value": "headline cost ordering",
+   "new_value": "recompute",
+   "depends_how": "Charged median per qualifying pose vs single instance; AutoDock median qualifying poses per succeeding complex doubles",
+   "change": "WORDING only if the ordering flips; the inventory's :744 site lists the Friedman, ratio and yield clauses but not this headline sentence",
+   "effort": "trivial"
+  }
+ ],
+ "notes": "Method: read body_main_short.tex :80-215, :255-540, :700-876 and Thesis_short.tex :55-105 with line numbers; every inventory line and quotation is present as stated (Kurzfassung :80 wording spans :80-81, within tolerance). Re-derived all derivable numbers from the probe CSV (53,651 rows, 303 complexes) with the thesis's own stats_utils (newcombe_paired_diff_ci, mcnemar_power, tost_paired_proportions, cochran_q, mcnemar_exact, holm, wilson_ci); scripts and outputs in scratchpad/wf/audit_verify.py, audit_verify.out, audit_verify2.py. Reference-basis recomputation reproduces every printed value it touches (111/198/199, 103/167/169, 55/80/80; +87/+64/+25 with Wilson 23.9-34.0 / 16.9-26.1 / 5.7-11.9; 60/52 p 0.509, +2.6 [-4.2,+9.4]; 88/48 7.6e-4; 82/51 0.009 +10.2 [+2.8,+17.5]; 81/51 0.011 +9.9 [+2.5,+17.1]; MDE 9.8 pp, power 0.12, n 4,162; 90% -3.1..+8.3; failures-with-no-pose 54.2/67.0/89.9; raw-vs-gnina 39/22 p 0.040; Table 1 NN 202/307, 202/319, 152/1,683, 173/1,715, 83/498; qualifying 311/1,622/466/302 over 199/169/80/202; 62.7% = 190/303; 6,169; near-site medians 1.54->5.06). Nearest-copy values confirmed exactly as the inventory states: 149/213/214, 132/179/183, 57/83/83; NN-only 151/137/59 and gains +65/+45/+27; validity gate removes AutoDock 2/4/3/3, DiffDock 5/4/3/3, EquiBind 2/3/3/3 (so 'at most five' is right); +64/+47/+26 with Wilson 16.9-26.1 / 11.9-20.0 / 5.9-12.3; 15->30 +1/+4/+0 with DiffDock b=4 c=0 p=0.125; rank-1 73/56 p 0.159 +5.6 [-1.7,+12.8], MDE 10.5 pp, power 0.32, n_needed 1,062, 90% [-0.5,+11.7]; top-5 88/48 identical in both conventions; top-15 82/48 p 0.0036 +11.2 [+3.9,+18.4]; top-30 79/48 p 0.0075 +10.2 [+3.0,+17.3]; Cochran Q p 2.0e-17 (d=1) to 1.6e-29 (d=30); max EquiBind p_holm 8.1e-13; failures-with-no-pose 57.8/70.2/89.4; raw exh128 130/198/217 (valid) and 131/171/198/217 (NN-only); gnina-vs-raw rank-1 39/20 p 0.018; Table 1 NN 217/437/4.9%, 217/451/5.0%, 161/2,118/23.5%, 186/2,169/24.1%, 86/515/5.7%; qualifying 442/2,068/483 (Vina-only 431) over 214/183/83 (217), AutoDock median per succeeding complex 2; 4 A rank-1 241/225/144, any-pose 92.4%/90.1%/52.8%, pooled 302 = 99.7%; 8 A rank-1 trim 249/303 = 82.2%; near-site pool 7,566; AutoDock near-site medians 1.49 -> 4.94 (+3.45), DiffDock 1.59 -> 2.10 (+0.51), EquiBind 3.28 -> 4.21. Kurzfassung character deltas verified (0, +1, +11). Cost arithmetic verified (545,112/442 = 1,233.3; /431 = 1,264.7; 36,972/442 = 83.6; /214 = 172.8; DiffDock 2.30/39.1; EquiBind 159.5/1.35; 442-431 = 11). The inventory correctly marks Kabsch-form, cluster-reach, interaction-fingerprint, cost-median and non-rescored-arm sites as recompute; the probe CSV has no per-copy Kabsch column and no timing. Note for the planner: scratchpad/wf/ already holds other agents' files (kabsch_nearest.csv, nearest_copy_extra_arms.csv, triple_gate_depths_two_conventions.csv) that may supply several of those 'recompute' values; I did not validate them and they are outside this dimension. No file under /home/manndo/master_dev was modified."
+}

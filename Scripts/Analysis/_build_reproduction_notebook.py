@@ -405,7 +405,14 @@ reg.add(Stage(
           "which the meeko preset cancels, because autodock_gnina is IN that preset. "
           "The two flags together dropped the whole AutoDock family and Figures 2 and 3 "
           "rendered with two tools instead of three. No error was raised. The dominant "
-          "arm must be named in full."))
+          "arm must be named in full.\n"
+          "CORRECTED 2026-09-03: the cross-tool baseline in _TOPK_TEST_PAIRS was raw "
+          "Vina, while Appendix C declares the family is computed on the gnina-rescored "
+          "arm and Table 21 prints that arm's rates. The script carried raw Vina in "
+          "every commit of its history, so it tested 31.4 against DiffDock's 33.7 "
+          "instead of the printed 37.3, and reported ns at three of the four depths "
+          "where the thesis reports significance. Table 21 had no assertion behind it, "
+          "which is why the drift survived. check_table_21 now pins it."))
 print(f"{len(reg)} stages registered")
 ''')
 
@@ -1011,10 +1018,36 @@ reg.add(Stage(
            "at ligand level in a sensitivity analysis reported with its result",
     cmd=[VINA_PY, ANA / "orai_ligand_level_contrasts.py", *VARIANTS,
          "--per-unit-csv", f"{TMSHARE}/pbvalid_tm_share_per_unit.csv",
+         # All nine input paths are stated. See the note below: every one of the
+         # eight beyond --per-unit-csv defaults to a SUPERSEDED tree.
+         "--exp-quality-csv", f"{OEXP}/pose_clusters/cluster_quality_per_tool.csv",
+         "--bench-quality-csv", f"{OCTL}/pose_clusters/cluster_quality_per_tool.csv",
+         "--exp-pair-csv", f"{OEXP}/pose_clusters/per_pair.csv",
+         "--bench-pair-csv", f"{OCTL}/pose_clusters/per_pair.csv",
+         "--pandamap-totals-csv",
+         f"{CANONICAL['orai_pandamap_compare'].relative_to(ROOT)}/pandamap_pose_totals.csv",
+         "--pandamap-exp-dir",
+         str(CANONICAL["orai_pandamap_experimental"].relative_to(ROOT)),
+         "--pandamap-bench-dir",
+         str(CANONICAL["orai_pandamap_control"].relative_to(ROOT)),
+         "--exp-posebusters-csv", f"{OEXP}/dock/posebusters_filtered_results.csv",
+         "--bench-posebusters-csv", f"{OCTL}/dock/posebusters_filtered_results.csv",
          "--out-dir", str(TMSHARE)],
     notes="The effective number of independent experimental observations is three "
           "ligands, so this is what keeps the frame-ligand tests from being read as "
-          "more powered than they are."))
+          "more powered than they are.\n"
+          "CORRECTED 2026-09-03: the stage passed only --per-unit-csv and the three "
+          "variant flags. The script takes nine input paths and the other eight default "
+          "to the superseded plain trees, so the registered command silently re-derived "
+          "the sensitivity analysis from one generation back. It did not error and the "
+          "output landed under the canonical out-dir, which is what made it invisible. "
+          "The divergence is material rather than cosmetic: EquiBind's cluster-quality "
+          "contrasts move from 6 frame-ligand units to 4, Compactness/EquiBind flips "
+          "from -0.09 ns to +0.39, and adjusted p-values move across the whole file. "
+          "This is the same defect already documented for orai_pandamap_compare, which "
+          "was fixed there and left standing here. Verified 2026-09-03: with the paths "
+          "above the script reproduces the shipped sidecar exactly, byte for byte apart "
+          "from its own generated-on timestamp line."))
 
 reg.add(Stage(
     name="orai_region_consensus", section="7. Orai cross-panel",
@@ -1117,27 +1150,63 @@ confidence of its own.
 
 A failure here is reported, not corrected. If a number does not reproduce, that
 is a finding about the thesis and belongs in a conversation, not in a silent edit.
+
+Coverage was extended on 2026-09-03 from 8 of the 27 tables to 23, and the figure
+provenance from 24 of the 39 shipped assets to 37 with the remaining 2 declared
+and their reason recorded. The four tables still unread are authored from the
+cited literature or print no numbers at all, and `REPRODUCTION_COVERAGE_2026-09-03.md`
+names each one with its reason. A completeness assertion now reads the two body files
+and fails if the thesis prints an image that is neither paired nor declared, so a
+figure added later cannot go unchecked while the count still reads as full.
+
+No entry is expected to fail. Table 12's AutoDock column was the one recorded defect,
+carrying the pre-Fr0 generation while the DiffDock column and the surrounding body
+prose were current. It was regenerated onto the canonical run on 2026-09-03 and two
+rows were added, so every check now reproduces. The machinery for recording a defect
+is kept below, because a table left out of the harness is exactly how Table 21
+drifted undetected since its first commit.
 """)
 
 code(r'''
 import thesis_assertions as TA
 
 report = TA.run_all(verbose=True)
+
+# Entries the spec marks expected_to_fail are recorded defects, not regressions.
+EXPECTED = tuple(f"{k}[" for k, v in TA._spec().items()
+                 if isinstance(v, dict) and v.get("expected_to_fail"))
 print()
-print(report.summary())
+print(report.summary(EXPECTED))
 ''')
 
 code(r'''
-if report.failures:
-    print("NUMBERS THAT DID NOT REPRODUCE\n")
-    for f in report.failures:
+recorded = [f for f in report.failures if f.key.startswith(EXPECTED)]
+unexpected = [f for f in report.failures if f not in recorded]
+
+if unexpected:
+    print("NUMBERS THAT DID NOT REPRODUCE AND ARE NOT RECORDED DEFECTS\n")
+    for f in unexpected:
         print(f"  {f.key}")
-        print(f"      thesis   : {f.expected}   ({f.source})")
+        print(f"      thesis    : {f.expected}   ({f.source})")
         print(f"      recomputed: {f.actual}")
-        print(f"      {f.note}")
+        if f.note:
+            print(f"      {f.note}")
         print()
 else:
-    print("Every checked number reproduces from the canonical trees.")
+    print("No unexpected failures." if recorded else
+          "No failures. Every number checked reproduces.")
+
+if recorded:
+    print(f"\nRECORDED DEFECTS ({len(recorded)} cells). These are known and are asserted "
+          f"so they stay visible.\n")
+    seen = set()
+    for f in recorded:
+        table = f.key.split("[")[0]
+        if table not in seen:
+            seen.add(table)
+            print(f"  {table}: {f.note}")
+    for f in recorded:
+        print(f"    {f.key:44s} thesis {f.expected}   recomputed {f.actual}")
 ''')
 
 # =============================================================================

@@ -1,0 +1,177 @@
+{
+ "dimension": "downstream-scripts",
+ "role": "COMPLETENESS AUDITOR",
+ "refuted": [],
+ "corrected": [],
+ "missing": [
+  {
+   "file": "Scripts/Analysis/autodock_exhaustiveness_returns.py",
+   "line": 214,
+   "what": "CASCADE_PINS hard-codes the published cascade rows for exh18 and exh92 (`18: (303, 8986, 303, 8974, 99.9, 126, 160, 1.8, 209, 2774, 30.9, 98, 112, 70.0, 1.2)`, `92: (..., 194, 290, 3.2, 221, 2828, 31.5, 159, 212, 73.1, 2.4)`); assert_cascade (:619-641) compares rmsd2_complexes / rmsd2_poses / rmsd2_pct / triple_* against them and main() raises `SystemExit(\"CASCADE REGRESSION ...\")` at :1373-1377 on any mismatch. The harness stage bench_exhaustiveness_returns (_build_reproduction_notebook.py:616-619) feeds it BENCH_REPORT/per_pose_metrics.csv, so the first nearest-copy run aborts the stage.",
+   "change": "Re-pin CASCADE_PINS to the nearest-copy cascade after the hub rebuild (or make the pins convention-keyed and read `reference_convention` from the manifest); do this BEFORE Phase 3.2, not as a 'no code change' consumer.",
+   "effort": "S",
+   "current_value": "exh18 rmsd2 = 126 complexes / 160 poses / 1.8 %; exh92 rmsd2 = 194 / 290 / 3.2 % (both reproduce today on the ladder CSV under column `rmsd`)",
+   "new_value": "exh18 rmsd2 = 144 / 219 / 2.4 %; exh92 rmsd2 = 209 / 407 / 4.5 % (computed from nearest_copy_ladder_arms.csv `rmsd_nearest_copy`); kabsch1_* and triple_* pins are recompute"
+  },
+  {
+   "file": "Scripts/Analysis/run_pandamap.py",
+   "line": 1175,
+   "what": "`crystal_csv = cfg.output_dir / \"crystal_interactions.csv\"; if cfg.benchmark_dir and (cfg.overwrite or not crystal_csv.exists()):` \u2014 the crystal reference is profiled only when the file is absent or --overwrite is set. The harness config Scripts/Docking/configs_thesis/07_benchmark_pandamap.yaml:67 has `overwrite: false`, and pandamap_results/benchmark_matched_equibind/crystal_interactions.csv (1.85 MB, 2026-08-14) and crystal_pose_summary.csv (304 lines) already exist, so a plain re-run of bench_pandamap keeps the single-instance native fingerprints. bench_pandamap also `needs=[\"bench_posebusters_matched\"]` only (_build_reproduction_notebook.py:528), so a hub rebuild does not re-trigger it.",
+   "change": "Add an explicit step to Phase 2.2 / 3.2: delete (or move aside) crystal_interactions.csv and crystal_pose_summary.csv in the arm's output_dir, or add a --refresh-crystal flag that recomputes only the crystal tasks, before bench_pandamap; do NOT pass --overwrite, which re-profiles every docked pose.",
+   "effort": "S",
+   "current_value": "one row block per (protein, ligand) with pose_name `<protein>__<ligand>/crystal`, pose_rank 0 (:969-971)",
+   "new_value": "one block per record of _ligands.sdf (`crystal_k`), method still `crystal` so `_also_filter(crystal, \"crystal\")` at pandamap_interaction_report.py:2614 keeps them"
+  },
+  {
+   "file": "Scripts/Analysis/pandamap_interaction_report.py",
+   "line": 1484,
+   "what": "`cryst_fp = {(p, l): pose_fingerprint(g, \"typed\") for (p, l), g in crystal.groupby([\"protein\", \"ligand\"])}` builds the crystal column of the cross-method similarity matrix (`labels = methods + [\"crystal\"]` :1499; `05_fingerprint_similarity_top5.png`, a registered harness output at _build_reproduction_notebook.py:537). Not among the three sites the plan names (:1181, :1716, :2044). Once crystal_k rows share (protein, ligand), this groupby silently UNIONS every copy's contacts into one reference.",
+   "change": "Select the copy per pair (or per pose) using the hub's nearest_copy_index instead of grouping the crystal frame by (protein, ligand); same fix at :2435 (`cryst_typed` per-complex figure).",
+   "effort": "M",
+   "current_value": "one typed fingerprint per (protein, ligand) = reference instance",
+   "new_value": "per-pose (or per-pair majority) copy chosen from nearest_copy_index; union of copies must be prevented"
+  },
+  {
+   "file": "Scripts/Analysis/interaction_pose_basis_audit.py",
+   "line": 227,
+   "what": "`crystal_fp = {(p, l): typed_fp(g) for (p, l), g in crystal.groupby([\"protein\", \"ligand\"])}` (and :406 `fp_ref = {(p, l): typed_fp(g, **kw) ...}`) reads crystal_interactions.csv directly at :184 and unions all rows of a pair. The plan (2.3) calls this script 'automatic' via the :206 rmsd join only. With crystal_k rows the App. B verbatim numbers (union Jaccard, section C site filter at :325/:353) change by construction, not by the endpoint.",
+   "change": "Add per-copy selection to the audit (join nearest_copy_index from --metrics, or read a per-pose copy id written by pandamap_interaction_report into recovery_detail_per_pose.csv) and decide the reference for the top-5 UNION when a method's five poses split across copies.",
+   "effort": "M",
+   "current_value": "one reference fingerprint per pair",
+   "new_value": "decision required (per-pose copy vs per-pair majority copy) for union_jaccard :104-118"
+  },
+  {
+   "file": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 553,
+   "what": "`_cluster_purity` : `d = np.linalg.norm(C[idx] - crystal, axis=1)` \u2014 purity_centroid of the crystal-closest cluster measured to one crystal point; not in the plan's 2.1 list (:921, :1109-1111, :562, :963, :1020, :4064, :3697, :980).",
+   "change": "Take the min over copy centroids per member (or purity vs the copy that defined the correct cluster under D5).",
+   "effort": "S",
+   "current_value": "single crystal ndarray",
+   "new_value": "list of copy centroids; min per member"
+  },
+  {
+   "file": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 614,
+   "what": "`_ensemble_stats` : `pose_d = np.linalg.norm(sc - crystal, axis=1)` (oracle_dist / oracle_hit) and :624 `top1 = _dist(top1_center, crystal)` \u2014 the tool-combination ensembles behind the pooled three-tool oracle the plan quotes as 98.0 \u2192 99.7 % (Section 1.7). Not listed in 2.1.",
+   "change": "min over copies for both pose_d and top1.",
+   "effort": "S",
+   "current_value": "distance to reference centroid",
+   "new_value": "min over copy centroids"
+  },
+  {
+   "file": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 944,
+   "what": "`_pocket_crystal_stats` : `dists = [_dist(p[key], crystal) for p in pockets]` \u2014 top1/oracle centre-to-crystal for ensemble clusters, fpocket and p2rank pockets (called at :1182-1184; feeds the `crystal comparison` block and the ECDF at :1385). Not listed in 2.1. 16 crystal-distance operations exist in the file, the plan names 6.",
+   "change": "min over copies; also update the example scatter at :1314-1315 (`ax.scatter(*cr, marker=\"X\", ... label=\"crystal\")`) to draw every copy.",
+   "effort": "S",
+   "current_value": "single point",
+   "new_value": "min over copies / all copies plotted"
+  },
+  {
+   "file": "Scripts/Analysis/pose_cluster_crystal_pocket_report.py",
+   "line": 3927,
+   "what": "`_CACHE_SCHEMA = 5`; the analysis signature (:3940-3977) fingerprints per_pose_csv by sha256 but keys benchmark_dir by PATH only ('crystal directories are keyed by path only ... pass --force if you regenerate those', :3947-3949). A code change to crystal_centroid is invisible to the cache; the harness cmd (_build_reproduction_notebook.py:511-521) passes no --force.",
+   "change": "Bump _CACHE_SCHEMA when crystal_centroid starts returning copy lists (mirror D8's hub bump 5\u21926), or add --force to the bench_clusters stage for the rebuild.",
+   "effort": "S",
+   "current_value": "schema 5, crystal source not fingerprinted",
+   "new_value": "schema 6 (or --force once)"
+  },
+  {
+   "file": "Scripts/Docking/Posebusters/rebust_hydrogen_normalised.py",
+   "line": 67,
+   "what": "`PER_POSE = (REPO / \"posebusters_results/benchmark_full_protein_vina_scoring/dock\" / \"pose_comparison_report/per_pose_metrics.csv\")` \u2014 the plan lists :254-267 as an automatic re-reader, but the script is pinned to the notebook tree, not the canonical benchmark_matched_equibind tree, and its report header (:278-279) asserts 'RMSD/Kabsch columns are the published values'. Not a harness stage, not cited in the short build (grep 'hydrogen-normalis|re-bust' in body_*_short.tex: no hits).",
+   "change": "Either re-point PER_POSE to the canonical tree and drop the 'published values' header, or state that the hnorm cascade stays single-instance and is out of scope.",
+   "effort": "S",
+   "current_value": "full_protein_vina_scoring tree, single-instance RMSD",
+   "new_value": "decision needed"
+  },
+  {
+   "file": "Scripts/Analysis/topk_recovery_gnina_arm.py",
+   "line": 305,
+   "what": "Generated report text hard-codes raw-arm numbers: :305-306 'the committed 18_topn_within_thresholds_pbvalid_depths* files are the RAW AutoDock arm (78/145/150)', :331-333 \"body_main.tex currently prints 'Vina Q = 135' ... (Q = 134.69 ...)\", and the docstring :36-40 '111 / 198 / 199 for the AutoDock arm, 103 / 167 / 169'. All are single-instance values that the regenerated 18_* files will no longer show; the plan lists the script as 'no code change'.",
+   "change": "Remove or regenerate these literals when the stage is re-run (they are prose inside a harness output, topk_recovery_validity_gnina_arm report).",
+   "effort": "S",
+   "current_value": "78/145/150; Q = 134.69; 111/198/199; 103/167/169",
+   "new_value": "recompute from the rebuilt 18_* files"
+  },
+  {
+   "file": "Master_Docking_AD_Full_Protein.ipynb",
+   "line": 25,
+   "what": "cell[33] id=24f6dd5d L25-28: `%run Scripts/Analysis/posebusters_pose_comparison.py --pb-csv posebusters_results/benchmark_full_protein_vina_scoring/dock/posebusters_filtered_results.csv ... --out-dir posebusters_results/benchmark_full_protein_vina_scoring/dock/pose_comparison_report` with no convention flag. Cells [35] L72, [37] L10, [46] L12-13, [121], [122], [124] and the script defaults thesis_endpoint_diagnostics.py:41, optimization_benefit_stats.py:348-349, autodock_exhaustiveness_returns.py:222-223 all read that second tree. The plan never mentions this tree or the notebook (0 hits for 'Master_Docking' / 'full_protein').",
+   "change": "Decide (inventory decision 4) whether the full_protein tree is rescored; if D8 flips the hub default, cell[33] switches convention on its next run while the other cells keep reading a single-instance cache until they are re-run \u2014 add the flag explicitly to cell[33] and a dated note, or rescore the tree in Phase 3.",
+   "effort": "M",
+   "current_value": "second per_pose_metrics tree, single-instance, not mentioned",
+   "new_value": "explicit decision + flag"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Phase 2, step 2.4 and 2.5; Phase 3, step 3.2 (bench_exhaustiveness_returns listed as a stage that 'needs no code change')",
+   "claim": "`autodock_exhaustiveness_returns.py:570` is 'unchanged under D2; run it as the first consumer to prove the coupling holds'.",
+   "correction": "The script will not reach the coupling check: CASCADE_PINS at :214-217 pins exh18 rmsd2 to 126/160/1.8 % and exh92 to 194/290/3.2 %, assert_cascade (:619-641) compares them, and main() raises SystemExit('CASCADE REGRESSION ...') at :1373-1377. Under nearest-copy the ladder CSV gives exh18 144/219/2.4 % and exh92 209/407/4.5 %, so the stage aborts. Add a re-pin step (and decide whether pins become convention-keyed) before 3.2.",
+   "severity": "critical"
+  },
+  {
+   "plan_location": "Phase 2, step 2.2 and Phase 3, step 3.2 ('PandaMap crystal tasks then bench_pandamap_report')",
+   "claim": "Emitting one crystal task per record of _ligands.sdf is sufficient; the PandaMap crystal tasks then run.",
+   "correction": "run_pandamap.py:1175-1176 recomputes the crystal reference only when crystal_interactions.csv is absent or cfg.overwrite is true; 07_benchmark_pandamap.yaml:67 sets `overwrite: false`, the file exists in pandamap_results/benchmark_matched_equibind (2026-08-14), and bench_pandamap needs only bench_posebusters_matched (builder :528). Without an explicit delete-or-refresh step the single-instance fingerprints survive and Table 7 / Fig 7 / Fig 39 are rebuilt on the old reference.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 2, step 2.3",
+   "claim": "Only :1181 native_recovery, :1716 build_recovery_detail and :2044 need the nearest_copy_index join; the :2251 RMSD join is automatic; interaction_pose_basis_audit.py:206 is automatic.",
+   "correction": "The crystal frame is grouped by (protein, ligand) in five places in the report (:1185, :1484 similarity matrix behind 05_fingerprint_similarity_top5.png, :1729, :2044, :2435 per-complex figure) and twice in the audit (:227 and :406, which read crystal_interactions.csv directly at :184). With crystal_k rows every unlisted groupby unions all copies into one native set. The plan also takes no decision on the reference for the top-5 UNION fingerprints (union_jaccard audit :104-118; Fig 7 top-5 union) when a method's five poses are nearest to different copies \u2014 a pose-set-level question D2 does not settle.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 0 decisions and Phase 3 (no entry); inventory decision 4 'Which per_pose_metrics trees to rescore?'",
+   "claim": "(absent) The plan rescore scope is the canonical benchmark_matched_equibind tree only (D7, D8).",
+   "correction": "The inventory's decision 4 recommended rescoring the benchmark_full_protein_vina_scoring tree too; the plan neither adopts nor rejects it and never mentions the tree or Master_Docking_AD_Full_Protein.ipynb (grep: 0 hits). Four scripts default to that tree (thesis_endpoint_diagnostics.py:41, optimization_benefit_stats.py:348, autodock_exhaustiveness_returns.py:222, rebust_hydrogen_normalised.py:67) and notebook cells [33],[35],[37],[46],[121],[122],[124] read it. After D8 flips the hub default, cell[33] silently switches convention on its next run while the sibling cells keep a single-instance cache \u2014 a mixed-convention notebook.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 3, step 3.2 ('14 of the 19 section-3 stages plus 3 new')",
+   "claim": "The re-run list bench_validity_report ... bench_diffdock_rerank covers every section-3 stage that consumes the rebuilt table.",
+   "correction": "bench_ligand_difficulty and bench_receptor_difficulty (_build_reproduction_notebook.py:623-638, `needs=[\"bench_pose_comparison\"]`, `--per-pose-metrics BENCH_REPORT/per_pose_metrics.csv`, thesis='Discussion; the appendix difficulty analysis') are omitted; both gate on the per-tool oracle `rmsd` (ligand_docking_difficulty.py:99/:112, receptor_docking_difficulty.py:93) and the inventory already quotes their shift 202\u2192217 / 173\u2192186 / 83\u219286. The count should read 16 of 19.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 2, step 2.1",
+   "claim": "Sites :921, :1109-1111, :562, :963, :1020, :4064 need 'min over copies'; :3697 and :980 follow the hub column automatically.",
+   "correction": "The file performs 16 crystal-distance operations; the plan lists six. Unlisted: _cluster_purity :553 (purity_centroid of the correct cluster), _ensemble_stats :614/:624 (the pooled oracle 98.0\u219299.7 % in Section 1.7 comes from here), _pocket_crystal_stats :944 (ensemble/fpocket/p2rank centre-to-crystal at :1182-1184 and the ECDF :1385), and the example scatter :1314-1315 that draws one crystal X. Also _CACHE_SCHEMA :3927 is not bumped although the signature keys the crystal source by path only (:3947-3949).",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 0 decision record (no entry) / Section 7",
+   "claim": "(absent) The inventory raised 'Should pocket_comparison_report.py (fpocket/p2rank DCC/DCA to the crystal) adopt min-over-copies?' with a check of the short build.",
+   "correction": "The plan records no outcome. I verified: no `crystal_hit_matrix`, `crystal_top1_distance`, `crystal_success` in body_main_short.tex / body_appendix_short.tex / thesis_expected_values.yaml, and bench_pockets (builder :305-313) runs fpocket/P2Rank only, not pocket_comparison_report.py. Close the decision explicitly as out of scope (single-instance retained, disclosed) rather than leave :1141 undecided.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 2, step 2.5",
+   "claim": "`optimization_benefit_stats.py:323` and `rebust_hydrogen_normalised.py:254-267` are pure re-readers that need no code change.",
+   "correction": "optimization_benefit_stats.py:323 is `from posebusters_pose_comparison import (aggregate_optimization_benefit,`; the rmsd gate is :115. rebust_hydrogen_normalised.py is pinned to the full_protein tree (:67-68) and its output header asserts 'RMSD/Kabsch columns are the published values' (:278-279), so it is not a re-reader of the canonical table; it is also absent from the harness and the short build.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 2, step 2.5 (topk_recovery_gnina_arm.py:130 'no code change')",
+   "claim": "topk_recovery_gnina_arm.py re-runs automatically with correct output.",
+   "correction": "Its report embeds single-instance literals: :305-306 '(78/145/150)', :331-333 'Q = 134.69' and the 'Vina Q = 135' sentence, docstring :36-40 '111 / 198 / 199 ... 103 / 167 / 169'. The regenerated 18_* files will contradict this prose inside a harness output.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "D6 rejected-alternatives column ('two test files ... stay untouched') and Section 7",
+   "claim": "The two synthetic tests remain valid under the kept column names.",
+   "correction": "Scripts/Analysis/tests/test_diffdock_sweep_gate.py:29 sets `NOTEBOOK = REPO / \"DiffDock_Parameter_Sweep.ipynb\"`, but the notebook now lives only at obsolete/DiffDock_Parameter_Sweep.ipynb, so the test cannot load its gate cell today; 'stays valid' cannot be demonstrated by running it. Pre-existing, but the plan should not cite it as evidence.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 7, 'X-ray crystal control ... busts the deposited ligand with no reference and no RMSD'",
+   "claim": "Nothing about the X-ray control changes.",
+   "correction": "True for the code (_build_xray_control_notebook.py:283 busts `<ID>_ligand.sdf`, :503 `_buster.bust(lig, None, prot, full_report=True)`), but once the primary endpoint accepts any deposited instance the control's 307/308 ceiling covers only record 0 of each _ligands.sdf. The plan should state that the validity ceiling is deliberately left on the reference instance (or extend it to all 519 records) \u2014 a decision this dimension should have raised.",
+   "severity": "minor"
+  }
+ ],
+ "confirmed": 0,
+ "notes": "Independent sweep: fresh greps for `_ligands?.sdf`, per_pose_metrics readers, hub-sidecar consumers (oracle_summary / rank1_vs_topn / topn / filmstrip / cascade), hard-coded PUBLISHED/EXPECTED literals, crystal-column consumers (pb_rmsd / centroid_dist / contact_recovery / plif_recovery / pb_kabsch), all notebook code cells, both test trees, configs_thesis YAMLs, and the harness stage registry. Two open checks the plan flags as unverified were resolved here: (1) PandaMap receptor chains \u2014 I measured, for every alternate copy in _ligands.sdf across the 171 multi-record ids of the 428 hetatm_cleaned set (247 alternate copies), the receptor atoms within 4.5 \u00c5 in posebusters_results/benchmark/dock/hetatm_cleaned/<ID>_protein.pdb: 0 copies have fewer than 10 contacts, none lose >50 % of contacts relative to the deposited _protein.pdb, and only 2 ids drop a chain (not one hosting a copy); the canonical receptor CAN profile every copy, so 2.2's fallback is not needed (table: scratchpad/wf2/copy_receptor_contacts.csv). (2) rank_success_analysis.py: no hit for 'rank_success' in body_main_short.tex, body_appendix_short.tex, thesis_expected_values.yaml or the builder, so no thesis number depends on it (inventory open question answerable: no stage needed). Also verified for Section 7: run_posebusters.py:3882 and :3953 call `buster.bust(pose_file, None, protein_file, full_report=True)` (pb_valid is reference-free), and the orai_* scripts mention 'crystal' only to say none exists (orai_pose_cluster_report.py:2, orai_jku_decoy_enrichment.py:4). The copies_inventory.csv covers 428 ids (171 multi-record) rather than the 308/143 the plan quotes; not my dimension, but a Section 0 'data facts' reader should know the CSV is the superset. Notebooks other than Master_Docking: PoseBusters_DataSet_Analysis cell[5] uses _ligand.sdf only for descriptors/startconf_rmsd (D13), XRay control cell[5] L17 busts record 0, Flow Charts has no data reads."
+}

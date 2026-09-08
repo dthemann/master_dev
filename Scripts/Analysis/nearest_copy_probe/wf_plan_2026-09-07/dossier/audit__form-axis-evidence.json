@@ -1,0 +1,97 @@
+{
+ "dimension": "form-axis",
+ "role": "EVIDENCE AUDITOR",
+ "refuted": [],
+ "corrected": [
+  {
+   "site": "posebusters/modules/rmsd.py:60 (site 0) \u2014 'pbmulti_kabsch == kabsch of the in-place-argmin copy (max 5e-5 A)'",
+   "correction": "True only against the copy PoseBusters' own CalcRMS argmin picks. Against the copy the thesis symmetry_rmsd picks (kabsch_nearest, the value the plan adopts), wf/nearest_copy_kabsch.csv gives max |pbmulti_kabsch - kabsch_nearest| = 0.233 A, because on 3 of 24,486 multi-copy poses nearest_idx != pb_rmsd_min_idx (diffdock_smina 7THI_PGA rank 6: kabsch 0.717 vs 0.740; equibind_unguided_gnina 7VQ9_ISY: 1.387 vs 1.154; equibind_unguided_gnina 7UXS_OJC: 2.422 vs 2.411). Neither the <=2 A nor the <=1 A verdict differs on those three, so the stated risk is real but gate-inert on this benchmark. 'differs from independent min in 13,247 poses (max 3.46 A)' reproduces exactly."
+  },
+  {
+   "site": "posebusters_pose_comparison.py:1572 (site 3) \u2014 'at 1580 rot_angle, self_bestfit = rigid_body_fit(pose, crystal_h)'",
+   "correction": "Line 1580 is `try:`; the rigid_body_fit call is line 1581. bestfit at 1584 and torsion_metrics at 1585 are correct. Trivial line slip."
+  },
+  {
+   "site": "posebusters_pose_comparison.py:1862 (site 8) \u2014 'driver at 14321 and 14347 passes rmsd_col=\"bestfit_rmsd\" for 18_topn_within_thresholds_kabsch_pbvalid_depths.png'",
+   "correction": "14318-14342 is the figure driver (aggregate_topn_within_thresholds at 14319-14321, _stats_topn_within, plot_topn_within_thresholds). Line 14347 belongs to the companion aggregate_refinement_gain_vs_depth(df_full, thr=1.0, ..., rmsd_col=\"bestfit_rmsd\") call, not the figure. Values 74.3/74.6/53.8 (follow) reproduce from per_pose_two_conventions.csv."
+  },
+  {
+   "site": "body_main_short.tex:205 (site 16) \u2014 guard-off counts 'recompute'",
+   "correction": "Derivable from per_pose_two_conventions*.csv: under follow the three DiffDock Form cells without the rmsd<1000 guard read 4,034 / 3,899 / 3,866 poses (44.8 / 43.4 / 43.0%); the guarded values 4,016 / 3,887 / 3,854 reproduce. All 42 exploded poses (18 raw, 12 smina, 12 gnina, rmsd >= 1000) still have kabsch_nearest <= 1 and rmsd_nearest_copy >= 1,007.6 A, so the guard removes the same 42 under both conventions."
+  },
+  {
+   "site": "body_main_short.tex:781 (site 26) \u2014 'the 83 vs 61 near-native pair: recompute (validity-gated top-15 reads 83 vs 64 under follow)'",
+   "correction": "The printed 83 vs 61 is the near-only top-15 gate (rank<=15 & rmsd<=2, no validity), asserted at thesis_expected_values.yaml:1003 `equibind_near_top15: {gnina: 83, smina: 61}`; the validity-gated (double) top-15 pair is 80 vs 61 today (selection_contrasts_top15_two_conventions.csv). Under follow the near-only pair becomes 86 vs 64 (recomputed from per_pose_two_conventions_extra_arms.csv); the double pair becomes 83 vs 64. The inventory conflated the two gates."
+  },
+  {
+   "site": "body_appendix_short.tex:1263 (site 31)",
+   "correction": "1263 is the \\section line; the quoted sentence ('The 2 A in-place column at each depth reproduces ...') is at 1265. Wording claim confirmed."
+  },
+  {
+   "site": "body_appendix_short.tex:1319 (site 32) \u2014 Table 26 Kabsch rows and '26 of 90 cells move by 0.3-0.7 pp'",
+   "correction": "Kabsch block starts at 1321 (1319-1320 is the EquiBind RMSD depth-30 row); AutoDock depth-30 row is 1325-1326, DiffDock depth-30 row 1331-1332. The cell count is wrong: diffing the reference and nearest_follow pct columns of kabsch_recovery_depths_two_conventions.csv gives 47 of 90 cells changed (AutoDock 9, DiffDock 18, EquiBind 20; independent 48), all by 0.3-0.7 pp. The example cells quoted (10.2/25.7/61.1/74.6 -> 10.6/25.1/60.7/74.9 etc.) are correct."
+  },
+  {
+   "site": "body_appendix_short.tex:1376 (site 33) \u2014 'Table 27 rows 1375-1383 ... footnote 1385'",
+   "correction": "Rows are 1377-1385 and the footnote is 1386-1387. Follow values reproduce exactly (AutoDock (1) 249/249/82.2/1.376/0.824; DiffDock (1) 224/224/73.9/1.532; EquiBind (1) 155/51.2/3.239; AutoDock (15) 2832/286/94.4/4.922/1.416) and the footnote medians 1.376 vs 1.491 and 1.532 vs 1.585 reproduce as pb_rmsd_nearest vs rmsd_nearest_copy medians on the cd_nearest<=8 rank-1 cohort. The hub sidecar cohort_summary.csv confirms EquiBind top-5 3.64/1.26/64.3/20.8/14.9 (probe gives 3.624), so the tie-break caveat stands."
+  },
+  {
+   "site": "body_appendix_short.tex:1186 (site 34)",
+   "correction": "1186 is the \\section line; the quoted paragraph ('Intermolecular failure for DiffDock falls from 14.6% ... 31 of its 498 ... 5 of 319') is at 1188. Strata 451/2,169/515 and validity 98.0/95.34/93.79% reproduce."
+  }
+ ],
+ "missing": [
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_main_short.tex",
+   "line": 414,
+   "what": "'Its rank-1 median in-place RMSD of 2.9 A already exceeds the near-native threshold' (EquiBind near-site rank-1 cohort, Table 27 input) is not in the inventory although :410 and :412 are.",
+   "change": "Under follow the PB-valid, cd_nearest<=8 rank-1 EquiBind cohort (n=155) has median pb_rmsd_nearest 3.239 A, i.e. 3.2 A, not the 3.3 A the plan prints. Note the printed 2.9 already disagrees with Table 27's 2.977 (rounds to 3.0) on the reference basis, so the basis of :414 must be pinned before the number is swapped.",
+   "effort": "trivial",
+   "current_value": "2.9",
+   "new_value": "3.2 (3.239) under follow"
+  },
+  {
+   "file": "/home/manndo/master_dev/Scripts/Analysis/thesis_expected_values.yaml",
+   "line": 1003,
+   "what": "`equibind_near_top15: {gnina: 83, smina: 61, mcnemar_p: 0.0001131}` is the near-only top-15 gate quoted at body_main_short.tex:781; the inventory updates :1004-1006 but not this row.",
+   "change": "Follow: gnina 86, smina 64 (recomputed from per_pose_two_conventions_extra_arms.csv with eff_rank<=15 & rmsd_nearest_copy<=2). McNemar p: recompute.",
+   "effort": "trivial",
+   "current_value": "83 / 61",
+   "new_value": "86 / 64 (follow)"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Section 1.4 (line 140-141) and Section 4 by implication: '26 of the 90 Table 26 Kabsch cells move by 0.3-0.7 pp'",
+   "claim": "26 of 90 Kabsch cells change under follow",
+   "correction": "47 of 90 change (AutoDock 9, DiffDock 18, EquiBind 20), 48 under independent; recomputed by diffing the reference and nearest_follow rows of Scripts/Analysis/nearest_copy_probe/wf_plan_2026-09-07/kabsch_recovery_depths_two_conventions.csv, pct columns only. The magnitude range 0.3-0.7 pp is right. The same wrong count appears in inventory__form-axis.json summary and site 32.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Risk 2 (line 504-505) and Section 1.3 (line 133-135): 'Three arms lose one form complex under D2'",
+   "claim": "Three arms lose a Form complex",
+   "correction": "Five of the ten printed Table 1 rows drop by one Form complex (DiffDock raw 225->224, DiffDock+smina 237->236, EquiBind+gnina 200->199, EquiBind fpocket raw 180->179, EquiBind P2Rank raw 181->180; the plan's own 1.3 table shows the last two). At complex level 7 of the 11 scored arms lose at least one Form complex: DiffDock+gnina loses 7QHL_D5P and EquiBind+smina loses 7VQ9_ISY but each gains one, so their totals are flat. Pose level: 149 lost / 91 gained over the six arms, 234 / 167 over all eleven.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 1.6 (line 182): 'EquiBind rank-1 near-site median 2.9 -> 3.3 A (`:414`)'",
+   "claim": "New value 3.3 A",
+   "correction": "filmstrip_table27_two_conventions.csv nearest_follow EquiBind depth 1 inplace_median = 3.239, which prints as 3.2 A; recomputed identically from per_pose_two_conventions.csv (n=155). Also the current printed 2.9 does not match the reference Table 27 median 2.977 (3.0), a pre-existing drift the plan does not list under Risk 11.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 1.6 (line 179-180) and Risk 11 (line 527): 'the figure script's clipping rule reproduces 2,337 on the reference basis' / ':408 (2,329 vs 2,337) are already off'",
+   "claim": "The filmstrip script gives 2,337 clipped poses against the printed 2,329",
+   "correction": "The script's own sidecars give 2,329: pose_comparison_report/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__caption.txt:5 reads '2329 pose(s) beyond the frame at top-15 not shown', and the per-pose CSV of the same name has 6,169 top-15 rows with in_frame_5A == False on exactly 2,329 (rule at filmstrip_rank1_top5_top15.py:152 `inplace<=axis_max & form<=axis_max`). My recompute on per_pose_two_conventions.csv also gives 2,329 (7,565 / 2,854 under follow). There is no :408 drift to fix; the 2,337 figure is unsourced.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "D2 (line 31): 'Measured cost of follow: Kabsch median shift 0.001 A, form verdict changes on 0/2/0 of the 38/29/2 flipped rank-1 poses'",
+   "claim": "0.001 A median shift; 38/29/2 flipped rank-1 poses",
+   "correction": "The 38/29/2 are the PB-valid rank-1 poses that become <=2 A only through an alternate copy (DiffDock has 30 before the validity filter); the sentence does not say so, and the plain 'flipped rank-1' set (nearest_copy_is_ref False) is 75/81/78 with verdict changes 0/2/1. The 0.001 A is the AutoDock-only signed median (0.0011); DiffDock is +0.009, EquiBind -0.013, pooled 70 poses +0.0025, and the median absolute shift on all 13,328 flipped poses is 0.014 A (q90 0.065, max 2.51). Verdicts 0/2/0 reproduce.",
+   "severity": "minor"
+  }
+ ],
+ "confirmed": 33,
+ "notes": "Method: opened every one of the 42 inventory sites at the stated line (+-5) in rmsd.py, loading.py, redock.yml, posebusters_pose_comparison.py, filmstrip_rank1_top5_top15.py, body_main_short.tex, body_appendix_short.tex, thesis_expected_values.yaml, thesis_assertions.py, _build_reproduction_notebook.py, REGENERATE.md and the 18_..._kabsch_pbvalid_depths_report.txt; all quoted text is present (nine sites have small line slips or a wrong derived number, listed under corrected; none is refuted). Recomputed from wf/per_pose_two_conventions.csv (53,651 rows) plus wf/per_pose_two_conventions_extra_arms.csv (44,783 rows) with pandas (scripts in scratchpad/wf2/recompute.py, recompute2.py, rc3.py): 24,486 multi-copy poses / 13,328 flipped (six arms); every Table 1 Form/Combined cell under reference, follow and independent for all 11 arms (matches table1_form_two_conventions*.csv and plan 1.3 exactly); pool-level DiffDock refiners 148/149 agree 145 (3/4) and EquiBind 57/50; Kabsch existence-gate recovery at d=1/15/30 for 1 A and 2 A (74.3/74.6/53.8, 95.4/97.0/82.5) and discordant pairs 48/47, 30/32, 25/26; H.4 strata 451/2,169/515 with 98.0/95.34/93.79%; filmstrip cohorts 497/2,345/6,169 -> 628/2,911/7,565, clipped 2,329 -> 2,854, all Table 27 rank-1 and top-15 medians; the 42-pose exploded guard; EquiBind gnina_affinity ties 333 poses in 133 groups from per_pose_metrics.csv (Risk 13 confirmed); autodock_exhaustiveness_returns.py:570 asserts bestfit_rmsd == pb_kabsch_rmsd (D2 confirmed); Thesis_short.aux confirms fig:results-r2b is Figure 3 and fig:results-r3 Figure 4; media md5s match the report PNGs. wf/nearest_copy_kabsch.csv: kabsch_ref reproduces bestfit_rmsd to 8.9e-16, sym to 4.7e-10, pb_rmsd to 2.9e-11; copies_same_atom_order True on all rows; kabsch_min_idx != nearest_idx on 13,248 poses. The strict `<` at hub :4648 versus `<=` in thesis_assertions.py:123 is confirmed and inert (no pose exactly at 1.000). Decision 3 of the inventory (thesis symmetry_rmsd picks the copy) is supported: CalcRMS and symmetry_rmsd pick different copies on only 3/24,486 poses with no gate consequence, so the residual risk of D1+D2 is bounded. Effort classes are defensible; nothing in the plan sections audited needs a class change. Plan 1.5 numbers (160->175, 144/143, 1,031/1,022, 7 discordant, 3 gnina-only, 57/48, 179/177, 178 vs 175) all reproduce from triple_gate_depths_two_conventions.csv and selection_contrasts_top15_two_conventions.csv. No file under /home/manndo/master_dev was modified."
+}

@@ -1,0 +1,132 @@
+{
+ "dimension": "numbers-selection",
+ "role": "COMPLETENESS AUDITOR",
+ "refuted": [],
+ "corrected": [],
+ "confirmed": 0,
+ "missing": [
+  {
+   "file": "thesis_latex/body_appendix_short.tex",
+   "line": 182,
+   "what": "Clause \"At rank-1 only two of the seven contrasts survive correction\" (exhaustiveness ladder, rank-1 McNemar of the selected arm against each rung, Holm over 7). Plan row 435 lists the 111-vs-110 tie and the top-3..top-22 lead for this line but not this clause.",
+   "change": "Recomputed from the ladder per-pose CSV with stats_utils.mcnemar_exact + holm on the PB-valid & <=2 A gate: under the nearest convention SIX of the seven rank-1 contrasts survive Holm (exh18 3e-09, exh32 2e-05, 32+gnina 0.023, exh64 0.0078, exh92 0.0078, raw exh128 0.037); only 64+gnina fails (16/8, p_holm 0.15). Rewrite the clause.",
+   "effort": "S",
+   "current_value": "only two of the seven contrasts survive correction",
+   "new_value": "six of the seven survive; only exhaustiveness 64 rescored does not (p_holm 0.15)"
+  },
+  {
+   "file": "thesis_latex/body_appendix_short.tex",
+   "line": 195,
+   "what": "Fig 21 caption: \"the top step is worth three complexes at rank-1 but does not become individually resolvable until about depth 22\" (raw exh92 -> raw exh128 by depth). Not itemised in Section 1 or Section 3.3.",
+   "change": "Recomputed by depth on the PB-valid & <=2 A gate: nearest gives +7 at rank-1 (130 vs 123) with uncorrected p 0.039 already at rank-1 (p<0.05 also at d=6, 8, 21-23, 28-30; not at 24-27). The reference basis reproduces +3 and first p<0.05 at depth 22. Caption and the Fig 21 ringed markers must be regenerated and reworded.",
+   "effort": "S",
+   "current_value": "three complexes at rank-1; resolvable from about depth 22",
+   "new_value": "seven complexes at rank-1 (p 0.039 uncorrected); resolvability no longer monotone with depth"
+  },
+  {
+   "file": "thesis_latex/body_appendix_short.tex",
+   "line": 230,
+   "what": "Descriptive sentence \"In absolute terms the five rungs recover 98, 128, 149, 159 and 164 complexes, so the first step adds thirty and the last adds five\" (triple gate over the whole pool). Plan row 439 lists only the per-hour cells and D10 of this line.",
+   "change": "Recomputed (PB-valid & <=2 A & Kabsch<1 A, any of 30 poses, Kabsch following the nearest copy): 115, 143, 166, 172, 178; first step +28, last step +6. The three per-hour returns (+71.6/+35.9/+5.9) also change on the descriptive reading even though D10 keeps the confirmatory cell on the instance.",
+   "effort": "S",
+   "current_value": "98, 128, 149, 159 and 164; thirty; five",
+   "new_value": "115, 143, 166, 172 and 178; twenty-eight; six"
+  },
+  {
+   "file": "thesis_latex/body_appendix_short.tex",
+   "line": 952,
+   "what": "Table 19 (Within-Tool Optimisation Effect on Cumulative Top-k Near-Native Recovery), row DiffDock + smina k = 5: printed \"44.6 -> 48.8 & 5 / 18 & 0.0106 & 0.0468 & *\". Phase 5.4 lists the range :945-962 but Section 1 does not flag that the star is lost.",
+   "change": "Recomputed on the near-native (no validity) existence gate, Holm over the 16 within-tool tests: 50.2 -> 54.1, 5 / 17, p 0.0169, p_holm 0.0676, ns. Same for the DiffDock + gnina k = 5 row at :956 (44.6 -> 49.2, 5/19, 0.0397 * becomes 50.2 -> 54.1, 5/17, p_holm 0.0676, ns). DiffDock gnina k = 10 keeps its star (0.0245). All other rows keep their marks (AutoDock k=1 0.0596 ns; k>=5 ***/**; EquiBind ***).",
+   "effort": "S",
+   "current_value": "k = 5 rows: 0.0468 * (smina), 0.0397 * (gnina)",
+   "new_value": "k = 5 rows: 0.0676 ns for both refiners"
+  },
+  {
+   "file": "thesis_latex/body_appendix_short.tex",
+   "line": 1260,
+   "what": "H.9 sentence \"Even the 428 entries of the earlier preprint release of this benchmark would leave the minimum detectable difference near 8.2 points\". Plan row 461 carries 8.2 in its current-value column with no new value.",
+   "change": "MDE at n = 428 with the nearest discordance rate psi = 129/303 = 0.4257: (1.96 + 0.8416) * sqrt(0.4257/428) = 8.8 points (reference basis reproduces 8.2). Also in this sentence: \"37.0 %\" -> 42.6 %, \"51 ... 140\" -> 76 / 98 (already in row 461).",
+   "effort": "S",
+   "current_value": "near 8.2 points",
+   "new_value": "near 8.8 points"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 758,
+   "what": "\"because rescoring adds nine qualifying poses at no CPU cost\" (311 - 302). Plan row 412 says \"recompute\" for :744-760 without itemising this count, although Section 1.9 already prints both operands.",
+   "change": "442 - 431 = 11 (from the plan's own 1.9 values, reproduced from the per-pose CSV: gnina arm 442 PB-valid & <=2 A poses, raw exh128 431).",
+   "effort": "S",
+   "current_value": "nine qualifying poses",
+   "new_value": "eleven qualifying poses"
+  },
+  {
+   "file": "thesis_latex/body_main_short.tex",
+   "line": 195,
+   "what": "\"no fpocket- or P2Rank-guided arm exceeds 18 at any depth\" (triple gate). The probe archived as nearest_copy_guided_equibind_arms.csv contains only equibind_fpocket_raw/smina and equibind_p2rank_raw/smina; equibind_fpocket_gnina (9,090 rows) and equibind_p2rank_gnina (8,520 rows) exist in per_pose_metrics.csv but were never re-scored. Plan row 442 marks :267-269 \"recompute\" and lists no step to score them.",
+   "change": "Recomputed on the four probed guided arms (Kabsch from kabsch_vs_nearest_copy.csv): top-15 triple fpocket-smina 7 -> 10, P2Rank-smina 5 -> 9; double gate P2Rank-smina 14 -> 19. The P2Rank-gnina arm sits at exactly 18 today and every probed guided arm gains 3-5 complexes, so the \"18\" ceiling at :195 and the \"trails by 37\" at App. E :267 are at risk. Add a Phase 0 step: run nearest_copy_rescoring.py on equibind_fpocket_gnina and equibind_p2rank_gnina before Phase 5 wording is fixed.",
+   "effort": "S",
+   "current_value": "exceeds 18 at any depth (P2Rank gnina = 18)",
+   "new_value": "unknown for the gnina-guided arms; smina-guided arms 7->10 and 5->9 (triple), 14->19 (double)"
+  },
+  {
+   "file": "thesis_latex/body_appendix_short.tex",
+   "line": 184,
+   "what": "\"Carried at the parent Vina order instead of the CNN-affinity order, the same rescored poses recover 93 complexes at rank-1 and 183 at top-15, below the raw search at 94 and 185\". Plan row 436 lists this as \"recompute\"; it is derivable now from the probe CSV (autodock_rank column of per_pose_metrics).",
+   "change": "Recomputed by ordering the gnina-minimised poses on autodock_rank: 129 at rank-1 and 196 at top-15, below the raw search at 130 and 198 (reference reproduces 93/183 vs 94/185). The \"whole of the advantage in the ranking head\" reading holds.",
+   "effort": "S",
+   "current_value": "93 / 183 vs 94 / 185",
+   "new_value": "129 / 196 vs 130 / 198"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Section 1.5, sentence \"The AutoDock gnina-versus-raw rank-1 step (:843, App. H :945): 31.4 -> 37.3 % becomes 43.2 -> 49.8 % on the top-k table basis\" (line 171-172 of the plan reads 43.2 -> 49.2)",
+   "claim": "43.2 -> 49.2 % on the top-k table basis, discordant 39/20, uncorrected p 0.018",
+   "correction": "Mixed bases. Table 19 (App. H :945) is the near-native gate without validity: raw 131/303 = 43.2 % -> gnina 151/303 = 49.8 %, discordant 19/39, uncorrected p 0.012, p_holm 0.060 in its 16-test family. The :843 sentence (31.0 -> 36.6) is the PB-valid & <=2 A gate: 130/303 = 42.9 % -> 149/303 = 49.2 %, discordant 20/39, p 0.018. 49.2 belongs to the valid gate, 43.2 to the near gate.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 1.5 and Phase 4 (no decision item)",
+   "claim": "Whether the AutoDock raw->gnina rank-1 step clears Holm is \"recompute\"",
+   "correction": "It clears Holm in one printed family and not the other, and the plan raises no decision on how the body should word it. In App. C's family of seven contrasts against the selected arm the raw-exh128 vs selected rank-1 contrast has p_holm 0.037 (survives); in Table 19's family of sixteen within-tool tests the same 39/19 (near gate) contrast has p_holm 0.060 (does not). Today :843 says the step \"does not clear Holm correction on its own\" and App. C :182 says only two of seven rank-1 contrasts survive; under nearest the two sentences would contradict each other unless the body names the family. Add a decision (D14) naming the family the body quotes.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 1.5 (\"still leads at every depth from 3 to 22\") and Section 3.3 row for App. C :182 (\"top-3 to top-22 ... holds\")",
+   "claim": "The selected arm still leads at every depth from 3 to 22",
+   "correction": "Understated. Recomputed depth by depth on the PB-valid & <=2 A gate: under nearest the selected arm is strictly ahead of all seven alternatives at every depth from rank-1 to top-25 (the reference-basis tie with 64+gnina at depth 2, 146 vs 146, disappears), ties raw exh128 at 214 at depth 26 and trails it from 27 to 30. The sentence should become \"from rank-1 to top-25\", not be marked \"holds\".",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 3.3 row for App. C :246 (\"95; 113; 'exactly 113' -> 131 raw exh128, 151 rescored\")",
+   "claim": "Replacing 95 by 131 and 113 by 151 carries the sentence over",
+   "correction": "The sentence's logic breaks. It says raw rank-1 near-native recovery \"tops out at 95 complexes anywhere above exhaustiveness 64\" and \"doubling the pool beneath the rescorer leaves it at exactly 113\". Recomputed (near-native, no validity, rank-1): raw exh64 124, exh92 124, exh128 131 (no plateau above 64); rescored 64+gnina 144 vs 128+gnina 151 (not equal). The \"ranking ceiling rather than a sampling one\" paragraph must be reargued, not renumbered.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Phase 0 / Phase 1 step list; Section 3.3 row :267-269 (\"recompute\")",
+   "claim": "The guided EquiBind arms can be recomputed from the rebuilt pipeline; nothing is needed before Phase 5",
+   "correction": "The archived probe (nearest_copy_guided_equibind_arms.csv) scored only the raw and smina guided arms; equibind_fpocket_gnina and equibind_p2rank_gnina (9,090 and 8,520 rows in per_pose_metrics.csv) were never re-scored, so the plan cannot state whether :195 \"no fpocket- or P2Rank-guided arm exceeds 18 at any depth\" survives. P2Rank-gnina is at the 18 ceiling today and the probed guided arms gain 3-5 complexes each (fpocket-smina triple 7 -> 10, P2Rank-smina 5 -> 9, P2Rank-smina double 14 -> 19). Add a step to probe the two gnina-guided arms before wording Phase 5.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 1.5 / Section 3.3 row for App. H Table 19 (:945-962 listed only as a range in Phase 5.4)",
+   "claim": "Section 1 enumerates every numerical consequence; Table 19 is a plain re-render",
+   "correction": "Two printed significance marks flip. On the near-native gate with Holm over the sixteen within-tool tests, DiffDock + smina k = 5 goes from 0.0468 * to 0.0676 ns and DiffDock + gnina k = 5 from 0.0397 * to 0.0676 ns (DiffDock gnina k = 10 keeps its star at 0.0245; AutoDock k = 1 stays ns at 0.0596; all k >= 5 AutoDock and all EquiBind rows keep their marks). A star loss in a printed table is a verdict change and belongs in Section 1.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Section 1.10 (Intention-to-treat)",
+   "claim": "Base ITT counts become 149 / 308 and 213 / 308 against 132 and 179",
+   "correction": "Incomplete for what App. I :1072 prints. The paragraph also states the ITT margins (\"holding at 2.6 percentage points at rank-1 and going from 10.2 to 10.1 at top-15\"). On the 308 basis these become (149-132)/308 = 5.5 and (213-179)/308 = 11.0 against 5.6 and 11.2 on the 303 basis. Verified against itt_dropped_ids_nearest_copy.csv: rank-1 closest 6.26 A (7FRX_O88), top-15 closest 2.14 A (7FRX_O88 optimized_rank 5), all-30 closest 1.54 A (8F4J_PHO at optimized_rank 28), as the plan states.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 1.6 / Section 3.3 row 423 (:843 \"recompute bands\") and Table 20 :990-997",
+   "claim": "Fixed-rank bands are recompute-only",
+   "correction": "The DiffDock bands are derivable now from the probe CSV (confidence rank held fixed, pose-count-weighted band rate). Near-native: smina +0.55 / +0.44 / +0.84, gnina +0.62 / +0.27 / +1.01 (reference reproduces +0.6/+0.1/+0.5 and +0.7/+0.1/+0.4), so the :843 and footnote span \"0.1 to 0.7\" becomes \"0.3 to 1.0\". Near-native and PB-valid: smina +16.5 / +10.5 / +6.5, gnina +16.5 / +10.3 / +6.7 (was +12.9/+7.7/+5.2 and +13.0/+7.6/+5.2). EquiBind bands need the raw-to-refined pose match and remain recompute.",
+   "severity": "minor"
+  }
+ ],
+ "notes": "Method: rebuilt every Section 1 selection number from the three probe CSVs (nearest_copy_alldepths.csv, wf/nearest_copy_extra_arms.csv, wf/nearest_copy_ladder_arms.csv, 152,378 rows, 17 arms, 303 complexes) merged with per_pose_metrics.csv (autodock_rank, pose_name) and wf/kabsch_vs_nearest_copy.csv (Kabsch following the nearest copy), using stats_utils.mcnemar_exact, newcombe_paired_diff_ci, mcnemar_power, tost_paired_proportions, holm, wilson_ci, cochran_q. Scripts and full output: scratchpad/wf2/audit_numbers.py, audit2.py, audit3.py, audit_numbers.out. Reference-convention values reproduced the printed thesis digits everywhere checked before the nearest value was read.\n\nReproduced exactly (not counted as confirmed per the brief, listed so the parent need not re-run them): all 27 cells of the 1.1 headline table; validity gate removes 5 at DiffDock rank-1 (137 vs 132); top-15->top-30 DiffDock b=4/c=0 p 0.125; 1.2 margins, Newcombe intervals, discordant 73/56 (129), p 0.159, MDE 10.5, power 0.32, n_needed 1,062, TOST 90 % interval -0.5..+11.7 (fails 10, passes 12), Cochran Q rank-1 p 2.0e-17, top-5 88/48 identical; 1.4 Kabsch 74.3/74.6, EquiBind 54.1 -> 53.8; 1.5 triple/double selection (175; 144 vs 143 with 4/3; 179 vs 177 with 5/3; 57 vs 48 with 18/9; raw 178 vs 175) and every ladder cell, uncorrected p 1.05e-20 / 2.6e-3 / 4.4e-3, gain 19 / lose 4, 149 vs 141; Holm on the ladder top-15 family under nearest: 7.3e-20, 1.4e-12, 9.1e-09, 1.4e-04, 0.0052 (64+gnina), 9.3e-04 (exh92), 0.0052 (raw exh128). Phase 4.2 derived 77/58 at k=1 (uncorrected 0.121) holds; the full :1031 footnote becomes Holm 0.242 / 1.2e-4 / 6.5e-5 / 3.8e-5 against DiffDock raw and 0.294 / 0.0042 / 0.0042 / 0.0071 against DiffDock gnina-opt, with 72/59 replacing 60/55; \\\"below 3e-7 throughout\\\" holds (max 2.5e-13). Winner's-curse inputs at :866: AutoDock top-15 triple margin 175 vs 166 (raw exh128) = 9 complexes (was 8), so the margins read nine / one / nine and the \\\"3.0 points\\\" ceiling is unchanged numerically. 1.9 denominators reproduced: qualifying complexes 214/183/83, all-three shared 54, gnina 442 vs Vina-only 431 poses.\n\nSection 7 check for this dimension: every listed item that touches numbers-selection holds on recomputation (validity-gate cost 2/4/3/3 at d=1/5/15/30; top-5 contrast 88/48 identical; Kabsch headline; Table 22 rows for AutoDock+gnina 0.7/1.3/1.0/1.0, EquiBind+gnina 0.7/1.0/1.0/1.0 and the raw-AutoDock footnote 0.3/0.3/0.0/0.0 coincide). The DiffDock (raw) row of Table 22 does change (15.5 -> 21.5 at k=1, 19.1 -> 19.8 at k=5) but Section 7 does not claim otherwise and row 454 carries it. No Section 7 error found in this dimension.\n\nHub selection safety: the stage command (_build_reproduction_notebook.py:396-399) pins --collapse-diffdock-variant diffdock_smina, so _select_best_diffdock (:2178-2225) does not auto-pick; note however that on BEST_VARIANT_METRIC (full-pool PB-valid & <=2 A) the automatic pick would FLIP from gnina (172 vs 169 today) to smina (183 vs 182 under nearest); any unpinned consumer that ranks on oracle_pb_valid_and_rmsd2_% would change arm. _select_best_equibind is unpinned and stays on unguided gnina (83 vs 67 smina; probed guided arms <= 19). The DiffDock re-rank footnote at :197 (32.7/33.7/32.3) cannot be re-derived from the probe: smina/gnina affinities are NaN for the diffdock_smina and diffdock_gnina keys in per_pose_metrics.csv; it needs bench_diffdock_rerank as the plan says. The metal-adjacent stratum could not be checked because no stratum file exists under Scripts/ or the report directory, consistent with the plan's own D4 note."
+}

@@ -1,0 +1,122 @@
+{
+ "dimension": "appendix \u2014 thesis_latex/body_appendix_short.tex (App. C ladder/selection, App. F :664-666, App. H/I tables and sensitivity paragraphs, ITT check, metal stratum, box section)",
+ "role": "EVIDENCE AUDITOR",
+ "refuted": [],
+ "corrected": [
+  {
+   "site": "inventory__appendix.json, every site with line >= 662 (and plan Sections 3.3 / 5.4 appendix references >= :662)",
+   "correction": "Line numbers are stale by +2. body_appendix_short.tex mtime 22:03:38 post-dates the inventory (21:51:36) and the plan (21:51:29); `git diff -U0` hunk `@@ -558 +560,3 @@` inserted two lines in the Orai1 receptor paragraph (\"ADFRsuite prepare_receptor aborts on the delivered Fr0 coordinates...\"). Verified current positions by grep: footnote '*_ligands.sdf ... ground-truth answer pose' :664 (was :662); 'Where a structure contains multiple crystallographic copies' :666 (was :664); 'The median is 1.56' :784; '34.0% and 34.3%' :871; Wilson rows :893-920; optimisation rows :947-962, footnote :964; band rows :992-997, footnote :999; cross-tool rows :1026-1029, footnote :1031; accurate-invalid rows :1056-1060, footnote :1062; ITT 'places none of the five' :1074; PB-decomposition rows :1172-1179, footnote :1181; 'Intermolecular failure for DiffDock falls' :1188; '10.7% intramolecular' :1194; 'removes at most four complexes' :1196; 'gave Vina a 25' :1203 (and :167); '148 to 185' :1207; depth-gain rows :1247-1250; Newcombe :1258; '51 of the 303' :1260; 'ten distance thresholds' :1265; RMSD rows :1303-1320, Kabsch rows :1321-1338; placement rows :1377-1385, footnote :1387; 'Friedman' :1394; caption 'Cluster-quality assessment' :1399; Kendall tau :1407; caption 'Matched, missed and spurious' :1412; 'invents slightly more spurious' :1415. Sites :77-:551 are unchanged and were verified verbatim."
+  },
+  {
+   "site": "inventory :1375 new_value 'EquiBind (15) 1933 / 169 / 55.8%'",
+   "correction": "Under the plan's adopted D2 rule (centroid of the argmin-RMSD copy, column cd_nearest in per_pose_two_conventions.csv) the EquiBind top-15 PB-valid cohort within 8 \u00c5 is 1932 poses, not 1933; 1933 is the per-metric minimum (appendix_sites.py:86 uses np.fmin(cd_ref, cd_min_alt), i.e. cd_min_all). 1932 is also what makes the plan's 1.6 pool total 7,565 (2832+2801+1932) add up. All other cohort cells (249/1147/2832, 224/1041/2801, 155/723) and the reference cohorts 190/882/2200, 164/790/2139, 143/673/1830 reproduce exactly."
+  },
+  {
+   "site": "inventory :182 new_value 'depth range ... recompute'",
+   "correction": "Derivable from nearest_copy_ladder_arms.csv: under nearest-copy the selected arm strictly leads all seven alternatives at every depth 1..25 and stops leading at 26 (214 vs exh128 raw 214/215/217). Under the reference convention it leads at depth 1 and 3..22 (not 2), so the printed 'from top-3 to top-22' must become 'from rank-1 to top-25'. Also derivable: rank-1 selected 149 vs exh64+gnina 141 is 8/16 discordant, exact p = 0.15, so the contrast stays unresolved; and with p(raw exh128) = 0.0026 and p(64+gnina) = 0.0044, a 28-pair correction now leaves TWO contrasts unsurvived, so the closing sentence 'the one contrast that would not survive' at :182 changes too."
+  },
+  {
+   "site": "inventory :184 new_value 'exh32+gnina 154 recompute; parent-Vina-order 93/183 recompute'",
+   "correction": "Both derivable now. autodock_mgltools_gnina VA top-15 under nearest = 170 (rank-1 129, pool 170). Parent-Vina order of the exh128+gnina poses (rankN parsed from pose_file, VA existence): 129 at rank-1 and 196 at top-15 under nearest, against the raw search at 130 and 198 (reference reproduction 93/183 vs 94/185 exact), so 'below the raw search' and 'places the whole of the advantage in the ranking head' survive."
+  },
+  {
+   "site": "inventory :195 new_value 'recompute (needs exh92 under nearest copy; the probe can run autodock_mgltools_exh92)'",
+   "correction": "exh92 is already in scratchpad/wf/nearest_copy_ladder_arms.csv (8,984 rows). Derived: the top step (exh92 -> exh128, VA) is worth +7 complexes at rank-1 under nearest (130 vs 123; reference +3 reproduces) and the per-depth exact McNemar is already p = 0.039 at depth 1 (p = 0.008 at depth 6), whereas under the reference the first p < 0.05 is at depth 22 (p = 0.039). The caption claim 'does not become individually resolvable until about depth 22' therefore inverts rather than shifts."
+  },
+  {
+   "site": "inventory :235 / :244 / :246 new_value 'recompute (exh92 not in the probe run)'",
+   "correction": "Derivable. :235 'buys nothing at rank-1': exh92 VA rank-1 = 123 = exh64 123 under nearest, so the caption survives. :244 'three at rank-1' becomes seven (VA 130 vs 123); 'five over the pool' is the three-part gate and still needs Kabsch for exh92. :246 near-native rank-1 without validity: exh64 raw 124, exh92 raw 124, exh128 raw 131, exh64+gnina 144, exh128+gnina 151, so 'tops out at 95 anywhere above exhaustiveness 64' and 'doubling the pool beneath the rescorer leaves it at exactly 113' both fail (not 'may not survive')."
+  },
+  {
+   "site": "inventory summary 'the probe covers six arms' and per-site 'DiffDock + gnina ... recompute' (:869, :891, :945, :990, :1024, :1054, :1170)",
+   "correction": "scratchpad/wf/nearest_copy_extra_arms.csv already carries diffdock_gnina (8,993 rows) and its reference rows reproduce the printed table exactly (33.7->35.6, 2/8, p 0.109; 5/19 p 0.00661; 6/20 p 0.00936; 6/25 p 8.8e-4). Derived nearest values: Wilson NN 45.5 [40.0, 51.2] / 54.1 [48.5, 59.6] / 57.1 [51.5, 62.5] / 59.4 [53.8, 64.8], VA 44.2 [38.7, 49.9] / 53.1 [47.5, 58.7] / 56.1 [50.5, 61.6] / 58.4 [52.8, 63.8]; optimisation row 43.6->45.5 6/12 p 0.238, 50.2->54.1 5/17 p 0.0169, 52.1->57.1 5/20 p 0.0041, 52.8->59.4 5/25 p 3.2e-4; band cells near-native +0.6/+0.3/+1.0 and NN&PB-valid +16.5/+10.3/+6.7; accurate-but-invalid 4/3/3/3 = 1.3/1.0/1.0/1.0 (unchanged from print); cross-tool AD+gnina vs DD gnina 49.8 vs 45.5, 67.3 vs 54.1, 70.0 vs 57.1, 71.3 vs 59.4 with discordant 72/59 p 0.294 then 8.4e-4, 1.0e-3, 2.4e-3; DD gnina vs EB gnina 45.5 vs 19.5, 54.1 vs 26.1, 57.1 vs 28.4, 59.4 vs 28.4 (p 2.8e-14 .. 8.9e-18); H.4 row 2,171 poses / 95.4% valid. EquiBind (raw) is NOT derivable from that CSV: its eff_rank ordering gives 4/10/16/18 = 1.3/3.3/5.3/5.9 against the printed 1.3/3.0/4.0/5.9 and 3/56 discordant against the printed 2/55, so the raw arm's pose order in the probe differs from the table's (rank==999 sentinel trap); the 'recompute' verdict stands only for EquiBind raw, Vinardo, the guided smina/gnina arms and the CNNscore/Vina-energy orderings at :173."
+  }
+ ],
+ "missing": [
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 267,
+   "what": "Sentence 'both raw guided arms recovering no near-native complex at all' (near-native over the full thirty-pose pool). Not listed in the inventory's :267 change list.",
+   "change": "Under nearest-copy equibind_p2rank_raw recovers 1 near-native complex over the pool (table1_form_two_conventions_extra_arms.csv nearest_follow row: near_complexes 1, near_poses 2; my recompute from nearest_copy_extra_arms.csv also gives 1; fpocket raw stays 0). The absolute 'no near-native complex at all' becomes false and must read 'the fpocket arm recovering none and the P2Rank arm one'.",
+   "effort": "trivial",
+   "current_value": "both raw guided arms recovering no near-native complex at all",
+   "new_value": "fpocket raw 0, P2Rank raw 1 near-native complex over the pool"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 182,
+   "what": "Closing sentence 'the step over raw exhaustiveness 128 is the one contrast that would not survive a correction taken over all twenty-eight pairs of the ladder'. The inventory lists the paragraph's counts but not this clause.",
+   "change": "Under nearest-copy the uncorrected top-15 p-values against the selected arm are exh18 1.0e-20, exh32 2.3e-13, 32+gnina 1.8e-9, exh64 3.4e-5, 64+gnina 0.0044, exh92 3.1e-4, exh128 raw 0.0026. Times 28, both 64+gnina (0.12) and raw exh128 (0.073) fail, so 'the one contrast' becomes 'two contrasts'.",
+   "effort": "trivial",
+   "current_value": "the one contrast that would not survive",
+   "new_value": "two contrasts (raw exh128 and exh64 + gnina) would not survive a 28-pair correction"
+  },
+  {
+   "file": "/home/manndo/master_dev/thesis_latex/body_appendix_short.tex",
+   "line": 1260,
+   "what": "'its smallest passing value of 8.4 points is read off the observed interval' and yaml :1042 smallest_passing_margin [8.4, 19.4, 16.4, 16.0]. The inventory notes a 0.1 rounding gap for the last three values only.",
+   "change": "stats_utils.newcombe_paired_diff_ci with z = 1.645 on the reference VA indicators gives a rank-1 90% interval of -3.1 to +8.3 (matching the printed interval text), so the smallest passing value read off it is 8.3, not 8.4; the same 0.1 gap the inventory found for 19.3/16.3/16.0 applies to the first value. Resolve the rounding rule of thesis_endpoint_diagnostics.py before asserting the new 11.7 / 19.3 / 17.2 / 16.2.",
+   "effort": "trivial",
+   "current_value": "8.4 (text and yaml :1042)",
+   "new_value": "8.3 on the printed interval; nearest-copy 11.7"
+  }
+ ],
+ "plan_errors": [
+  {
+   "plan_location": "Section 1.5, sentence 'The AutoDock gnina-versus-raw rank-1 step (:843, App. H :945): 31.4 -> 37.3 % becomes 43.2 -> 49.8 % on the top-k table basis, discordant 39/20, uncorrected p 0.018 (was 0.040)'",
+   "claim": "The App. H :945 optimisation-table contrast has discordant 39/20, p 0.018, previously 0.040.",
+   "correction": "Those are the validity-aware rank-1 numbers (my recompute: reference 22/39 p 0.0396, nearest 20/39 p 0.0183). The optimisation table is on the near-native endpoint (body_appendix_short.tex:871 'The four within-tool contrasts, on the same endpoint' after naming the near-native endpoint) and its printed AutoDock k=1 row at :949 is '31.4 -> 37.3 & 21 / 39 & 0.0273', which reproduces on the near-native gate; the nearest-copy value is 19/39, p 0.0119, exactly what the plan's own Section 3.3 row '945-962' prints ('19 / 39, p 0.012'). Section 1.5 contradicts Section 3.3 and mislabels the basis; following 1.5 would put VA numbers into a near-native table.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 5 step 5.4 and Section 3.3, all body_appendix_short.tex references at or beyond :662 (:662-664, :869, :891-918, :945-962, :990-997, :1024-1029, :1054-1060, :1072, :1170-1194, :1201, :1205, :1245-1258, :1263, :1301-1338, :1375-1385, :1392-1413) and the two draft anchors ':664' and 'beside :1072'",
+   "claim": "The named lines hold the quoted appendix sites.",
+   "correction": "The file was edited at 22:03 after the plan was written at 21:51 (git hunk @@ -558 +560,3 @@ inserted two lines into the Orai1 receptor paragraph), so every appendix reference from the Composition-and-Provenance footnote onward is off by +2: the four-file footnote is :664, the convention sentence is :666, the ITT paragraph is :1074, the Newcombe paragraph :1258 and its cohort paragraph :1260, the placement table :1377-1385 with footnote :1387, the Kendall paragraph :1407, the contact decomposition :1415. Sites :77-:551 are unaffected. Phase 5.4 should locate every site by quoted text, not by line.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 5 step 5.4, draft for :664, sentence 'Four alternates do not share the reference pocket (7A9E_R4W, 7TUO_KL9, 7VKZ_NOJ, 7Z1Q_NIO) and no reported pose recovers any of them' (rests on D3 'minimum alternate RMSD 2.1-2.6 \u00c5')",
+   "claim": "No reported pose lies within 2 \u00c5 of any of the four non-pocket alternates.",
+   "correction": "False for 7Z1Q_NIO. In nearest_copy_ladder_arms.csv three PB-valid poses sit 1.70-1.75 \u00c5 from its alternate copy (autodock_mgltools rank 30, autodock_mgltools_exh18 rank 28, autodock_mgltools_gnina rank 21), and those arms are reported in the ladder table's d=30 column (:218-225). No count changes because each of those arms already recovers 7Z1Q_NIO against the reference (min reference RMSD 1.8 / 1.7 / 1.79 \u00c5), so the defensible sentence is 'no complex gains recovery through any of them'. D3's 'minimum alternate RMSD 2.1-2.6 \u00c5' holds only over the six headline arms (7A9E 2.11, 7VKZ 2.13, 7Z1Q 2.03, 7TUO 11.5) and is 1.70 \u00c5 over the ladder arms.",
+   "severity": "major"
+  },
+  {
+   "plan_location": "Phase 5 step 5.4, draft for :664, sentence 'Its 25 \u00c5 cube centred on the reference kept the other copies outside Vina's search'",
+   "claim": "All alternate copies lay outside the source benchmark's crystal-centred 25 \u00c5 cube.",
+   "correction": "Overstated. copies_inventory.csv gives eight alternates whose centroid lies within the 12.5 \u00c5 half-edge of the reference centroid (7A9E_R4W 4.9, 7CD9_FVR 5.0, 7JY3_VUD 5.8, 7VKZ_NOJ 6.0, 7Z1Q_NIO 6.2, 6YYO_Q1K 7.8, 7O0N_CDP 10.5, 7WL4_JFU 11.2 \u00c5; all eight are in the 303), and M2_REVALIDATION_2026-09-07.md's regime table records 2 boxed-run rank-1 poses 'on an alternate copy'. Write 'kept all but eight of the other copies outside' or 'kept the copies outside for 203 of the 211'.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 1.5, 'and still leads at every depth from 3 to 22' and Section 3.3 row 182 'holds'",
+   "claim": "The depth range over which the selected arm leads all seven alternatives is unchanged under nearest-copy.",
+   "correction": "Under nearest-copy the selected arm strictly leads at every depth 1..25 and is overtaken at 26 (214 vs 214/215/217 for raw exh128); under the reference it leads at 1 and 3..22. The printed clause is true but stale and understates the new range; the appendix sentence must be rewritten to 'from rank-1 to top-25', not left as 'holds'.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 3.3 row 1319-1338, 'Table 26 Kabsch rows | 26 of 90 cells move 0.3-0.7 pp'",
+   "claim": "26 of the 90 Kabsch cells change.",
+   "correction": "kabsch_recovery_depths_two_conventions.csv: nearest_follow differs from reference in 47 of 90 cells (range 0.3-0.7 pp); nearest_independent differs in 48 cells (range 0.3-1.4 pp). The direction (a few tenths of a point) holds; the count does not.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 3.3 row 267-269, new value '179-199' for the Form block",
+   "claim": "The Form block spans 179-199 complexes across all nine EquiBind configurations under nearest-copy.",
+   "correction": "The probe covers only five of the nine configurations (fpocket raw 179, P2Rank raw 180, unguided raw 186, unguided smina 192, unguided gnina 199 in table1_form_two_conventions_extra_arms.csv nearest_follow); equibind_fpocket_smina/gnina and equibind_p2rank_smina/gnina exist in per_pose_metrics.csv (9,090 / 8,520 rows each) but were not probed, so the range is derived from five arms and must be marked recompute for the other four.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 3.3 rows 182 ('175 / recompute'), 184 ('recompute' for 154->198 and 93/183), 189-195-235-241 ('recompute'), 244-248 ('recompute'), 246, and Section 1.5 'Holm to recompute'",
+   "claim": "The raw-exh128 three-part top-15 count, the exh32+gnina top-15 count, the parent-Vina-order counts and the exh92 caption numbers are not yet derivable.",
+   "correction": "Several are derivable from the archived CSVs: raw exh128 three-part top-15 = 166 (triple_gate_depths_two_conventions.csv nearest_follow, was 152); exh32+gnina VA top-15 = 170; parent-Vina order 129 / 196 vs raw 130 / 198; exh92->exh128 rank-1 step +7 (VA) with per-depth p = 0.039 already at depth 1; exh92 = exh64 = 123 at rank-1 so the 'buys nothing at rank-1' caption survives; raw near-native rank-1 124/124/131 for exh64/92/128 and 144 vs 151 for the rescored pair so both :246 clauses fail. Only the three-part (Kabsch) quantities for the non-headline rungs and the winner's-curse estimator remain recompute.",
+   "severity": "minor"
+  },
+  {
+   "plan_location": "Section 1.5 and Section 3.3 row 182, 'becomes a lead, 149 against 141 (no longer a tie, W)'",
+   "claim": "The rank-1 contrast between the selected arm and exhaustiveness 64 rescored is resolved under nearest-copy.",
+   "correction": "149 vs 141 is 8/16 discordant, exact McNemar p = 0.15 uncorrected, so it is a nominal lead that is still unresolved; the rewritten sentence must not read as a significant separation (the paragraph's own standard is Holm-corrected survival).",
+   "severity": "minor"
+  }
+ ],
+ "confirmed": 48,
+ "notes": "Method: opened every one of the 54 inventory sites in body_appendix_short.tex (all quoted text found; sites >= :662 found at +2 lines because the file was edited at 22:03 after the inventory/plan were written at 21:51), then recomputed every derivable new value from nearest_copy_alldepths.csv, wf/nearest_copy_ladder_arms.csv, wf/nearest_copy_extra_arms.csv and wf/per_pose_two_conventions.csv with the vina env (scripts under scratchpad/wf2/). Reference-convention baselines reproduced to the printed digit before substitution: ladder table (all 32 cells), :182/:184 counts, depth-gain decomposition (+88/-2/+1, +63/-1/+2, +26/-2/+1), Wilson NN/VA cells for AutoDock raw/gnina, DiffDock raw/smina/gnina, EquiBind gnina, optimisation rows for AutoDock and both DiffDock refiners, accurate-but-invalid rows, validity-cost counts, the 90% and 95% Newcombe intervals, power 0.12 / MDD 9.8 / n 4,162, threshold-resolved RMSD rows, and the placement/form cohorts and quartiles (190/1.490/0.758/4.220...). Nearest-copy derived values in the inventory confirmed: ladder exh128 130/170/198/217 and selected 149/200/213/214 (plan's full eight-rung table matches: 92/138/143, 109/161/170, 129/170/170, 123/190/201, 141/200/200, 123/194/209); raw-vs-selected top-15 4/19 p 0.0026; top-15 p vs exh18 1.0e-20, vs 64+gnina 0.0044; decomposition +65/-2/+1/+64, +45/0/+2/+47, +27/-2/+1/+26; Wilson and optimisation cells as printed in the inventory (AutoDock NN k=1 19/39 p 0.0119; DiffDock smina 5/10 p 0.302, 5/17 0.0169, 5/22 0.00151, 5/27 1.1e-4); bands +0.6/+0.4/+0.8 and +16.5/+10.5/+6.5; DiffDock raw accurate-but-invalid 65/60/59/57 = 21.5/19.8/19.5/18.8; cross-tool 77/58 p 0.121 then 2.0e-5, 9.2e-6, 4.8e-6, vs EquiBind 5.3e-17..2.3e-28; Newcombe +5.6 [-1.7, +12.8], +13.2 unchanged, +11.2 [+3.9, +18.4], +10.2 [+3.0, +17.3], 76/98/129, MDD 10.5, power 0.32, n 1,062, 90% -0.5..+11.7 so 'within 12'; McNemar 7.6e-4/0.0036/0.0075; RMSD threshold rows all 90 cells; H.4 451/98.0, 2,169/95.3, 515/93.8, 437/98.6, 2,118/50.2; :1196 counts 2/4/3/3/3, 5/4/3/3/3, 2/3/3/3/3, 65/60/59/57/55; :267 83->86; :869 43.6 and 134 = 44.2; single-copy stratum 165. Plan 1.10 ITT verified against itt_dropped_ids_nearest_copy.csv: 150 poses all status success; rank-1 closest 6.26 \u00c5 (7FRX_O88, reference 80.7 \u00c5); top-15 closest 2.14 \u00c5 (7FRX_O88 optimized_rank 5) against 6.41 \u00c5 to the reference (the printed 6.4); 8F4J_PHO 1.54 \u00c5 at optimized_rank 28; 7B2C/7D6O/7FRX/7M31/8F4J carry 2/2/4/4/4 copies; no generator for the ITT numbers exists outside the probe (7B2C_TP7 appears only in probe files and the docking config). Plan 1.6 verified: pool 6,169 -> 7,565, clipped 2,329 -> 2,854, coverage 62.7/54.1/47.2 -> 82.2/73.9/51.2, medians 1.490 -> 1.376 and 5.043 -> 4.922, DiffDock drift +0.46 -> +0.53, EquiBind +1.09 -> +0.96 and 2.977 -> 3.239; the D2 cd_nearest cohort gives EquiBind (15) 1932 (inventory's 1933 is the per-metric minimum). Inventory claims about provenance confirmed: installed redock.yml:307 'load_all: True # important to set if there are multiple ligands that could be correct'; yaml :1042 smallest_passing_margin, :1102-1104 site_filtered_*, :1105-1106 metal_records/metal_complexes, :345-346/:354/:389 threshold and placement rows; no metal-adjacent stratum generator found (only PandaMap metal_coordination audit and a ligand has_metal descriptor); all 27 method keys including autodock_vinardo* and the guided smina/gnina arms exist in per_pose_metrics.csv. Trap for Phase 5.4: the probe's EquiBind raw pose order does not reproduce the printed EquiBind (raw) rows (1.3/3.3/5.3/5.9 vs 1.3/3.0/4.0/5.9), so any EquiBind-raw number must come from the hub rebuild, not from the extra-arms CSV. Not audited here: Kabsch-to-nearest values for the non-headline rungs (Section 1.5 three-part numbers for exh18 etc.), the winner's-curse estimator, the CNNscore/Vina-energy orderings at :173, the metal-stratum membership, and the contact/PLIF sites (:543-551, :1407-1415), which are recompute by the inventory's own account."
+}
