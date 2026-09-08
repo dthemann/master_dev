@@ -70,7 +70,7 @@ determinism:
 # Both are checked below, which is how the difference stays visible.
 table_1:
   source: "body_main_short.tex:261, tab:results-pose-production"
-  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv
+  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv
   columns: [poses, valid_complexes, valid_poses, valid_pct,
             near_complexes, near_poses, near_pct,
             form_complexes, form_poses, form_pct,
@@ -99,7 +99,7 @@ table_1:
 # regenerated here and reproduces every printed cell exactly.
 table_2:
   source: "body_main_short.tex:336, tab:results-depth-recovery"
-  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity_gnina_arm.csv
+  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_validity_gnina_arm.csv
   columns: [rank1, top15, top30]
   rows:
     AutoDock: [149, 213, 214]
@@ -120,7 +120,7 @@ table_2:
 # diverge from what the plotting run actually computed.
 table_3:
   source: "body_main_short.tex, tab:results-cluster-recovery"
-  input: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/topN_crystal_cluster_matrix_stats.txt
+  input: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/topN_crystal_cluster_matrix_stats.txt
   depths: [1, 5, 10, 15]
   reach_pct:                      # [rate, wilson_lo, wilson_hi] per depth
     AutoDock:  [[78, 73, 82], [86, 81, 89], [88, 84, 91], [90, 86, 93]]
@@ -148,7 +148,7 @@ table_3:
 # the three rates.
 table_4:
   source: "body_main_short.tex, tab:results-native-recovery-rank"
-  input: pandamap_results/benchmark_matched_equibind_nearest/report/native_recovery_by_rank.csv
+  input: pandamap_results/benchmark_matched_equibind/report/native_recovery_by_rank.csv
   ranks: [1, 2, 3, 4, 5]
   method_keys:
     AutoDock: autodock_mgltools_exh128_gnina
@@ -167,9 +167,9 @@ table_4:
       f1:        [0.694, 0.670, 0.639, 0.626, 0.631]
     EquiBind:
       n:         [266, 256, 247, 245, 243]
-      precision: [0.522, 0.518, 0.518, 0.508, 0.497]
+      precision: [0.522, 0.518, 0.518, 0.507, 0.497]
       recall:    [0.486, 0.475, 0.475, 0.459, 0.444]
-      f1:        [0.499, 0.491, 0.490, 0.476, 0.463]
+      f1:        [0.498, 0.491, 0.490, 0.476, 0.463]
 
 # -----------------------------------------------------------------------------
 # Table 10 - Pooled Cost per Generated Pose by Hardware Currency
@@ -182,7 +182,7 @@ table_4:
 # checks the table against.
 table_10:
   source: "body_appendix_short.tex, tab:appendix-cost-per-pose"
-  input: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged_nearest/effort_summary.csv
+  input: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/effort_summary.csv
   threads: 32
   rows:                           # [charged s, gpu s, cpu-core s] per generated pose
     autodock: [6.02, 4.12, 60.73]
@@ -243,7 +243,7 @@ table_14:
 # is what stands behind that sentence.
 table_20:
   source: "body_appendix_short.tex, tab:appendix-refinement-bands"
-  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/optimization_benefit_by_rank.csv
+  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/optimization_benefit_by_rank.csv
   bands: {"1-10": [1, 10], "11-20": [11, 20], "21-30": [21, 30]}
   rows:                           # [1-10 smina, 1-10 gnina, 11-20 smina, 11-20 gnina, 21-30 smina, 21-30 gnina]
     "DiffDock/near-native":               [0.6, 0.6, 0.4, 0.3, 0.8, 1.0]
@@ -273,7 +273,7 @@ table_22:
   # Read from the same sidecar Table 18 uses, which carries near_k and valid_k as
   # counts. Variant labels are that file's own, so they read as the thesis prints
   # them rather than as internal method keys.
-  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv
+  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_validity.csv
   footnote_variant: "AutoDock Vina"
   # The table prints the Results chapter's names for the arms; the sidecar uses
   # the recovery chapter's. Only one of the six actually differs, and mapping it
@@ -304,7 +304,7 @@ table_22:
 # The pools are nested, so V1 is a subset of V15 and no complex is ever lost.
 table_25:
   source: "body_appendix_short.tex, tab:results-depth-gain"
-  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv
+  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv
   arms:
     "AutoDock Vina + gnina": [autodock_mgltools_exh128_gnina, optimized_rank]
     "DiffDock + smina":      [diffdock_smina, rank]
@@ -327,7 +327,7 @@ table_25:
 # use each tool's own order, EquiBind by gnina affinity.
 table_26:
   source: "body_appendix_short.tex, tab:results-near-native-form"
-  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv
+  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv
   n: 303
   thresholds: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5]
   depths: [1, 15, 30]
@@ -381,7 +381,7 @@ table_26:
 # no top-15 row and its depth-3 rows would line up against the table's top-5.
 table_27:
   source: "body_appendix_short.tex, tab:results-placement-form"
-  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__stats_per_tool_depth.csv
+  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__stats_per_tool_depth.csv
   columns: [n_poses, n_valid_complexes, coverage_pct, inplace_median, inplace_q1,
             inplace_q3, form_median, form_q1, form_q3, median_r,
             pct_placement_limited, pct_mixed, pct_form_limited]
@@ -646,7 +646,7 @@ table_16:
 table_24:
   source: "body_appendix_short.tex, tab:appendix-pb-decomposition-full"
   pb_input: posebusters_results/benchmark_matched_equibind/dock/posebusters_filtered_results.csv
-  metrics_input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv
+  metrics_input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv
   join_on: pose_file
   near_native_rmsd: 2.0
   groups:
@@ -711,7 +711,7 @@ table_24:
 # comparison-only wins, Holm p]. Depths [1, 5, 10, 15].
 table_21:
   source: "body_appendix_short.tex, tab:appendix-cross-tool-mcnemar"
-  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv
+  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_stats.csv
   family: between_tool
   family_size: 16
   depths: [1, 5, 10, 15]
@@ -800,7 +800,7 @@ table_17:
 # Columns per depth: [near-native %, validity-aware %]. Depths [1, 5, 10, 15].
 table_18:
   source: "body_appendix_short.tex, tab:appendix-top-k-recovery"
-  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv
+  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_validity.csv
   depths: [1, 5, 10, 15]
   rows:
     "AutoDock Vina": [[43.2, 42.9], [56.4, 56.1], [62.7, 62.7], [65.3, 65.3]]
@@ -822,7 +822,7 @@ table_18:
 # Columns per depth: [raw %, optimised %, raw-only wins, opt-only wins].
 table_19:
   source: "body_appendix_short.tex, tab:appendix-refinement-mcnemar"
-  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv
+  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_stats.csv
   family: within_tool
   family_size: 16
   depths: [1, 5, 10, 15]
@@ -860,9 +860,9 @@ table_5:
 # worker count; the charged basis does not.
 table_6:
   source: "body_main_short.tex, tab:results-cost-per-qualifying-pose"
-  input: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged_nearest/effort_summary.csv
+  input: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/effort_summary.csv
   rows:
-    autodock: {complexes: 214, cpu_core_s_per_near2: 1233.3, gpu_s_per_near2: 83.6, poses_near2: 442}
+    autodock: {complexes: 214, cpu_core_s_per_near2: 1233.3, gpu_s_per_near2: 83.7, poses_near2: 442}
     diffdock: {complexes: 183, cpu_core_s_per_near2: 2.30,   gpu_s_per_near2: 39.1,  poses_near2: 2068}
     equibind: {complexes: 83,  cpu_core_s_per_near2: 159.4,  gpu_s_per_near2: 1.4,   poses_near2: 483}
   note: >-
@@ -882,7 +882,7 @@ table_6:
 # by `optimized_rank`, which is gnina's CNNaffinity order over the same poses.
 table_8:
   source: "body_appendix_short.tex, tab:appendix-exhaustiveness-ladder"
-  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv
+  input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv
   depths: [1, 5, 15, 30]
   rows:
     autodock_mgltools_exh18:        {rank_col: rank,           counts: [92, 127, 138, 143]}
@@ -911,15 +911,15 @@ table_8:
 figures:
   media_dir: thesis_latex_nearest/media/media
   pairs:
-    image2:  posebusters_results/benchmark_matched_equibind/dock/validity_report_mgltools_nearest/00_figure2_validity_yield.png
-    image3:  posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/18_topn_within_thresholds_pbvalid_depths.png
-    image4:  posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/18_topn_within_thresholds_kabsch_pbvalid_depths.png
-    image5:  posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__thesis.png
-    image6:  posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/topN_crystal_cluster_matrix.png
-    image7:  posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/crystal_cluster_homogeneity.png
-    image8:  posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/cluster_quality_metrics.png
-    image9:  pandamap_results/benchmark_matched_equibind_nearest/report/05_fingerprint_similarity_top5.png
-    image11: pandamap_results/benchmark_matched_equibind_nearest/report/10b_contact_decomposition_by_rank.png
+    image2:  posebusters_results/benchmark_matched_equibind/dock/validity_report_mgltools/00_figure2_validity_yield.png
+    image3:  posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/18_topn_within_thresholds_pbvalid_depths.png
+    image4:  posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/18_topn_within_thresholds_kabsch_pbvalid_depths.png
+    image5:  posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__thesis.png
+    image6:  posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/topN_crystal_cluster_matrix.png
+    image7:  posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/crystal_cluster_homogeneity.png
+    image8:  posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes/cluster_quality_metrics.png
+    image9:  pandamap_results/benchmark_matched_equibind/report/05_fingerprint_similarity_top5.png
+    image11: pandamap_results/benchmark_matched_equibind/report/10b_contact_decomposition_by_rank.png
     image13: posebusters_results/_orai_matched_root/orai_pbvalid_yield_compare/09f_pbvalid_yield_dominant_orai_benchmark_vs_experimental.png
     image15: posebusters_results/_orai_matched_root/orai_pbvalid_tm_share_compare/fig_tm_loss_relative_compare.png
     image16: posebusters_results/_orai_matched_root/orai_jku/pose_clusters/panels/orai_cross_tool_agreement_compare.png
@@ -928,13 +928,13 @@ figures:
     image19: posebusters_results/_orai_matched_root/orai_benchmark/pose_clusters/orai_cluster_quality_filtering.png
     image21: pandamap_results/orai_interaction_compare_matched/fig_type_profile_compare.png
     image23: pandamap_results/orai_interaction_compare_matched/fig_fingerprint_overlap_compare.png
-    image24: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged_nearest/panels/effort_by_quality_near2.png
-    image25: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_nearest/panels/resource_per_near_native_valid_pose.png
+    image24: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/panels/effort_by_quality_near2.png
+    image25: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2/panels/resource_per_near_native_valid_pose.png
     image43: posebusters_results/_orai_matched_root/orai_pbvalid_tm_share_compare/fig_pbvalid_outside_tm_whisker.png
-    image44: posebusters_results/autodock_exhaustiveness_returns_nearest/figures/exh_raw_vs_rescored.png
-    image45: posebusters_results/autodock_exhaustiveness_returns_nearest/figures/exh_depth_sweep.png
-    image46: posebusters_results/autodock_exhaustiveness_returns_nearest/figures/exh_yield_vs_cost.png
-    image47: posebusters_results/autodock_exhaustiveness_returns_nearest/figures/exh_marginal_return.png
+    image44: posebusters_results/autodock_exhaustiveness_returns/figures/exh_raw_vs_rescored.png
+    image45: posebusters_results/autodock_exhaustiveness_returns/figures/exh_depth_sweep.png
+    image46: posebusters_results/autodock_exhaustiveness_returns/figures/exh_yield_vs_cost.png
+    image47: posebusters_results/autodock_exhaustiveness_returns/figures/exh_marginal_return.png
     # ---------------------------------------------------------------------
     # Added 2026-09-03. Thirteen shipped assets had NO provenance pair, so
     # nothing tied them to a file the pipeline writes. Each was located by
@@ -993,7 +993,7 @@ figures:
 prose:
   refiner_contrasts:
     source: "body_main_short.tex, Discussion, 'Physical Validity and Post-Docking Optimisation'"
-    input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv
+    input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv
     note: >-
       ADDED 2026-09-03. The Discussion compares the two refiners within each
       learned family, and NOTHING in the pipeline computes those contrasts.
@@ -1015,7 +1015,7 @@ prose:
     diffdock_near_top15:      {smina: 182, gnina: 180, mcnemar_p: 0.7}
   appendix_h9:
     source: "body_appendix_short.tex, 'Resolution of the Two-Pipeline Contrast'"
-    input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv
+    input: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv
     note: >-
       A whole section of prose with no float behind it. It carries the thesis's
       answer to its own headline question, namely whether the leading pair
@@ -1077,7 +1077,7 @@ prose:
     equibind_multicluster_stability_filtered: 0.74
   figure_39:
     source: "body_appendix_short.tex, the paragraph on fig:results-r9"
-    input: pandamap_results/benchmark_matched_equibind_nearest/report/10b_contact_decomposition_by_rank.csv
+    input: pandamap_results/benchmark_matched_equibind/report/10b_contact_decomposition_by_rank.csv
     autodock_spurious_rank1: 9.1
     diffdock_spurious_rank1: 7.8
     autodock_spurious_rank5: 13.5
@@ -1099,8 +1099,8 @@ prose:
 # The 303-id file is derived from per_pose_metrics rather than written by hand.
   audit:
     source: 'body_appendix_short.tex, "Interaction Fingerprints"'
-    input: pandamap_results/benchmark_matched_equibind_nearest/report/interaction_pose_basis_audit.csv
-    ids_file: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/analysed_cohort_ids.txt
+    input: pandamap_results/benchmark_matched_equibind/report/interaction_pose_basis_audit.csv
+    ids_file: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/analysed_cohort_ids.txt
     profiled_poses: 4253
     profiled_complexes: 303
     median_rmsd: 5.01

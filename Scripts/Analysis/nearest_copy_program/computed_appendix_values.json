@@ -1271,17 +1271,33 @@
   }
  },
  "line248_winners_curse": {
-  "d1": {
-   "selected_rate_pct": 49.17,
-   "sigma_pp": 2.87,
-   "bias_pp_normal_order_stat_8_arms": 4.09,
-   "note": "NO registered generator found for the eight-arm figure printed at :248 (grep for winner/curse over Scripts/Analysis finds none); this is a normal-order-statistic approximation, flagged UNRESOLVED"
+  "status": "RESOLVED 2026-09-08 14:05 (author decision 4): generator nearest_copy_program/selection_bias.py = stage bench_selection_bias; output posebusters_results/selection_bias_nearest/selection_bias.csv",
+  "estimator": "c_k * sigma_d / sqrt(2), sigma_d = paired (McNemar) SE of the winner's recovery margin over its runner-up on the same 303 complexes",
+  "top15_triple_gate_pp": {
+   "AutoDock exh128 (k=2)": 0.431,
+   "DiffDock (k=3)": 0.522,
+   "EquiBind unguided (k=3)": 1.021,
+   "AutoDock ladder (k=8)": 1.088
   },
-  "d15": {
-   "selected_rate_pct": 70.3,
-   "sigma_pp": 2.63,
-   "bias_pp_normal_order_stat_8_arms": 3.74,
-   "note": "NO registered generator found for the eight-arm figure printed at :248 (grep for winner/curse over Scripts/Analysis finds none); this is a normal-order-statistic approximation, flagged UNRESOLVED"
+  "ladder_k8_other_rows_pp": {
+   "rank1_triple": 1.517,
+   "top15_double": 1.427,
+   "rank1_double": 1.62
+  },
+  "printed_at_248": "0.4 / 0.5 / 1.0; ladder 1.1 top-15, 1.5 rank-1; 1.4 / 1.6 on the validity-aware gate",
+  "superseded_approximation": {
+   "d1": {
+    "selected_rate_pct": 49.17,
+    "sigma_pp": 2.87,
+    "bias_pp_normal_order_stat_8_arms": 4.09,
+    "note": "NO registered generator found for the eight-arm figure printed at :248 (grep for winner/curse over Scripts/Analysis finds none); this is a normal-order-statistic approximation, flagged UNRESOLVED"
+   },
+   "d15": {
+    "selected_rate_pct": 70.3,
+    "sigma_pp": 2.63,
+    "bias_pp_normal_order_stat_8_arms": 3.74,
+    "note": "NO registered generator found for the eight-arm figure printed at :248 (grep for winner/curse over Scripts/Analysis finds none); this is a normal-order-statistic approximation, flagged UNRESOLVED"
+   }
   }
  },
  "line267_equibind": {

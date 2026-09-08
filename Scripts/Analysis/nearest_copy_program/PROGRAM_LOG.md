@@ -85,3 +85,38 @@ The old :248 figures ("near two at rank-1, near one and a half at top-15", eight
 Identity re-run: per-pose identity failure 0.95 % under instance, combined (load_all) and nearest references alike; 0 poses differ between references; no complex has deposited copies with different InChI. Cost by arm and depth (rank-1 / top-15 / top-30): DiffDock smina −1/−2/−2 (7ZXV_45D, then +7XQZ_FPF) under both conventions; DiffDock gnina the same; AutoDock and EquiBind 0.
 
 Copy rebuilt 14:05–14:08 after the decision edits: latexmk exit 0, 0 `!` errors, 3 overfull boxes, 146 pages (145 before; the longer App. C caveat paragraph and the footnote add a page). Kurzfassung stays on page 4 with the Schlagworte on the same page (lowest text at 749 of 842 pt); raster `qa_raster/kurzfassung_after_decisions.png`.
+
+## 2026-09-08 14:07–14:40 — six adversarial reviews folded, Phase 7 complete
+
+**Reviews (workflow wf_61387ef7-85f resumed at 14:07, 12 agents, 0 errors).** Six reviewers, two lenses per file. Every changed number in all three copy files traced to a rebuilt `_nearest` sidecar or reproduced from the nearest per-pose table; no plan preview, bracketed placeholder or stale canonical value survives; all longtables keep their column counts; the D9 table (Table 23) is consistent with its CSV. Findings folded into the copy (exact-match edits, all in `thesis_latex_nearest/`):
+
+| file | finding | action |
+|---|---|---|
+| Thesis_short.tex | Kurzfassung cuts for decision 6 weakened the hedge (:84) and dropped the method-class contrast (:109) | restored "möglicherweise zu optimistisch" and "nicht für physik- oder KI-basiertes Docking allgemein"; compensated with "nämlich", "anhand bekannter Posen", "daher" (net −6 characters vs shipped). The :81 clause stands (author decision 6). |
+| body_main | MAJOR :807 "dropping either term leaves smina ahead by two" false (near∧form gate 146 vs 145) | rewritten with both counts |
+| body_main | MAJOR :894 36.0 Å median attached to the 138-complex denominator | clause reordered (36.0 Å is over the 143 entries) |
+| body_main | stale `% TODO` above the :144 footnote | replaced by a provenance comment naming `reference_identity_nearest/identity_cost_summary.json` |
+| body_main | :516 "did not survive correction" overstates the instance test (never significant uncorrected) | "detected no association" |
+| body_main | :553 spurious range 8.6 → 8.7 (rank-4 value 8.674) | fixed |
+| body_main | :869 Table 19 family is on the near-native gate | "on the near-native gate" added |
+| body_main | :892 estimator mixes k = 2 and k = 3 without saying so | "with the AutoDock family taken over its two exhaustiveness-128 arms" |
+| body_main | :201 depth marker + comma; :162 redundant clause and "the crystal"; :338 "of the crystal"; rank 1/rank 5 → rank-1/rank-5 | applied |
+| body_appendix | MAJOR Table 21 footnote "genuine tie" for a 77/58, p 0.12 rank-1 contrast | "unresolved nominal lead rather than a tie ... exact p of 0.12 before correction" |
+| body_appendix | MAJOR :1242 "8 of the 211 alternate copies" was a plan preview (the 12.5 Å sphere count) | NEW generator `alternate_copy_box_containment.py` = stage `bench_alternate_copy_containment`; centroid-in-cube rule gives **11 of 211** (16 by any heavy atom; 8 by sphere) over the 308 entries; text says 11 |
+| body_appendix | :1235 gate-cost sentence used depths 1/5/15/30 under Table 22 (depths 1/5/10/15) | "57 to 60 ... 18.8 to 21.5" |
+| body_appendix | :1076 Form column one-sided; :1082 caption "Near-Native" → "Validity-Aware Recovery"; :1227 "of the crystal ligand"; :1242 since/whereas/so chain; :1454 rank hyphens; :246 basis of "seventeen minutes"; :165 ", so" chain | applied |
+| ledgers | Phase 5 JSON ledger and `computed_appendix_values.json` did not know the decision-stage edits (:248, :512, :516, :555, :892, :144, Kurzfassung) | `line248_winners_curse` entry RESOLVED to the generator; the decision table above is the ledger of record for the rest |
+
+Not acted on: :458 "gains 6" vs Table 3 rounded cells (pre-existing convention, reviewers marked optional); :543 0.499 (half-up of 0.4985, matches Table 4's printed 0.499; yaml set to the printed value).
+
+**Phase 7 (yaml copy re-transcription).** Tool `phase7_retranscribe.py`: a position-tracking yaml loader wraps every scalar with its (line, column), the harness copy runs once, and every failing check whose expected value is a yaml scalar is patched in place at the token's own precision. 1,364 checks, 725 moving; 700 tokens patched on 122 lines (6 duplicate-token checks collapsed); 19 list-shaped entries transcribed by `phase7_manual_patches.py` (Table 3 reach and all-three rows, Table 22 DiffDock raw k1/k5, H.9 TOST-10pp flag → false); 4 printed-rounding cells set to what the copy prints (Table 20 6.7 and 4.6, Table 27 16.7, Table 4 EquiBind 0.508 / 0.499, Table 6 83.6; the harness compares unrounded with a window, so both spellings pass) and one p-value at the yaml's 4-significant-figure convention (0.7266). Harness copy: `_close` and the Table 20 window carry a 1e-9 hair, because values printed from x.x5 sit exactly on the window edge in binary (precedent: Table 4 HALF_ULP).
+
+| signature | spec | tree | result |
+|---|---|---|---|
+| A (12:08) | canonical values | `_nearest` | 740 / 1,364 differ (incl. 15 figure pairs) |
+| **B** | re-transcribed copy | `_nearest` | **1,364 / 1,364 reproduce** (`harness_signature_B_newvalues_newtree.csv`) |
+| **C** | re-transcribed copy | canonical | 737 / 1,364 differ, same blocks as A in the opposite direction (`harness_signature_C_newvalues_oldtree.csv`; 14 figure pairs) |
+
+Direction rule (`phase7_direction_check.py`): of the 700 auto-patched values 662 are printed verbatim in the copy; the 38 others are 14 harness-only quantities the thesis never prints as numbers (Holm p-values in Table 21, two prose p-values, one base-wins count) and 24 that ARE printed but with a thousands separator ("2,829", "1,233.3", "1,100") or a half-up rounding (Table 4, Table 6), which the check now recognises. All 19 manual values are printed in the copy.
+
+**Kurzfassung final state (14:50).** After restoring the two meanings the reviewers asked for, the body ran to 33 lines and the three Schlagworte lines fell onto page 5 (the page holds 32 body lines plus the keywords). Four further meaning-neutral cuts: "Arbeitsabläufe" → "Pipelines" (the word the last paragraph already uses), "auf demselben Datensatz erfolgten" → "denselben Datensatz nutzten", "weder eine native Pose noch eine Bindungsstelle" → "weder native Pose noch Bindungsstelle", "explizite Untersuchung" → "explizite Prüfung". Net −32 characters against the shipped Kurzfassung with the endpoint clause included. Raster `qa_raster/kurzfassung_final_check.png`.

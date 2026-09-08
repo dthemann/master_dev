@@ -74,14 +74,14 @@ PoseBusters physical validity; Local pose optimisation; Orai1 calcium channel
 Molekulares Docking sagt Bindungsposen von Protein--Ligand-Komplexen voraus, doch
 physikbasierte und auf künstlicher Intelligenz (KI) beruhende Werkzeuge unterscheiden
 sich in Suche, Reihung und Geometriedarstellung. Verglichen werden drei konfigurierte
-Arbeitsabläufe für blindes Ganzprotein-Docking, nämlich AutoDock Vina mit
+Pipelines für blindes Ganzprotein-Docking, AutoDock Vina mit
 gnina-Rescoring, DiffDock-L mit smina- und EquiBind mit gnina-Optimierung. Ein
-Kalibrierungsdatensatz aus 303 kokristallisierten Komplexen erlaubt die Bewertung anhand
-bekannter Posen unter einem primären Endpunkt aus PoseBusters-Gültigkeit und
+Kalibrierungsdatensatz aus 303 kokristallisierten Komplexen erlaubt die Bewertung
+unter einem primären Endpunkt aus PoseBusters-Gültigkeit und
 Schweratom-RMSD von höchstens 2\angstrom{} zur nächstgelegenen hinterlegten Ligandkopie. Eine referenzfreie Fallstudie dockt drei
 Modulatoren an vier bereitgestellte Molekulardynamik-Schnappschüsse eines
-Homologiemodells des Orai1-Kalziumkanals. Da Auswahl und Bewertung auf demselben
-Datensatz erfolgten, ist der Vergleich deskriptiv und eher optimistisch.
+Homologiemodells des Orai1-Kalziumkanals. Da Auswahl und Bewertung denselben
+Datensatz nutzten, ist der Vergleich deskriptiv und möglicherweise zu optimistisch.
 
 Die Rohposen der lernenden Verfahren waren physikalisch weitgehend unzulässig, mit
 gepoolter Gültigkeit von 24,4\% für DiffDock und 2,9\% für EquiBind gegenüber 99,6\% für
@@ -103,10 +103,10 @@ Für Orai1 blieb die Rangfolge der Gültigkeit erhalten, die der nutzbaren Ausbe
 sich dagegen um, im Median 65\% für DiffDock, 60\% für AutoDock und 0\% für EquiBind.
 Diese Umkehr stammt aus AutoDocks gelernter Neureihung, nicht aus seiner Suche, deren
 erste zehn Modi 75\% erreichen. Dieses kleine, korrelierte und referenzfreie Panel
-validiert weder eine native Pose noch eine Bindungsstelle. Die Ergebnisse sprechen daher
+validiert weder native Pose noch Bindungsstelle. Die Ergebnisse sprechen
 für gemeinsame Beurteilung von Genauigkeit und Gültigkeit, lokale Optimierung und
-explizite Untersuchung der Rangtiefe. Sie gelten für die konfigurierten Pipelines und die
-Hardware, nicht für Dockingmethoden allgemein.
+explizite Prüfung der Rangtiefe. Sie gelten für die konfigurierten Pipelines und die
+Hardware, nicht für physik- oder KI-basiertes Docking allgemein.
 
 \vfill\paragraph*{Schlagworte:}Molekulares Docking; Physikbasierte und KI-basierte
 Methoden; Physikalische PoseBusters-Gültigkeit; Lokale Posenoptimierung;

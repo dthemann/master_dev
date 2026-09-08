@@ -98,7 +98,8 @@ def _md5(p: Path) -> str | None:
 
 
 def _close(a: float, b: float, tol: float) -> bool:
-    return abs(float(a) - float(b)) <= tol
+    # 1e-9 hair: a value printed from x.x5 sits exactly on the window edge in binary
+    return abs(float(a) - float(b)) <= tol + 1e-9
 
 
 # =============================================================================
@@ -1139,7 +1140,7 @@ def check_table_20(spec: dict, rep: Report, verbose: bool = False) -> None:
                 got = (cur[col] * cur.n).sum() / cur.n.sum() - base
                 # Whole-point rows carry a 0.5 window, one-decimal rows 0.05.
                 tol = 0.5 if float(want[i]).is_integer() and abs(want[i]) >= 10 else 0.05
-                ok = abs(got - want[i]) <= tol
+                ok = abs(got - want[i]) <= tol + 1e-9
                 bad += not ok
                 rep.add(f"table_20[{row_key}].{band}/{opt}", want[i], round(got, 2),
                         ok, t["source"])

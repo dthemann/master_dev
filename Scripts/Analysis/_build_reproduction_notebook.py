@@ -571,6 +571,22 @@ reg.add(Stage(
           "give identical per-pose outcomes (0.95 % of poses fail; no complex has copies with different InChI) "
           "and the cost is -1 / -2 / -2 (7ZXV_45D; +7XQZ_FPF) for both DiffDock arms under both conventions, "
           "0 for AutoDock and EquiBind. About 1 minute on 8 workers."))
+
+reg.add(Stage(
+    name="bench_alternate_copy_containment", section="3. Benchmark analysis",
+    title="Alternate deposited ligand copies inside a 25 A PoseBusters-style cube on the reference instance",
+    determinism=BITEXACT, cost=CHEAP,
+    needs=[],
+    outputs=["posebusters_results/reference_convention/alternate_copies_in_25A_cube.json"],
+    thesis="App. C box-volume paragraph ('only N of the 211 alternate copies have a centroid inside it')",
+    cmd=[VINA_PY, ANA / "nearest_copy_program" / "alternate_copy_box_containment.py",
+         "--benchmark-dir", "Data/PoseBuster Benchmark Set",
+         "--ids-file", str(IDS),
+         "--out", "posebusters_results/reference_convention/alternate_copies_in_25A_cube.json"],
+    notes="ADDED 2026-09-08 after the appendix numbers review: the printed '8 of the 211' was a plan preview with no "
+          "generator and was the 12.5 A SPHERE count; the stated rule (alternate copy's heavy-atom centroid inside the "
+          "25 A cube centred on the reference heavy-atom centroid) gives 11 of 211 over the 308 entries (16 by any heavy "
+          "atom). 143 multi-copy entries, 211 alternates."))
 print(f"{len(reg)} stages registered")
 ''')
 
