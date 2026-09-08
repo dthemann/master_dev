@@ -188,3 +188,18 @@ No value anywhere in the covered text equals a retired single-instance number; A
 | 6 | :429 gate qualifier | "rank-1 recovery" | "rank-1 near-native rate ... before the validity requirement is applied" | smina/gnina rerank summaries: 3.0 / 3.6 pp on the ungated rmsd<=2 rank-1 rate |
 
 Unverifiable by construction (literature values, no repository source): 73 % Orai1 transmembrane identity (:614, ref037), 22.1 % and 67.3 % TEMPL success (:822, ref065).
+
+## 2026-09-08 23:10 — second validation pass (main text complete), four new findings adjudicated
+
+The resumed run added 14 verifier results, giving the main text 3-4 independent routes per section (M:1-189 four routes, M:190-400 four, M:401-501 three, M:502-559 three, M:560-728 four, M:729-785 four, M:786-899 three, Abstract three). Beyond the six already fixed in 2446c658, four new items were raised and each was adjudicated here by recomputation from the primary tables (the refuter agents had died on the quota):
+
+| # | location | verdict | evidence |
+|---|---|---|---|
+| 1 | main :433 "AutoDock returns a valid pose for all 303 complexes" | **REAL** | The paragraph and its 82.2 % belong to the plotted arm `autodock_mgltools_exh128_gnina` (20d panel data: top-1 n_valid_complexes 249, universe 303, coverage 82.18 %). That arm has a PB-valid pose for **301** of 303 complexes (rank-1 valid: 298); only the RAW exh128 arm reaches 303 (whose own trim would be 78.2 %, not 82.2 %). The parallel EquiBind sentence at :437 correctly uses its own arm's 266. Convention-independent, so pre-existing rather than a promotion miss. Fix: "for 301 of 303 complexes". |
+| 2 | main :516 "Wilcoxon p = 0.064" | **REFUTED** | The verifier's 0.063 came from a different F1 source. Recomputing the exact F1 from the integer contingency counts of `recovery_detail_per_pose.csv` (2tp/(2tp+fp+fn)) over the 280 shared rank-1 complexes gives p = 0.06379, which prints 0.064; the stored 4-dp column gives 0.06398. Printed value is right. (Note for the record: with `zero_method` pratt or zsplit the same 280 pairs give 0.043, so the non-significance depends on how the 26 exact ties are handled.) |
+| 3 | main :694 "PandaMap assigns residue-level contacts to fifteen interaction classes" | **REAL (minor)** | PandaMap's class set is **sixteen**: the calibration-benchmark panel exhibits all sixteen including `metal_coordination`, and `pandamap_pose_summary.csv` carries sixteen count columns. Only fifteen occur on Orai1, because that receptor carries no metal ion. Fix: "sixteen interaction classes, fifteen of which occur on this receptor" or "the fifteen classes observed here". |
+| 4 | main :871 "the remaining sixteenfold EquiBind advantage over DiffDock" | **REFUTED, with a note** | 39.0 / 2.4 = 16.25 follows from the two medians the same sentence prints, so the word is internally consistent. The cost sidecar's paired estimator on the same tier gives 10.45x (95 % CI 7.14-14.20, n = 54 paired complexes), which excludes sixteen. Both quantities are defensible; they are not the same estimator. Optional: say "the ratio of the two medians" or quote the paired 10.5x. |
+
+Unverifiable by construction (cited literature, no repository source): 73 % Orai1 transmembrane identity (:614, ref037 Hou 2012), 22.1 % and 67.3 % TEMPL success (:822, ref065). Do not re-file.
+
+Appendix validation (7 chunks x 2 routes + refuters) launched separately as wf_89c91e8b-782 after the model switch.
