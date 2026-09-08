@@ -165,3 +165,9 @@ Not acted on: `thesis_latex_nearest/` stays tracked as the audited record (it no
 **Audit fold verified (16:25).** Harness with the three new checkers: **1398/1398 checks reproduce** (1364 + 34 new: 12 Table 23 rows, 6 convention assertions, 16 program-sidecar values). Shipped PDF rebuilt: 145 pages, 0 errors, Kurzfassung and Schlagworte on page 4; probes confirm the deleted clause is gone and "at any reported depth", "the raw poses", the split sentences and the new Table 23 short caption are in. No `TODO` remains in the shipped sources.
 
 **Regeneration validation re-run (16:01, audit item m11).** `validate_regeneration.py` on the promoted trees: 20 of 20 regenerable assets byte-identical to the published figures, 0 not (`posebusters_results/_reproduction/regeneration_check.json`, written 2026-09-08 16:01:49). The stale 09-06 verdict is superseded.
+
+## 2026-09-08 16:40 — the last two open hygiene items (author decision)
+
+- `Scripts/Analysis/tests/test_diffdock_sweep_gate.py` retired to `obsolete/tests/` beside the notebook it pins (`obsolete/DiffDock_Parameter_Sweep.ipynb`, gitignored since the repo clean-up); it could not run in a clean clone and the sweep is no longer reported. The two live tests (`method_filter`, `stats_utils`) stay.
+- LaTeX build by-products of the shipped thesis untracked and ignored (`.aux .blg .dvi .fdb_latexmk .fls .lof .log .lot .out.ps .toc`, plus the regenerated `.bcf` and `.run.xml`); `.tex`, `.bib`, `.bbl` and the PDF stay tracked. Files remain on disk; no history rewrite.
+- The cluster sidecar double-rounding (55.5 %) was already closed by the promotion: the regenerated sidecar prints from the exact fraction (71.3 % = 216/303).

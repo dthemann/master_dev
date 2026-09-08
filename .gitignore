@@ -71,3 +71,19 @@ obsolete/
 # in-repo safety copies taken before the nearest-copy program (the real backup is outside the repository)
 *.backup-instance-*
 *.bak-instance-*
+
+# LaTeX build by-products of the shipped thesis (the .tex, .bib, .bbl and .pdf stay tracked)
+thesis_latex/*.aux
+thesis_latex/*.blg
+thesis_latex/*.dvi
+thesis_latex/*.fdb_latexmk
+thesis_latex/*.fls
+thesis_latex/*.lof
+thesis_latex/*.log
+thesis_latex/*.lot
+thesis_latex/*.out
+thesis_latex/*.out.ps
+thesis_latex/*.toc
+thesis_latex/*.synctex.gz
+thesis_latex/*.bcf
+thesis_latex/*.run.xml
