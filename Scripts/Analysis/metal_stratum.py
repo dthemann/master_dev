@@ -89,7 +89,9 @@ def read_pdb_atoms(path: Path) -> pd.DataFrame:
             if not line.startswith(("ATOM", "HETATM")):
                 continue
             el = line[76:78].strip().capitalize()
-            if not el:
+            if not el and line.startswith("HETATM"):
+                # Name-derived fallback for HETATM only: an ATOM record named CA
+                # is an alpha carbon, not calcium (the known PDBQT-CA trap).
                 name = line[12:16].strip()
                 el = "".join(c for c in name if c.isalpha())[:2].capitalize()
             rows.append(dict(
@@ -98,7 +100,14 @@ def read_pdb_atoms(path: Path) -> pd.DataFrame:
                 el=el, x=float(line[30:38]), y=float(line[38:46]), z=float(line[46:54])))
     df = pd.DataFrame(rows)
     df["reskey"] = df.rec + "|" + df.chain + "|" + df.resn + "|" + df.resi
-    df["is_metal"] = df.el.isin(METALS)
+    # The D4 rule counts HETATM metals (free ions and metal-bearing cofactors);
+    # no shipped <ID>_protein.pdb has a metal in an ATOM record, and the guard
+    # keeps that true if one ever does.
+    df["is_metal"] = df.el.isin(METALS) & (df.rec == "HETATM")
+    n_atom_metal = int((df.el.isin(METALS) & (df.rec == "ATOM")).sum())
+    if n_atom_metal:
+        print(f"  WARNING: {path.name}: {n_atom_metal} ATOM-record atom(s) carry a metal "
+              "element and are NOT counted (the rule counts HETATM metals only).")
     return df
 
 
@@ -189,8 +198,11 @@ def effective_rank(df: pd.DataFrame) -> pd.Series:
     index, the same order as the hub's _gnina_affinity_rank). Every other arm
     keeps its own rank column. If the table already carries eff_rank it is used
     verbatim."""
+    given = None
     if "eff_rank" in df.columns:
-        return pd.to_numeric(df["eff_rank"], errors="coerce").astype(int)
+        # Never trust a supplied eff_rank silently: derive the rank from the
+        # affinities (the hub's own ordering) and report every disagreement.
+        given = pd.to_numeric(df["eff_rank"], errors="coerce")
     eff = pd.to_numeric(df["rank"], errors="coerce").copy()
     eq = df.method.str.startswith("equibind")
     if eq.any():
@@ -202,6 +214,10 @@ def effective_rank(df: pd.DataFrame) -> pd.Series:
         e = e.sort_values(["method", "protein", "_k", "pose_file"], na_position="last", kind="mergesort")
         e["_eff"] = e.groupby(["method", "protein"]).cumcount() + 1
         eff.loc[e.index] = e["_eff"]
+    if given is not None:
+        n_dis = int((given.fillna(-1).astype(int) != eff.fillna(-1).astype(int)).sum())
+        print(f"  eff_rank column present: {n_dis} of {len(df)} rows disagree with the "
+              "affinity-derived rank; the derived rank is used.")
     return eff.astype(int)
 
 

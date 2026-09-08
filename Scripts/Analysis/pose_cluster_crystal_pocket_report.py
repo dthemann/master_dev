@@ -129,22 +129,29 @@ def _equibind_rank_note(eq_variant: Optional[str]) -> str:
 # ════════════════════════════════════════════════════════════════════════
 
 def _strip_all_hs(mol: Chem.Mol) -> Optional[Chem.Mol]:
-    """Return ``mol`` with EVERY hydrogen removed, or None if RDKit cannot.
+    """Return ``mol`` on the hub's heavy-atom basis, or None if RDKit cannot.
 
     Sanitising first is preferred (it also fixes up implicit-H counts), but the
     refined pose files carry geometries RDKit occasionally refuses to sanitise
     (boron ligands, odd valences from the refiner), so a ``sanitize=False``
-    strip is the fallback. ``RemoveAllHs`` rather than ``RemoveHs`` because the
-    latter keeps isotopic / stereo-defining / wedged hydrogens by default and the
-    crystal ``<ID>_ligand.sdf`` is strictly heavy-atom only.
+    strip is the fallback.
     """
+    # Mirror the hub (posebusters_pose_comparison.py: load_first_mol sanitises,
+    # then Chem.RemoveHs) so this report and per_pose_metrics.csv share ONE
+    # heavy-atom basis: RemoveHs keeps a stereo-defining hydrogen on two
+    # ligands (5SAK_ZRY, 8D5D_5DK) and RemoveAllHs would not, which is why the
+    # two generators disagreed by up to 0.22 A on those complexes. RemoveAllHs
+    # stays as the last resort for a pose RDKit cannot sanitise.
     try:
-        return Chem.RemoveAllHs(mol)
+        return Chem.RemoveHs(mol)
     except Exception:
         try:
-            return Chem.RemoveAllHs(mol, sanitize=False)
+            return Chem.RemoveHs(mol, sanitize=False)
         except Exception:
-            return None
+            try:
+                return Chem.RemoveAllHs(mol, sanitize=False)
+            except Exception:
+                return None
 
 
 def load_heavy_atom_mol(sdf_path: str) -> Optional[Chem.Mol]:

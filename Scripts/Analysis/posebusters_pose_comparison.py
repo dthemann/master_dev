@@ -1253,8 +1253,10 @@ def load_all_mols(sdf_path: Path) -> list[Chem.Mol]:
     returned index is NOT guaranteed to equal the file record index in that case."""
     suppl = Chem.SDMolSupplier(str(sdf_path), removeHs=True, sanitize=False)
     mols: list[Chem.Mol] = []
-    for m in suppl:
+    for k, m in enumerate(suppl):
         if m is None:
+            print(f"  WARNING: {sdf_path.name} record {k} could not be read; skipped "
+                  "(copy indices below this record shift by one).")
             continue
         try:
             Chem.SanitizeMol(m)
@@ -1263,6 +1265,8 @@ def load_all_mols(sdf_path: Path) -> list[Chem.Mol]:
                 m.UpdatePropertyCache(strict=False)
                 Chem.GetSymmSSSR(m)
             except Exception:
+                print(f"  WARNING: {sdf_path.name} record {k} failed sanitization and "
+                      "ring perception; skipped (copy indices below this record shift by one).")
                 continue
         mols.append(m)
     return mols
@@ -1304,6 +1308,14 @@ def symmetry_rmsd(pose: Chem.Mol, ref: Chem.Mol) -> float:
         if rmsd < best:
             best = rmsd
     return best if best != math.inf else float("nan")
+
+
+def _safe_symmetry_rmsd(pose: Chem.Mol, ref: Chem.Mol) -> float:
+    """symmetry_rmsd that returns NaN instead of raising (per-copy scoring)."""
+    try:
+        return symmetry_rmsd(pose, ref)
+    except Exception:
+        return float("nan")
 
 
 def centroid_distance(pose: Chem.Mol, ref: Chem.Mol) -> float:
@@ -1730,11 +1742,16 @@ def process_pair(args) -> list[dict]:
         copies_raw = [crystal]
     copies_h = [Chem.RemoveHs(reassign_template(m, crystal_h) or m) for m in copies_raw]
     ref_copy_index = _reference_copy_index(copies_h, crystal_h)
+    # Written copy indices are FILE record indices of <ID>_ligands.sdf; when the
+    # reference had to be prepended (not the case on this dataset) it is written
+    # as -1, which _reference_copy_source maps back to <ID>_ligand.sdf.
+    copy_index_offset = 0
     if ref_copy_index is None:
         print(f"  [{pdb_id}] WARNING: no record of {copies_sdf.name} matches "
               f"{crystal_sdf.name}; prepending the reference instance as copy 0.")
         copies_h = [crystal_h] + copies_h
         ref_copy_index = 0
+        copy_index_offset = 1
     else:
         copies_h[ref_copy_index] = crystal_h
     n_copies = len(copies_h)
@@ -1805,7 +1822,10 @@ def process_pair(args) -> list[dict]:
         # (D1/D2 of the nearest-copy plan) or the reference instance (default).
         try:
             if nearest:
-                r_all = [symmetry_rmsd(pose, c) for c in copies_h]
+                # One copy failing (an unsanitisable alternate record) must not
+                # NaN the whole pose: score each copy in its own try and let
+                # _nearest_copy_index treat NaN as +inf.
+                r_all = [_safe_symmetry_rmsd(pose, c) for c in copies_h]
                 j_star = _nearest_copy_index(r_all, ref_copy_index)
                 rmsd = r_all[j_star]
                 rmsd_ref = r_all[ref_copy_index]
@@ -1886,8 +1906,8 @@ def process_pair(args) -> list[dict]:
             unidock2_affinity=_finite_number(rec.get("unidock2_affinity")),
             reference_convention=reference_convention,
             n_copies=int(n_copies),
-            ref_copy_index=int(ref_copy_index),
-            nearest_copy_index=int(j_star),
+            ref_copy_index=int(ref_copy_index - copy_index_offset),
+            nearest_copy_index=int(j_star - copy_index_offset),
             nearest_copy_is_ref=bool(j_star == ref_copy_index),
             rmsd_ref_instance=float(rmsd_ref),
             centroid_dist_ref_instance=float(cdist_ref),
@@ -9623,6 +9643,8 @@ def _reference_copy_source(bdir: Path, row) -> tuple[Path, int]:
         j, ref_j = None, 0
     if j is None or j == ref_j:
         return single, 0
+    if int(j) < 0:
+        return single, 0
     copies = Path(bdir) / prot / f"{prot}_ligands.sdf"
     if copies.exists():
         return copies, j
@@ -13560,6 +13582,11 @@ def _manifest_reference_convention(man: dict) -> "str | None":
     conv = man.get("reference_convention")
     if conv is None:
         conv = (man.get("signature") or {}).get("reference_convention")
+    if conv is None and isinstance(man.get("signature"), dict):
+        # Every cache written before schema 6 was scored against the single
+        # deposited instance; treat the missing key as that convention so the
+        # refusals below apply to legacy caches too.
+        return "instance"
     return str(conv) if conv is not None else None
 
 
@@ -13574,7 +13601,8 @@ def _read_cached_per_pose(per_pose_csv: Path):
     missing = sorted(c for c in _CACHE_REQUIRED_COLS if c not in df.columns)
     if missing:
         print("  cached per-pose metrics lack required columns — cannot reuse. "
-              f"Missing: {', '.join(missing)}")
+              f"Missing: {', '.join(missing)} (a per_pose_metrics.csv written before "
+              "schema 6 must be rebuilt with --force).")
         return None
     return df
 
@@ -13632,12 +13660,27 @@ def _load_cached_per_pose(args, sig: dict):
                           if old_sig.get(k) != sig.get(k))
         else:
             diff = ["signature"]
-        if diff == ["reference_convention"]:
-            have = old_sig.get("reference_convention")
-            print(f"ERROR: per-pose cache in {args.out_dir} built under {have}, run "
-                  f"requested {want}; pass --force to rebuild "
-                  "(or point --out-dir at a different directory).")
-            args.cache_refused = f"reference_convention {have} != {want}"
+        have = _manifest_reference_convention(man)
+        old_schema = old_sig.get("schema") if isinstance(old_sig, dict) else None
+        # A cache whose CONVENTION or SCHEMA differs is never rebuilt implicitly:
+        # both would silently replace a table every downstream sidecar depends
+        # on with one that means something else (or that was built by another
+        # generation of this script). Only --force may do that; every other
+        # signature change (PB CSV content, id filter, variant flags) keeps the
+        # long-standing recompute behaviour.
+        if have != want or "reference_convention" in diff or old_schema != sig.get("schema"):
+            others = [k for k in diff if k not in ("reference_convention", "schema")]
+            why = []
+            if have != want or "reference_convention" in diff:
+                why.append(f"built under --reference-convention {have}, run requested {want}")
+            if old_schema != sig.get("schema"):
+                why.append(f"cache schema {old_schema} predates the current schema {sig.get('schema')}")
+            if others:
+                why.append("other inputs also differ: " + ", ".join(others))
+            print(f"ERROR: per-pose cache in {args.out_dir}: " + "; ".join(why) +
+                  ". Refusing to rebuild it implicitly; pass --force to rebuild in place "
+                  "(back the directory up first) or point --out-dir at a new directory.")
+            args.cache_refused = "; ".join(why)
             return None
         print("  cached per-pose metrics are stale (inputs changed: "
               f"{', '.join(diff)}) — recomputing.")
@@ -13877,8 +13920,10 @@ def main() -> None:
     if df is None and args.reuse_cache:
         print(f"ERROR: --reuse-cache was set but no usable per-pose cache exists "
               f"in {args.out_dir}.\n       Run once without --reuse-cache to build "
-              f"per_pose_metrics.csv, then re-run with it.")
-        return
+              f"per_pose_metrics.csv, then re-run with it. A cache written before "
+              "schema 6 (no reference_convention columns) must be rebuilt with --force "
+              "into a NEW --out-dir or after backing the directory up.")
+        raise SystemExit(2)
 
     if df is None:
         print(f"Loading pose index from: {args.pb_csv}")
