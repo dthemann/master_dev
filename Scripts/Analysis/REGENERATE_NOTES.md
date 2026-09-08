@@ -67,7 +67,7 @@ Thesis figure and table numbers are the automatic LaTeX numbers, read from
 > `FINDINGS_2026-09-02.md`, sections C and D.
 >
 > **The pipeline that supersedes this guide** is `Thesis_Reproduction.ipynb`, which
-> runs all 58 stages in dependency order and asserts 225 printed numbers against the
+> runs all 66 stages in dependency order and asserts 1,364 checks against the
 > canonical trees. This guide remains useful for the per-command detail it carries.
 
 ## Analysis changes of 2026-08-28

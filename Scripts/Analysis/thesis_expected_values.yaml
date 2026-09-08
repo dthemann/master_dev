@@ -100,8 +100,8 @@ table_2:
     DiffDock: [132, 179, 183]
     EquiBind: [57, 83, 83]
   note: >-
-    Printed as percentages of 303 with the count in brackets: 36.6 (111),
-    65.3 (198), 65.7 (199) for AutoDock. The counts are asserted, since the
+    Printed as percentages of 303 with the count in brackets: 49.2 (149),
+    70.3 (213), 70.6 (214) for AutoDock (nearest-copy endpoint). The counts are asserted, since the
     percentages are derived from them.
 
 # -----------------------------------------------------------------------------
@@ -637,6 +637,45 @@ table_16:
 # The three group shares can sum past the invalid share because one pose may fail
 # in more than one group. Min. dist. protein is a single check inside the
 # intermolecular group and is reported separately as the dominant contributor.
+# -----------------------------------------------------------------------------
+# Table 23 - Sensitivity of the Validity-Aware Recovery Endpoint to the Reference Convention
+# -----------------------------------------------------------------------------
+# Added 2026-09-08 with the promotion of the nearest-copy endpoint (App. C, the
+# table that documents the switch). Per arm and depth: recovery under the nearest
+# copy, under the single instance, the gain, the Form column under both, the
+# combined (PB-valid AND near-native AND form) column under both, and the count
+# of the 165 single-copy complexes recovered, which is identical under both.
+table_23:
+  source: "body_appendix_short.tex, tab:reference_convention_sensitivity"
+  input: posebusters_results/reference_convention/reference_convention_sensitivity.csv
+  depths: [1, 5, 15, 30]
+  method_keys:
+    "AutoDock Vina + gnina": autodock_mgltools_exh128_gnina
+    "DiffDock + smina": diffdock_smina
+    "EquiBind + gnina": equibind_unguided_gnina
+  columns: [recovered_nearest, recovered_instance, gain, form_nearest, form_instance, combined_nearest, combined_instance, single_copy_both]
+  rows:
+    "AutoDock Vina + gnina": [[149, 111, 38, 161, 161, 122, 88, 88], [200, 184, 16, 206, 206, 164, 148, 114], [213, 198, 15, 219, 220, 175, 160, 122], [214, 199, 15, 227, 227, 175, 160, 123]]
+    "DiffDock + smina":      [[132, 103, 29, 162, 162, 98, 76, 80], [160, 144, 16, 205, 207, 130, 115, 98], [179, 167, 12, 225, 226, 144, 133, 109], [183, 169, 14, 236, 237, 148, 138, 111]]
+    "EquiBind + gnina":      [[57, 55, 2, 108, 107, 38, 37, 53], [76, 73, 3, 150, 148, 52, 51, 69], [83, 80, 3, 183, 182, 57, 55, 76], [83, 80, 3, 199, 200, 57, 55, 76]]
+
+# -----------------------------------------------------------------------------
+# Reference convention of the per-pose table itself
+# -----------------------------------------------------------------------------
+# Added 2026-09-08. The switch is asserted directly so that a silent reversion of
+# the hub cache to the single instance is caught by name, not only through the
+# 737 values that would move.
+convention:
+  source: "Methods, the primary-endpoint definition; App. C cohort paragraph (143 of 308, 138 of 303)"
+  manifest: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.manifest.json
+  per_pose_csv: posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv
+  summary: posebusters_results/reference_convention/reference_convention_summary.json
+  reference_convention: nearest
+  schema: 6
+  multi_copy_303: 138
+  single_copy_303: 165
+  multi_copy_308: 143
+
 table_24:
   source: "body_appendix_short.tex, tab:appendix-pb-decomposition-full"
   pb_input: posebusters_results/benchmark_matched_equibind/dock/posebusters_filtered_results.csv
@@ -889,7 +928,7 @@ table_8:
     autodock_mgltools_exh128_gnina: {rank_col: optimized_rank, counts: [149, 200, 213, 214]}
   note: >-
     The selected arm is exhaustiveness 128 with gnina rescoring. Note the raw
-    exh128 rung leads it over the full pool, 202 against 199, because rescoring
+    exh128 rung leads it over the full pool, 217 against 214, because rescoring
     reorders a pool rather than extending it and a few poses cross the threshold
     the wrong way.
 
@@ -1099,10 +1138,24 @@ prose:
     profiled_complexes: 303
     median_rmsd: 5.01
     within_2a_pct: 26.9
-    crude_f1: {autodock: 0.565, diffdock: 0.529, equibind: 0.471}
-    standardised_f1: {autodock: 0.532, diffdock: 0.527, equibind: 0.513}
+    crude_f1: {autodock: 0.732, diffdock: 0.694, equibind: 0.499}
+    standardised_f1: {autodock: 0.667, diffdock: 0.647, equibind: 0.628}
     site_filtered_overlap: {autodock: 0.676, diffdock: 0.706, equibind: 0.623}
-    site_filtered_complexes: {autodock: 257, diffdock: 240, equibind: 155}
+    site_filtered_complexes: {autodock: 274, diffdock: 262, equibind: 166}
     dropped_by_site_filter: {autodock: 27, diffdock: 38, equibind: 100}
     metal_records: 6296
     metal_complexes: 121
+
+  nearest_copy_program:
+    source: "App. C winner's curse (:248) and Limitations (:892); Results footnote on reference-dependent checks (:144); App. C ITT sentence; App. C box paragraph (11 of the 211 alternate copies)"
+    selection_bias: posebusters_results/selection_bias/selection_bias.csv
+    identity_cost: posebusters_results/reference_identity/identity_cost_summary.json
+    itt: posebusters_results/itt/itt_summary.json
+    alternate_copies: posebusters_results/reference_convention/alternate_copies_in_25A_cube.json
+    # printed to one decimal: c_k * sigma_d / sqrt(2) on the top-15 triple gate; ladder = eight-rung AutoDock field
+    winners_curse_top15_triple_pp: {"AutoDock (exh128)": 0.4, "DiffDock": 0.5, "EquiBind (unguided)": 1.0, "AutoDock ladder (all exhaustiveness arms)": 1.1}
+    winners_curse_ladder_pp: {rank1_triple: 1.5, top15_double: 1.4, rank1_double: 1.6}
+    identity_cost_diffdock_smina: {depths: [1, 15, 30], nearest: [1, 2, 2], instance: [1, 2, 2]}
+    identity_cost_zero_arms: [autodock_mgltools_exh128_gnina, equibind_unguided_gnina]
+    itt_dropped_recovered: {rank1: 0, top15: 0, all_poses: 1}
+    alternate_copies_in_cube: {n_entries: 308, n_multi_copy_entries: 143, n_alternate_copies: 211, alternate_centroid_inside_cube: 11}

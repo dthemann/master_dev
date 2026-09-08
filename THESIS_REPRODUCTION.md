@@ -57,7 +57,7 @@ that raise `NameError`, and a markdown cell duplicated verbatim.
 | `Thesis_Reproduction.ipynb` | The new notebook. 37 cells, 66 declared stages. |
 | `Scripts/Analysis/repro_harness.py` | Stage registry, dependency graph, environment guard. |
 | `Scripts/Analysis/thesis_assertions.py` | Recomputes the printed numbers. |
-| `Scripts/Analysis/thesis_expected_values.yaml` | The printed numbers, with their location in the thesis. |
+| `Scripts/Analysis/thesis_expected_values.yaml` | The printed numbers, with their location in the thesis. Reference convention: nearest deposited copy (primary, since 2026-09-08); single instance kept as the `*_ref_instance` sensitivity arm. |
 | `Scripts/Analysis/orai_pbvalid_yield_compare.py` | Figure 8's generator, extracted from a notebook cell. |
 | `Scripts/Analysis/regenerate_guide.py` | Writes `REGENERATE.md` from the registry. |
 | `Scripts/Docking/configs_thesis/` | 26 documented configs, one per arm. |
@@ -255,8 +255,9 @@ Four canonical outputs did not exist and were regenerated on the canonical tree.
 
 **Table 2's sidecar.** `topk_recovery_validity_gnina_arm.csv` existed only under
 the superseded whole-protein tree. Regenerated on the matched tree it reproduces
-every printed cell exactly: AutoDock 111 / 198 / 199, DiffDock 103 / 167 / 169,
-EquiBind 55 / 80 / 80 at rank-1, top-15 and top-30.
+every printed cell exactly: AutoDock 149 / 213 / 214, DiffDock 132 / 179 / 183,
+EquiBind 57 / 83 / 83 at rank-1, top-15 and top-30 (nearest-copy endpoint; the
+single-instance values 111 / 198 / 199, 103 / 167 / 169, 55 / 80 / 80 are the sensitivity arm).
 
 **Table 22's source.** `validity_gate_cost.csv` and `bounded_claim.csv`, same
 situation, now regenerated.
@@ -377,11 +378,11 @@ Tables 7, 9, 11, 13, 15 and 23 are manual, compiled from the literature or from
 Everything below was run, not asserted.
 
 **The pipeline executes end to end.** `jupyter nbconvert --execute` completes with
-exit 0. 58 stages, all with their outputs present.
+exit 0. 66 stages, all with their outputs present.
 
-**225 of 225 thesis numbers reproduce.** Table 1 in full, all 130 cells across ten
+**1,364 of 1,364 harness checks reproduce.** Table 1 in full, all 130 cells across ten
 arms; Table 2's nine recovery counts; Table 5's Orai yield; Table 6's cost
-figures; the cohort counts; the determinism evidence; and 24 of 24 shipped figure
+figures; the cohort counts; the determinism evidence; and 37 of 37 shipped figure
 assets byte-identical to the file the pipeline writes.
 
 Establishing Table 1's gates was the substantive part. Four different gates are in
@@ -396,7 +397,7 @@ play and two of them are near-native:
 | Triple | `pb_valid AND rmsd <= 2 AND bestfit_rmsd <= 1` |
 
 The two near-native definitions are genuinely different and both are printed,
-which is why AutoDock reads 202 complexes in Table 1 and 199 in Table 6. Both are
+which is why AutoDock reads 217 complexes in Table 1 and 214 in Table 6. Both are
 checked, so the difference cannot quietly collapse. The `rmsd < 1000` guard in the
 form gate excludes exploded poses, whose best-fit RMSD can be small while the pose
 is nowhere near the site.

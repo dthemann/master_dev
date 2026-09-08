@@ -19,6 +19,11 @@ it checks that every stage's outputs are present and asserts the numbers, which
 takes a few minutes. Re-running the docking itself is days of GPU and CPU time
 and is opt-in per stage.
 
+Since 2026-09-08 the primary near-native endpoint scores every pose against the
+deposited copy of the ligand nearest to it (`--reference-convention nearest` in
+`Scripts/Analysis/REGENERATE.md`); the single deposited instance is the sensitivity
+arm and survives in the `*_ref_instance` columns of the per-pose table.
+
 ## Layout
 
 | Path | What it holds |

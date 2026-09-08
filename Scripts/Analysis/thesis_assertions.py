@@ -804,6 +804,122 @@ def check_known_gaps(spec: dict, rep: Report, verbose: bool = False) -> None:
             print(f"  Gap      {gap['key']:44s} {state}")
 
 
+
+def check_table_23(spec: dict, rep: Report, verbose: bool = False) -> None:
+    """Table 23: both reference conventions per arm and depth, from the sensitivity CSV."""
+    t = spec.get("table_23")
+    if not t:
+        return
+    csv = ROOT / t["input"]
+    if not csv.exists():
+        rep.add("table_23", "3 arms x 4 depths x 8 cells", f"input missing: {t['input']}", False, t["source"])
+        return
+    df = pd.read_csv(csv)
+    cols = [("recovered_nearest", "recovered_nearest"), ("recovered_instance", "recovered_instance"), ("gain", "gain"),
+            ("form_nearest", "form_complexes_nearest"), ("form_instance", "form_complexes_instance"),
+            ("combined_nearest", "combined_complexes_nearest"), ("combined_instance", "combined_complexes_instance")]
+    for tool, rows in t["rows"].items():
+        key = t["method_keys"][tool]
+        bad = 0
+        for depth, want in zip(t["depths"], rows):
+            allr = df[(df.arm == key) & (df.depth == depth) & (df.stratum == "all")]
+            sing = df[(df.arm == key) & (df.depth == depth) & (df.stratum == "single_copy")]
+            if allr.empty or sing.empty:
+                rep.add(f"table_23[{tool}].d{depth}", want, "row absent", False, t["source"])
+                bad += 1
+                continue
+            got = [int(allr.iloc[0][c]) for _, c in cols] + [int(sing.iloc[0]["recovered_nearest"])]
+            ok = got == [int(x) for x in want]
+            bad += not ok
+            rep.add(f"table_23[{tool}].d{depth}", want, got, ok, t["source"])
+        if verbose:
+            print(f"  Table 23 {tool:24s} {'ok' if not bad else f'{bad} ROWS DIFFER'}")
+
+
+def check_convention(spec: dict, rep: Report, verbose: bool = False) -> None:
+    """The per-pose table's reference convention, asserted by name."""
+    c = spec.get("convention")
+    if not c:
+        return
+    import json as _json
+    man = ROOT / c["manifest"]
+    if man.exists():
+        m = _json.loads(man.read_text())
+        sig = m.get("signature", {})
+        rep.add("convention.manifest", c["reference_convention"], m.get("reference_convention"),
+                m.get("reference_convention") == c["reference_convention"], c["source"])
+        rep.add("convention.schema", c["schema"], sig.get("schema"), sig.get("schema") == c["schema"], c["source"])
+    else:
+        rep.add("convention.manifest", c["reference_convention"], f"missing: {c['manifest']}", False, c["source"])
+    csv = ROOT / c["per_pose_csv"]
+    if csv.exists():
+        col = pd.read_csv(csv, usecols=["reference_convention"], low_memory=False)["reference_convention"]
+        vals = sorted(col.dropna().astype(str).unique().tolist())
+        rep.add("convention.per_pose_column", [c["reference_convention"]], vals, vals == [c["reference_convention"]], c["source"])
+    summ = ROOT / c["summary"]
+    if summ.exists():
+        d = _json.loads(summ.read_text())
+        rep.add("convention.multi_copy_303", c["multi_copy_303"], d.get("multi_copy_303"), d.get("multi_copy_303") == c["multi_copy_303"], c["source"])
+        rep.add("convention.single_copy_303", c["single_copy_303"], d.get("single_copy_303"), d.get("single_copy_303") == c["single_copy_303"], c["source"])
+        c308 = d.get("count_308") or {}
+        got308 = c308.get("multi_copy") if isinstance(c308, dict) else None
+        rep.add("convention.multi_copy_308", c["multi_copy_308"], got308, got308 == c["multi_copy_308"], c["source"])
+    if verbose:
+        print("  Convention  nearest-copy manifest, column and copy counts  checked")
+
+
+def check_nearest_program(spec: dict, rep: Report, verbose: bool = False) -> None:
+    """Sidecars of the nearest-copy program that the appendix and the footnote :144 print."""
+    p = (spec.get("prose") or {}).get("nearest_copy_program")
+    if not p:
+        return
+    import json as _json
+    src = p["source"]
+    sb = ROOT / p["selection_bias"]
+    if sb.exists():
+        d = pd.read_csv(sb)
+        top = d[(d.gate == "triple") & (d.depth == 15)].set_index("family")["bias_pp"]
+        for fam, want in p["winners_curse_top15_triple_pp"].items():
+            got = round(float(top[fam]), 1) if fam in top.index else None
+            rep.add(f"prose.nearest_copy_program.winners_curse[{fam}]", want, got, got == want, src)
+        lad = d[d.family.str.startswith("AutoDock ladder")]
+        for key, (gate, depth) in {"rank1_triple": ("triple", 1), "top15_double": ("double", 15), "rank1_double": ("double", 1)}.items():
+            row = lad[(lad.gate == gate) & (lad.depth == depth)]
+            got = round(float(row.iloc[0]["bias_pp"]), 1) if len(row) else None
+            want = p["winners_curse_ladder_pp"][key]
+            rep.add(f"prose.nearest_copy_program.winners_curse_ladder.{key}", want, got, got == want, src)
+    else:
+        rep.add("prose.nearest_copy_program.winners_curse", "sidecar", f"missing: {p['selection_bias']}", False, src)
+    ic = ROOT / p["identity_cost"]
+    if ic.exists():
+        cost = _json.loads(ic.read_text())["cost"]
+        spec_ic = p["identity_cost_diffdock_smina"]
+        for conv in ("nearest", "instance"):
+            got = [cost.get(f"diffdock_smina|{conv}|{dpt}") for dpt in spec_ic["depths"]]
+            rep.add(f"prose.nearest_copy_program.identity_cost.diffdock_smina.{conv}", spec_ic[conv], got, got == spec_ic[conv], src)
+        for arm in p["identity_cost_zero_arms"]:
+            got = sorted({v for k, v in cost.items() if k.startswith(arm + "|")})
+            rep.add(f"prose.nearest_copy_program.identity_cost.{arm}", [0], got, got == [0], src)
+    else:
+        rep.add("prose.nearest_copy_program.identity_cost", "sidecar", f"missing: {p['identity_cost']}", False, src)
+    it = ROOT / p["itt"]
+    if it.exists():
+        d = _json.loads(it.read_text())
+        got = (d.get("conventions", {}).get("nearest", {}) or {}).get("dropped_recovered")
+        rep.add("prose.nearest_copy_program.itt_dropped_recovered", p["itt_dropped_recovered"], got, got == p["itt_dropped_recovered"], src)
+    else:
+        rep.add("prose.nearest_copy_program.itt", "sidecar", f"missing: {p['itt']}", False, src)
+    ac = ROOT / p["alternate_copies"]
+    if ac.exists():
+        d = _json.loads(ac.read_text())
+        for k, want in p["alternate_copies_in_cube"].items():
+            rep.add(f"prose.nearest_copy_program.alternate_copies.{k}", want, d.get(k), d.get(k) == want, src)
+    else:
+        rep.add("prose.nearest_copy_program.alternate_copies", "sidecar", f"missing: {p['alternate_copies']}", False, src)
+    if verbose:
+        print("  Prose    nearest-copy program sidecars           checked")
+
+
 # =============================================================================
 
 def run_all(verbose: bool = False) -> Report:
@@ -831,6 +947,9 @@ def run_all(verbose: bool = False) -> Report:
     check_table_20(spec, rep, verbose)
     check_table_21(spec, rep, verbose)
     check_table_22(spec, rep, verbose)
+    check_table_23(spec, rep, verbose)
+    check_convention(spec, rep, verbose)
+    check_nearest_program(spec, rep, verbose)
     check_table_24(spec, rep, verbose)
     check_table_25(spec, rep, verbose)
     check_table_26(spec, rep, verbose)

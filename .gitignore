@@ -67,3 +67,7 @@ obsolete/
 *.snapshot-*
 *-SAVE-ERROR
 *.orig
+
+# in-repo safety copies taken before the nearest-copy program (the real backup is outside the repository)
+*.backup-instance-*
+*.bak-instance-*
