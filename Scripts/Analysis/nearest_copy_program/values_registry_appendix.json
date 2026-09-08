@@ -1,0 +1,5976 @@
+{
+ "meta": {
+  "file": "body_appendix_short.tex",
+  "copy": "/home/manndo/master_dev/thesis_latex_nearest/body_appendix_short.tex",
+  "built": "2026-09-08T12:27:16",
+  "sources_root": "/home/manndo/master_dev",
+  "computed_values": "Scripts/Analysis/nearest_copy_program/computed_appendix_values.json",
+  "signature": "Scripts/Analysis/nearest_copy_program/harness_signatures/harness_signature_A_oldvalues_newtree.csv",
+  "rule": "every `new` is a rebuilt `_nearest` output or a stats_utils recompute on per_pose_metrics_nearest; probe previews are never used (D16)"
+ },
+ "n_entries": 179,
+ "entries": [
+  {
+   "id": "A165.stratum_sizes",
+   "file": "body_appendix_short.tex",
+   "line": 165,
+   "anchor": "App. C, Metal-adjacent stratum",
+   "plan_ref": "3.3:165 / W30 / D4",
+   "kind": "value",
+   "current": "78 of 303; 4 A rule 73; 6 A rule 81",
+   "new": {
+    "5A": 78,
+    "4A": 73,
+    "6A": 81,
+    "metal_free_5A": 225
+   },
+   "source": "posebusters_results/metal_stratum_nearest/metal_stratum_summary.json counts_metal_adjacent",
+   "status": "unchanged",
+   "note": "Registered rule (D4): residue-level, reference instance, <= 5 A. Membership is copy-invariant by construction; 73 / 78 / 81 reproduce the print."
+  },
+  {
+   "id": "A165.cofactor_ion_split",
+   "file": "body_appendix_short.tex",
+   "line": 165,
+   "anchor": "App. C, Metal-adjacent stratum",
+   "plan_ref": "3.3:165 / A5 / D4",
+   "kind": "value",
+   "current": "Fifteen of the 78 ... cofactor ... remaining 63 ... free ion",
+   "new": {
+    "cofactor": 16,
+    "ion": 62,
+    "cofactor_resnames": {
+     "B12": 1,
+     "F3S": 1,
+     "F43": 1,
+     "FES": 1,
+     "HEM": 10,
+     "SF4": 2
+    }
+   },
+   "source": "posebusters_results/metal_stratum_nearest/metal_stratum_summary.json cofactor_ion_split.5A",
+   "status": "resolved",
+   "note": "DECISION per task brief (D4): print the registered rule's split, 16 cofactor / 62 free ion, and FLAG the change from 15 / 63 in the report. The extra cofactor is a second SF4 (iron-sulfur cluster) complex that the 4 A rule excludes (4 A split 15 / 58). Sentence becomes 'Sixteen of the 78 ... and the remaining 62 involve a free ion.'"
+  },
+  {
+   "id": "A165.rank1_rates",
+   "file": "body_appendix_short.tex",
+   "line": 165,
+   "anchor": "App. C, Metal-adjacent stratum",
+   "plan_ref": "3.3:165 / W30",
+   "kind": "value",
+   "current": "37.8% AutoDock / 39.6% DiffDock metal-free (225); 33.3% / 17.9% metal-adjacent (78)",
+   "new": {
+    "metal_free": {
+     "autodock": 51.1,
+     "diffdock": 49.3
+    },
+    "metal_adjacent": {
+     "autodock": 43.6,
+     "diffdock": 26.9
+    },
+    "k": {
+     "metal_free": {
+      "autodock": 115,
+      "diffdock": 111
+     },
+     "metal_adjacent": {
+      "autodock": 34,
+      "diffdock": 21
+     }
+    }
+   },
+   "source": "posebusters_results/metal_stratum_nearest/metal_stratum_contrasts.csv (convention == nearest, cutoff_A == 5.0 unless stated) and posebusters_results/metal_stratum_nearest/metal_stratum_summary.json kind == recovery, depth == 1",
+   "status": "resolved",
+   "note": "Instance block reproduces the print exactly ({'metal_free': {'autodock': 37.8, 'diffdock': 39.6}, 'metal_adjacent': {'autodock': 33.3, 'diffdock': 17.9}}). Under nearest AutoDock still leads on the metal-adjacent stratum (43.6 vs 26.9) and the two are level on the metal-free one (51.1 vs 49.3), so the sentence 'AutoDock leads on the metal-adjacent stratum while the two are level on the metal-free one' holds."
+  },
+  {
+   "id": "A165.top15_contrasts",
+   "file": "body_appendix_short.tex",
+   "line": 165,
+   "anchor": "App. C, Metal-adjacent stratum",
+   "plan_ref": "3.3:165 / W30",
+   "kind": "value",
+   "current": "-6.7 pp metal-free (134 against 149 of 225, p = 0.142); -20.5 pp metal-adjacent (33 against 49 of 78, p = 0.020)",
+   "new": {
+    "metal_free": {
+     "autodock": 160,
+     "diffdock": 141,
+     "n": 225,
+     "diffdock_minus_autodock_pp": -8.4,
+     "autodock_only": 54,
+     "diffdock_only": 35,
+     "p_mcnemar": 0.0558
+    },
+    "metal_adjacent": {
+     "autodock": 53,
+     "diffdock": 38,
+     "n": 78,
+     "diffdock_minus_autodock_pp": -19.2,
+     "autodock_only": 28,
+     "diffdock_only": 13,
+     "p_mcnemar": 0.0275
+    }
+   },
+   "source": "posebusters_results/metal_stratum_nearest/metal_stratum_contrasts.csv (convention == nearest, cutoff_A == 5.0 unless stated) and posebusters_results/metal_stratum_nearest/metal_stratum_summary.json kind == contrast, depth == 15",
+   "status": "resolved",
+   "note": "Print as DiffDock minus AutoDock: -8.4 points (141 against 160 of 225, exact McNemar p = 0.056) and -19.2 points (38 against 53 of 78, p = 0.028). Instance block: {\"metal_free\": {\"autodock\": 149, \"diffdock\": 134, \"n\": 225, \"diffdock_minus_autodock_pp\": -6.7, \"autodock_only\": 53, \"diffdock_only\": 38, \"p_mcnemar\": 0.1418}, \"metal_adjacent\": {\"autodock\": 49, \"diffdock\": 33, \"n\": 78, \"diffdock_minus_autodock_pp\": -20.5, \"autodock_only\": 29, \"diffdock_only\": 13, \"p_mcnemar\": 0.0195}}"
+  },
+  {
+   "id": "A165.fisher_between_strata",
+   "file": "body_appendix_short.tex",
+   "line": 165,
+   "anchor": "App. C, Metal-adjacent stratum",
+   "plan_ref": "3.3:165 / W30",
+   "kind": "value",
+   "current": "Fisher's exact test on the discordant pairs p = 0.256",
+   "new": 0.44,
+   "source": "posebusters_results/metal_stratum_nearest/metal_stratum_contrasts.csv (convention == nearest, cutoff_A == 5.0 unless stated) and posebusters_results/metal_stratum_nearest/metal_stratum_summary.json kind == fisher_discordant, depth == 15",
+   "status": "resolved",
+   "note": "Instance block gives 0.256 (print 0.256). Nearest 0.440. 'reported as heterogeneity rather than as an established interaction' still holds."
+  },
+  {
+   "id": "A165.failure_shares",
+   "file": "body_appendix_short.tex",
+   "line": 165,
+   "anchor": "App. C, Metal-adjacent stratum",
+   "plan_ref": "3.3:165 / W30",
+   "kind": "value",
+   "current": "metal-free 53.6% AutoDock / 65.4% DiffDock; metal-adjacent 55.8% / 70.3%",
+   "new": {
+    "metal_free": {
+     "autodock_pct": 58.2,
+     "diffdock_pct": 70.2
+    },
+    "metal_adjacent": {
+     "autodock_pct": 56.8,
+     "diffdock_pct": 70.2
+    },
+    "counts_k_of_n": {
+     "metal_free": {
+      "autodock": [
+       64,
+       110,
+       58.2
+      ],
+      "diffdock": [
+       80,
+       114,
+       70.2
+      ]
+     },
+     "metal_adjacent": {
+      "autodock": [
+       25,
+       44,
+       56.8
+      ],
+      "diffdock": [
+       40,
+       57,
+       70.2
+      ]
+     }
+    }
+   },
+   "source": "posebusters_results/metal_stratum_nearest/metal_stratum_contrasts.csv (convention == nearest, cutoff_A == 5.0 unless stated) and posebusters_results/metal_stratum_nearest/metal_stratum_summary.json kind == no_qualifying_pose_among_rank1_failures",
+   "status": "resolved",
+   "note": "58.2 / 70.2 on the metal-free stratum and 56.8 / 70.2 on the metal-adjacent one (64 of 110, 80 of 114, 25 of 44, 40 of 57). The reading 'AutoDock's misses about as often recoverable deeper on either stratum, DiffDock's more often absent' holds."
+  },
+  {
+   "id": "A165.distance_rule_sensitivity",
+   "file": "body_appendix_short.tex",
+   "line": 165,
+   "anchor": "App. C, Metal-adjacent stratum",
+   "plan_ref": "3.3:165 / W30",
+   "kind": "value",
+   "current": "4 A rule 73 / 6 A rule 81, contrasts -7.4 and -19.2 and -6.3 and -21.0",
+   "new": {
+    "4A": {
+     "n_adjacent": 73,
+     "contrasts_pp": [
+      -9.1,
+      -17.8
+     ],
+     "full": {
+      "metal_free": {
+       "autodock": 163,
+       "diffdock": 142,
+       "n": 230,
+       "diffdock_minus_autodock_pp": -9.1,
+       "autodock_only": 57,
+       "diffdock_only": 36,
+       "p_mcnemar": 0.0375
+      },
+      "metal_adjacent": {
+       "autodock": 50,
+       "diffdock": 37,
+       "n": 73,
+       "diffdock_minus_autodock_pp": -17.8,
+       "autodock_only": 25,
+       "diffdock_only": 12,
+       "p_mcnemar": 0.047
+      }
+     }
+    },
+    "6A": {
+     "n_adjacent": 81,
+     "contrasts_pp": [
+      -8.1,
+      -19.8
+     ],
+     "full": {
+      "metal_free": {
+       "autodock": 158,
+       "diffdock": 140,
+       "n": 222,
+       "diffdock_minus_autodock_pp": -8.1,
+       "autodock_only": 53,
+       "diffdock_only": 35,
+       "p_mcnemar": 0.0693
+      },
+      "metal_adjacent": {
+       "autodock": 55,
+       "diffdock": 39,
+       "n": 81,
+       "diffdock_minus_autodock_pp": -19.8,
+       "autodock_only": 29,
+       "diffdock_only": 13,
+       "p_mcnemar": 0.0195
+      }
+     }
+    }
+   },
+   "source": "posebusters_results/metal_stratum_nearest/metal_stratum_contrasts.csv (convention == nearest, cutoff_A == 5.0 unless stated) and posebusters_results/metal_stratum_nearest/metal_stratum_summary.json cutoff_A in (4.0, 6.0), kind == contrast, depth == 15",
+   "status": "resolved",
+   "note": "Nearest: -9.1 and -17.8 (4 A) and -8.1 and -19.8 (6 A). 'insensitive in direction if not in size' holds."
+  },
+  {
+   "id": "A165.wording_rule_and_crossover",
+   "file": "body_appendix_short.tex",
+   "line": 165,
+   "anchor": "App. C, Metal-adjacent stratum",
+   "plan_ref": "W30 / D4",
+   "kind": "wording",
+   "current": "In 78 of the 303 analysed entries a metal ion or a metal-containing cofactor lies within 5 A of a crystal-ligand heavy atom",
+   "new": "W: residue-carrying-a-metal rule on the deposited reference instance, plus the D4 crossover sentence (7JHQ_VAJ counted metal-adjacent though scored against a metal-free copy; 7TB0_UD1 counted metal-free though scored against the one copy with a metal within 5 A). Replacement text is in NEAREST_COPY_TEXT_CHANGES W30.",
+   "source": "plan D4; metal_stratum_summary.json rule string",
+   "status": "wording",
+   "note": "The 7JHQ_VAJ / 7TB0_UD1 distances (21.8-39.5 A; K at 3.17 A) come from plan D4, not from a rebuilt sidecar; metal_stratum.csv carries per-complex distances if the editor wants to re-verify."
+  },
+  {
+   "id": "A165.ligand_size_comparisons",
+   "file": "body_appendix_short.tex",
+   "line": 165,
+   "anchor": "App. C, Metal-adjacent stratum",
+   "plan_ref": "3.3:165",
+   "kind": "value",
+   "current": "medians 25 / 22.5 (p 0.124, delta +0.12); 5 / 5 (p 0.596, -0.04); 358 / 361 Da (p 0.468, +0.06)",
+   "new": "unchanged",
+   "source": "stratum membership is copy-invariant (D4), the descriptor comparison does not touch a pose",
+   "status": "unchanged",
+   "note": ""
+  },
+  {
+   "id": "A167.box_copies_inside",
+   "file": "body_appendix_short.tex",
+   "line": 167,
+   "anchor": "App. C, AutoDock Vina box",
+   "plan_ref": "3.3:167 / W31",
+   "kind": "wording",
+   "current": "No further padding is applied.",
+   "new": "No further padding is applied, and every deposited copy of the ligand lies inside the box.",
+   "source": "plan Phase 5.4 (receptor bounding box + 1 A contains every bound copy)",
+   "status": "wording",
+   "note": ""
+  },
+  {
+   "id": "A173.heads_rank1",
+   "file": "body_appendix_short.tex",
+   "line": 173,
+   "anchor": "App. C, CNNaffinity head",
+   "plan_ref": "3.3:173",
+   "kind": "value",
+   "current": "111 (36.6%) CNNaffinity; 112 (37.0%) CNNscore; 90 (29.7%) minimised Vina energy",
+   "new": {
+    "cnn_affinity": [
+     149,
+     49.2
+    ],
+    "cnn_score": [
+     152,
+     50.2
+    ],
+    "minimised_vina": [
+     128,
+     42.2
+    ]
+   },
+   "source": "recompute: per_pose_metrics_nearest, method autodock_mgltools_exh128_gnina, per-complex order by optimized_rank / cnn_score desc / minimized_affinity asc, gate pb_valid & rmsd <= 2 (method reproduces the canonical 111 / 112 / 90 on the shipped table)",
+   "status": "resolved",
+   "note": "149 (49.2 %), 152 (50.2 %), 128 (42.2 %)."
+  },
+  {
+   "id": "A173.heads_discordance",
+   "file": "body_appendix_short.tex",
+   "line": 173,
+   "anchor": "App. C, CNNaffinity head",
+   "plan_ref": "3.3:173",
+   "kind": "value",
+   "current": "31 complexes, 15 favouring CNNaffinity and 16 favouring CNNscore, exact McNemar p = 1.000",
+   "new": {
+    "discordant": 31,
+    "cnn_affinity_only": 14,
+    "cnn_score_only": 17,
+    "p": 0.72
+   },
+   "source": "recompute (same recipe), stats_utils.mcnemar_exact",
+   "status": "resolved",
+   "note": "31 complexes, 14 favouring CNNaffinity and 17 favouring CNNscore, p = 0.720. 'not resolved' holds; 'does not report the arm at its most favourable rank-1 value' holds (CNNscore is higher)."
+  },
+  {
+   "id": "A173.heads_gap_and_depth",
+   "file": "body_appendix_short.tex",
+   "line": 173,
+   "anchor": "App. C, CNNaffinity head",
+   "plan_ref": "3.3:173",
+   "kind": "value",
+   "current": "about seven percentage points; top-15 198 / 197 / 190; top-30 all 199",
+   "new": {
+    "gap_pp_affinity_vs_vina": 7.0,
+    "gap_pp_score_vs_vina": 8.0,
+    "top15": [
+     213,
+     213,
+     202
+    ],
+    "top30": [
+     214,
+     214,
+     214
+    ],
+    "top30_same_set": true
+   },
+   "source": "recompute (same recipe)",
+   "status": "resolved",
+   "note": "Gaps 7.0 and 8.0 points, write 'by seven to eight percentage points'. Top-15 213 / 213 / 202, top-30 all 214 and the same set."
+  },
+  {
+   "id": "A182.top15_selected_and_holm_range",
+   "file": "body_appendix_short.tex",
+   "line": 182,
+   "anchor": "App. C, Selection paragraph",
+   "plan_ref": "3.3:182 / W32 / D14",
+   "kind": "value",
+   "current": "198 of 303; Holm 2e-21 (exh 18) to 0.007 (own raw search)",
+   "new": {
+    "selected_top15": 213,
+    "holm_min": "7.3e-20",
+    "holm_min_arm": "Exhaustiveness 18",
+    "holm_max": "0.0052",
+    "holm_max_arms": [
+     "Exhaustiveness 128 (raw)",
+     "64 + gnina"
+    ],
+    "all_seven": {
+     "autodock_mgltools_exh18": {
+      "k_arm": 138,
+      "sel_only": 77,
+      "arm_only": 2,
+      "p_raw": "1.0e-20",
+      "p_holm": "7.3e-20"
+     },
+     "autodock_mgltools": {
+      "k_arm": 161,
+      "sel_only": 55,
+      "arm_only": 3,
+      "p_raw": "2.3e-13",
+      "p_holm": "1.4e-12"
+     },
+     "autodock_mgltools_gnina": {
+      "k_arm": 170,
+      "sel_only": 49,
+      "arm_only": 6,
+      "p_raw": "1.8e-09",
+      "p_holm": "9.1e-09"
+     },
+     "autodock_mgltools_exh64": {
+      "k_arm": 190,
+      "sel_only": 27,
+      "arm_only": 4,
+      "p_raw": "3.4e-05",
+      "p_holm": "1.4e-04"
+     },
+     "autodock_mgltools_exh64_gnina": {
+      "k_arm": 200,
+      "sel_only": 16,
+      "arm_only": 3,
+      "p_raw": "0.0044",
+      "p_holm": "0.0052"
+     },
+     "autodock_mgltools_exh92": {
+      "k_arm": 194,
+      "sel_only": 23,
+      "arm_only": 4,
+      "p_raw": "3.1e-04",
+      "p_holm": "9.3e-04"
+     },
+     "autodock_mgltools_exh128": {
+      "k_arm": 198,
+      "sel_only": 19,
+      "arm_only": 4,
+      "p_raw": "0.0026",
+      "p_holm": "0.0052"
+     }
+    }
+   },
+   "source": "recompute: gate pb_valid & rmsd <= 2, existence over top-15, exact McNemar vs autodock_mgltools_exh128_gnina, stats_utils.holm over the seven contrasts",
+   "status": "resolved",
+   "note": "7.3e-20 to 0.0052; the top Holm value is shared by the raw exh128 contrast and the 64 + gnina contrast (both 0.0052), so write 'to 0.005 against its own raw search and against exhaustiveness 64 rescored'."
+  },
+  {
+   "id": "A182.depth_lead",
+   "file": "body_appendix_short.tex",
+   "line": 182,
+   "anchor": "App. C, Selection paragraph",
+   "plan_ref": "3.3:182 / W32",
+   "kind": "value",
+   "current": "It leads at every depth from top-3 to top-22.",
+   "new": {
+    "strict_lead_depths": "1-25",
+    "tie_depths": [
+     26
+    ],
+    "trail_depths": [
+     27,
+     28,
+     29,
+     30
+    ]
+   },
+   "source": "recompute: selected vs best of the seven other arms on the double gate at d = 1..30",
+   "status": "resolved",
+   "note": "Leads strictly at every depth from rank-1 to top-25, ties at top-26 and trails the raw exhaustiveness-128 arm from top-27. The claim is strengthened."
+  },
+  {
+   "id": "A182.rank1_seven_contrasts",
+   "file": "body_appendix_short.tex",
+   "line": 182,
+   "anchor": "App. C, Selection paragraph",
+   "plan_ref": "3.3:182 / W32 / D14",
+   "kind": "value",
+   "current": "At rank-1 only two of the seven contrasts survive correction and the arm ties with exhaustiveness 64 rescored, at 111 against 110.",
+   "new": {
+    "surviving": 6,
+    "failing": [
+     "autodock_mgltools_exh64_gnina"
+    ],
+    "vs_64_gnina": {
+     "selected": 149,
+     "arm": 141,
+     "selected_only": 16,
+     "arm_only": 8,
+     "p_raw": 0.152,
+     "p_holm": 0.152
+    },
+    "all_seven": {
+     "autodock_mgltools_exh18": {
+      "k_arm": 92,
+      "sel_only": 72,
+      "arm_only": 15,
+      "p_raw": "4.3e-10",
+      "p_holm": "3.0e-09"
+     },
+     "autodock_mgltools": {
+      "k_arm": 109,
+      "sel_only": 57,
+      "arm_only": 17,
+      "p_raw": "3.4e-06",
+      "p_holm": "2.0e-05"
+     },
+     "autodock_mgltools_gnina": {
+      "k_arm": 129,
+      "sel_only": 36,
+      "arm_only": 16,
+      "p_raw": "0.0078",
+      "p_holm": "0.0234"
+     },
+     "autodock_mgltools_exh64": {
+      "k_arm": 123,
+      "sel_only": 45,
+      "arm_only": 19,
+      "p_raw": "0.0016",
+      "p_holm": "0.0078"
+     },
+     "autodock_mgltools_exh64_gnina": {
+      "k_arm": 141,
+      "sel_only": 16,
+      "arm_only": 8,
+      "p_raw": "0.1516",
+      "p_holm": "0.1516"
+     },
+     "autodock_mgltools_exh92": {
+      "k_arm": 123,
+      "sel_only": 46,
+      "arm_only": 20,
+      "p_raw": "0.0019",
+      "p_holm": "0.0078"
+     },
+     "autodock_mgltools_exh128": {
+      "k_arm": 130,
+      "sel_only": 39,
+      "arm_only": 20,
+      "p_raw": "0.0183",
+      "p_holm": "0.0367"
+     }
+    }
+   },
+   "source": "recompute (double gate, rank-1, seven-contrast Holm family)",
+   "status": "resolved",
+   "note": "Six of seven survive within the seven-contrast family (D14). The one that does not is 64 + gnina, 149 against 141, 16 against 8 discordant, exact p = 0.152, so the lead is nominal and unresolved. The raw-exh128 contrast has Holm p 0.037 here (survives), against Holm 0.060 in Table 19's sixteen-test family, which is the D14 contradiction the family naming resolves."
+  },
+  {
+   "id": "A182.top30_raw_ahead",
+   "file": "body_appendix_short.tex",
+   "line": 182,
+   "anchor": "App. C, Selection paragraph",
+   "plan_ref": "3.3:182",
+   "kind": "value",
+   "current": "202 against 199",
+   "new": {
+    "raw128": 217,
+    "selected": 214,
+    "raw_only": 4,
+    "selected_only": 1,
+    "p": 0.375
+   },
+   "source": "recompute (double gate, top-30)",
+   "status": "resolved",
+   "note": "217 against 214, 4 raw-only against 1 selected-only."
+  },
+  {
+   "id": "A182.triple_endpoint",
+   "file": "body_appendix_short.tex",
+   "line": 182,
+   "anchor": "App. C, Selection paragraph",
+   "plan_ref": "3.3:182",
+   "kind": "value",
+   "current": "160 complexes against 152 for its own raw search and 95 at exhaustiveness 18, Holm 6e-18 to 0.039",
+   "new": {
+    "selected": 175,
+    "raw128": 166,
+    "exh18": 110,
+    "holm_min": "6.5e-18",
+    "holm_max": "0.0234",
+    "all_seven": {
+     "autodock_mgltools_exh18": {
+      "k_arm": 110,
+      "sel_only": 66,
+      "arm_only": 1,
+      "p_raw": "9.2e-19",
+      "p_holm": "6.5e-18"
+     },
+     "autodock_mgltools": {
+      "k_arm": 136,
+      "sel_only": 41,
+      "arm_only": 2,
+      "p_raw": "2.2e-10",
+      "p_holm": "1.3e-09"
+     },
+     "autodock_mgltools_gnina": {
+      "k_arm": 142,
+      "sel_only": 38,
+      "arm_only": 5,
+      "p_raw": "2.5e-07",
+      "p_holm": "1.2e-06"
+     },
+     "autodock_mgltools_exh64": {
+      "k_arm": 157,
+      "sel_only": 19,
+      "arm_only": 1,
+      "p_raw": "4.0e-05",
+      "p_holm": "1.6e-04"
+     },
+     "autodock_mgltools_exh64_gnina": {
+      "k_arm": 164,
+      "sel_only": 14,
+      "arm_only": 3,
+      "p_raw": "0.0127",
+      "p_holm": "0.0234"
+     },
+     "autodock_mgltools_exh92": {
+      "k_arm": 162,
+      "sel_only": 15,
+      "arm_only": 2,
+      "p_raw": "0.0023",
+      "p_holm": "0.007"
+     },
+     "autodock_mgltools_exh128": {
+      "k_arm": 166,
+      "sel_only": 10,
+      "arm_only": 1,
+      "p_raw": "0.0117",
+      "p_holm": "0.0234"
+     }
+    }
+   },
+   "source": "recompute: triple gate (pb_valid & rmsd <= 2 & bestfit_rmsd <= 1), top-15, seven-contrast Holm; cross-check selection_check_nearest/selection_check.txt (175 / 166 / 110)",
+   "status": "resolved",
+   "note": "175 against 166 and 110 at exhaustiveness 18, Holm 6.5e-18 to 0.023 (the 0.023 is shared by raw exh128 and 64 + gnina)."
+  },
+  {
+   "id": "A182.twentyeight_pair_sentence",
+   "file": "body_appendix_short.tex",
+   "line": 182,
+   "anchor": "App. C, Selection paragraph",
+   "plan_ref": "3.3:182 / W32",
+   "kind": "value",
+   "current": "the step over raw exhaustiveness 128 is the one contrast that would not survive a correction taken over all twenty-eight pairs of the ladder",
+   "new": {
+    "triple_gate_holm28_vs_selected": {
+     "autodock_mgltools_exh18": 0.0,
+     "autodock_mgltools": 0.0,
+     "autodock_mgltools_gnina": 0.0,
+     "autodock_mgltools_exh64": 0.0006,
+     "autodock_mgltools_exh64_gnina": 0.1067,
+     "autodock_mgltools_exh92": 0.0267,
+     "autodock_mgltools_exh128": 0.1067
+    },
+    "triple_failing": [
+     "autodock_mgltools_exh64_gnina",
+     "autodock_mgltools_exh128"
+    ],
+    "double_gate_holm28_vs_selected": {
+     "autodock_mgltools_exh18": 0.0,
+     "autodock_mgltools": 0.0,
+     "autodock_mgltools_gnina": 0.0,
+     "autodock_mgltools_exh64": 0.0005,
+     "autodock_mgltools_exh64_gnina": 0.0354,
+     "autodock_mgltools_exh92": 0.0037,
+     "autodock_mgltools_exh128": 0.0234
+    },
+    "double_failing": []
+   },
+   "source": "recompute: exact McNemar on all 28 arm pairs at top-15, stats_utils.holm over 28, read off the seven pairs involving the selected arm",
+   "status": "resolved",
+   "note": "On the three-part endpoint the sentence's gate, the steps over raw exhaustiveness 128 AND over exhaustiveness 64 rescored are the two contrasts that would not survive (Holm-28 p 0.107 each). On the double gate every one of the seven survives even the 28-pair correction (largest 0.035), so the sentence must stay on the triple gate as it does today. Holm step-down is less severe than the plan's 28 x p Bonferroni preview."
+  },
+  {
+   "id": "A184.components",
+   "file": "body_appendix_short.tex",
+   "line": 184,
+   "anchor": "App. C, two components",
+   "plan_ref": "3.3:184",
+   "kind": "value",
+   "current": "32 -> 128 rescored top-15 154 -> 198; rescoring at 128 185 -> 198, gaining 17 and losing 4",
+   "new": {
+    "gnina32_top15": 170,
+    "sel_top15": 213,
+    "raw128_top15": 198,
+    "gained": 19,
+    "lost": 4
+   },
+   "source": "recompute (double gate, top-15, existence)",
+   "status": "resolved",
+   "note": "170 to 213; 198 to 213, gaining 19 and losing 4."
+  },
+  {
+   "id": "A184.parent_vina_order",
+   "file": "body_appendix_short.tex",
+   "line": 184,
+   "anchor": "App. C, two components",
+   "plan_ref": "3.3:184",
+   "kind": "value",
+   "current": "Carried at the parent Vina order ... 93 complexes at rank-1 and 183 at top-15, below the raw search at 94 and 185",
+   "new": {
+    "rescored_by_autodock_rank": [
+     129,
+     196
+    ],
+    "raw128": [
+     130,
+     198
+    ]
+   },
+   "source": "recompute: autodock_mgltools_exh128_gnina poses ordered by autodock_rank (parent Vina rank), double gate (reproduces the canonical 93 / 183 on the shipped table)",
+   "status": "resolved",
+   "note": "129 and 196, below the raw search at 130 and 198. Direction holds."
+  },
+  {
+   "id": "A189.fig18_caption",
+   "file": "body_appendix_short.tex",
+   "line": 189,
+   "anchor": "fig:appendix-exh-rescored",
+   "plan_ref": "3.3:189",
+   "kind": "wording",
+   "current": "gains nothing on placement and gives a little back on the three-part gate",
+   "new": "unchanged (pool near-native 217 -> 217; pool triple 178 -> 175 at exh128)",
+   "source": "recompute (pool gates) and pose_validity_cascade.csv",
+   "status": "unchanged",
+   "note": "Regenerate image44 from autodock_exhaustiveness_returns_nearest/figures/exh_raw_vs_rescored.png."
+  },
+  {
+   "id": "A195.fig19_caption",
+   "file": "body_appendix_short.tex",
+   "line": 195,
+   "anchor": "fig:appendix-exh-depth",
+   "plan_ref": "3.3:195 / W33",
+   "kind": "value",
+   "current": "the top step is worth three complexes at rank-1 but does not become individually resolvable until about depth 22",
+   "new": {
+    "near_gate_A": {
+     "delta_rank1": 7,
+     "gained": 8,
+     "lost": 1,
+     "p_rank1": 0.0391,
+     "first_depth_p_lt_0.05": 1
+    },
+    "triple_gate_B": {
+     "delta_rank1": 6,
+     "gained": 8,
+     "lost": 2,
+     "p_rank1": 0.1094,
+     "first_depth_p_lt_0.05": 2
+    }
+   },
+   "source": "recompute (exh92 vs exh128 exact McNemar by depth, both caption gates); cross-check posebusters_results/autodock_exhaustiveness_returns_nearest/exh_yield_contrasts.csv rmsd2 rank-1 exh92->exh128 (7, p 0.0391) and posebusters_results/autodock_exhaustiveness_returns_nearest/exh_returns_report.txt section 7",
+   "status": "resolved",
+   "note": "On the near-nativeness gate (A) the top step is worth seven complexes at rank-1 (8 gained, 1 lost) and is already resolvable there at an unadjusted p of 0.039. On the three-part gate (B) it is worth six at rank-1 (p 0.109) and first resolves at depth 2. W33 text uses the (A) reading; the editor may add the (B) clause."
+  },
+  {
+   "id": "A235.fig20_caption",
+   "file": "body_appendix_short.tex",
+   "line": 235,
+   "anchor": "fig:appendix-exh-cost",
+   "plan_ref": "3.3:235",
+   "kind": "wording",
+   "current": "Exhaustiveness 92 is the most expensive rung on the ladder and buys nothing at rank-1",
+   "new": "unchanged (exh64 -> exh92 at rank-1: near 124 -> 124, double 123 -> 123, triple 101 -> 100)",
+   "source": "recompute; posebusters_results/autodock_exhaustiveness_returns_nearest/exh_returns_report.txt section 5 (exh64->exh92 rank-1 +0 / -1)",
+   "status": "unchanged",
+   "note": "Regenerate image46."
+  },
+  {
+   "id": "A241.fig21_caption",
+   "file": "body_appendix_short.tex",
+   "line": 241,
+   "anchor": "fig:appendix-exh-return",
+   "plan_ref": "3.3:241",
+   "kind": "wording",
+   "current": "The top step carries no bar because its measured cost delta is negative",
+   "new": "unchanged (-0.110 wall-h is a cost fact)",
+   "source": "posebusters_results/autodock_exhaustiveness_returns_nearest/exh_returns_report.txt section 2",
+   "status": "unchanged",
+   "note": "Regenerate image47."
+  },
+  {
+   "id": "A218.table8.autodock_mgltools_exh18",
+   "file": "body_appendix_short.tex",
+   "line": 218,
+   "anchor": "tab:appendix-exhaustiveness-ladder",
+   "plan_ref": "3.3:218-227 / plan 1.5",
+   "kind": "table_cell",
+   "current": [
+    72,
+    108,
+    121,
+    125,
+    "2e-21",
+    2.14
+   ],
+   "new": [
+    92,
+    127,
+    138,
+    143,
+    "7.3e-20",
+    2.14
+   ],
+   "source": "harness signature table_8[...] actual == recompute (double gate by rank / optimized_rank); Holm column recompute (exact McNemar vs selected at top-15, Holm over seven); Search h unchanged from posebusters_results/autodock_exhaustiveness_returns_nearest/exh_cost_per_arm.csv",
+   "status": "resolved",
+   "note": "signature: ['92', '127', '138', '143']. The task brief names exh_yield_contrasts.csv for the Holm column, but that file holds the raw-ladder STEP contrasts (exh18->32 etc.), not the arm-vs-selected family the footnote defines, so the column is recomputed."
+  },
+  {
+   "id": "A219.table8.autodock_mgltools",
+   "file": "body_appendix_short.tex",
+   "line": 219,
+   "anchor": "tab:appendix-exhaustiveness-ladder",
+   "plan_ref": "3.3:218-227 / plan 1.5",
+   "kind": "table_cell",
+   "current": [
+    85,
+    130,
+    148,
+    154,
+    "5e-12",
+    2.56
+   ],
+   "new": [
+    109,
+    147,
+    161,
+    170,
+    "1.4e-12",
+    2.56
+   ],
+   "source": "harness signature table_8[...] actual == recompute (double gate by rank / optimized_rank); Holm column recompute (exact McNemar vs selected at top-15, Holm over seven); Search h unchanged from posebusters_results/autodock_exhaustiveness_returns_nearest/exh_cost_per_arm.csv",
+   "status": "resolved",
+   "note": "signature: ['109', '147', '161', '170']. The task brief names exh_yield_contrasts.csv for the Holm column, but that file holds the raw-ladder STEP contrasts (exh18->32 etc.), not the arm-vs-selected family the footnote defines, so the column is recomputed."
+  },
+  {
+   "id": "A220.table8.autodock_mgltools_gnina",
+   "file": "body_appendix_short.tex",
+   "line": 220,
+   "anchor": "tab:appendix-exhaustiveness-ladder",
+   "plan_ref": "3.3:218-227 / plan 1.5",
+   "kind": "table_cell",
+   "current": [
+    100,
+    144,
+    154,
+    154,
+    "2e-09",
+    2.56
+   ],
+   "new": [
+    129,
+    160,
+    170,
+    170,
+    "9.1e-09",
+    2.56
+   ],
+   "source": "harness signature table_8[...] actual == recompute (double gate by rank / optimized_rank); Holm column recompute (exact McNemar vs selected at top-15, Holm over seven); Search h unchanged from posebusters_results/autodock_exhaustiveness_returns_nearest/exh_cost_per_arm.csv",
+   "status": "resolved",
+   "note": "signature: ['129', '160', '170', '170']. The task brief names exh_yield_contrasts.csv for the Holm column, but that file holds the raw-ladder STEP contrasts (exh18->32 etc.), not the arm-vs-selected family the footnote defines, so the column is recomputed."
+  },
+  {
+   "id": "A221.table8.autodock_mgltools_exh64",
+   "file": "body_appendix_short.tex",
+   "line": 221,
+   "anchor": "tab:appendix-exhaustiveness-ladder",
+   "plan_ref": "3.3:218-227 / plan 1.5",
+   "kind": "table_cell",
+   "current": [
+    94,
+    145,
+    175,
+    182,
+    "1.4e-04",
+    3.14
+   ],
+   "new": [
+    123,
+    162,
+    190,
+    201,
+    "1.4e-04",
+    3.14
+   ],
+   "source": "harness signature table_8[...] actual == recompute (double gate by rank / optimized_rank); Holm column recompute (exact McNemar vs selected at top-15, Holm over seven); Search h unchanged from posebusters_results/autodock_exhaustiveness_returns_nearest/exh_cost_per_arm.csv",
+   "status": "resolved",
+   "note": "signature: ['123', '162', '190', '201']. The task brief names exh_yield_contrasts.csv for the Holm column, but that file holds the raw-ladder STEP contrasts (exh18->32 etc.), not the arm-vs-selected family the footnote defines, so the column is recomputed."
+  },
+  {
+   "id": "A222.table8.autodock_mgltools_exh64_gnina",
+   "file": "body_appendix_short.tex",
+   "line": 222,
+   "anchor": "tab:appendix-exhaustiveness-ladder",
+   "plan_ref": "3.3:218-227 / plan 1.5",
+   "kind": "table_cell",
+   "current": [
+    110,
+    169,
+    182,
+    182,
+    "0.0026",
+    3.14
+   ],
+   "new": [
+    141,
+    187,
+    200,
+    200,
+    "0.0052",
+    3.14
+   ],
+   "source": "harness signature table_8[...] actual == recompute (double gate by rank / optimized_rank); Holm column recompute (exact McNemar vs selected at top-15, Holm over seven); Search h unchanged from posebusters_results/autodock_exhaustiveness_returns_nearest/exh_cost_per_arm.csv",
+   "status": "resolved",
+   "note": "signature: ['141', '187', '200', '200']. The task brief names exh_yield_contrasts.csv for the Holm column, but that file holds the raw-ladder STEP contrasts (exh18->32 etc.), not the arm-vs-selected family the footnote defines, so the column is recomputed."
+  },
+  {
+   "id": "A223.table8.autodock_mgltools_exh92",
+   "file": "body_appendix_short.tex",
+   "line": 223,
+   "anchor": "tab:appendix-exhaustiveness-ladder",
+   "plan_ref": "3.3:218-227 / plan 1.5",
+   "kind": "table_cell",
+   "current": [
+    91,
+    150,
+    182,
+    194,
+    "0.0031",
+    4.84
+   ],
+   "new": [
+    123,
+    164,
+    194,
+    209,
+    "9.3e-04",
+    4.84
+   ],
+   "source": "harness signature table_8[...] actual == recompute (double gate by rank / optimized_rank); Holm column recompute (exact McNemar vs selected at top-15, Holm over seven); Search h unchanged from posebusters_results/autodock_exhaustiveness_returns_nearest/exh_cost_per_arm.csv",
+   "status": "resolved",
+   "note": "signature: ['123', '164', '194', '209']. The task brief names exh_yield_contrasts.csv for the Holm column, but that file holds the raw-ladder STEP contrasts (exh18->32 etc.), not the arm-vs-selected family the footnote defines, so the column is recomputed."
+  },
+  {
+   "id": "A224.table8.autodock_mgltools_exh128",
+   "file": "body_appendix_short.tex",
+   "line": 224,
+   "anchor": "tab:appendix-exhaustiveness-ladder",
+   "plan_ref": "3.3:218-227 / plan 1.5",
+   "kind": "table_cell",
+   "current": [
+    94,
+    153,
+    185,
+    202,
+    "0.0072",
+    4.73
+   ],
+   "new": [
+    130,
+    170,
+    198,
+    217,
+    "0.0052",
+    4.73
+   ],
+   "source": "harness signature table_8[...] actual == recompute (double gate by rank / optimized_rank); Holm column recompute (exact McNemar vs selected at top-15, Holm over seven); Search h unchanged from posebusters_results/autodock_exhaustiveness_returns_nearest/exh_cost_per_arm.csv",
+   "status": "resolved",
+   "note": "signature: ['130', '170', '198', '217']. The task brief names exh_yield_contrasts.csv for the Holm column, but that file holds the raw-ladder STEP contrasts (exh18->32 etc.), not the arm-vs-selected family the footnote defines, so the column is recomputed."
+  },
+  {
+   "id": "A225.table8.autodock_mgltools_exh128_gnina",
+   "file": "body_appendix_short.tex",
+   "line": 225,
+   "anchor": "tab:appendix-exhaustiveness-ladder",
+   "plan_ref": "3.3:218-227 / plan 1.5",
+   "kind": "table_cell",
+   "current": [
+    111,
+    184,
+    198,
+    199,
+    "---",
+    4.73
+   ],
+   "new": [
+    149,
+    200,
+    213,
+    214,
+    "---",
+    4.73
+   ],
+   "source": "harness signature table_8[...] actual == recompute (double gate by rank / optimized_rank); Holm column recompute (exact McNemar vs selected at top-15, Holm over seven); Search h unchanged from posebusters_results/autodock_exhaustiveness_returns_nearest/exh_cost_per_arm.csv",
+   "status": "resolved",
+   "note": "signature: ['149', '200', '213', '214']. The task brief names exh_yield_contrasts.csv for the Holm column, but that file holds the raw-ladder STEP contrasts (exh18->32 etc.), not the arm-vs-selected family the footnote defines, so the column is recomputed."
+  },
+  {
+   "id": "A227.table8_footnote",
+   "file": "body_appendix_short.tex",
+   "line": 227,
+   "anchor": "tab:appendix-exhaustiveness-ladder footnote",
+   "plan_ref": "3.3:218-227 / W34",
+   "kind": "wording",
+   "current": "Complexes of 303 with at least one pose that is PoseBusters-valid and within 2 A among the first d ranks.",
+   "new": "... within 2 A of the nearest deposited copy of the ligand among the first d ranks. (rest unchanged: Search h, threads, 0.110 h inversion)",
+   "source": "W34",
+   "status": "wording",
+   "note": ""
+  },
+  {
+   "id": "A230.confirmatory_cell_D10",
+   "file": "body_appendix_short.tex",
+   "line": 230,
+   "anchor": "App. C, per-hour returns",
+   "plan_ref": "3.3:230 / W35 / D10",
+   "kind": "decision",
+   "current": "+71.6, +35.9 and +5.9 complexes per hour; contrast +65.6 (+32.1 to +137.2); rungs 98, 128, 149, 159, 164; first step adds thirty, last adds five",
+   "new": {
+    "KEEP_instance": {
+     "per_hour": [
+      71.58,
+      35.91,
+      5.88
+     ],
+     "contrast": {
+      "value": 65.64,
+      "ci": [
+       32.14,
+       137.19
+      ],
+      "first": 71.58,
+      "last": 5.88
+     },
+     "pool": [
+      98,
+      128,
+      149,
+      159,
+      164
+     ],
+     "first_step": 30,
+     "last_step": 5
+    },
+    "ADD_nearest_sentence": {
+     "per_hour": [
+      66.81,
+      39.33,
+      3.53
+     ],
+     "per_hour_ci": [
+      [
+       35.77,
+       136.16
+      ],
+      [
+       20.64,
+       63.99
+      ],
+      [
+       0.57,
+       7.42
+      ]
+     ],
+     "contrast": {
+      "value": 62.43,
+      "ci": [
+       31.96,
+       133.26
+      ],
+      "first": 66.81,
+      "last": 3.53
+     },
+     "pool": [
+      115,
+      143,
+      166,
+      172,
+      178
+     ],
+     "first_step": 28,
+     "last_step": 6
+    }
+   },
+   "source": "instance (kept, READ-ONLY): posebusters_results/autodock_exhaustiveness_returns/exh_marginal_return.csv, exh_diminishing_returns.csv (gate triple, depth 0 = oracle), canonical pose_validity_cascade.csv triple_complexes; nearest: same files under posebusters_results/autodock_exhaustiveness_returns_nearest and posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/pose_validity_cascade.csv",
+   "status": "decision",
+   "note": "D10 adopted as in the task brief: the whole paragraph stays on the single instance (98 / 128 / 149 / 159 / 164, +71.6 / +35.9 / +5.9, +65.6 [+32.1, +137.2]) and ONE sentence adds the nearest values: rungs 115, 143, 166, 172 and 178 (first step +28, last +6), per-hour returns +66.8, +39.3 and +3.5, contrast +62.4 (95 % +32.0 to +133.3). W35 text carries the sentence with [brackets] to fill from this entry."
+  },
+  {
+   "id": "A244.top_step",
+   "file": "body_appendix_short.tex",
+   "line": 244,
+   "anchor": "App. C, fourth step",
+   "plan_ref": "3.3:244-248",
+   "kind": "value",
+   "current": "adds five complexes over the pool and three at rank-1; -0.110 hours; 18.7 percentage points",
+   "new": {
+    "triple_pool_delta": 6,
+    "triple_rank1_delta": 6,
+    "double_pool_delta": 8,
+    "double_rank1_delta": 7,
+    "wall_h_delta": -0.11,
+    "residual_arm_effect_pp": 18.7
+   },
+   "source": "recompute (canonical gate of the sentence is the three-part one: instance 164-159 = 5 and 77-74 = 3 reproduce the print); posebusters_results/autodock_exhaustiveness_returns_nearest/exh_returns_report.txt section 2 (-0.110 wall-h, 18.7 pp unchanged)",
+   "status": "resolved",
+   "note": "Exhaustiveness 92 to 128 adds six complexes over the pool and six at rank-1 on the three-part gate. The -0.110 h and 18.7 pp are cost-side facts and do not move."
+  },
+  {
+   "id": "A246.minutes_per_complex",
+   "file": "body_appendix_short.tex",
+   "line": 246,
+   "anchor": "App. C, what follows",
+   "plan_ref": "3.3:244-248",
+   "kind": "value",
+   "current": "about ten minutes of wall time per additional complex against about one minute for the first",
+   "new": {
+    "last_measurable_step_min": 17,
+    "first_step_min": 1,
+    "instance_check": {
+     "last": 10,
+     "first": 1
+    }
+   },
+   "source": "posebusters_results/autodock_exhaustiveness_returns_nearest/exh_marginal_return.csv gate triple, depth 0, wall_h_per_extra_complex (report section 8 budget crossing: 1 / 2 / 17 min)",
+   "status": "resolved",
+   "note": "About seventeen minutes against about one minute (instance 10 / 1 reproduces the print). NOTE this sentence sits in the paragraph D10 keeps on the instance convention; if the paragraph stays on instance the 'ten minutes' stays, and the nearest figure belongs in the added sentence. Editor decides placement."
+  },
+  {
+   "id": "A246.plateau_argument",
+   "file": "body_appendix_short.tex",
+   "line": 246,
+   "anchor": "App. C, what follows",
+   "plan_ref": "3.3:246 / W36",
+   "kind": "value",
+   "current": "raw rank-1 recovery tops out at 95 complexes anywhere above exhaustiveness 64, while rescoring lifts it to 113 and doubling the pool beneath the rescorer leaves it at exactly 113",
+   "new": {
+    "raw_rank1_near_64_92_128": [
+     124,
+     124,
+     131
+    ],
+    "rescored_rank1_near_64_128": [
+     144,
+     151
+    ]
+   },
+   "source": "recompute (rmsd <= 2, no validity, rank-1); cross-check posebusters_results/autodock_exhaustiveness_returns_nearest/exh_raw_vs_rescored.csv and report section 9 (124 -> 144, 131 -> 151)",
+   "status": "resolved",
+   "note": "124 / 124 / 131 raw and 144 / 151 rescored, so the ranking-ceiling argument collapses and is rewritten per W36 ('One thing follows, one follows in part, and a third does not')."
+  },
+  {
+   "id": "A248.winners_curse_eight_arms",
+   "file": "body_appendix_short.tex",
+   "line": 248,
+   "anchor": "App. C, caveat",
+   "plan_ref": "3.3:244-248",
+   "kind": "value",
+   "current": "bias near two percentage points at rank-1 and near one and a half at top-15",
+   "new": null,
+   "source": "NO registered generator: grep for winner / curse / selection-bias over Scripts/Analysis and REGENERATE.md finds nothing that produces the eight-arm figure; the memory note 'variant-selection-bias-quantified' covers the per-family (three-arm) estimator only",
+   "status": "unresolved",
+   "note": "A normal order-statistic approximation (E[max of 8] = 1.4236 sigma at the selected arm's rate) gives 4.09 pp at rank-1 and 3.74 pp at top-15, which does NOT reproduce the printed 2 / 1.5 on the instance rates either, so the printed estimator is unknown. Leave the two figures unchanged and flag, or locate the author's estimator."
+  },
+  {
+   "id": "A267.triple_top15",
+   "file": "body_appendix_short.tex",
+   "line": 267,
+   "anchor": "App. C, pocket-guided EquiBind",
+   "plan_ref": "3.3:267-269 / W37",
+   "kind": "value",
+   "current": "2, 46 and 55 ... against 0, 7 and 14 under fpocket and 0, 5 and 18 under P2Rank, trails by 37",
+   "new": {
+    "unguided_raw_smina_gnina": [
+     2,
+     48,
+     57
+    ],
+    "fpocket": [
+     0,
+     10,
+     20
+    ],
+    "p2rank": [
+     0,
+     9,
+     23
+    ],
+    "gap_best_guided_to_selected": 34
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/pose_validity_cascade.csv triple_complexes (pool; the raw arms carry 2 / 0 / 0 over the whole pool so their top-15 value is bounded by it) and recompute top-15 by each refiner's own affinity (smina_affinity / gnina_affinity ascending); cross-check posebusters_results/selection_check_nearest/selection_check.txt",
+   "status": "resolved",
+   "note": "2, 48 and 57 against 0, 10 and 20 under fpocket and 0, 9 and 23 under P2Rank, so the best guided configuration trails the selected unguided one by 34. The unguided-raw top-15 value of 2 is the pool value (both near-native complexes sit inside the 30-pose pool; the raw arm has no rank and the thesis orders it by unguided_NNN)."
+  },
+  {
+   "id": "A267.near_native_pool",
+   "file": "body_appendix_short.tex",
+   "line": 267,
+   "anchor": "App. C, pocket-guided EquiBind",
+   "plan_ref": "3.3:267-269 / W37",
+   "kind": "value",
+   "current": "19, 64 and 83 unguided against 0, 14 and 24 and 0, 18 and 35, both raw guided arms recovering no near-native complex at all",
+   "new": {
+    "unguided": [
+     19,
+     67,
+     86
+    ],
+    "fpocket": [
+     0,
+     19,
+     32
+    ],
+    "p2rank": [
+     1,
+     28,
+     43
+    ],
+    "p2rank_raw_poses": 2
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/pose_validity_cascade.csv rmsd2_complexes",
+   "status": "resolved",
+   "note": "19, 67 and 86 against 0, 19 and 32 and 1, 28 and 43. The P2Rank raw arm now recovers one complex (two poses), so 'both raw guided arms recovering no near-native complex at all' becomes W37's 'the fpocket raw arm recovering no near-native complex and the P2Rank raw arm one'."
+  },
+  {
+   "id": "A267.validity_pct",
+   "file": "body_appendix_short.tex",
+   "line": 267,
+   "anchor": "App. C, pocket-guided EquiBind",
+   "plan_ref": "3.3:267",
+   "kind": "value",
+   "current": "2.9%, 51.3% and 62.0% unguided against 0.3%, 15.2% and 28.4% and 0.6%, 20.7% and 38.0%",
+   "new": "unchanged",
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/pose_validity_cascade.csv pb_valid_%",
+   "status": "unchanged",
+   "note": ""
+  },
+  {
+   "id": "A267.form_range",
+   "file": "body_appendix_short.tex",
+   "line": 267,
+   "anchor": "App. C, pocket-guided EquiBind",
+   "plan_ref": "3.3:267",
+   "kind": "value",
+   "current": "between 180 and 200 complexes across all nine configurations",
+   "new": {
+    "min": 179,
+    "max": 199,
+    "per_configuration": {
+     "equibind_unguided_raw": 186,
+     "equibind_unguided_smina": 192,
+     "equibind_unguided_gnina": 199,
+     "equibind_fpocket_raw": 179,
+     "equibind_fpocket_smina": 181,
+     "equibind_fpocket_gnina": 190,
+     "equibind_p2rank_raw": 180,
+     "equibind_p2rank_smina": 181,
+     "equibind_p2rank_gnina": 189
+    }
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/pose_validity_cascade.csv kabsch1_complexes",
+   "status": "resolved",
+   "note": "Between 179 and 199 across the nine configurations."
+  },
+  {
+   "id": "A269.pbvalid_complexes",
+   "file": "body_appendix_short.tex",
+   "line": 269,
+   "anchor": "App. C, pocket-guided EquiBind",
+   "plan_ref": "3.3:269",
+   "kind": "value",
+   "current": "261 for fpocket with gnina and 282 for P2Rank with gnina against 266 unguided",
+   "new": [
+    261,
+    282,
+    266
+   ],
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/pose_validity_cascade.csv pb_valid_complexes",
+   "status": "unchanged",
+   "note": "38 complexes / 570-pose shortfall / 8,520 total are production facts, unchanged."
+  },
+  {
+   "id": "A276.accuracy_definition",
+   "file": "body_appendix_short.tex",
+   "line": 276,
+   "anchor": "App. C, refinement paragraph",
+   "plan_ref": "3.3:276 / W38",
+   "kind": "wording",
+   "current": "symmetry-corrected heavy-atom RMSD to the crystal ligand",
+   "new": "... to the nearest deposited copy of the crystal ligand",
+   "source": "W38",
+   "status": "wording",
+   "note": ""
+  },
+  {
+   "id": "A487.load_all_clause",
+   "file": "body_appendix_short.tex",
+   "line": 487,
+   "anchor": "App. D, PoseBusters checks",
+   "plan_ref": "3.3:487 / W39",
+   "kind": "wording",
+   "current": "It is kept off the validity axis here because near-nativeness is gated separately.",
+   "new": "+ 'That test loads every deposited instance of the ligand and reports the lowest RMSD, which is the copy rule the Methods adopt.'",
+   "source": "W39 (redock.yml:301-307 load_all: True; modules/rmsd.py:52-70)",
+   "status": "wording",
+   "note": "optional clause"
+  },
+  {
+   "id": "A543.profiled_pool",
+   "file": "body_appendix_short.tex",
+   "line": 543,
+   "anchor": "App. B, Interaction Fingerprints",
+   "plan_ref": "3.3:545-553 / W40a (anchor drifted to :543)",
+   "kind": "value",
+   "current": "4,253 poses over 303 complexes with a median deviation of 7.57 A ... 21.3% of poses within 2 A",
+   "new": {
+    "poses": 4253,
+    "median_rmsd_A": 5.01,
+    "within_2A_pct": 26.9
+   },
+   "source": "pandamap_results/benchmark_matched_equibind_nearest/report/interaction_pose_basis_audit.csv pool_*",
+   "status": "resolved",
+   "note": "4,253 (unchanged), 5.01 A, 26.9 %."
+  },
+  {
+   "id": "A543.standardised_f1",
+   "file": "body_appendix_short.tex",
+   "line": 543,
+   "anchor": "App. B, Interaction Fingerprints",
+   "plan_ref": "3.3:545-553 / W40a",
+   "kind": "value",
+   "current": "F1 triple 0.565, 0.529 and 0.471 to 0.532, 0.527 and 0.513",
+   "new": {
+    "crude": [
+     0.732,
+     0.694,
+     0.498
+    ],
+    "standardised": [
+     0.667,
+     0.647,
+     0.628
+    ],
+    "spread_crude": 0.2334,
+    "spread_standardised": 0.0391
+   },
+   "source": "pandamap_results/benchmark_matched_equibind_nearest/report/interaction_pose_basis_audit.txt section B (crude / standardised columns) and pandamap_results/benchmark_matched_equibind_nearest/report/native_recovery_by_rank.csv rank 1",
+   "status": "resolved",
+   "note": "0.732, 0.694 and 0.499 to 0.667, 0.647 and 0.628 (standardised values are printed to four places in the .txt, 0.6673 / 0.6469 / 0.6282)."
+  },
+  {
+   "id": "A543.placement_share",
+   "file": "body_appendix_short.tex",
+   "line": 543,
+   "anchor": "App. B, Interaction Fingerprints",
+   "plan_ref": "3.3:545-553 / W40a",
+   "kind": "value",
+   "current": "Roughly four fifths ... 80 to 87% across band schemes of three to fourteen strata",
+   "new": {
+    "reported_5band_pct": 83.2,
+    "range_pct": [
+     81.9,
+     88.5
+    ],
+    "by_scheme": {
+     "placement_share_3-band_pct": 81.9,
+     "placement_share_5-band_(reported)_pct": 83.2,
+     "placement_share_8-band_pct": 85.5,
+     "placement_share_14-band_pct": 88.5
+    }
+   },
+   "source": "pandamap_results/benchmark_matched_equibind_nearest/report/interaction_pose_basis_audit.csv placement_share_*",
+   "status": "resolved",
+   "note": "83.2 %, running from 82 to 89 % (81.9 to 88.5)."
+  },
+  {
+   "id": "A543.standardised_order_swap",
+   "file": "body_appendix_short.tex",
+   "line": 543,
+   "anchor": "App. B, Interaction Fingerprints",
+   "plan_ref": "3.3:545-553",
+   "kind": "wording",
+   "current": "The AutoDock Vina and DiffDock standardised values swap under finer banding and carry no ordering between them.",
+   "new": "W: under nearest the standardised order is autodock > diffdock > equibind at every band scheme (3, 5, 8, 14), so the swap sentence is FALSE and must be replaced, e.g. 'The standardised ordering AutoDock Vina above DiffDock above EquiBind holds at every banding, although the spread between the tools shrinks to 0.039.'",
+   "source": "pandamap_results/benchmark_matched_equibind_nearest/report/interaction_pose_basis_audit.txt section B 'standardised order' lines",
+   "status": "wording",
+   "note": "New defect the change list did not carry; recorded as a decision the editor must take."
+  },
+  {
+   "id": "A543.site_filter",
+   "file": "body_appendix_short.tex",
+   "line": 543,
+   "anchor": "App. B, Interaction Fingerprints",
+   "plan_ref": "3.3:545-553",
+   "kind": "value",
+   "current": "0.683 over 257 (AutoDock), 0.714 over 240 (DiffDock), 0.629 over 155 (EquiBind); p = 0.014 to 5.7e-5; holds 8 to 20 A; discards 44, 60 and 111; 21.3 to 38.1%",
+   "new": {
+    "overlap": [
+     0.6757,
+     0.7061,
+     0.6228
+    ],
+    "complexes": [
+     274,
+     262,
+     166
+    ],
+    "p_published_common": 0.0108,
+    "p_filtered_common": 0.0002,
+    "sweep_p_8_to_20": {
+     "8A": 0.0064,
+     "10A": 0.0002,
+     "12A": 0.002,
+     "15A": 0.00048,
+     "20A": 0.018
+    },
+    "dropped": [
+     27,
+     38,
+     100
+    ],
+    "within_2A_from_to": [
+     26.9,
+     38.8
+    ]
+   },
+   "source": "pandamap_results/benchmark_matched_equibind_nearest/report/interaction_pose_basis_audit.txt section C (published 0.5391 (301) / 0.5722 (300) / 0.4030 (266); rmsd < 10 A 0.6757 (274) / 0.7061 (262) / 0.6228 (166))",
+   "status": "resolved",
+   "note": "0.676 over 274, 0.706 over 262 and 0.623 over 166; DiffDock lead moves from p = 0.011 to p = 2.0e-4 on the shared cohort (common n 264 -> 144); holds at every threshold from 8 to 20 A (all p < 0.05); discards 27, 38 and 100; share within 2 A from 26.9 to 38.8 %. NOTE the 'p = 0.014' the current text quotes is the Results' published value; under nearest the published shared-cohort p is 0.0108, so the Results sentence and this one must agree on 0.011."
+  },
+  {
+   "id": "A549.metal_far_field",
+   "file": "body_appendix_short.tex",
+   "line": 549,
+   "anchor": "App. B, Interaction Fingerprints, third defect",
+   "plan_ref": "3.3:545-553 (anchor :549)",
+   "kind": "value",
+   "current": "6,296 records over 1,662 poses in 121 complexes; beyond 20 A no-metal poses mean F1 0.0003, three of 750 recover any contact; metal poses 0.1112, not one of 515 scores zero",
+   "new": {
+    "records": 6296,
+    "poses": 1662,
+    "complexes": 121,
+    "pose_invariant_complexes": 121,
+    "far_field_no_metal": {
+     "n": 335,
+     "mean_f1": 0.0012,
+     "any_contact": 6,
+     "zero_pct": 98.2
+    },
+    "far_field_metal": {
+     "n": 233,
+     "mean_f1": 0.1419,
+     "zero_pct": 0.0
+    }
+   },
+   "source": "pandamap_results/benchmark_matched_equibind_nearest/report/interaction_pose_basis_audit.txt section D",
+   "status": "resolved",
+   "note": "6,296 / 1,662 / 121 unchanged; beyond 20 A those carrying no metal contact recover a mean F1 of 0.0012 and only six of 335 recover any native contact, whereas those carrying one recover 0.1419 and not one of the 233 scores zero."
+  },
+  {
+   "id": "A549.defect_effect_on_overlap",
+   "file": "body_appendix_short.tex",
+   "line": 549,
+   "anchor": "App. B, Interaction Fingerprints, third defect",
+   "plan_ref": "3.3:545-553 (anchor :549)",
+   "kind": "value",
+   "current": "0.417, 0.450 and 0.380 to 0.407, 0.440 and 0.366; both repaired 0.408, 0.440 and 0.367; p 0.014 -> 0.017 (metal removed) -> 0.016 (both)",
+   "new": {
+    "published": [
+     0.5391,
+     0.5722,
+     0.403
+    ],
+    "metal_dropped": [
+     0.5308,
+     0.5642,
+     0.3894
+    ],
+    "both_repaired": [
+     0.532,
+     0.5655,
+     0.3913
+    ],
+    "p_common": {
+     "published": 0.0108,
+     "metal_dropped": 0.0126,
+     "both_repaired": 0.0115
+    }
+   },
+   "source": "pandamap_results/benchmark_matched_equibind_nearest/report/interaction_pose_basis_audit.csv defect_*",
+   "status": "resolved",
+   "note": "0.539, 0.572 and 0.403 to 0.531, 0.564 and 0.389; both repaired 0.532, 0.566 and 0.391; p 0.011 -> 0.013 -> 0.012 on the shared cohort (n 264). Ordering and significance unaffected."
+  },
+  {
+   "id": "A551.per_copy_fingerprint_sentence",
+   "file": "body_appendix_short.tex",
+   "line": 551,
+   "anchor": "App. B, Interaction Fingerprints",
+   "plan_ref": "W40b / plan 1.8",
+   "kind": "wording",
+   "current": "(canonical receptor sentence)",
+   "new": "+ W40b sentence on the per-copy crystal fingerprint and nearest-copy scoring; state the union rule (a top-5 union is scored against the union of the copies its poses are nearest to)",
+   "source": "pandamap_results/benchmark_matched_equibind_nearest/report/crystal_copy_selection.txt and audit header ('each top-5 union is scored against the union of the crystal copies its poses are nearest to (138 of 303 pairs carry >1 fingerprinted copy)')",
+   "status": "wording",
+   "note": "Sidecar facts for the sentence: 138 of 303 pairs multi-copy; 60,539 of 241,913 poses nearest to an alternate copy; 9 profiled poses without an index fell back to the reference (3 pairs)."
+  },
+  {
+   "id": "A664.footnote_file_roles",
+   "file": "body_appendix_short.tex",
+   "line": 664,
+   "anchor": "App. E, benchmark files footnote",
+   "plan_ref": "A6 / 3.3:664",
+   "kind": "wording",
+   "current": "the single chosen crystal instance that serves as the ground-truth answer pose (*_ligand.sdf)",
+   "new": "A6 replacement (documented README roles); under Part B the clause 'and which this study scores against' becomes 'and which is the first record of the multi-instance file'",
+   "source": "Data/PoseBuster Benchmark Set/README.txt:51-63; reference_is_record0_in 303 of 303 (posebusters_results/metal_stratum_nearest/metal_stratum_summary.json)",
+   "status": "wording",
+   "note": ""
+  },
+  {
+   "id": "A666.convention_paragraph",
+   "file": "body_appendix_short.tex",
+   "line": 666,
+   "anchor": "App. E, leakage paragraph",
+   "plan_ref": "B2 / D3 / D11 / plan 1.3",
+   "kind": "value",
+   "current": "the comparison is made against the single deposited reference instance rather than against the closest copy ... within that one instance and not equivalence between copies",
+   "new": {
+    "multi_copy_308": 143,
+    "multi_copy_303": 138,
+    "median_alternate_separation_A_over_143": 36.0,
+    "form_rows_losing_one_complex": [
+     "DiffDock (raw)",
+     "DiffDock + smina",
+     "EquiBind + gnina",
+     "EquiBind (raw) fpocket",
+     "EquiBind (raw) P2Rank"
+    ],
+    "n_form_rows_losing": 5,
+    "alternates_outside_reference_pocket": [
+     "7A9E_R4W",
+     "7TUO_KL9",
+     "7VKZ_NOJ",
+     "7Z1Q_NIO"
+    ],
+    "complexes_gaining_recovery_through_them": 0
+   },
+   "source": "143 / 138 from posebusters_results/reference_convention_nearest/reference_convention_summary.json; Form-loss rows recomputed on per_pose_metrics_nearest (bestfit_rmsd <= 1 & rmsd < 1000 against the *_ref_instance twins) for the ten Table 1 rows; 36.0 A median, the four alternates and the 0-gain fact are plan Data facts / D3 (verified twice per plan) with NO rebuilt sidecar",
+   "status": "resolved",
+   "note": "B2 text: 'one complex in each of five printed variants of Table 1' is confirmed (DiffDock raw 225 -> 224, DiffDock + smina 237 -> 236, EquiBind + gnina 200 -> 199, fpocket raw 180 -> 179, P2Rank raw 181 -> 180; EquiBind raw and + smina GAIN one each). The 36.0 A median and the four pocket-foreign alternates are not carried by any _nearest sidecar; flagged so the author can register a generator or accept the plan's verified fact."
+  },
+  {
+   "id": "A722.multi_copy_share",
+   "file": "body_appendix_short.tex",
+   "line": 722,
+   "anchor": "App. E, fig:appendix-dataset-3 prose",
+   "plan_ref": "3.3:722 / W43",
+   "kind": "value",
+   "current": "(no current text)",
+   "new": {
+    "multi_copy_308": 143,
+    "share_pct": 46.4,
+    "multi_copy_303": 138
+   },
+   "source": "posebusters_results/reference_convention_nearest/reference_convention_summary.json count_308 / multi_copy_303",
+   "status": "resolved",
+   "note": "In 143 of the 308 entries, 46 %, ... 138 of those among the 303 analysed."
+  },
+  {
+   "id": "A784.start_conformer_D13",
+   "file": "body_appendix_short.tex",
+   "line": 784,
+   "anchor": "App. F, start-conformer difficulty",
+   "plan_ref": "3.3:784 / W44 / D13",
+   "kind": "wording",
+   "current": "1.56 A median; 65% within 2 A",
+   "new": "unchanged (kept on the single instance); add the D13 clause",
+   "source": "D13",
+   "status": "unchanged",
+   "note": ""
+  },
+  {
+   "id": "A871.leadin_gates",
+   "file": "body_appendix_short.tex",
+   "line": 871,
+   "anchor": "App. H lead-in",
+   "plan_ref": "A4 / 3.3:871",
+   "kind": "value",
+   "current": "at 34.0% and 34.3% rank-1 validity-aware recovery respectively",
+   "new": {
+    "validity_aware_rank1": [
+     43.6,
+     44.2
+    ],
+    "near_native_rank1": [
+     45.2,
+     45.5
+    ]
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv k == 1",
+   "status": "resolved",
+   "note": "A4 wording with 45.2 % against 45.5 % (near-native) and 43.6 % against 44.2 % (validity-aware)."
+  },
+  {
+   "id": "A893.table18.AutoDock Vina.k1",
+   "file": "body_appendix_short.tex",
+   "line": 893,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "AutoDock Vina (raw) & 1 & 31.4 {[}26.4, 36.8{]} & 31.0 {[}26.1, 36.4{]} \\\\",
+   "new": {
+    "near": "43.2 [37.8, 48.9]",
+    "validity_aware": "42.9 [37.5, 48.5]",
+    "near_k": 131,
+    "valid_k": 130
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'AutoDock Vina', k 1) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A894.table18.AutoDock Vina.k5",
+   "file": "body_appendix_short.tex",
+   "line": 894,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 5 & 50.8 {[}45.2, 56.4{]} & 50.5 {[}44.9, 56.1{]} \\\\",
+   "new": {
+    "near": "56.4 [50.8, 61.9]",
+    "validity_aware": "56.1 [50.5, 61.6]",
+    "near_k": 171,
+    "valid_k": 170
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'AutoDock Vina', k 5) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A895.table18.AutoDock Vina.k10",
+   "file": "body_appendix_short.tex",
+   "line": 895,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 10 & 58.7 {[}53.1, 64.1{]} & 58.7 {[}53.1, 64.1{]} \\\\",
+   "new": {
+    "near": "62.7 [57.1, 68.0]",
+    "validity_aware": "62.7 [57.1, 68.0]",
+    "near_k": 190,
+    "valid_k": 190
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'AutoDock Vina', k 10) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A896.table18.AutoDock Vina.k15",
+   "file": "body_appendix_short.tex",
+   "line": 896,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 15 & 61.1 {[}55.5, 66.4{]} & 61.1 {[}55.5, 66.4{]} \\\\",
+   "new": {
+    "near": "65.3 [59.8, 70.5]",
+    "validity_aware": "65.3 [59.8, 70.5]",
+    "near_k": 198,
+    "valid_k": 198
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'AutoDock Vina', k 15) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A897.table18.AutoDock (gnina-opt).k1",
+   "file": "body_appendix_short.tex",
+   "line": 897,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "AutoDock Vina + gnina & 1 & 37.3 {[}32.0, 42.9{]} & 36.6 {[}31.4, 42.2{]} \\\\",
+   "new": {
+    "near": "49.8 [44.2, 55.4]",
+    "validity_aware": "49.2 [43.6, 54.8]",
+    "near_k": 151,
+    "valid_k": 149
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'AutoDock (gnina-opt)', k 1) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A898.table18.AutoDock (gnina-opt).k5",
+   "file": "body_appendix_short.tex",
+   "line": 898,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 5 & 62.0 {[}56.5, 67.3{]} & 60.7 {[}55.1, 66.1{]} \\\\",
+   "new": {
+    "near": "67.3 [61.9, 72.4]",
+    "validity_aware": "66.0 [60.5, 71.1]",
+    "near_k": 204,
+    "valid_k": 200
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'AutoDock (gnina-opt)', k 5) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A899.table18.AutoDock (gnina-opt).k10",
+   "file": "body_appendix_short.tex",
+   "line": 899,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 10 & 65.0 {[}59.5, 70.2{]} & 64.0 {[}58.5, 69.2{]} \\\\",
+   "new": {
+    "near": "70.0 [64.6, 74.9]",
+    "validity_aware": "69.0 [63.6, 73.9]",
+    "near_k": 212,
+    "valid_k": 209
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'AutoDock (gnina-opt)', k 10) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A900.table18.AutoDock (gnina-opt).k15",
+   "file": "body_appendix_short.tex",
+   "line": 900,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 15 & 66.3 {[}60.8, 71.4{]} & 65.3 {[}59.8, 70.5{]} \\\\",
+   "new": {
+    "near": "71.3 [66.0, 76.1]",
+    "validity_aware": "70.3 [64.9, 75.2]",
+    "near_k": 216,
+    "valid_k": 213
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'AutoDock (gnina-opt)', k 15) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A901.table18.DiffDock (raw).k1",
+   "file": "body_appendix_short.tex",
+   "line": 901,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "DiffDock (raw) & 1 & 33.7 {[}28.6, 39.2{]} & 18.2 {[}14.2, 22.9{]} \\\\",
+   "new": {
+    "near": "43.6 [38.1, 49.2]",
+    "validity_aware": "22.1 [17.8, 27.1]",
+    "near_k": 132,
+    "valid_k": 67
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'DiffDock (raw)', k 1) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A902.table18.DiffDock (raw).k5",
+   "file": "body_appendix_short.tex",
+   "line": 902,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 5 & 44.6 {[}39.1, 50.2{]} & 25.4 {[}20.8, 30.6{]} \\\\",
+   "new": {
+    "near": "50.2 [44.6, 55.8]",
+    "validity_aware": "30.4 [25.5, 35.8]",
+    "near_k": 152,
+    "valid_k": 92
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'DiffDock (raw)', k 5) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A903.table18.DiffDock (raw).k10",
+   "file": "body_appendix_short.tex",
+   "line": 903,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 10 & 48.2 {[}42.6, 53.8{]} & 28.7 {[}23.9, 34.0{]} \\\\",
+   "new": {
+    "near": "52.1 [46.5, 57.7]",
+    "validity_aware": "32.7 [27.6, 38.1]",
+    "near_k": 158,
+    "valid_k": 99
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'DiffDock (raw)', k 10) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A904.table18.DiffDock (raw).k15",
+   "file": "body_appendix_short.tex",
+   "line": 904,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 15 & 49.8 {[}44.2, 55.4{]} & 31.0 {[}26.1, 36.4{]} \\\\",
+   "new": {
+    "near": "52.8 [47.2, 58.4]",
+    "validity_aware": "34.0 [28.9, 39.5]",
+    "near_k": 160,
+    "valid_k": 103
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'DiffDock (raw)', k 15) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A905.table18.DiffDock + smina.k1",
+   "file": "body_appendix_short.tex",
+   "line": 905,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "DiffDock + smina & 1 & 35.3 {[}30.1, 40.8{]} & 34.0 {[}28.9, 39.5{]} \\\\",
+   "new": {
+    "near": "45.2 [39.7, 50.8]",
+    "validity_aware": "43.6 [38.1, 49.2]",
+    "near_k": 137,
+    "valid_k": 132
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'DiffDock + smina', k 1) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A906.table18.DiffDock + smina.k5",
+   "file": "body_appendix_short.tex",
+   "line": 906,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 5 & 48.8 {[}43.3, 54.5{]} & 47.5 {[}42.0, 53.1{]} \\\\",
+   "new": {
+    "near": "54.1 [48.5, 59.6]",
+    "validity_aware": "52.8 [47.2, 58.4]",
+    "near_k": 164,
+    "valid_k": 160
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'DiffDock + smina', k 5) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A907.table18.DiffDock + smina.k10",
+   "file": "body_appendix_short.tex",
+   "line": 907,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 10 & 53.5 {[}47.8, 59.0{]} & 52.5 {[}46.9, 58.0{]} \\\\",
+   "new": {
+    "near": "57.8 [52.1, 63.2]",
+    "validity_aware": "56.8 [51.1, 62.2]",
+    "near_k": 175,
+    "valid_k": 172
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'DiffDock + smina', k 10) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A908.table18.DiffDock + smina.k15",
+   "file": "body_appendix_short.tex",
+   "line": 908,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 15 & 56.1 {[}50.5, 61.6{]} & 55.1 {[}49.5, 60.6{]} \\\\",
+   "new": {
+    "near": "60.1 [54.5, 65.4]",
+    "validity_aware": "59.1 [53.5, 64.5]",
+    "near_k": 182,
+    "valid_k": 179
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'DiffDock + smina', k 15) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A909.table18.DiffDock (gnina-opt).k1",
+   "file": "body_appendix_short.tex",
+   "line": 909,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "DiffDock + gnina & 1 & 35.6 {[}30.5, 41.2{]} & 34.3 {[}29.2, 39.8{]} \\\\",
+   "new": {
+    "near": "45.5 [40.0, 51.2]",
+    "validity_aware": "44.2 [38.7, 49.9]",
+    "near_k": 138,
+    "valid_k": 134
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'DiffDock (gnina-opt)', k 1) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A910.table18.DiffDock (gnina-opt).k5",
+   "file": "body_appendix_short.tex",
+   "line": 910,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 5 & 49.2 {[}43.6, 54.8{]} & 48.2 {[}42.6, 53.8{]} \\\\",
+   "new": {
+    "near": "54.1 [48.5, 59.6]",
+    "validity_aware": "53.1 [47.5, 58.7]",
+    "near_k": 164,
+    "valid_k": 161
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'DiffDock (gnina-opt)', k 5) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A911.table18.DiffDock (gnina-opt).k10",
+   "file": "body_appendix_short.tex",
+   "line": 911,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 10 & 52.8 {[}47.2, 58.4{]} & 51.8 {[}46.2, 57.4{]} \\\\",
+   "new": {
+    "near": "57.1 [51.5, 62.5]",
+    "validity_aware": "56.1 [50.5, 61.6]",
+    "near_k": 173,
+    "valid_k": 170
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'DiffDock (gnina-opt)', k 10) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A912.table18.DiffDock (gnina-opt).k15",
+   "file": "body_appendix_short.tex",
+   "line": 912,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 15 & 56.1 {[}50.5, 61.6{]} & 55.1 {[}49.5, 60.6{]} \\\\",
+   "new": {
+    "near": "59.4 [53.8, 64.8]",
+    "validity_aware": "58.4 [52.8, 63.8]",
+    "near_k": 180,
+    "valid_k": 177
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'DiffDock (gnina-opt)', k 15) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A913.table18.EquiBind (raw).k1",
+   "file": "body_appendix_short.tex",
+   "line": 913,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "EquiBind (raw) & 1 & 1.3 {[}0.5, 3.3{]} & 0.7 {[}0.2, 2.4{]} \\\\",
+   "new": {
+    "near": "1.3 [0.5, 3.3]",
+    "validity_aware": "0.7 [0.2, 2.4]",
+    "near_k": 4,
+    "valid_k": 2
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'EquiBind (raw)', k 1) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A914.table18.EquiBind (raw).k5",
+   "file": "body_appendix_short.tex",
+   "line": 914,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 5 & 3.0 {[}1.6, 5.5{]} & 0.7 {[}0.2, 2.4{]} \\\\",
+   "new": {
+    "near": "3.0 [1.6, 5.5]",
+    "validity_aware": "0.7 [0.2, 2.4]",
+    "near_k": 9,
+    "valid_k": 2
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'EquiBind (raw)', k 5) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A915.table18.EquiBind (raw).k10",
+   "file": "body_appendix_short.tex",
+   "line": 915,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 10 & 4.0 {[}2.3, 6.8{]} & 0.7 {[}0.2, 2.4{]} \\\\",
+   "new": {
+    "near": "4.0 [2.3, 6.8]",
+    "validity_aware": "0.7 [0.2, 2.4]",
+    "near_k": 12,
+    "valid_k": 2
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'EquiBind (raw)', k 10) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A916.table18.EquiBind (raw).k15",
+   "file": "body_appendix_short.tex",
+   "line": 916,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 15 & 5.9 {[}3.8, 9.2{]} & 0.7 {[}0.2, 2.4{]} \\\\",
+   "new": {
+    "near": "5.9 [3.8, 9.2]",
+    "validity_aware": "0.7 [0.2, 2.4]",
+    "near_k": 18,
+    "valid_k": 2
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'EquiBind (raw)', k 15) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A917.table18.EquiBind (gnina-opt).k1",
+   "file": "body_appendix_short.tex",
+   "line": 917,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "EquiBind + gnina & 1 & 18.8 {[}14.8, 23.6{]} & 18.2 {[}14.2, 22.9{]} \\\\",
+   "new": {
+    "near": "19.5 [15.4, 24.3]",
+    "validity_aware": "18.8 [14.8, 23.6]",
+    "near_k": 59,
+    "valid_k": 57
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'EquiBind (gnina-opt)', k 1) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A918.table18.EquiBind (gnina-opt).k5",
+   "file": "body_appendix_short.tex",
+   "line": 918,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 5 & 25.1 {[}20.5, 30.3{]} & 24.1 {[}19.6, 29.2{]} \\\\",
+   "new": {
+    "near": "26.1 [21.5, 31.3]",
+    "validity_aware": "25.1 [20.5, 30.3]",
+    "near_k": 79,
+    "valid_k": 76
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'EquiBind (gnina-opt)', k 5) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A919.table18.EquiBind (gnina-opt).k10",
+   "file": "body_appendix_short.tex",
+   "line": 919,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 10 & 27.4 {[}22.7, 32.7{]} & 26.4 {[}21.8, 31.6{]} \\\\",
+   "new": {
+    "near": "28.4 [23.6, 33.7]",
+    "validity_aware": "27.4 [22.7, 32.7]",
+    "near_k": 86,
+    "valid_k": 83
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'EquiBind (gnina-opt)', k 10) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A920.table18.EquiBind (gnina-opt).k15",
+   "file": "body_appendix_short.tex",
+   "line": 920,
+   "anchor": "tab:appendix-top-k-recovery",
+   "plan_ref": "3.3:893-920",
+   "kind": "table_cell",
+   "current": "& 15 & 27.4 {[}22.7, 32.7{]} & 26.4 {[}21.8, 31.6{]} \\\\",
+   "new": {
+    "near": "28.4 [23.6, 33.7]",
+    "validity_aware": "27.4 [22.7, 32.7]",
+    "near_k": 86,
+    "valid_k": 83
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv (variant 'EquiBind (gnina-opt)', k 15) + stats_utils.wilson_ci(k, 303); harness signature table_18 rows agree",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A947.table19.AutoDock Vina + gnina.k1",
+   "file": "body_appendix_short.tex",
+   "line": 947,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "AutoDock Vina + gnina & 1 & 31.4 \\ensuremath{\\rightarrow} 37.3 & 21 / 39 & 0.0273 & 0.082 & ns \\\\",
+   "new": {
+    "raw_pct": 43.2,
+    "opt_pct": 49.8,
+    "raw_only": 19,
+    "opt_only": 39,
+    "p_raw": "0.0119",
+    "p_holm": "0.0596",
+    "sig": "ns"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, AutoDock Vina -> AutoDock (gnina-opt), k 1); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: AutoDock k=1 stays ns (Holm 0.060)"
+  },
+  {
+   "id": "A948.table19.AutoDock Vina + gnina.k5",
+   "file": "body_appendix_short.tex",
+   "line": 948,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "& 5 & 50.8 \\ensuremath{\\rightarrow} 62.0 & 3 / 37 & \\textless1e-4 & \\textless1e-4 & *** \\\\",
+   "new": {
+    "raw_pct": 56.4,
+    "opt_pct": 67.3,
+    "raw_only": 3,
+    "opt_only": 36,
+    "p_raw": "3.6e-08",
+    "p_holm": "4.3e-07",
+    "sig": "***"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, AutoDock Vina -> AutoDock (gnina-opt), k 5); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: AutoDock k=5 / 10 / 15 become ***"
+  },
+  {
+   "id": "A949.table19.AutoDock Vina + gnina.k10",
+   "file": "body_appendix_short.tex",
+   "line": 949,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "& 10 & 58.7 \\ensuremath{\\rightarrow} 65.0 & 3 / 22 & 1.6e-4 & 0.00159 & ** \\\\",
+   "new": {
+    "raw_pct": 62.7,
+    "opt_pct": 70.0,
+    "raw_only": 3,
+    "opt_only": 25,
+    "p_raw": "2.7e-05",
+    "p_holm": "3.0e-04",
+    "sig": "***"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, AutoDock Vina -> AutoDock (gnina-opt), k 10); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: AutoDock k=5 / 10 / 15 become ***"
+  },
+  {
+   "id": "A950.table19.AutoDock Vina + gnina.k15",
+   "file": "body_appendix_short.tex",
+   "line": 950,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "& 15 & 61.1 \\ensuremath{\\rightarrow} 66.3 & 1 / 17 & 1.4e-4 & 0.00159 & ** \\\\",
+   "new": {
+    "raw_pct": 65.3,
+    "opt_pct": 71.3,
+    "raw_only": 1,
+    "opt_only": 19,
+    "p_raw": "4.0e-05",
+    "p_holm": "4.0e-04",
+    "sig": "***"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, AutoDock Vina -> AutoDock (gnina-opt), k 15); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: AutoDock k=5 / 10 / 15 become ***"
+  },
+  {
+   "id": "A951.table19.DiffDock + smina.k1",
+   "file": "body_appendix_short.tex",
+   "line": 951,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "DiffDock + smina & 1 & 33.7 \\ensuremath{\\rightarrow} 35.3 & 1 / 6 & 0.125 & 0.219 & ns \\\\",
+   "new": {
+    "raw_pct": 43.6,
+    "opt_pct": 45.2,
+    "raw_only": 5,
+    "opt_only": 10,
+    "p_raw": "0.3018",
+    "p_holm": "0.4758",
+    "sig": "ns"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, DiffDock (raw) -> DiffDock + smina, k 1); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: "
+  },
+  {
+   "id": "A952.table19.DiffDock + smina.k5",
+   "file": "body_appendix_short.tex",
+   "line": 952,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "& 5 & 44.6 \\ensuremath{\\rightarrow} 48.8 & 5 / 18 & 0.0106 & 0.0468 & * \\\\",
+   "new": {
+    "raw_pct": 50.2,
+    "opt_pct": 54.1,
+    "raw_only": 5,
+    "opt_only": 17,
+    "p_raw": "0.0169",
+    "p_holm": "0.0676",
+    "sig": "ns"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, DiffDock (raw) -> DiffDock + smina, k 5); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: DiffDock k=5 loses its star (Holm 0.068)"
+  },
+  {
+   "id": "A953.table19.DiffDock + smina.k10",
+   "file": "body_appendix_short.tex",
+   "line": 953,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "& 10 & 48.2 \\ensuremath{\\rightarrow} 53.5 & 5 / 21 & 0.00249 & 0.0175 & * \\\\",
+   "new": {
+    "raw_pct": 52.1,
+    "opt_pct": 57.8,
+    "raw_only": 5,
+    "opt_only": 22,
+    "p_raw": "0.0015",
+    "p_holm": "0.0106",
+    "sig": "*"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, DiffDock (raw) -> DiffDock + smina, k 10); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: "
+  },
+  {
+   "id": "A954.table19.DiffDock + smina.k15",
+   "file": "body_appendix_short.tex",
+   "line": 954,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "& 15 & 49.8 \\ensuremath{\\rightarrow} 56.1 & 5 / 24 & 5.5e-4 & 0.00492 & ** \\\\",
+   "new": {
+    "raw_pct": 52.8,
+    "opt_pct": 60.1,
+    "raw_only": 5,
+    "opt_only": 27,
+    "p_raw": "1.1e-04",
+    "p_holm": "0.001",
+    "sig": "**"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, DiffDock (raw) -> DiffDock + smina, k 15); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: "
+  },
+  {
+   "id": "A955.table19.DiffDock + gnina.k1",
+   "file": "body_appendix_short.tex",
+   "line": 955,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "DiffDock + gnina & 1 & 33.7 \\ensuremath{\\rightarrow} 35.6 & 2 / 8 & 0.109 & 0.219 & ns \\\\",
+   "new": {
+    "raw_pct": 43.6,
+    "opt_pct": 45.5,
+    "raw_only": 6,
+    "opt_only": 12,
+    "p_raw": "0.2379",
+    "p_holm": "0.4758",
+    "sig": "ns"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, DiffDock (raw) -> DiffDock (gnina-opt), k 1); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: "
+  },
+  {
+   "id": "A956.table19.DiffDock + gnina.k5",
+   "file": "body_appendix_short.tex",
+   "line": 956,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "& 5 & 44.6 \\ensuremath{\\rightarrow} 49.2 & 5 / 19 & 0.00661 & 0.0397 & * \\\\",
+   "new": {
+    "raw_pct": 50.2,
+    "opt_pct": 54.1,
+    "raw_only": 5,
+    "opt_only": 17,
+    "p_raw": "0.0169",
+    "p_holm": "0.0676",
+    "sig": "ns"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, DiffDock (raw) -> DiffDock (gnina-opt), k 5); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: DiffDock k=5 loses its star (Holm 0.068)"
+  },
+  {
+   "id": "A957.table19.DiffDock + gnina.k10",
+   "file": "body_appendix_short.tex",
+   "line": 957,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "& 10 & 48.2 \\ensuremath{\\rightarrow} 52.8 & 6 / 20 & 0.00936 & 0.0468 & * \\\\",
+   "new": {
+    "raw_pct": 52.1,
+    "opt_pct": 57.1,
+    "raw_only": 5,
+    "opt_only": 20,
+    "p_raw": "0.0041",
+    "p_holm": "0.0245",
+    "sig": "*"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, DiffDock (raw) -> DiffDock (gnina-opt), k 10); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: "
+  },
+  {
+   "id": "A958.table19.DiffDock + gnina.k15",
+   "file": "body_appendix_short.tex",
+   "line": 958,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "& 15 & 49.8 \\ensuremath{\\rightarrow} 56.1 & 6 / 25 & 8.8e-4 & 0.00702 & ** \\\\",
+   "new": {
+    "raw_pct": 52.8,
+    "opt_pct": 59.4,
+    "raw_only": 5,
+    "opt_only": 25,
+    "p_raw": "3.2e-04",
+    "p_holm": "0.0026",
+    "sig": "**"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, DiffDock (raw) -> DiffDock (gnina-opt), k 15); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: "
+  },
+  {
+   "id": "A959.table19.EquiBind + gnina.k1",
+   "file": "body_appendix_short.tex",
+   "line": 959,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "EquiBind + gnina & 1 & 1.3 \\ensuremath{\\rightarrow} 18.8 & 2 / 55 & \\textless1e-4 & \\textless1e-4 & *** \\\\",
+   "new": {
+    "raw_pct": 1.3,
+    "opt_pct": 19.5,
+    "raw_only": 2,
+    "opt_only": 57,
+    "p_raw": "6.1e-15",
+    "p_holm": "8.0e-14",
+    "sig": "***"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, EquiBind (raw) -> EquiBind (gnina-opt), k 1); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: "
+  },
+  {
+   "id": "A960.table19.EquiBind + gnina.k5",
+   "file": "body_appendix_short.tex",
+   "line": 960,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "& 5 & 3.0 \\ensuremath{\\rightarrow} 25.1 & 2 / 69 & \\textless1e-4 & \\textless1e-4 & *** \\\\",
+   "new": {
+    "raw_pct": 3.0,
+    "opt_pct": 26.1,
+    "raw_only": 2,
+    "opt_only": 72,
+    "p_raw": "2.9e-19",
+    "p_holm": "4.1e-18",
+    "sig": "***"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, EquiBind (raw) -> EquiBind (gnina-opt), k 5); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: "
+  },
+  {
+   "id": "A961.table19.EquiBind + gnina.k10",
+   "file": "body_appendix_short.tex",
+   "line": 961,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "& 10 & 4.0 \\ensuremath{\\rightarrow} 27.4 & 1 / 72 & \\textless1e-4 & \\textless1e-4 & *** \\\\",
+   "new": {
+    "raw_pct": 4.0,
+    "opt_pct": 28.4,
+    "raw_only": 1,
+    "opt_only": 75,
+    "p_raw": "2.0e-21",
+    "p_holm": "3.3e-20",
+    "sig": "***"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, EquiBind (raw) -> EquiBind (gnina-opt), k 10); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: "
+  },
+  {
+   "id": "A962.table19.EquiBind + gnina.k15",
+   "file": "body_appendix_short.tex",
+   "line": 962,
+   "anchor": "tab:appendix-refinement-mcnemar",
+   "plan_ref": "3.3:947-964 / plan 1.5 star flips",
+   "kind": "table_cell",
+   "current": "& 15 & 5.9 \\ensuremath{\\rightarrow} 27.4 & 1 / 66 & \\textless1e-4 & \\textless1e-4 & *** \\\\",
+   "new": {
+    "raw_pct": 5.9,
+    "opt_pct": 28.4,
+    "raw_only": 1,
+    "opt_only": 69,
+    "p_raw": "1.2e-19",
+    "p_holm": "1.8e-18",
+    "sig": "***"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv (family within_tool, EquiBind (raw) -> EquiBind (gnina-opt), k 15); harness signature table_19 rows agree",
+   "status": "resolved",
+   "note": "star flips vs print: "
+  },
+  {
+   "id": "A964.table19_footnote_rerank",
+   "file": "body_appendix_short.tex",
+   "line": 964,
+   "anchor": "tab:appendix-refinement-mcnemar footnote",
+   "plan_ref": "3.3:947-964",
+   "kind": "value",
+   "current": "32.3% of complexes with gnina and 32.7% with smina, against the 33.7% of the confidence order",
+   "new": {
+    "gnina_rerank_pct": 41.6,
+    "smina_rerank_pct": 41.6,
+    "confidence_pct": 43.6
+   },
+   "source": "PoseBusters_Benchmark_Analysis/smina_rerank_nearest/selection_strategy_summary_smina.csv C_rerank / A_native; gnina value from the same registered script run with --tool gnina on the nearest table into the scratchpad (the program has NO gnina_rerank_nearest stage; REGENERATE.md registers only --tool smina)",
+   "status": "resolved",
+   "note": "41.6 % with gnina and 41.6 % with smina against the 43.6 % of the confidence order (both re-rank strategies select 126 of 303). Re-ordering still does not help. The gnina re-rank output should be added to the program as a `gnina_rerank_nearest` stage if the author wants a canonical sidecar."
+  },
+  {
+   "id": "A964.table19_footnote_gains",
+   "file": "body_appendix_short.tex",
+   "line": 964,
+   "anchor": "tab:appendix-refinement-mcnemar footnote",
+   "plan_ref": "3.3:947-964",
+   "kind": "value",
+   "current": "EquiBind starts at 1.3% and gains more than seventeen points at rank-1, AutoDock Vina starts at 31.4% and gains six, DiffDock starts at 33.7% and gains two; top-15 66.3% / 56.1% both / 27.4%; 24 and 25 recovered complexes",
+   "new": {
+    "equibind_rank1": [
+     1.3,
+     19.5
+    ],
+    "autodock_rank1": [
+     43.2,
+     49.8
+    ],
+    "diffdock_rank1": [
+     43.6,
+     45.2,
+     45.5
+    ],
+    "top15_opt": {
+     "autodock": 71.3,
+     "diffdock_smina": 60.1,
+     "diffdock_gnina": 59.4,
+     "equibind": 28.4
+    },
+    "diffdock_top15_opt_only_wins": [
+     27,
+     25
+    ]
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv",
+   "status": "resolved",
+   "note": "EquiBind 1.3 -> 19.5 (gains eighteen), AutoDock 43.2 -> 49.8 (gains seven), DiffDock 43.6 -> 45.2 / 45.5 (gains two). Top-15 71.3 % for AutoDock against 60.1 % (smina) and 59.4 % (gnina) for DiffDock and 28.4 % for EquiBind, ordering of raw arms repeated. The two DiffDock refiners no longer reach 'the same' top-15 value: 60.1 against 59.4 by way of 27 and 25 recovered complexes, so the 'indistinguishable ... same 56.1 %' sentence is reworded to 'within one point of each other'."
+  },
+  {
+   "id": "A992.table20_bands.DiffDock|near-native",
+   "file": "body_appendix_short.tex",
+   "line": 992,
+   "anchor": "tab:appendix-refinement-bands",
+   "plan_ref": "3.3:992-999",
+   "kind": "table_cell",
+   "current": "DiffDock & near-native & +0.6 & +0.7 & +0.1 & +0.1 & +0.5 & +0.4 \\\\",
+   "new": {
+    "columns_1-10_smina_gnina_11-20_smina_gnina_21-30_smina_gnina": [
+     0.551,
+     0.617,
+     0.438,
+     0.271,
+     0.836,
+     1.005
+    ],
+    "print_as": [
+     "+0.6",
+     "+0.6",
+     "+0.4",
+     "+0.3",
+     "+0.8",
+     "+1.0"
+    ],
+    "canonical_recompute_check": [
+     0.612,
+     0.711,
+     0.063,
+     0.063,
+     0.488,
+     0.42
+    ]
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/optimization_benefit_by_rank.csv pose-count-weighted pooled rate per band (ranks 1-10 / 11-20 / 21-30), optimiser minus raw; recipe reproduces every printed canonical cell",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A993.table20_bands.DiffDock|PoseBusters-valid",
+   "file": "body_appendix_short.tex",
+   "line": 993,
+   "anchor": "tab:appendix-refinement-bands",
+   "plan_ref": "3.3:992-999",
+   "kind": "table_cell",
+   "current": "DiffDock & PoseBusters-valid & +57 & +59 & +60 & +62 & +63 & +67 \\\\",
+   "new": {
+    "columns_1-10_smina_gnina_11-20_smina_gnina_21-30_smina_gnina": [
+     57.471,
+     58.594,
+     59.736,
+     62.135,
+     63.091,
+     67.409
+    ],
+    "print_as": [
+     "+57",
+     "+59",
+     "+60",
+     "+62",
+     "+63",
+     "+67"
+    ],
+    "canonical_recompute_check": [
+     57.471,
+     58.594,
+     59.736,
+     62.135,
+     63.091,
+     67.409
+    ]
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/optimization_benefit_by_rank.csv pose-count-weighted pooled rate per band (ranks 1-10 / 11-20 / 21-30), optimiser minus raw; recipe reproduces every printed canonical cell",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A994.table20_bands.DiffDock|near-native and PB-valid",
+   "file": "body_appendix_short.tex",
+   "line": 994,
+   "anchor": "tab:appendix-refinement-bands",
+   "plan_ref": "3.3:992-999",
+   "kind": "table_cell",
+   "current": "DiffDock & near-native and PB-valid & +12.9 & +13.0 & +7.7 & +7.6 & +5.2 & +5.2 \\\\",
+   "new": {
+    "columns_1-10_smina_gnina_11-20_smina_gnina_21-30_smina_gnina": [
+     16.496,
+     16.529,
+     10.479,
+     10.313,
+     6.509,
+     6.745
+    ],
+    "print_as": [
+     "+16.5",
+     "+16.5",
+     "+10.5",
+     "+10.3",
+     "+6.5",
+     "+6.7"
+    ],
+    "canonical_recompute_check": [
+     12.926,
+     12.992,
+     7.71,
+     7.644,
+     5.221,
+     5.221
+    ]
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/optimization_benefit_by_rank.csv pose-count-weighted pooled rate per band (ranks 1-10 / 11-20 / 21-30), optimiser minus raw; recipe reproduces every printed canonical cell",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A995.table20_bands.EquiBind|near-native",
+   "file": "body_appendix_short.tex",
+   "line": 995,
+   "anchor": "tab:appendix-refinement-bands",
+   "plan_ref": "3.3:992-999",
+   "kind": "table_cell",
+   "current": "EquiBind & near-native & +4.4 & +4.6 & +3.5 & +4.4 & +3.7 & +4.1 \\\\",
+   "new": {
+    "columns_1-10_smina_gnina_11-20_smina_gnina_21-30_smina_gnina": [
+     4.455,
+     4.686,
+     3.597,
+     4.554,
+     3.894,
+     4.36
+    ],
+    "print_as": [
+     "+4.5",
+     "+4.7",
+     "+3.6",
+     "+4.6",
+     "+3.9",
+     "+4.4"
+    ],
+    "canonical_recompute_check": [
+     4.356,
+     4.587,
+     3.498,
+     4.356,
+     3.696,
+     4.096
+    ]
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/optimization_benefit_by_rank.csv pose-count-weighted pooled rate per band (ranks 1-10 / 11-20 / 21-30), optimiser minus raw; recipe reproduces every printed canonical cell",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A996.table20_bands.EquiBind|PoseBusters-valid",
+   "file": "body_appendix_short.tex",
+   "line": 996,
+   "anchor": "tab:appendix-refinement-bands",
+   "plan_ref": "3.3:992-999",
+   "kind": "table_cell",
+   "current": "EquiBind & PoseBusters-valid & +48 & +58 & +49 & +59 & +48 & +60 \\\\",
+   "new": {
+    "columns_1-10_smina_gnina_11-20_smina_gnina_21-30_smina_gnina": [
+     48.185,
+     58.251,
+     48.581,
+     58.845,
+     48.482,
+     60.174
+    ],
+    "print_as": [
+     "+48",
+     "+58",
+     "+49",
+     "+59",
+     "+48",
+     "+60"
+    ],
+    "canonical_recompute_check": [
+     48.185,
+     58.251,
+     48.581,
+     58.845,
+     48.482,
+     60.174
+    ]
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/optimization_benefit_by_rank.csv pose-count-weighted pooled rate per band (ranks 1-10 / 11-20 / 21-30), optimiser minus raw; recipe reproduces every printed canonical cell",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A997.table20_bands.EquiBind|near-native and PB-valid",
+   "file": "body_appendix_short.tex",
+   "line": 997,
+   "anchor": "tab:appendix-refinement-bands",
+   "plan_ref": "3.3:992-999",
+   "kind": "table_cell",
+   "current": "EquiBind & near-native and PB-valid & +4.8 & +5.0 & +4.1 & +5.0 & +4.2 & +4.7 \\\\",
+   "new": {
+    "columns_1-10_smina_gnina_11-20_smina_gnina_21-30_smina_gnina": [
+     4.884,
+     5.083,
+     4.125,
+     5.215,
+     4.257,
+     4.954
+    ],
+    "print_as": [
+     "+4.9",
+     "+5.1",
+     "+4.1",
+     "+5.2",
+     "+4.3",
+     "+5.0"
+    ],
+    "canonical_recompute_check": [
+     4.785,
+     4.983,
+     4.059,
+     5.017,
+     4.158,
+     4.69
+    ]
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/optimization_benefit_by_rank.csv pose-count-weighted pooled rate per band (ranks 1-10 / 11-20 / 21-30), optimiser minus raw; recipe reproduces every printed canonical cell",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A999.table20_footnote",
+   "file": "body_appendix_short.tex",
+   "line": 999,
+   "anchor": "tab:appendix-refinement-bands footnote",
+   "plan_ref": "3.3:992-999",
+   "kind": "value",
+   "current": "near-native gnina bands span 0.1 to 0.7 (DiffDock) and 4.1 to 4.6 (EquiBind); smina bands 0.1 to 0.6 and 3.5 to 4.4; whole-run validity gains +60 / +63 and +48 / +59 against 84.5% / 87.1% from 24.4% and 51.3% / 62.0% from 2.9%",
+   "new": {
+    "diffdock_near_gnina_span": [
+     0.271,
+     1.005
+    ],
+    "equibind_near_gnina_span": [
+     4.36,
+     4.686
+    ],
+    "diffdock_near_smina_span": [
+     0.438,
+     0.836
+    ],
+    "equibind_near_smina_span": [
+     3.597,
+     4.455
+    ],
+    "validity_gains_unchanged": "+60 / +63 and +48 / +59 (validity is convention-free)"
+   },
+   "source": "same recipe",
+   "status": "resolved",
+   "note": "DiffDock gnina near bands 0.3 to 1.0, smina 0.4 to 0.8; EquiBind gnina 4.4 to 4.7, smina 3.6 to 4.5. The note to Table 19 quoting '0.1-0.7 and 4.1-4.6' must follow."
+  },
+  {
+   "id": "A1026.table21.AutoDock (gnina-opt)_vs_DiffDock (raw)",
+   "file": "body_appendix_short.tex",
+   "line": 1026,
+   "anchor": "tab:appendix-cross-tool-mcnemar",
+   "plan_ref": "3.3:1026-1031",
+   "kind": "table_cell",
+   "current": "AutoDock Vina + gnina versus DiffDock (raw) & 37.3 versus 33.7 & 62.0 versus 44.6 & 65.0 versus 48.2 & 66.3 versus 49.8 \\\\",
+   "new": {
+    "k1": {
+     "a_pct": 49.8,
+     "b_pct": 43.6,
+     "a_only": 77,
+     "b_only": 58,
+     "p_raw": "0.121",
+     "p_holm": "0.242",
+     "sig": "ns"
+    },
+    "k5": {
+     "a_pct": 67.3,
+     "b_pct": 50.2,
+     "a_only": 99,
+     "b_only": 47,
+     "p_raw": "2.0e-05",
+     "p_holm": "1.2e-04",
+     "sig": "***"
+    },
+    "k10": {
+     "a_pct": 70.0,
+     "b_pct": 52.1,
+     "a_only": 100,
+     "b_only": 46,
+     "p_raw": "9.2e-06",
+     "p_holm": "6.5e-05",
+     "sig": "***"
+    },
+    "k15": {
+     "a_pct": 71.3,
+     "b_pct": 52.8,
+     "a_only": 102,
+     "b_only": 46,
+     "p_raw": "4.8e-06",
+     "p_holm": "3.8e-05",
+     "sig": "***"
+    }
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv family between_tool",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A1027.table21.AutoDock (gnina-opt)_vs_DiffDock (gnina-opt)",
+   "file": "body_appendix_short.tex",
+   "line": 1027,
+   "anchor": "tab:appendix-cross-tool-mcnemar",
+   "plan_ref": "3.3:1026-1031",
+   "kind": "table_cell",
+   "current": "AutoDock Vina + gnina versus DiffDock (gnina-opt) & 37.3 versus 35.6 & 62.0 versus 49.2 & 65.0 versus 52.8 & 66.3 versus 56.1 \\\\",
+   "new": {
+    "k1": {
+     "a_pct": 49.8,
+     "b_pct": 45.5,
+     "a_only": 72,
+     "b_only": 59,
+     "p_raw": "0.2944",
+     "p_holm": "0.2944",
+     "sig": "ns"
+    },
+    "k5": {
+     "a_pct": 67.3,
+     "b_pct": 54.1,
+     "a_only": 89,
+     "b_only": 49,
+     "p_raw": "8.4e-04",
+     "p_holm": "0.0042",
+     "sig": "**"
+    },
+    "k10": {
+     "a_pct": 70.0,
+     "b_pct": 57.1,
+     "a_only": 87,
+     "b_only": 48,
+     "p_raw": "1.0e-03",
+     "p_holm": "0.0042",
+     "sig": "**"
+    },
+    "k15": {
+     "a_pct": 71.3,
+     "b_pct": 59.4,
+     "a_only": 85,
+     "b_only": 49,
+     "p_raw": "0.0024",
+     "p_holm": "0.0071",
+     "sig": "**"
+    }
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv family between_tool",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A1028.table21.DiffDock (gnina-opt)_vs_EquiBind (gnina-opt)",
+   "file": "body_appendix_short.tex",
+   "line": 1028,
+   "anchor": "tab:appendix-cross-tool-mcnemar",
+   "plan_ref": "3.3:1026-1031",
+   "kind": "table_cell",
+   "current": "DiffDock (gnina-opt) versus EquiBind (gnina-opt) & 35.6 versus 18.8 & 49.2 versus 25.1 & 52.8 versus 27.4 & 56.1 versus 27.4 \\\\",
+   "new": {
+    "k1": {
+     "a_pct": 45.5,
+     "b_pct": 19.5,
+     "a_only": 97,
+     "b_only": 18,
+     "p_raw": "2.8e-14",
+     "p_holm": "2.5e-13",
+     "sig": "***"
+    },
+    "k5": {
+     "a_pct": 54.1,
+     "b_pct": 26.1,
+     "a_only": 107,
+     "b_only": 22,
+     "p_raw": "1.3e-14",
+     "p_holm": "1.3e-13",
+     "sig": "***"
+    },
+    "k10": {
+     "a_pct": 57.1,
+     "b_pct": 28.4,
+     "a_only": 109,
+     "b_only": 22,
+     "p_raw": "4.8e-15",
+     "p_holm": "5.3e-14",
+     "sig": "***"
+    },
+    "k15": {
+     "a_pct": 59.4,
+     "b_pct": 28.4,
+     "a_only": 112,
+     "b_only": 18,
+     "p_raw": "8.9e-18",
+     "p_holm": "1.2e-16",
+     "sig": "***"
+    }
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv family between_tool",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A1029.table21.AutoDock (gnina-opt)_vs_EquiBind (gnina-opt)",
+   "file": "body_appendix_short.tex",
+   "line": 1029,
+   "anchor": "tab:appendix-cross-tool-mcnemar",
+   "plan_ref": "3.3:1026-1031",
+   "kind": "table_cell",
+   "current": "AutoDock Vina + gnina versus EquiBind (gnina-opt) & 37.3 versus 18.8 & 62.0 versus 25.1 & 65.0 versus 27.4 & 66.3 versus 27.4 \\\\",
+   "new": {
+    "k1": {
+     "a_pct": 49.8,
+     "b_pct": 19.5,
+     "a_only": 111,
+     "b_only": 19,
+     "p_raw": "5.3e-17",
+     "p_holm": "6.4e-16",
+     "sig": "***"
+    },
+    "k5": {
+     "a_pct": 67.3,
+     "b_pct": 26.1,
+     "a_only": 141,
+     "b_only": 16,
+     "p_raw": "3.6e-26",
+     "p_holm": "5.1e-25",
+     "sig": "***"
+    },
+    "k10": {
+     "a_pct": 70.0,
+     "b_pct": 28.4,
+     "a_only": 141,
+     "b_only": 15,
+     "p_raw": "7.4e-27",
+     "p_holm": "1.1e-25",
+     "sig": "***"
+    },
+    "k15": {
+     "a_pct": 71.3,
+     "b_pct": 28.4,
+     "a_only": 144,
+     "b_only": 14,
+     "p_raw": "2.3e-28",
+     "p_holm": "3.7e-27",
+     "sig": "***"
+    }
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv family between_tool",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A1031.table21_footnote",
+   "file": "body_appendix_short.tex",
+   "line": 1031,
+   "anchor": "tab:appendix-cross-tool-mcnemar footnote",
+   "plan_ref": "3.3:1026-1031",
+   "kind": "value",
+   "current": "vs DiffDock (raw) Holm 0.694 then 0.0001, 0.0002, 0.0003; vs DiffDock (gnina-opt) 0.709 then 0.0059, 0.0080, 0.029; rank-1 wins 62 / losses 51 (raw) and 60 / 55 (gnina-opt); EquiBind contrasts Holm < 3e-7",
+   "new": {
+    "vs_diffdock_raw_holm": [
+     "0.242",
+     "1.2e-04",
+     "6.5e-05",
+     "3.8e-05"
+    ],
+    "vs_diffdock_gnina_holm": [
+     "0.2944",
+     "0.0042",
+     "0.0042",
+     "0.0071"
+    ],
+    "rank1_wins_losses_raw": [
+     77,
+     58
+    ],
+    "rank1_wins_losses_gnina": [
+     72,
+     59
+    ],
+    "equibind_contrasts_max_holm": "2.5e-13"
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_stats.csv",
+   "status": "resolved",
+   "note": "Holm 0.242 then 1.2e-4, 6.5e-5, 3.8e-5 against DiffDock (raw); 0.294 then 0.0042, 0.0042, 0.0071 against DiffDock (gnina-opt). Rank-1 AutoDock wins 77 / loses 58 (raw) and 72 / 59 (gnina-opt), still a tie. EquiBind contrasts all below 1e-12 ('below 3e-7 throughout' remains true; tighten to 'below 1e-12')."
+  },
+  {
+   "id": "A1056.table22.AutoDock Vina + gnina",
+   "file": "body_appendix_short.tex",
+   "line": 1056,
+   "anchor": "tab:appendix-accurate-invalid",
+   "plan_ref": "3.3:1056-1062",
+   "kind": "table_cell",
+   "current": "AutoDock Vina + gnina & 0.7 {[}0.2, 2.4{]} & 1.3 {[}0.5, 3.3{]} & 1.0 {[}0.3, 2.9{]} & 1.0 {[}0.3, 2.9{]} \\\\",
+   "new": {
+    "k1": {
+     "cost": 2,
+     "pct": 0.7,
+     "ci": [
+      0.2,
+      2.4
+     ]
+    },
+    "k5": {
+     "cost": 4,
+     "pct": 1.3,
+     "ci": [
+      0.5,
+      3.3
+     ]
+    },
+    "k10": {
+     "cost": 3,
+     "pct": 1.0,
+     "ci": [
+      0.3,
+      2.9
+     ]
+    },
+    "k15": {
+     "cost": 3,
+     "pct": 1.0,
+     "ci": [
+      0.3,
+      2.9
+     ]
+    }
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv near_k - valid_k with stats_utils.wilson_ci(gap, 303); k 1 / 5 / 15 cross-checked against posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/validity_gate_cost.csv; harness signature table_22 agrees",
+   "status": "unchanged",
+   "note": ""
+  },
+  {
+   "id": "A1057.table22.DiffDock (raw)",
+   "file": "body_appendix_short.tex",
+   "line": 1057,
+   "anchor": "tab:appendix-accurate-invalid",
+   "plan_ref": "3.3:1056-1062",
+   "kind": "table_cell",
+   "current": "DiffDock (raw) & 15.5 {[}11.9, 20.0{]} & 19.1 {[}15.1, 23.9{]} & 19.5 {[}15.4, 24.3{]} & 18.8 {[}14.8, 23.6{]} \\\\",
+   "new": {
+    "k1": {
+     "cost": 65,
+     "pct": 21.5,
+     "ci": [
+      17.2,
+      26.4
+     ]
+    },
+    "k5": {
+     "cost": 60,
+     "pct": 19.8,
+     "ci": [
+      15.7,
+      24.7
+     ]
+    },
+    "k10": {
+     "cost": 59,
+     "pct": 19.5,
+     "ci": [
+      15.4,
+      24.3
+     ]
+    },
+    "k15": {
+     "cost": 57,
+     "pct": 18.8,
+     "ci": [
+      14.8,
+      23.6
+     ]
+    }
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv near_k - valid_k with stats_utils.wilson_ci(gap, 303); k 1 / 5 / 15 cross-checked against posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/validity_gate_cost.csv; harness signature table_22 agrees",
+   "status": "resolved",
+   "note": "DiffDock raw k=1 65 (21.5 [17.2, 26.4]), k=5 60 (19.8 [15.7, 24.7]); k=10 59 (19.5) and k=15 57 (18.8) unchanged"
+  },
+  {
+   "id": "A1058.table22.DiffDock (gnina-opt)",
+   "file": "body_appendix_short.tex",
+   "line": 1058,
+   "anchor": "tab:appendix-accurate-invalid",
+   "plan_ref": "3.3:1056-1062",
+   "kind": "table_cell",
+   "current": "DiffDock (gnina-opt) & 1.3 {[}0.5, 3.3{]} & 1.0 {[}0.3, 2.9{]} & 1.0 {[}0.3, 2.9{]} & 1.0 {[}0.3, 2.9{]} \\\\",
+   "new": {
+    "k1": {
+     "cost": 4,
+     "pct": 1.3,
+     "ci": [
+      0.5,
+      3.3
+     ]
+    },
+    "k5": {
+     "cost": 3,
+     "pct": 1.0,
+     "ci": [
+      0.3,
+      2.9
+     ]
+    },
+    "k10": {
+     "cost": 3,
+     "pct": 1.0,
+     "ci": [
+      0.3,
+      2.9
+     ]
+    },
+    "k15": {
+     "cost": 3,
+     "pct": 1.0,
+     "ci": [
+      0.3,
+      2.9
+     ]
+    }
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv near_k - valid_k with stats_utils.wilson_ci(gap, 303); k 1 / 5 / 15 cross-checked against posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/validity_gate_cost.csv; harness signature table_22 agrees",
+   "status": "unchanged",
+   "note": ""
+  },
+  {
+   "id": "A1059.table22.EquiBind (raw)",
+   "file": "body_appendix_short.tex",
+   "line": 1059,
+   "anchor": "tab:appendix-accurate-invalid",
+   "plan_ref": "3.3:1056-1062",
+   "kind": "table_cell",
+   "current": "EquiBind (raw) & 0.7 {[}0.2, 2.4{]} & 2.3 {[}1.1, 4.7{]} & 3.3 {[}1.8, 6.0{]} & 5.3 {[}3.3, 8.4{]} \\\\",
+   "new": {
+    "k1": {
+     "cost": 2,
+     "pct": 0.7,
+     "ci": [
+      0.2,
+      2.4
+     ]
+    },
+    "k5": {
+     "cost": 7,
+     "pct": 2.3,
+     "ci": [
+      1.1,
+      4.7
+     ]
+    },
+    "k10": {
+     "cost": 10,
+     "pct": 3.3,
+     "ci": [
+      1.8,
+      6.0
+     ]
+    },
+    "k15": {
+     "cost": 16,
+     "pct": 5.3,
+     "ci": [
+      3.3,
+      8.4
+     ]
+    }
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv near_k - valid_k with stats_utils.wilson_ci(gap, 303); k 1 / 5 / 15 cross-checked against posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/validity_gate_cost.csv; harness signature table_22 agrees",
+   "status": "unchanged",
+   "note": ""
+  },
+  {
+   "id": "A1060.table22.EquiBind (gnina-opt)",
+   "file": "body_appendix_short.tex",
+   "line": 1060,
+   "anchor": "tab:appendix-accurate-invalid",
+   "plan_ref": "3.3:1056-1062",
+   "kind": "table_cell",
+   "current": "EquiBind (gnina-opt) & 0.7 {[}0.2, 2.4{]} & 1.0 {[}0.3, 2.9{]} & 1.0 {[}0.3, 2.9{]} & 1.0 {[}0.3, 2.9{]} \\\\",
+   "new": {
+    "k1": {
+     "cost": 2,
+     "pct": 0.7,
+     "ci": [
+      0.2,
+      2.4
+     ]
+    },
+    "k5": {
+     "cost": 3,
+     "pct": 1.0,
+     "ci": [
+      0.3,
+      2.9
+     ]
+    },
+    "k10": {
+     "cost": 3,
+     "pct": 1.0,
+     "ci": [
+      0.3,
+      2.9
+     ]
+    },
+    "k15": {
+     "cost": 3,
+     "pct": 1.0,
+     "ci": [
+      0.3,
+      2.9
+     ]
+    }
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv near_k - valid_k with stats_utils.wilson_ci(gap, 303); k 1 / 5 / 15 cross-checked against posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/validity_gate_cost.csv; harness signature table_22 agrees",
+   "status": "unchanged",
+   "note": ""
+  },
+  {
+   "id": "A1062.table22_footnote",
+   "file": "body_appendix_short.tex",
+   "line": 1062,
+   "anchor": "tab:appendix-accurate-invalid footnote",
+   "plan_ref": "3.3:1056-1062",
+   "kind": "value",
+   "current": "raw AutoDock Vina 0.3 [0.1, 1.8] at the first two depths and 0.0 [0.0, 1.3] at the last two",
+   "new": {
+    "k1": {
+     "pct": 0.3,
+     "ci": [
+      0.1,
+      1.8
+     ]
+    },
+    "k5": {
+     "pct": 0.3,
+     "ci": [
+      0.1,
+      1.8
+     ]
+    },
+    "k10": {
+     "pct": 0.0,
+     "ci": [
+      0.0,
+      1.3
+     ]
+    },
+    "k15": {
+     "pct": 0.0,
+     "ci": [
+      0.0,
+      1.3
+     ]
+    }
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity.csv",
+   "status": "unchanged",
+   "note": "footnote wording 'within 2 A of the crystal ligand' -> 'of the nearest deposited copy' (W)"
+  },
+  {
+   "id": "A1074.itt",
+   "file": "body_appendix_short.tex",
+   "line": 1074,
+   "anchor": "App. I, Cohort and Exclusions",
+   "plan_ref": "3.3:1074 / plan 1.10",
+   "kind": "value",
+   "current": "none of the five within 2 A at rank-1 and none within its top-15 pool, closest 6.4 A; 111 of 308 and 198 of 308 against 103 and 167; 2.6 pp; 10.2 -> 10.1; all 150 poses pass",
+   "new": {
+    "rank1_recovered_dropped": 0,
+    "closest_rank1_A": 6.26,
+    "closest_rank1_id": "7FRX_O88",
+    "top15_recovered_dropped": 0,
+    "closest_top15_A": 2.14,
+    "closest_top15_id": "7FRX_O88",
+    "all_poses_recovered_dropped": 1,
+    "closest_all_A": 1.54,
+    "closest_all_id": "8F4J_PHO",
+    "closest_all_rank": 28,
+    "counts_308": {
+     "autodock_rank1": 149,
+     "diffdock_rank1": 132,
+     "autodock_top15": 213,
+     "diffdock_top15": 179,
+     "n": 308
+    },
+    "margin_303_pp": {
+     "rank1": 5.61,
+     "top15": 11.22
+    },
+    "margin_308_pp": {
+     "rank1": 5.52,
+     "top15": 11.04
+    },
+    "n_poses_scored": 150,
+    "instance_check": {
+     "counts_308": {
+      "autodock_rank1": 111,
+      "diffdock_rank1": 103,
+      "autodock_top15": 198,
+      "diffdock_top15": 167,
+      "n": 308
+     },
+     "margins": {
+      "rank1": 2.6,
+      "top15": 10.06
+     },
+     "closest_top15_A": 6.41
+    }
+   },
+   "source": "posebusters_results/itt_nearest/itt_summary.json",
+   "status": "resolved",
+   "note": "AutoDock Vina + gnina places none of the five within 2 A at rank-1 (closest 6.3 A) and none within its top-15 pool, where the closest pose sits at 2.1 A (7FRX_O88); over all thirty poses 8F4J_PHO reaches 1.5 A of an alternate copy at rank 28. Recovery stays at 149 of 308 rank-1 and 213 of 308 top-15 against 132 and 179; margin 5.6 -> 5.5 at rank-1 and 11.2 -> 11.0 at top-15. The validity clause ('all 150 poses pass') is NOT re-checked by the generator (posebusters_filtered_results.csv holds no rows for the five ids); it stands on the canonical statement."
+  },
+  {
+   "id": "A1172.table24.AutoDock (raw).near_native_half",
+   "file": "body_appendix_short.tex",
+   "line": 1172,
+   "anchor": "tab:appendix-pb-decomposition-full",
+   "plan_ref": "3.3:1172-1181 / W46",
+   "kind": "table_cell",
+   "current": "AutoDock (raw) & 8,976 & 99.6 & 0.0 & 0.1 & 0.2 & 0.2 & 307 & 98.4 & 0.0 & 0.0 & 1.6 & 1.6 \\\\",
+   "new": {
+    "poses": 437,
+    "valid_pct": 98.6,
+    "chem_pct": 0.0,
+    "intra_pct": 0.2,
+    "inter_pct": 1.1,
+    "mindist_pct": 1.1,
+    "instance_check": [
+     307,
+     98.4,
+     0.0,
+     0.0,
+     1.6,
+     1.6
+    ]
+   },
+   "source": "recompute: posebusters_filtered_results.csv joined to per_pose_metrics_nearest on pose_file, rmsd <= 2, group shares per yaml table_24 (reproduces the printed near-native half on the *_ref_instance twin; harness signature table_24 agrees)",
+   "status": "resolved",
+   "note": "all-poses half unchanged"
+  },
+  {
+   "id": "A1173.table24.AutoDock + gnina.near_native_half",
+   "file": "body_appendix_short.tex",
+   "line": 1173,
+   "anchor": "tab:appendix-pb-decomposition-full",
+   "plan_ref": "3.3:1172-1181 / W46",
+   "kind": "table_cell",
+   "current": "AutoDock + gnina & 8,976 & 98.9 & 0.0 & 0.9 & 0.2 & 0.2 & 319 & 97.5 & 0.0 & 0.9 & 1.6 & 1.6 \\\\",
+   "new": {
+    "poses": 451,
+    "valid_pct": 98.0,
+    "chem_pct": 0.0,
+    "intra_pct": 0.9,
+    "inter_pct": 1.1,
+    "mindist_pct": 1.1,
+    "instance_check": [
+     319,
+     97.5,
+     0.0,
+     0.9,
+     1.6,
+     1.6
+    ]
+   },
+   "source": "recompute: posebusters_filtered_results.csv joined to per_pose_metrics_nearest on pose_file, rmsd <= 2, group shares per yaml table_24 (reproduces the printed near-native half on the *_ref_instance twin; harness signature table_24 agrees)",
+   "status": "resolved",
+   "note": "all-poses half unchanged"
+  },
+  {
+   "id": "A1174.table24.DiffDock (raw).near_native_half",
+   "file": "body_appendix_short.tex",
+   "line": 1174,
+   "anchor": "tab:appendix-pb-decomposition-full",
+   "plan_ref": "3.3:1172-1181 / W46",
+   "kind": "table_cell",
+   "current": "DiffDock (raw) & 9,013 & 24.4 & 0.0 & 3.8 & 75.2 & 73.8 & 1,683 & 50.3 & 0.0 & 2.2 & 48.2 & 48.2 \\\\",
+   "new": {
+    "poses": 2118,
+    "valid_pct": 50.2,
+    "chem_pct": 0.0,
+    "intra_pct": 1.8,
+    "inter_pct": 48.5,
+    "mindist_pct": 48.4,
+    "instance_check": [
+     1683,
+     50.3,
+     0.0,
+     2.2,
+     48.2,
+     48.2
+    ]
+   },
+   "source": "recompute: posebusters_filtered_results.csv joined to per_pose_metrics_nearest on pose_file, rmsd <= 2, group shares per yaml table_24 (reproduces the printed near-native half on the *_ref_instance twin; harness signature table_24 agrees)",
+   "status": "resolved",
+   "note": "all-poses half unchanged"
+  },
+  {
+   "id": "A1175.table24.DiffDock + smina.near_native_half",
+   "file": "body_appendix_short.tex",
+   "line": 1175,
+   "anchor": "tab:appendix-pb-decomposition-full",
+   "plan_ref": "3.3:1172-1181 / W46",
+   "kind": "table_cell",
+   "current": "DiffDock + smina & 8,993 & 84.5 & 0.0 & 1.5 & 14.6 & 13.4 & 1,715 & 94.6 & 0.0 & 0.1 & 5.4 & 5.4 \\\\",
+   "new": {
+    "poses": 2169,
+    "valid_pct": 95.3,
+    "chem_pct": 0.0,
+    "intra_pct": 0.0,
+    "inter_pct": 4.6,
+    "mindist_pct": 4.6,
+    "instance_check": [
+     1715,
+     94.6,
+     0.0,
+     0.1,
+     5.4,
+     5.4
+    ]
+   },
+   "source": "recompute: posebusters_filtered_results.csv joined to per_pose_metrics_nearest on pose_file, rmsd <= 2, group shares per yaml table_24 (reproduces the printed near-native half on the *_ref_instance twin; harness signature table_24 agrees)",
+   "status": "resolved",
+   "note": "all-poses half unchanged"
+  },
+  {
+   "id": "A1176.table24.DiffDock + gnina.near_native_half",
+   "file": "body_appendix_short.tex",
+   "line": 1176,
+   "anchor": "tab:appendix-pb-decomposition-full",
+   "plan_ref": "3.3:1172-1181 / W46",
+   "kind": "table_cell",
+   "current": "DiffDock + gnina & 8,993 & 87.1 & 0.0 & 1.4 & 12.0 & 10.7 & 1,716 & 94.5 & 0.0 & 0.2 & 5.3 & 5.2 \\\\",
+   "new": {
+    "poses": 2171,
+    "valid_pct": 95.4,
+    "chem_pct": 0.0,
+    "intra_pct": 0.1,
+    "inter_pct": 4.5,
+    "mindist_pct": 4.4,
+    "instance_check": [
+     1716,
+     94.5,
+     0.0,
+     0.2,
+     5.3,
+     5.2
+    ]
+   },
+   "source": "recompute: posebusters_filtered_results.csv joined to per_pose_metrics_nearest on pose_file, rmsd <= 2, group shares per yaml table_24 (reproduces the printed near-native half on the *_ref_instance twin; harness signature table_24 agrees)",
+   "status": "resolved",
+   "note": "all-poses half unchanged"
+  },
+  {
+   "id": "A1177.table24.EquiBind (raw).near_native_half",
+   "file": "body_appendix_short.tex",
+   "line": 1177,
+   "anchor": "tab:appendix-pb-decomposition-full",
+   "plan_ref": "3.3:1172-1181 / W46",
+   "kind": "table_cell",
+   "current": "EquiBind (raw) & 9,090 & 2.9 & 0.0 & 27.9 & 96.8 & 96.5 & 103 & 20.4 & 0.0 & 10.7 & 78.6 & 78.6 \\\\",
+   "new": {
+    "poses": 103,
+    "valid_pct": 20.4,
+    "chem_pct": 0.0,
+    "intra_pct": 10.7,
+    "inter_pct": 78.6,
+    "mindist_pct": 78.6,
+    "instance_check": [
+     103,
+     20.4,
+     0.0,
+     10.7,
+     78.6,
+     78.6
+    ]
+   },
+   "source": "recompute: posebusters_filtered_results.csv joined to per_pose_metrics_nearest on pose_file, rmsd <= 2, group shares per yaml table_24 (reproduces the printed near-native half on the *_ref_instance twin; harness signature table_24 agrees)",
+   "status": "unchanged",
+   "note": "all-poses half unchanged"
+  },
+  {
+   "id": "A1178.table24.EquiBind + smina.near_native_half",
+   "file": "body_appendix_short.tex",
+   "line": 1178,
+   "anchor": "tab:appendix-pb-decomposition-full",
+   "plan_ref": "3.3:1172-1181 / W46",
+   "kind": "table_cell",
+   "current": "EquiBind + smina & 9,090 & 51.3 & 0.0 & 4.8 & 47.6 & 47.3 & 453 & 91.6 & 0.0 & 0.2 & 8.2 & 8.2 \\\\",
+   "new": {
+    "poses": 465,
+    "valid_pct": 91.0,
+    "chem_pct": 0.0,
+    "intra_pct": 0.2,
+    "inter_pct": 8.8,
+    "mindist_pct": 8.8,
+    "instance_check": [
+     453,
+     91.6,
+     0.0,
+     0.2,
+     8.2,
+     8.2
+    ]
+   },
+   "source": "recompute: posebusters_filtered_results.csv joined to per_pose_metrics_nearest on pose_file, rmsd <= 2, group shares per yaml table_24 (reproduces the printed near-native half on the *_ref_instance twin; harness signature table_24 agrees)",
+   "status": "resolved",
+   "note": "all-poses half unchanged"
+  },
+  {
+   "id": "A1179.table24.EquiBind + gnina.near_native_half",
+   "file": "body_appendix_short.tex",
+   "line": 1179,
+   "anchor": "tab:appendix-pb-decomposition-full",
+   "plan_ref": "3.3:1172-1181 / W46",
+   "kind": "table_cell",
+   "current": "EquiBind + gnina & 9,088 & 62.0 & 0.0 & 3.7 & 37.0 & 36.6 & 498 & 93.6 & 0.0 & 0.2 & 6.2 & 6.2 \\\\",
+   "new": {
+    "poses": 515,
+    "valid_pct": 93.8,
+    "chem_pct": 0.0,
+    "intra_pct": 0.2,
+    "inter_pct": 6.0,
+    "mindist_pct": 6.0,
+    "instance_check": [
+     498,
+     93.6,
+     0.0,
+     0.2,
+     6.2,
+     6.2
+    ]
+   },
+   "source": "recompute: posebusters_filtered_results.csv joined to per_pose_metrics_nearest on pose_file, rmsd <= 2, group shares per yaml table_24 (reproduces the printed near-native half on the *_ref_instance twin; harness signature table_24 agrees)",
+   "status": "resolved",
+   "note": "all-poses half unchanged"
+  },
+  {
+   "id": "A1181.table24_footnote",
+   "file": "body_appendix_short.tex",
+   "line": 1181,
+   "anchor": "tab:appendix-pb-decomposition-full footnote",
+   "plan_ref": "W46",
+   "kind": "wording",
+   "current": "within 2 A of the crystal ligand by symmetry-corrected heavy-atom RMSD without superposition",
+   "new": "... of the nearest deposited copy of the crystal ligand ...",
+   "source": "W46",
+   "status": "wording",
+   "note": ""
+  },
+  {
+   "id": "A1188.coupling_strata",
+   "file": "body_appendix_short.tex",
+   "line": 1188,
+   "anchor": "App. H, Coupling",
+   "plan_ref": "3.3:1188-1196 / W47a",
+   "kind": "value",
+   "current": "DiffDock 14.6% -> 5.4% over 1,715; EquiBind 37.0% -> 6.2% over 498; 98.9% against 62.0% narrows to roughly four points; EquiBind 31 of 498 against 5 of 319 for AutoDock",
+   "new": {
+    "diffdock_smina": {
+     "all_inter_pct": 14.6,
+     "near_inter_pct": 4.6,
+     "near_n": 2169,
+     "near_inter_fail_n": 100
+    },
+    "equibind_gnina": {
+     "all_inter_pct": 37.0,
+     "near_inter_pct": 6.0,
+     "near_n": 515,
+     "near_inter_fail_n": 31
+    },
+    "autodock_gnina": {
+     "near_n": 451,
+     "near_inter_fail_n": 5
+    },
+    "validity_spread_near_native": [
+     98.0,
+     93.8
+    ]
+   },
+   "source": "same recompute",
+   "status": "resolved",
+   "note": "DiffDock 14.6 % -> 4.6 % over its 2,169 near-native poses; EquiBind 37.0 % -> 6.0 % over 515. The 98.9 against 62.0 spread narrows to 98.0 against 93.8, still 'roughly four percentage points'. EquiBind fails the intermolecular group on 31 of its 515 near-native poses against 5 of 451 for AutoDock."
+  },
+  {
+   "id": "A1196.validity_cost_headline",
+   "file": "body_appendix_short.tex",
+   "line": 1196,
+   "anchor": "App. H, what the requirement costs",
+   "plan_ref": "3.3:1188-1196 / W47b / A1b",
+   "kind": "value",
+   "current": "at most four complexes of 303; two at rank-1, four at top-5 and three deeper for AutoDock Vina + gnina, three to four for DiffDock + smina, two to three for EquiBind + gnina; span 0.66 to 1.32 pp; raw DiffDock 47 at rank-1 and 57 to 59 deeper, span 15.5 to 19.5",
+   "new": {
+    "autodock_gnina": [
+     2,
+     4,
+     3,
+     3
+    ],
+    "diffdock_smina": [
+     5,
+     4,
+     3,
+     3
+    ],
+    "equibind_gnina": [
+     2,
+     3,
+     3,
+     3
+    ],
+    "max_three_variants": 5,
+    "span_pp": [
+     0.66,
+     1.65
+    ],
+    "diffdock_raw": [
+     65,
+     60,
+     57,
+     55
+    ],
+    "diffdock_raw_span_pp": [
+     18.2,
+     21.5
+    ]
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/validity_gate_cost.csv",
+   "status": "resolved",
+   "note": "At most five complexes; AutoDock 2 / 4 / 3 / 3 unchanged, DiffDock + smina 5 / 4 / 3 / 3, EquiBind 2 / 3 / 3 / 3; span 0.66 to 1.65 points. Raw DiffDock loses 65 at rank-1 and 55 to 60 at the deeper pools, a span of 18.2 to 21.5 points. A1b adds the pb_rmsd sentence (two decisions, one AutoDock Vina + gnina and one EquiBind + gnina, see A1387)."
+  },
+  {
+   "id": "A1203.cube_regime_clause",
+   "file": "body_appendix_short.tex",
+   "line": 1203,
+   "anchor": "App. H, Search Effort and Box Volume",
+   "plan_ref": "3.3:1203 / W48 / D11",
+   "kind": "wording",
+   "current": "(25 A cube sentence)",
+   "new": "+ W48 sentence: only 8 of the 211 alternate copies have a centroid inside the cube; every box used here contains every copy",
+   "source": "plan D11 data facts (8 of 211 alternate centroids; 16 ids by any heavy atom); no rebuilt sidecar",
+   "status": "wording",
+   "note": "The 8 / 211 count is a plan fact without a `_nearest` generator; flagged."
+  },
+  {
+   "id": "A1207.exh32_to_128_top15",
+   "file": "body_appendix_short.tex",
+   "line": 1207,
+   "anchor": "App. H, Search Effort and Box Volume",
+   "plan_ref": "3.3:1207",
+   "kind": "value",
+   "current": "from 148 to 185 complexes of 303",
+   "new": {
+    "exh32_raw_top15": 161,
+    "exh128_raw_top15": 198
+   },
+   "source": "recompute (Table 8 raw exh32 / exh128 top-15 double gate); harness signature table_8[autodock_mgltools].d15 = 161, [autodock_mgltools_exh128].d15 = 198",
+   "status": "resolved",
+   "note": "161 to 198."
+  },
+  {
+   "id": "A1247.table25.gained",
+   "file": "body_appendix_short.tex",
+   "line": 1247,
+   "anchor": "tab:results-depth-gain",
+   "plan_ref": "3.3:1247-1250",
+   "kind": "table_cell",
+   "current": "Complexes gaining a near-native pose\\newline (RMSD \\ensuremath{\\leq} 2\\angstrom{} gate) & +88 & +63 & +26 \\\\",
+   "new": {
+    "AutoDock Vina + gnina": 65,
+    "DiffDock + smina": 45,
+    "EquiBind + gnina": 27
+   },
+   "source": "harness signature table_25 actual (recompute on per_pose_metrics_nearest per yaml table_25 set algebra)",
+   "status": "resolved",
+   "note": "signs as printed: gained +, stay_invalid -, rescued +, net + with ***"
+  },
+  {
+   "id": "A1248.table25.stay_invalid",
+   "file": "body_appendix_short.tex",
+   "line": 1248,
+   "anchor": "tab:results-depth-gain",
+   "plan_ref": "3.3:1247-1250",
+   "kind": "table_cell",
+   "current": "of which remain PoseBusters-invalid & -2 & -1 & -2 \\\\",
+   "new": {
+    "AutoDock Vina + gnina": 2,
+    "DiffDock + smina": 0,
+    "EquiBind + gnina": 2
+   },
+   "source": "harness signature table_25 actual (recompute on per_pose_metrics_nearest per yaml table_25 set algebra)",
+   "status": "resolved",
+   "note": "signs as printed: gained +, stay_invalid -, rescued +, net + with ***"
+  },
+  {
+   "id": "A1249.table25.rescued",
+   "file": "body_appendix_short.tex",
+   "line": 1249,
+   "anchor": "tab:results-depth-gain",
+   "plan_ref": "3.3:1247-1250",
+   "kind": "table_cell",
+   "current": "Valid near-native rescued from a\\newline lower rank & +1 & +2 & +1 \\\\",
+   "new": {
+    "AutoDock Vina + gnina": 1,
+    "DiffDock + smina": 2,
+    "EquiBind + gnina": 1
+   },
+   "source": "harness signature table_25 actual (recompute on per_pose_metrics_nearest per yaml table_25 set algebra)",
+   "status": "resolved",
+   "note": "signs as printed: gained +, stay_invalid -, rescued +, net + with ***"
+  },
+  {
+   "id": "A1250.table25.net",
+   "file": "body_appendix_short.tex",
+   "line": 1250,
+   "anchor": "tab:results-depth-gain",
+   "plan_ref": "3.3:1247-1250",
+   "kind": "table_cell",
+   "current": "Net valid complexes added & +87 *** & +64 *** & +25 *** \\\\",
+   "new": {
+    "AutoDock Vina + gnina": 64,
+    "DiffDock + smina": 47,
+    "EquiBind + gnina": 26
+   },
+   "source": "harness signature table_25 actual (recompute on per_pose_metrics_nearest per yaml table_25 set algebra)",
+   "status": "resolved",
+   "note": "signs as printed: gained +, stay_invalid -, rescued +, net + with *** (stars: re-check the McNemar on the rebuilt table; nested depths, all three remain p < 0.001)"
+  },
+  {
+   "id": "A1258.h9_differences",
+   "file": "body_appendix_short.tex",
+   "line": 1258,
+   "anchor": "App. H.9, Resolution of the Two-Pipeline Contrast",
+   "plan_ref": "3.3:1258-1260 / W49",
+   "kind": "value",
+   "current": "+2.6 [-4.2, +9.4] rank-1; +13.2 [+5.7, +20.4] top-5; +10.2 [+2.8, +17.5] top-15; +9.9 [+2.5, +17.1] top-30",
+   "new": {
+    "d1": {
+     "diff_pp": 5.6,
+     "ci95": [
+      -1.7,
+      12.8
+     ]
+    },
+    "d5": {
+     "diff_pp": 13.2,
+     "ci95": [
+      5.7,
+      20.4
+     ]
+    },
+    "d15": {
+     "diff_pp": 11.2,
+     "ci95": [
+      3.9,
+      18.4
+     ]
+    },
+    "d30": {
+     "diff_pp": 10.2,
+     "ci95": [
+      3.0,
+      17.3
+     ]
+    }
+   },
+   "source": "recompute: stats_utils.newcombe_paired_diff_ci on the double gate, AutoDock minus DiffDock; agrees with posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/bounded_claim.csv (negated) and posebusters_results/reference_convention_nearest/reference_convention_margins.csv",
+   "status": "resolved",
+   "note": "+5.6 [-1.7, +12.8]; +13.2 [+5.7, +20.4] (identical); +11.2 [+3.9, +18.4]; +10.2 [+3.0, +17.3]."
+  },
+  {
+   "id": "A1260.h9_rank1_resolution",
+   "file": "body_appendix_short.tex",
+   "line": 1260,
+   "anchor": "App. H.9",
+   "plan_ref": "3.3:1258-1260 / W49",
+   "kind": "value",
+   "current": "both 51, neither 140, discordant 112 (37.0%); MDD 9.8; power 0.12; roughly 4,200; 428 -> 8.2; p 7.6e-4, 0.009, 0.011",
+   "new": {
+    "both": 76,
+    "neither": 98,
+    "discordant": 129,
+    "discordant_pct": 42.6,
+    "mde_pp": 10.5,
+    "observed_power": 0.32,
+    "n_needed": 1062.0,
+    "n_needed_print": "roughly 1,100",
+    "mde_at_428_pp": 8.8,
+    "mcnemar_p_5_15_30": [
+     "7.6e-04",
+     "0.0036",
+     "0.0075"
+    ]
+   },
+   "source": "recompute: stats_utils.mcnemar_power (MDD at 80 % power on the observed discordance; scaled by sqrt(303/428) for the 428-entry release), mcnemar_exact; agrees with bounded_claim.csv (power 0.322, mde 10.5, n_needed 1062)",
+   "status": "resolved",
+   "note": "Both 76, neither 98, discordant 129 (42.6 %); MDD 10.5 points; power 0.32; roughly 1,100 paired complexes; 428 entries leave the MDD near 8.8; top-5 / top-15 / top-30 separate at p = 7.6e-4, 0.0036 and 0.0075."
+  },
+  {
+   "id": "A1260.h9_equivalence",
+   "file": "body_appendix_short.tex",
+   "line": 1260,
+   "anchor": "App. H.9",
+   "plan_ref": "3.3:1258-1260 / W49",
+   "kind": "value",
+   "current": "only rank-1 is equivalent, within 10 points, smallest passing value 8.4; top-5 / 15 / 30 smallest passing 19.4, 16.4, 16.0; 90% interval -3.1 to +8.3, +6.9 to +19.3, +4.0 to +16.3, +3.7 to +16.0",
+   "new": {
+    "d1": {
+     "ci90": [
+      -0.5,
+      11.7
+     ],
+     "smallest_passing_margin": 11.7,
+     "equivalent": {
+      "5": false,
+      "10": false,
+      "12": true,
+      "15": true
+     }
+    },
+    "d5": {
+     "ci90": [
+      6.9,
+      19.3
+     ],
+     "smallest_passing_margin": 19.4,
+     "equivalent": {
+      "5": false,
+      "10": false,
+      "12": false,
+      "15": false
+     }
+    },
+    "d15": {
+     "ci90": [
+      5.1,
+      17.2
+     ],
+     "smallest_passing_margin": 17.3,
+     "equivalent": {
+      "5": false,
+      "10": false,
+      "12": false,
+      "15": false
+     }
+    },
+    "d30": {
+     "ci90": [
+      4.2,
+      16.2
+     ],
+     "smallest_passing_margin": 16.2,
+     "equivalent": {
+      "5": false,
+      "10": false,
+      "12": false,
+      "15": false
+     }
+    }
+   },
+   "source": "recompute: stats_utils.tost_paired_proportions (90 % Newcombe interval) on the grid 5 / 10 / 12 / 15; margin = larger absolute 90 % bound rounded UP to one decimal (harness rule); harness signature prose[h9] agrees",
+   "status": "resolved",
+   "note": "Only rank-1 is equivalent, within 12 points and no longer within 10, smallest passing value 11.7; deeper depths 19.4, 17.3 and 16.2; 90 % intervals -0.5 to +11.7, +6.9 to +19.3, +5.1 to +17.2 and +4.2 to +16.2."
+  },
+  {
+   "id": "A1265.threshold_leadin",
+   "file": "body_appendix_short.tex",
+   "line": 1265,
+   "anchor": "App. H, Threshold-Resolved Recovery",
+   "plan_ref": "3.3:1265 / W50",
+   "kind": "wording",
+   "current": "for both the as-placed and the best-fit (Kabsch) criterion.",
+   "new": "..., each taken to the deposited copy of the ligand nearest to the pose.",
+   "source": "W50",
+   "status": "wording",
+   "note": ""
+  },
+  {
+   "id": "A1303.table26.RMSD/AutoDock_Vina_+_gnina.d1",
+   "file": "body_appendix_short.tex",
+   "line": 1303,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     0.0,
+     5.9,
+     13.5,
+     22.1,
+     27.1,
+     30.4,
+     32.7,
+     36.6,
+     37.0,
+     38.9
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     0.0,
+     8.6,
+     18.2,
+     30.0,
+     38.0,
+     41.6,
+     44.9,
+     49.2,
+     49.8,
+     53.5
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "9 of 10 cells move; the line spans two source lines (1303-1304) in the .tex"
+  },
+  {
+   "id": "A1305.table26.RMSD/AutoDock_Vina_+_gnina.d15",
+   "file": "body_appendix_short.tex",
+   "line": 1305,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     0.0,
+     11.2,
+     20.1,
+     34.7,
+     45.5,
+     52.1,
+     59.4,
+     65.3,
+     67.0,
+     69.6
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     0.0,
+     13.2,
+     24.4,
+     40.6,
+     50.2,
+     57.8,
+     64.7,
+     70.3,
+     71.9,
+     74.3
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "9 of 10 cells move; the line spans two source lines (1305-1306) in the .tex"
+  },
+  {
+   "id": "A1307.table26.RMSD/AutoDock_Vina_+_gnina.d30",
+   "file": "body_appendix_short.tex",
+   "line": 1307,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     0.0,
+     11.2,
+     20.1,
+     34.7,
+     45.9,
+     52.8,
+     60.1,
+     65.7,
+     67.7,
+     70.6
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     0.0,
+     13.2,
+     24.4,
+     40.6,
+     50.5,
+     58.4,
+     65.7,
+     70.6,
+     72.6,
+     75.2
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "9 of 10 cells move; the line spans two source lines (1307-1308) in the .tex"
+  },
+  {
+   "id": "A1309.table26.RMSD/DiffDock_+_smina.d1",
+   "file": "body_appendix_short.tex",
+   "line": 1309,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     0.3,
+     4.0,
+     10.9,
+     15.5,
+     21.5,
+     26.1,
+     31.4,
+     34.0,
+     35.3,
+     37.6
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     0.3,
+     5.0,
+     12.5,
+     20.1,
+     28.4,
+     34.3,
+     40.3,
+     43.6,
+     46.2,
+     48.8
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "9 of 10 cells move; the line spans two source lines (1309-1310) in the .tex"
+  },
+  {
+   "id": "A1311.table26.RMSD/DiffDock_+_smina.d15",
+   "file": "body_appendix_short.tex",
+   "line": 1311,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     1.0,
+     9.6,
+     20.5,
+     30.0,
+     40.6,
+     46.5,
+     51.8,
+     55.1,
+     58.1,
+     60.1
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     1.3,
+     11.9,
+     23.4,
+     34.3,
+     43.9,
+     50.5,
+     55.4,
+     59.1,
+     62.7,
+     64.7
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "10 of 10 cells move; the line spans two source lines (1311-1312) in the .tex"
+  },
+  {
+   "id": "A1313.table26.RMSD/DiffDock_+_smina.d30",
+   "file": "body_appendix_short.tex",
+   "line": 1313,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     1.0,
+     10.9,
+     21.8,
+     31.7,
+     41.6,
+     48.2,
+     53.1,
+     55.8,
+     59.4,
+     61.7
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     1.3,
+     12.9,
+     24.4,
+     35.3,
+     44.9,
+     52.8,
+     57.4,
+     60.4,
+     64.0,
+     66.7
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "10 of 10 cells move; the line spans two source lines (1313-1314) in the .tex"
+  },
+  {
+   "id": "A1315.table26.RMSD/EquiBind_+_gnina.d1",
+   "file": "body_appendix_short.tex",
+   "line": 1315,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     0.0,
+     1.3,
+     4.0,
+     6.9,
+     9.6,
+     12.5,
+     15.5,
+     18.2,
+     19.5,
+     20.5
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     0.0,
+     1.3,
+     4.0,
+     6.9,
+     10.2,
+     13.2,
+     16.2,
+     18.8,
+     20.1,
+     21.1
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "6 of 10 cells move; the line spans two source lines (1315-1316) in the .tex"
+  },
+  {
+   "id": "A1317.table26.RMSD/EquiBind_+_gnina.d15",
+   "file": "body_appendix_short.tex",
+   "line": 1317,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     0.3,
+     3.0,
+     6.3,
+     10.2,
+     14.2,
+     17.8,
+     22.1,
+     26.4,
+     27.7,
+     29.4
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     0.7,
+     3.3,
+     6.6,
+     10.6,
+     14.9,
+     18.5,
+     22.8,
+     27.4,
+     29.0,
+     30.7
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "10 of 10 cells move; the line spans two source lines (1317-1318) in the .tex"
+  },
+  {
+   "id": "A1319.table26.RMSD/EquiBind_+_gnina.d30",
+   "file": "body_appendix_short.tex",
+   "line": 1319,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     0.3,
+     3.0,
+     6.6,
+     10.6,
+     14.2,
+     17.8,
+     22.4,
+     26.4,
+     27.7,
+     29.4
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     0.7,
+     3.3,
+     6.9,
+     10.9,
+     14.9,
+     18.5,
+     23.1,
+     27.4,
+     29.0,
+     30.7
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "10 of 10 cells move; the line spans two source lines (1319-1320) in the .tex"
+  },
+  {
+   "id": "A1321.table26.Kabsch_RMSD/AutoDock_Vina_+_gnina.d1",
+   "file": "body_appendix_short.tex",
+   "line": 1321,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     10.2,
+     25.7,
+     41.6,
+     52.5,
+     61.1,
+     66.7,
+     74.6,
+     78.9,
+     81.5,
+     84.8
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     10.6,
+     25.1,
+     41.6,
+     52.5,
+     60.7,
+     66.7,
+     74.9,
+     78.9,
+     81.5,
+     84.8
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "4 of 10 cells move; the line spans two source lines (1321-1322) in the .tex"
+  },
+  {
+   "id": "A1323.table26.Kabsch_RMSD/AutoDock_Vina_+_gnina.d15",
+   "file": "body_appendix_short.tex",
+   "line": 1323,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     17.8,
+     35.3,
+     55.8,
+     71.9,
+     81.2,
+     87.1,
+     91.4,
+     93.4,
+     96.0,
+     97.4
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     18.5,
+     35.0,
+     55.8,
+     71.6,
+     81.2,
+     87.1,
+     91.4,
+     93.4,
+     96.0,
+     97.4
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "3 of 10 cells move; the line spans two source lines (1323-1324) in the .tex"
+  },
+  {
+   "id": "A1325.table26.Kabsch_RMSD/AutoDock_Vina_+_gnina.d30",
+   "file": "body_appendix_short.tex",
+   "line": 1325,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     18.8,
+     37.0,
+     58.7,
+     74.3,
+     82.8,
+     88.4,
+     92.7,
+     95.4,
+     97.7,
+     97.7
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     19.5,
+     36.6,
+     58.7,
+     74.3,
+     82.8,
+     88.4,
+     92.7,
+     95.4,
+     97.7,
+     97.7
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "2 of 10 cells move; the line spans two source lines (1325-1326) in the .tex"
+  },
+  {
+   "id": "A1327.table26.Kabsch_RMSD/DiffDock_+_smina.d1",
+   "file": "body_appendix_short.tex",
+   "line": 1327,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     11.9,
+     25.1,
+     38.6,
+     52.1,
+     61.7,
+     70.0,
+     76.2,
+     82.5,
+     85.8,
+     88.1
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     11.6,
+     24.4,
+     38.9,
+     52.1,
+     62.0,
+     70.3,
+     75.9,
+     82.2,
+     86.1,
+     88.4
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "9 of 10 cells move; the line spans two source lines (1327-1328) in the .tex"
+  },
+  {
+   "id": "A1329.table26.Kabsch_RMSD/DiffDock_+_smina.d15",
+   "file": "body_appendix_short.tex",
+   "line": 1329,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     21.1,
+     39.3,
+     57.4,
+     72.3,
+     80.2,
+     87.8,
+     94.1,
+     95.7,
+     96.0,
+     96.4
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     21.1,
+     39.9,
+     57.4,
+     72.3,
+     80.9,
+     88.1,
+     94.4,
+     95.4,
+     96.0,
+     96.4
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "5 of 10 cells move; the line spans two source lines (1329-1330) in the .tex"
+  },
+  {
+   "id": "A1331.table26.Kabsch_RMSD/DiffDock_+_smina.d30",
+   "file": "body_appendix_short.tex",
+   "line": 1331,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     22.4,
+     42.6,
+     60.4,
+     74.6,
+     84.5,
+     92.7,
+     96.0,
+     97.0,
+     97.7,
+     98.0
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     22.8,
+     41.9,
+     59.7,
+     74.6,
+     84.5,
+     93.1,
+     96.0,
+     97.0,
+     97.7,
+     98.0
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "4 of 10 cells move; the line spans two source lines (1331-1332) in the .tex"
+  },
+  {
+   "id": "A1333.table26.Kabsch_RMSD/EquiBind_+_gnina.d1",
+   "file": "body_appendix_short.tex",
+   "line": 1333,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     5.6,
+     15.5,
+     21.8,
+     33.3,
+     42.9,
+     48.5,
+     53.1,
+     61.4,
+     66.3,
+     71.0
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     5.6,
+     15.2,
+     21.8,
+     33.3,
+     42.9,
+     48.5,
+     53.5,
+     62.0,
+     67.0,
+     71.0
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "4 of 10 cells move; the line spans two source lines (1333-1334) in the .tex"
+  },
+  {
+   "id": "A1335.table26.Kabsch_RMSD/EquiBind_+_gnina.d15",
+   "file": "body_appendix_short.tex",
+   "line": 1335,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     15.2,
+     27.7,
+     40.3,
+     51.2,
+     62.0,
+     71.0,
+     75.9,
+     79.9,
+     82.5,
+     85.1
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     14.9,
+     27.4,
+     39.9,
+     51.5,
+     62.4,
+     71.0,
+     76.2,
+     80.2,
+     82.8,
+     85.1
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "8 of 10 cells move; the line spans two source lines (1335-1336) in the .tex"
+  },
+  {
+   "id": "A1337.table26.Kabsch_RMSD/EquiBind_+_gnina.d30",
+   "file": "body_appendix_short.tex",
+   "line": 1337,
+   "anchor": "tab:results-near-native-form",
+   "plan_ref": "3.3:1303-1340 / plan 1.4",
+   "kind": "table_cell",
+   "current": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     17.2,
+     31.0,
+     43.9,
+     54.1,
+     64.4,
+     72.6,
+     77.6,
+     81.8,
+     83.5,
+     85.5
+    ]
+   },
+   "new": {
+    "thresholds": [
+     0.25,
+     0.5,
+     0.75,
+     1.0,
+     1.25,
+     1.5,
+     1.75,
+     2.0,
+     2.25,
+     2.5
+    ],
+    "pct": [
+     16.8,
+     30.7,
+     43.6,
+     53.8,
+     64.7,
+     72.6,
+     77.9,
+     82.5,
+     83.8,
+     85.5
+    ]
+   },
+   "source": "harness signature table_26 actual (recompute: pb_valid & rmsd <= t / pb_valid & bestfit_rmsd <= t, existence over depth, per_pose_metrics_nearest); cross-check posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topn_within_thresholds_pbvalid.csv / topn_within_thresholds_kabsch_pbvalid.csv and the two *_report.txt",
+   "status": "resolved",
+   "note": "8 of 10 cells move; the line spans two source lines (1337-1338) in the .tex"
+  },
+  {
+   "id": "A1377.table27.AutoDock.d1",
+   "file": "body_appendix_short.tex",
+   "line": 1377,
+   "anchor": "tab:results-placement-form",
+   "plan_ref": "3.3:1377-1387 / plan 1.6",
+   "kind": "table_cell",
+   "current": "AutoDock Vina + gnina (1) & 190 & 190 & 62.7\\% & 1.490 & 0.758 & 4.220 & 0.845 & 0.426 & 1.507 & 0.365 & 47.9\\% & 25.3\\% & 26.8\\% \\\\",
+   "new": {
+    "n_poses": 249,
+    "n_valid_complexes": 249,
+    "coverage_pct": 82.2,
+    "inplace_median": 1.376,
+    "inplace_q1": 0.682,
+    "inplace_q3": 3.734,
+    "form_median": 0.824,
+    "form_q1": 0.402,
+    "form_q3": 1.513,
+    "median_r": 0.368,
+    "pct_placement_limited": 46.6,
+    "pct_mixed": 25.7,
+    "pct_form_limited": 27.7
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__stats_per_tool_depth.csv (tool AutoDock, depth 1); harness signature table_27 agrees",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A1378.table27.AutoDock.d5",
+   "file": "body_appendix_short.tex",
+   "line": 1378,
+   "anchor": "tab:results-placement-form",
+   "plan_ref": "3.3:1377-1387 / plan 1.6",
+   "kind": "table_cell",
+   "current": "AutoDock Vina + gnina (5) & 882 & 256 & 84.5\\% & 3.476 & 1.791 & 6.035 & 1.265 & 0.704 & 1.984 & 0.172 & 65.1\\% & 19.4\\% & 15.5\\% \\\\",
+   "new": {
+    "n_poses": 1147,
+    "n_valid_complexes": 272,
+    "coverage_pct": 89.8,
+    "inplace_median": 3.291,
+    "inplace_q1": 1.615,
+    "inplace_q3": 5.926,
+    "form_median": 1.215,
+    "form_q1": 0.645,
+    "form_q3": 1.962,
+    "median_r": 0.178,
+    "pct_placement_limited": 63.7,
+    "pct_mixed": 19.6,
+    "pct_form_limited": 16.7
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__stats_per_tool_depth.csv (tool AutoDock, depth 5); harness signature table_27 agrees",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A1379.table27.AutoDock.d15",
+   "file": "body_appendix_short.tex",
+   "line": 1379,
+   "anchor": "tab:results-placement-form",
+   "plan_ref": "3.3:1377-1387 / plan 1.6",
+   "kind": "table_cell",
+   "current": "AutoDock Vina + gnina (15) & 2200 & 275 & 90.8\\% & 5.043 & 2.937 & 7.414 & 1.445 & 0.811 & 2.200 & 0.094 & 77.8\\% & 13.9\\% & 8.3\\% \\\\",
+   "new": {
+    "n_poses": 2832,
+    "n_valid_complexes": 286,
+    "coverage_pct": 94.4,
+    "inplace_median": 4.922,
+    "inplace_q1": 2.847,
+    "inplace_q3": 7.314,
+    "form_median": 1.416,
+    "form_q1": 0.776,
+    "form_q3": 2.201,
+    "median_r": 0.097,
+    "pct_placement_limited": 77.3,
+    "pct_mixed": 13.9,
+    "pct_form_limited": 8.8
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__stats_per_tool_depth.csv (tool AutoDock, depth 15); harness signature table_27 agrees",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A1380.table27.DiffDock.d1",
+   "file": "body_appendix_short.tex",
+   "line": 1380,
+   "anchor": "tab:results-placement-form",
+   "plan_ref": "3.3:1377-1387 / plan 1.6",
+   "kind": "table_cell",
+   "current": "DiffDock + smina (1) & 164 & 164 & 54.1\\% & 1.467 & 0.753 & 3.068 & 0.885 & 0.488 & 1.427 & 0.458 & 40.9\\% & 28.7\\% & 30.5\\% \\\\",
+   "new": {
+    "n_poses": 224,
+    "n_valid_complexes": 224,
+    "coverage_pct": 73.9,
+    "inplace_median": 1.532,
+    "inplace_q1": 0.868,
+    "inplace_q3": 3.843,
+    "form_median": 0.89,
+    "form_q1": 0.499,
+    "form_q3": 1.421,
+    "median_r": 0.458,
+    "pct_placement_limited": 41.5,
+    "pct_mixed": 29.0,
+    "pct_form_limited": 29.5
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__stats_per_tool_depth.csv (tool DiffDock, depth 1); harness signature table_27 agrees",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A1381.table27.DiffDock.d5",
+   "file": "body_appendix_short.tex",
+   "line": 1381,
+   "anchor": "tab:results-placement-form",
+   "plan_ref": "3.3:1377-1387 / plan 1.6",
+   "kind": "table_cell",
+   "current": "DiffDock + smina (5) & 790 & 235 & 77.6\\% & 1.646 & 0.863 & 4.000 & 0.882 & 0.498 & 1.469 & 0.406 & 44.2\\% & 32.5\\% & 23.3\\% \\\\",
+   "new": {
+    "n_poses": 1041,
+    "n_valid_complexes": 256,
+    "coverage_pct": 84.5,
+    "inplace_median": 1.683,
+    "inplace_q1": 0.866,
+    "inplace_q3": 4.286,
+    "form_median": 0.883,
+    "form_q1": 0.503,
+    "form_q3": 1.489,
+    "median_r": 0.416,
+    "pct_placement_limited": 44.5,
+    "pct_mixed": 31.2,
+    "pct_form_limited": 24.3
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__stats_per_tool_depth.csv (tool DiffDock, depth 5); harness signature table_27 agrees",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A1382.table27.DiffDock.d15",
+   "file": "body_appendix_short.tex",
+   "line": 1382,
+   "anchor": "tab:results-placement-form",
+   "plan_ref": "3.3:1377-1387 / plan 1.6",
+   "kind": "table_cell",
+   "current": "DiffDock + smina (15) & 2139 & 259 & 85.5\\% & 1.929 & 0.921 & 4.893 & 0.918 & 0.517 & 1.569 & 0.363 & 47.9\\% & 30.8\\% & 21.3\\% \\\\",
+   "new": {
+    "n_poses": 2801,
+    "n_valid_complexes": 269,
+    "coverage_pct": 88.8,
+    "inplace_median": 2.062,
+    "inplace_q1": 0.945,
+    "inplace_q3": 4.935,
+    "form_median": 0.936,
+    "form_q1": 0.52,
+    "form_q3": 1.603,
+    "median_r": 0.377,
+    "pct_placement_limited": 47.1,
+    "pct_mixed": 30.5,
+    "pct_form_limited": 22.4
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__stats_per_tool_depth.csv (tool DiffDock, depth 15); harness signature table_27 agrees",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A1383.table27.EquiBind.d1",
+   "file": "body_appendix_short.tex",
+   "line": 1383,
+   "anchor": "tab:results-placement-form",
+   "plan_ref": "3.3:1377-1387 / plan 1.6",
+   "kind": "table_cell",
+   "current": "EquiBind + gnina (1) & 143 & 143 & 47.2\\% & 2.977 & 1.347 & 5.476 & 1.120 & 0.592 & 2.008 & 0.214 & 59.4\\% & 23.8\\% & 16.8\\% \\\\",
+   "new": {
+    "n_poses": 155,
+    "n_valid_complexes": 155,
+    "coverage_pct": 51.2,
+    "inplace_median": 3.239,
+    "inplace_q1": 1.353,
+    "inplace_q3": 5.94,
+    "form_median": 1.148,
+    "form_q1": 0.65,
+    "form_q3": 2.015,
+    "median_r": 0.208,
+    "pct_placement_limited": 60.6,
+    "pct_mixed": 22.6,
+    "pct_form_limited": 16.8
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__stats_per_tool_depth.csv (tool EquiBind, depth 1); harness signature table_27 agrees",
+   "status": "resolved",
+   "note": "EquiBind rank-1 in-place median prints 3.239 (the shipped 2.977 was already truncated to 2.9 in the body, A3)"
+  },
+  {
+   "id": "A1384.table27.EquiBind.d5",
+   "file": "body_appendix_short.tex",
+   "line": 1384,
+   "anchor": "tab:results-placement-form",
+   "plan_ref": "3.3:1377-1387 / plan 1.6",
+   "kind": "table_cell",
+   "current": "EquiBind + gnina (5) & 673 & 156 & 51.5\\% & 3.640 & 1.770 & 6.191 & 1.260 & 0.752 & 2.018 & 0.154 & 64.3\\% & 20.8\\% & 14.9\\% \\\\",
+   "new": {
+    "n_poses": 722,
+    "n_valid_complexes": 167,
+    "coverage_pct": 55.1,
+    "inplace_median": 3.723,
+    "inplace_q1": 1.817,
+    "inplace_q3": 6.395,
+    "form_median": 1.313,
+    "form_q1": 0.775,
+    "form_q3": 2.035,
+    "median_r": 0.146,
+    "pct_placement_limited": 64.8,
+    "pct_mixed": 20.2,
+    "pct_form_limited": 15.0
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__stats_per_tool_depth.csv (tool EquiBind, depth 5); harness signature table_27 agrees",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A1385.table27.EquiBind.d15",
+   "file": "body_appendix_short.tex",
+   "line": 1385,
+   "anchor": "tab:results-placement-form",
+   "plan_ref": "3.3:1377-1387 / plan 1.6",
+   "kind": "table_cell",
+   "current": "EquiBind + gnina (15) & 1830 & 156 & 51.5\\% & 4.065 & 2.334 & 6.453 & 1.342 & 0.789 & 2.118 & 0.133 & 70.2\\% & 18.5\\% & 11.3\\% \\\\",
+   "new": {
+    "n_poses": 1932,
+    "n_valid_complexes": 169,
+    "coverage_pct": 55.8,
+    "inplace_median": 4.195,
+    "inplace_q1": 2.365,
+    "inplace_q3": 6.556,
+    "form_median": 1.354,
+    "form_q1": 0.808,
+    "form_q3": 2.118,
+    "median_r": 0.132,
+    "pct_placement_limited": 70.5,
+    "pct_mixed": 18.1,
+    "pct_form_limited": 11.4
+   },
+   "source": "posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__stats_per_tool_depth.csv (tool EquiBind, depth 15); harness signature table_27 agrees",
+   "status": "resolved",
+   "note": ""
+  },
+  {
+   "id": "A1387.table27_footnote",
+   "file": "body_appendix_short.tex",
+   "line": 1387,
+   "anchor": "tab:results-placement-form footnote",
+   "plan_ref": "3.3:1377-1387 / W51 / plan 1.6",
+   "kind": "value",
+   "current": "1.490 against 1.543 (AutoDock Vina + gnina), 1.467 against 1.566 (DiffDock + smina); two of the 909 decisions (one AutoDock, one EquiBind, none DiffDock); 37.0% / 18.5% / unchanged 34.0%",
+   "new": {
+    "autodock": {
+     "median_pb_rmsd": 1.376,
+     "median_own_rmsd": 1.491,
+     "n": 249
+    },
+    "diffdock": {
+     "median_pb_rmsd": 1.532,
+     "median_own_rmsd": 1.585,
+     "n": 224
+    },
+    "equibind": {
+     "median_pb_rmsd": 3.239,
+     "median_own_rmsd": 3.276,
+     "n": 155
+    },
+    "decisions_moved": {
+     "AutoDock Vina + gnina": 1,
+     "DiffDock + smina": 0,
+     "EquiBind + gnina": 1
+    },
+    "total_decisions": 909,
+    "rank1_recovery_pb_gate_pct": {
+     "AutoDock Vina + gnina": 49.5,
+     "DiffDock + smina": 43.6,
+     "EquiBind + gnina": 19.1
+    },
+    "pb_rmsd_never_smaller_violations": 0,
+    "trim_note_from_caption": [
+     "Poses outside the crystal-site neighbourhood removed \u2014 docked centroid > 8 \u00c5 from the crystal-ligand site, not off the receptor (4255 dropped at top-15).",
+     "Axes clipped at 5 \u00c5 for legibility \u2014 2854 pose(s) beyond the frame at top-15 not shown."
+    ]
+   },
+   "source": "recompute: rank-1 PB-valid poses with centroid_dist <= 8 A to the nearest copy, medians of pb_rmsd and rmsd (the 1.376 reproduces the table's in-place median); gate substitution pb_rmsd <= 2 vs rmsd <= 2 at rank-1 with pb_valid",
+   "status": "resolved",
+   "note": "1.376 against 1.491 A for AutoDock Vina + gnina and 1.532 against 1.585 A for DiffDock + smina (EquiBind 3.239 against 3.276). Still two of the 909 decisions, one AutoDock Vina + gnina and one EquiBind + gnina, none DiffDock, both from missed to recovered. Rank-1 recovery would then read 49.5 % and 19.1 % against an unchanged 43.6 %. pb_rmsd > rmsd on 0 rows ('never smaller' holds). Trim wording per W51."
+  },
+  {
+   "id": "A1394.cluster_statistics",
+   "file": "body_appendix_short.tex",
+   "line": 1394,
+   "anchor": "App. H, Cluster-Composition and Quality Statistics",
+   "plan_ref": "3.3:1394-1399 / D5 / Phase 0.3 loader fix",
+   "kind": "value",
+   "current": "Friedman chi2 33.6, W 0.055; Cochran Q 139.6; pose count DiffDock > AutoDock rb -0.28 (Holm p 2.7e-4, 248 pairs), > EquiBind +0.34 (p < 1e-4); AutoDock vs EquiBind +0.01, p 0.912; reach AutoDock vs DiffDock Holm p 0.470 on 38 / 31; both > EquiBind p < 1e-20; consensus 55 single-tool vs 51.8 expected, 105 two-tool vs 149.9; KW H 46.4, eps2 0.075; paired 110 complexes Friedman 31.1; JT z 6.07; ranking Cochran Q 174.0",
+   "new": {
+    "pose_count_friedman": {
+     "chi2": 36.596,
+     "kendall_w": 0.06,
+     "p": 1.1303473854669833e-08
+    },
+    "reach_cochran_q": {
+     "Q": 159.529,
+     "p": 2.2844996860624756e-35,
+     "rates": {
+      "AutoDock*": 0.898,
+      "DiffDock*": 0.861,
+      "EquiBind*": 0.512
+     }
+    },
+    "pose_count_pairs": {
+     "AutoDock_vs_DiffDock": {
+      "rank_biserial": -0.311,
+      "p_holm": "4.2e-05",
+      "n_pairs": 249
+     },
+     "DiffDock_vs_EquiBind": {
+      "rank_biserial": 0.525,
+      "p_holm": "2.0e-10"
+     },
+     "AutoDock_vs_EquiBind": {
+      "rank_biserial": 0.211,
+      "p_holm": "0.0038",
+      "n_pairs": 250
+     }
+    },
+    "reach_pairs": {
+     "AutoDock_vs_DiffDock": {
+      "p_holm": 0.161,
+      "disc": [
+       31,
+       20
+      ]
+     },
+     "AutoDock_vs_EquiBind_p_holm": "1.7e-26",
+     "DiffDock_vs_EquiBind_p_holm": "9.9e-24"
+    },
+    "consensus": {
+     "observed_0_1_2_3": [
+      9.0,
+      37.0,
+      120.0,
+      137.0
+     ],
+     "expected_0_1_2_3": [
+      2.1,
+      33.66,
+      147.4,
+      119.85
+     ],
+     "single_tool_obs_exp": [
+      37.0,
+      33.66
+     ],
+     "two_tool_obs_exp": [
+      120.0,
+      147.4
+     ],
+     "three_tool_obs_exp": [
+      137.0,
+      119.85
+     ]
+    },
+    "tightness": {
+     "H": 49.193,
+     "p": 2.0788480599152313e-11,
+     "epsilon_sq": 0.074,
+     "n": {
+      "AutoDock*": 252,
+      "DiffDock*": 247,
+      "EquiBind*": 145
+     },
+     "paired_subset": {
+      "n_common": 119,
+      "chi2": 37.866,
+      "p": 5.992404362718723e-09,
+      "note": "paired subset present for all 3 tools"
+     }
+    },
+    "radius_trend": {
+     "z": 6.311,
+     "p": 2.7641888215504464e-10
+    },
+    "ranking_rule_cochran_q": 149.555
+   },
+   "source": "posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/crystal_cluster_homogeneity_stats.json (+ .txt) and posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/cluster_quality_metrics_stats.txt (any-copy rule, D5, per-pose table convention nearest, after the Phase 0.3 hydrogen-centroid loader fix)",
+   "status": "resolved",
+   "note": "Friedman chi2 36.6, W 0.06; Cochran Q 159.5. Pose count: DiffDock > AutoDock rb -0.31 (Holm p < 1e-4, 249 pairs), DiffDock > EquiBind +0.52 (p < 1e-4). CHANGE OF VERDICT: AutoDock and EquiBind now DO separate on pose count (rb +0.21, Holm p 0.004, 250 pairs), so 'AutoDock and EquiBind do not separate on pose count' must be rewritten. Reach: AutoDock vs DiffDock Holm p 0.161 on 31 / 20 discordant; both exceed EquiBind at p < 1e-23. Consensus: 37 single-tool against 33.7 expected and 120 two-tool against 147.4 (the all-three cell 137 against 119.9 is the enrichment). KW H 49.2, eps2 0.074; paired 119 complexes Friedman 37.9; JT z 6.31; ranking-rule Cochran Q 149.6."
+  },
+  {
+   "id": "A1399.fig38_caption",
+   "file": "body_appendix_short.tex",
+   "line": 1399,
+   "anchor": "fig:results-r6 caption",
+   "plan_ref": "3.3:1394-1399 / W52 / D5",
+   "kind": "wording",
+   "current": "4 A crystal-site recovery threshold",
+   "new": "... to any deposited copy of the ligand (D5 wording: for every copy, the cluster nearest to that copy counts when within 4 A; a cluster nearest to two copies counts once)",
+   "source": "W52; posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/cluster_quality_metrics_stats.txt header",
+   "status": "wording",
+   "note": "Regenerate image8 from posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/cluster_quality_metrics.png"
+  },
+  {
+   "id": "A1407.kendall_tau_recovery",
+   "file": "body_appendix_short.tex",
+   "line": 1407,
+   "anchor": "App. H, Rank-Quality Concordance",
+   "plan_ref": "3.3:1407-1415",
+   "kind": "value",
+   "current": "AutoDock tau -0.20 / -0.32 / -0.20 (P / R / F1) all q < 0.001; EquiBind recall and F1 -0.20 both significant, precision marginal q = 0.022; DiffDock tau ~ 0, none significant",
+   "new": {
+    "AutoDock": {
+     "Precision": {
+      "tau": -0.32,
+      "rank_biserial": -0.6,
+      "p": "<1e-4 ***",
+      "q": "<1e-4",
+      "n": 292
+     },
+     "Recall": {
+      "tau": -0.4,
+      "rank_biserial": -0.67,
+      "p": "<1e-4 ***",
+      "q": "<1e-4",
+      "n": 285
+     },
+     "F1": {
+      "tau": -0.4,
+      "rank_biserial": -0.67,
+      "p": "<1e-4 ***",
+      "q": "<1e-4",
+      "n": 292
+     }
+    },
+    "DiffDock": {
+     "Precision": {
+      "tau": -0.11,
+      "rank_biserial": -0.2,
+      "p": "0.008 **",
+      "q": "0.008",
+      "n": 255
+     },
+     "Recall": {
+      "tau": -0.18,
+      "rank_biserial": -0.28,
+      "p": "2.8e-04 ***",
+      "q": "5.1e-04",
+      "n": 233
+     },
+     "F1": {
+      "tau": -0.11,
+      "rank_biserial": -0.24,
+      "p": "0.002 **",
+      "q": "0.002",
+      "n": 258
+     }
+    },
+    "EquiBind": {
+     "Precision": {
+      "tau": -0.11,
+      "rank_biserial": -0.23,
+      "p": "0.008 **",
+      "q": "0.008",
+      "n": 200
+     },
+     "Recall": {
+      "tau": -0.2,
+      "rank_biserial": -0.5,
+      "p": "<1e-4 ***",
+      "q": "<1e-4",
+      "n": 172
+     },
+     "F1": {
+      "tau": -0.2,
+      "rank_biserial": -0.3,
+      "p": "5.1e-04 ***",
+      "q": "7.7e-04",
+      "n": 200
+     }
+    }
+   },
+   "source": "pandamap_results/benchmark_matched_equibind_nearest/report/04c_native_recovery_by_rank.txt (per-copy crystal fingerprints, nearest-copy join)",
+   "status": "resolved",
+   "note": "AutoDock tau -0.32 / -0.40 / -0.40, all q < 0.001. EquiBind recall and F1 -0.20 (q < 0.001 and 7.7e-4), precision -0.11 (q 0.008). CHANGE OF VERDICT: DiffDock's confidence NOW shows a detected association on all three (tau -0.11 / -0.18 / -0.11, q 0.008 / 5.1e-4 / 0.002), so 'no detected association on any of the three ... absence of detected ordering' must be rewritten to a weak but detected ordering."
+  },
+  {
+   "id": "A1415.contact_decomposition",
+   "file": "body_appendix_short.tex",
+   "line": 1415,
+   "anchor": "App. H, Rank-Quality Concordance, Fig 39 prose",
+   "plan_ref": "3.3:1407-1415 / W53",
+   "kind": "value",
+   "current": "AutoDock 15.3 spurious against DiffDock 14.1 at rank 1; AutoDock 17.6 by rank 5, DiffDock flat; EquiBind 16.7 matched against 18.9 missed, spurious 12.0 to 12.6; AutoDock tau -0.32 matched, +0.32 missed, +0.11 spurious all sig; EquiBind +-0.26; DiffDock flat",
+   "new": {
+    "rank1_spurious": {
+     "autodock": 9.1,
+     "diffdock": 7.8
+    },
+    "autodock_rank5_spurious": 13.5,
+    "diffdock_spurious_r1_r5": [
+     7.8,
+     8.6
+    ],
+    "equibind_rank1_matched_missed": [
+     17.7,
+     17.8
+    ],
+    "equibind_spurious_range": [
+     11.2,
+     11.6
+    ],
+    "tau": {
+     "AutoDock": {
+      "matched": {
+       "tau": -0.4,
+       "rank_biserial": -0.68,
+       "p": "<1e-4 ***",
+       "q": "<1e-4",
+       "n": 282
+      },
+      "missed": {
+       "tau": 0.4,
+       "rank_biserial": 0.67,
+       "p": "<1e-4 ***",
+       "q": "<1e-4",
+       "n": 286
+      },
+      "spurious": {
+       "tau": 0.32,
+       "rank_biserial": 0.52,
+       "p": "<1e-4 ***",
+       "q": "<1e-4",
+       "n": 300
+      }
+     },
+     "DiffDock": {
+      "matched": {
+       "tau": -0.12,
+       "rank_biserial": -0.26,
+       "p": "0.001 **",
+       "q": "0.002",
+       "n": 232
+      },
+      "missed": {
+       "tau": 0.12,
+       "rank_biserial": 0.24,
+       "p": "0.002 **",
+       "q": "0.003",
+       "n": 237
+      },
+      "spurious": {
+       "tau": 0.0,
+       "rank_biserial": 0.17,
+       "p": "0.019 *",
+       "q": "0.021",
+       "n": 259
+      }
+     },
+     "EquiBind": {
+      "matched": {
+       "tau": -0.2,
+       "rank_biserial": -0.53,
+       "p": "<1e-4 ***",
+       "q": "<1e-4",
+       "n": 169
+      },
+      "missed": {
+       "tau": 0.2,
+       "rank_biserial": 0.45,
+       "p": "<1e-4 ***",
+       "q": "<1e-4",
+       "n": 184
+      },
+      "spurious": {
+       "tau": 0.0,
+       "rank_biserial": -0.03,
+       "p": "0.735 ns",
+       "q": "0.735",
+       "n": 241
+      }
+     }
+    }
+   },
+   "source": "pandamap_results/benchmark_matched_equibind_nearest/report/10b_contact_decomposition_by_rank.csv and .txt; harness signature prose.fig39 agrees",
+   "status": "resolved",
+   "note": "At rank 1 AutoDock invents 9.1 spurious contacts against 7.8 for DiffDock; by rank 5 AutoDock's climbs to 13.5 while DiffDock's stays near 8.6. EquiBind recovers 17.7 matched against 17.8 missed at rank 1 and invents the fewest, 11.2 to 11.6. AutoDock tau -0.40 matched, +0.40 missed, +0.32 spurious, all significant; EquiBind +-0.20 on matched / missed. DiffDock matched -0.12 and missed +0.12 are now significant (q 0.002 / 0.003) with spurious flat, so 'DiffDock's counts are flat' becomes 'DiffDock's spurious count is flat and its matched and missed counts move weakly'. Regenerate image11."
+  },
+  {
+   "id": "A1074.D9_sensitivity_table_verbatim",
+   "file": "body_appendix_short.tex",
+   "line": 1074,
+   "anchor": "App. I, beside the intention-to-treat paragraph (label cohort-and-exclusions)",
+   "plan_ref": "D9 / B1b / B6 new material",
+   "kind": "verbatim",
+   "current": "(no current text)",
+   "new": "% Generated by Scripts/Analysis/nearest_copy_program/reference_convention_table.py\n% 2026-09-08T11:47:58; do not edit by hand\n\\begin{table}[tb]\n\\centering\\small\n\\caption{Sensitivity of the near-native endpoint to the reference convention. Each cell counts complexes with at least one pose in the top-$d$ that passes the gate. Recovery is PoseBusters-valid and within 2\\,\\AA{} of the nearest deposited copy (primary) or of the single reference instance (sensitivity). Form is a best-fit RMSD of at most 1\\,\\AA{} without a validity gate and Combined adds the form condition to the recovery gate. The single-copy stratum is identical under both conventions by construction. Multi-copy complexes number 138 of 303 analysed and 143 of 308 source entries.}\n\\label{tab:reference_convention_sensitivity}\n\\begin{tabular}{llrrrrrrrr}\n\\toprule\nTool & $d$ & \\multicolumn{3}{c}{Recovery} & \\multicolumn{2}{c}{Form} & \\multicolumn{2}{c}{Combined} & Single copy \\\\\n\\cmidrule(lr){3-5}\\cmidrule(lr){6-7}\\cmidrule(lr){8-9}\\cmidrule(lr){10-10}\n & & nearest & instance & gain & nearest & instance & nearest & instance & both \\\\\n\\midrule\nAutoDock Vina + gnina & 1 & 149 & 111 & +38 & 161 & 161 & 122 & 88 & 88 of 165 \\\\\n & 5 & 200 & 184 & +16 & 206 & 206 & 164 & 148 & 114 of 165 \\\\\n & 15 & 213 & 198 & +15 & 219 & 220 & 175 & 160 & 122 of 165 \\\\\n & 30 & 214 & 199 & +15 & 227 & 227 & 175 & 160 & 123 of 165 \\\\\n\\addlinespace\nDiffDock + smina & 1 & 132 & 103 & +29 & 162 & 162 & 98 & 76 & 80 of 165 \\\\\n & 5 & 160 & 144 & +16 & 205 & 207 & 130 & 115 & 98 of 165 \\\\\n & 15 & 179 & 167 & +12 & 225 & 226 & 144 & 133 & 109 of 165 \\\\\n & 30 & 183 & 169 & +14 & 236 & 237 & 148 & 138 & 111 of 165 \\\\\n\\addlinespace\nEquiBind + gnina & 1 & 57 & 55 & +2 & 108 & 107 & 38 & 37 & 53 of 165 \\\\\n & 5 & 76 & 73 & +3 & 150 & 148 & 52 & 51 & 69 of 165 \\\\\n & 15 & 83 & 80 & +3 & 183 & 182 & 57 & 55 & 76 of 165 \\\\\n & 30 & 83 & 80 & +3 & 199 & 200 & 57 & 55 & 76 of 165 \\\\\n\\addlinespace\n\\midrule\n\\multicolumn{10}{l}{AutoDock Vina + gnina against DiffDock + smina, recovery gate, exact McNemar and Newcombe 95\\,\\% interval in percentage points} \\\\\n\\multicolumn{10}{l}{$d=1$, nearest. 149 against 132 of 303, margin +5.6\\,pp (-1.7 to +12.8), discordant 73 against 56, $p$ 0.159} \\\\\n\\multicolumn{10}{l}{$d=1$, instance. 111 against 103 of 303, margin +2.6\\,pp (-4.2 to +9.4), discordant 60 against 52, $p$ 0.509} \\\\\n\\multicolumn{10}{l}{$d=5$, nearest. 200 against 160 of 303, margin +13.2\\,pp (+5.7 to +20.4), discordant 88 against 48, $p$ 0.001} \\\\\n\\multicolumn{10}{l}{$d=5$, instance. 184 against 144 of 303, margin +13.2\\,pp (+5.7 to +20.4), discordant 88 against 48, $p$ 0.001} \\\\\n\\multicolumn{10}{l}{$d=15$, nearest. 213 against 179 of 303, margin +11.2\\,pp (+3.9 to +18.4), discordant 82 against 48, $p$ 0.004} \\\\\n\\multicolumn{10}{l}{$d=15$, instance. 198 against 167 of 303, margin +10.2\\,pp (+2.8 to +17.5), discordant 82 against 51, $p$ 0.009} \\\\\n\\multicolumn{10}{l}{$d=30$, nearest. 214 against 183 of 303, margin +10.2\\,pp (+3.0 to +17.3), discordant 79 against 48, $p$ 0.008} \\\\\n\\multicolumn{10}{l}{$d=30$, instance. 199 against 169 of 303, margin +9.9\\,pp (+2.5 to +17.1), discordant 81 against 51, $p$ 0.011} \\\\\n\\bottomrule\n\\end{tabular}\n\\end{table}\n",
+   "source": "posebusters_results/reference_convention_nearest/reference_convention_sensitivity.tex (generated 2026-09-08T11:47:58 by reference_convention_table.py; paste verbatim; house-style check: the caption uses no mid-sentence colon or semicolon)",
+   "status": "resolved",
+   "note": "The single-instance convention is the sensitivity arm. Single-copy stratum rank-1: 88 / 80 / 53 of 165 = 53.3 / 48.5 / 32.1 % on the PB-valid and <= 2 A gate, identical under both conventions. The table's 'Recovery' block at d = 5 (200 / 184 AutoDock) differs from the M2 preview; the .tex is the source. The caption's \\AA{} macro must resolve in the thesis preamble (the body uses \\angstrom{}); adapt the macro, not the numbers."
+  },
+  {
+   "id": "A1074.D9_single_multi_copy_rows",
+   "file": "body_appendix_short.tex",
+   "line": 1074,
+   "anchor": "App. I, D9 table companion rows",
+   "plan_ref": "D9",
+   "kind": "table_block",
+   "current": "(no current text)",
+   "new": [
+    {
+     "arm_label": "AutoDock Vina + gnina",
+     "depth": 1,
+     "stratum": "single_copy",
+     "n_complexes": 165,
+     "recovered_nearest": 88,
+     "recovered_instance": 88,
+     "gain": 0,
+     "recovered_nearest_pct": 53.3,
+     "recovered_instance_pct": 53.3,
+     "form_complexes_nearest": 90,
+     "form_complexes_instance": 90,
+     "combined_complexes_nearest": 67,
+     "combined_complexes_instance": 67
+    },
+    {
+     "arm_label": "AutoDock Vina + gnina",
+     "depth": 1,
+     "stratum": "multi_copy",
+     "n_complexes": 138,
+     "recovered_nearest": 61,
+     "recovered_instance": 23,
+     "gain": 38,
+     "recovered_nearest_pct": 44.2,
+     "recovered_instance_pct": 16.7,
+     "form_complexes_nearest": 71,
+     "form_complexes_instance": 71,
+     "combined_complexes_nearest": 55,
+     "combined_complexes_instance": 21
+    },
+    {
+     "arm_label": "AutoDock Vina + gnina",
+     "depth": 5,
+     "stratum": "single_copy",
+     "n_complexes": 165,
+     "recovered_nearest": 114,
+     "recovered_instance": 114,
+     "gain": 0,
+     "recovered_nearest_pct": 69.1,
+     "recovered_instance_pct": 69.1,
+     "form_complexes_nearest": 112,
+     "form_complexes_instance": 112,
+     "combined_complexes_nearest": 92,
+     "combined_complexes_instance": 92
+    },
+    {
+     "arm_label": "AutoDock Vina + gnina",
+     "depth": 5,
+     "stratum": "multi_copy",
+     "n_complexes": 138,
+     "recovered_nearest": 86,
+     "recovered_instance": 70,
+     "gain": 16,
+     "recovered_nearest_pct": 62.3,
+     "recovered_instance_pct": 50.7,
+     "form_complexes_nearest": 94,
+     "form_complexes_instance": 94,
+     "combined_complexes_nearest": 72,
+     "combined_complexes_instance": 56
+    },
+    {
+     "arm_label": "AutoDock Vina + gnina",
+     "depth": 15,
+     "stratum": "single_copy",
+     "n_complexes": 165,
+     "recovered_nearest": 122,
+     "recovered_instance": 122,
+     "gain": 0,
+     "recovered_nearest_pct": 73.9,
+     "recovered_instance_pct": 73.9,
+     "form_complexes_nearest": 122,
+     "form_complexes_instance": 122,
+     "combined_complexes_nearest": 97,
+     "combined_complexes_instance": 97
+    },
+    {
+     "arm_label": "AutoDock Vina + gnina",
+     "depth": 15,
+     "stratum": "multi_copy",
+     "n_complexes": 138,
+     "recovered_nearest": 91,
+     "recovered_instance": 76,
+     "gain": 15,
+     "recovered_nearest_pct": 65.9,
+     "recovered_instance_pct": 55.1,
+     "form_complexes_nearest": 97,
+     "form_complexes_instance": 98,
+     "combined_complexes_nearest": 78,
+     "combined_complexes_instance": 63
+    },
+    {
+     "arm_label": "AutoDock Vina + gnina",
+     "depth": 30,
+     "stratum": "single_copy",
+     "n_complexes": 165,
+     "recovered_nearest": 123,
+     "recovered_instance": 123,
+     "gain": 0,
+     "recovered_nearest_pct": 74.5,
+     "recovered_instance_pct": 74.5,
+     "form_complexes_nearest": 128,
+     "form_complexes_instance": 128,
+     "combined_complexes_nearest": 97,
+     "combined_complexes_instance": 97
+    },
+    {
+     "arm_label": "AutoDock Vina + gnina",
+     "depth": 30,
+     "stratum": "multi_copy",
+     "n_complexes": 138,
+     "recovered_nearest": 91,
+     "recovered_instance": 76,
+     "gain": 15,
+     "recovered_nearest_pct": 65.9,
+     "recovered_instance_pct": 55.1,
+     "form_complexes_nearest": 99,
+     "form_complexes_instance": 99,
+     "combined_complexes_nearest": 78,
+     "combined_complexes_instance": 63
+    },
+    {
+     "arm_label": "DiffDock + smina",
+     "depth": 1,
+     "stratum": "single_copy",
+     "n_complexes": 165,
+     "recovered_nearest": 80,
+     "recovered_instance": 80,
+     "gain": 0,
+     "recovered_nearest_pct": 48.5,
+     "recovered_instance_pct": 48.5,
+     "form_complexes_nearest": 86,
+     "form_complexes_instance": 86,
+     "combined_complexes_nearest": 57,
+     "combined_complexes_instance": 57
+    },
+    {
+     "arm_label": "DiffDock + smina",
+     "depth": 1,
+     "stratum": "multi_copy",
+     "n_complexes": 138,
+     "recovered_nearest": 52,
+     "recovered_instance": 23,
+     "gain": 29,
+     "recovered_nearest_pct": 37.7,
+     "recovered_instance_pct": 16.7,
+     "form_complexes_nearest": 76,
+     "form_complexes_instance": 76,
+     "combined_complexes_nearest": 41,
+     "combined_complexes_instance": 19
+    },
+    {
+     "arm_label": "DiffDock + smina",
+     "depth": 5,
+     "stratum": "single_copy",
+     "n_complexes": 165,
+     "recovered_nearest": 98,
+     "recovered_instance": 98,
+     "gain": 0,
+     "recovered_nearest_pct": 59.4,
+     "recovered_instance_pct": 59.4,
+     "form_complexes_nearest": 113,
+     "form_complexes_instance": 113,
+     "combined_complexes_nearest": 79,
+     "combined_complexes_instance": 79
+    },
+    {
+     "arm_label": "DiffDock + smina",
+     "depth": 5,
+     "stratum": "multi_copy",
+     "n_complexes": 138,
+     "recovered_nearest": 62,
+     "recovered_instance": 46,
+     "gain": 16,
+     "recovered_nearest_pct": 44.9,
+     "recovered_instance_pct": 33.3,
+     "form_complexes_nearest": 92,
+     "form_complexes_instance": 94,
+     "combined_complexes_nearest": 51,
+     "combined_complexes_instance": 36
+    },
+    {
+     "arm_label": "DiffDock + smina",
+     "depth": 15,
+     "stratum": "single_copy",
+     "n_complexes": 165,
+     "recovered_nearest": 109,
+     "recovered_instance": 109,
+     "gain": 0,
+     "recovered_nearest_pct": 66.1,
+     "recovered_instance_pct": 66.1,
+     "form_complexes_nearest": 125,
+     "form_complexes_instance": 125,
+     "combined_complexes_nearest": 88,
+     "combined_complexes_instance": 88
+    },
+    {
+     "arm_label": "DiffDock + smina",
+     "depth": 15,
+     "stratum": "multi_copy",
+     "n_complexes": 138,
+     "recovered_nearest": 70,
+     "recovered_instance": 58,
+     "gain": 12,
+     "recovered_nearest_pct": 50.7,
+     "recovered_instance_pct": 42.0,
+     "form_complexes_nearest": 100,
+     "form_complexes_instance": 101,
+     "combined_complexes_nearest": 56,
+     "combined_complexes_instance": 45
+    },
+    {
+     "arm_label": "DiffDock + smina",
+     "depth": 30,
+     "stratum": "single_copy",
+     "n_complexes": 165,
+     "recovered_nearest": 111,
+     "recovered_instance": 111,
+     "gain": 0,
+     "recovered_nearest_pct": 67.3,
+     "recovered_instance_pct": 67.3,
+     "form_complexes_nearest": 129,
+     "form_complexes_instance": 129,
+     "combined_complexes_nearest": 92,
+     "combined_complexes_instance": 92
+    },
+    {
+     "arm_label": "DiffDock + smina",
+     "depth": 30,
+     "stratum": "multi_copy",
+     "n_complexes": 138,
+     "recovered_nearest": 72,
+     "recovered_instance": 58,
+     "gain": 14,
+     "recovered_nearest_pct": 52.2,
+     "recovered_instance_pct": 42.0,
+     "form_complexes_nearest": 107,
+     "form_complexes_instance": 108,
+     "combined_complexes_nearest": 56,
+     "combined_complexes_instance": 46
+    },
+    {
+     "arm_label": "EquiBind + gnina",
+     "depth": 1,
+     "stratum": "single_copy",
+     "n_complexes": 165,
+     "recovered_nearest": 53,
+     "recovered_instance": 53,
+     "gain": 0,
+     "recovered_nearest_pct": 32.1,
+     "recovered_instance_pct": 32.1,
+     "form_complexes_nearest": 66,
+     "form_complexes_instance": 66,
+     "combined_complexes_nearest": 35,
+     "combined_complexes_instance": 35
+    },
+    {
+     "arm_label": "EquiBind + gnina",
+     "depth": 1,
+     "stratum": "multi_copy",
+     "n_complexes": 138,
+     "recovered_nearest": 4,
+     "recovered_instance": 2,
+     "gain": 2,
+     "recovered_nearest_pct": 2.9,
+     "recovered_instance_pct": 1.4,
+     "form_complexes_nearest": 42,
+     "form_complexes_instance": 41,
+     "combined_complexes_nearest": 3,
+     "combined_complexes_instance": 2
+    },
+    {
+     "arm_label": "EquiBind + gnina",
+     "depth": 5,
+     "stratum": "single_copy",
+     "n_complexes": 165,
+     "recovered_nearest": 69,
+     "recovered_instance": 69,
+     "gain": 0,
+     "recovered_nearest_pct": 41.8,
+     "recovered_instance_pct": 41.8,
+     "form_complexes_nearest": 86,
+     "form_complexes_instance": 86,
+     "combined_complexes_nearest": 48,
+     "combined_complexes_instance": 48
+    },
+    {
+     "arm_label": "EquiBind + gnina",
+     "depth": 5,
+     "stratum": "multi_copy",
+     "n_complexes": 138,
+     "recovered_nearest": 7,
+     "recovered_instance": 4,
+     "gain": 3,
+     "recovered_nearest_pct": 5.1,
+     "recovered_instance_pct": 2.9,
+     "form_complexes_nearest": 64,
+     "form_complexes_instance": 62,
+     "combined_complexes_nearest": 4,
+     "combined_complexes_instance": 3
+    },
+    {
+     "arm_label": "EquiBind + gnina",
+     "depth": 15,
+     "stratum": "single_copy",
+     "n_complexes": 165,
+     "recovered_nearest": 76,
+     "recovered_instance": 76,
+     "gain": 0,
+     "recovered_nearest_pct": 46.1,
+     "recovered_instance_pct": 46.1,
+     "form_complexes_nearest": 102,
+     "form_complexes_instance": 102,
+     "combined_complexes_nearest": 52,
+     "combined_complexes_instance": 52
+    },
+    {
+     "arm_label": "EquiBind + gnina",
+     "depth": 15,
+     "stratum": "multi_copy",
+     "n_complexes": 138,
+     "recovered_nearest": 7,
+     "recovered_instance": 4,
+     "gain": 3,
+     "recovered_nearest_pct": 5.1,
+     "recovered_instance_pct": 2.9,
+     "form_complexes_nearest": 81,
+     "form_complexes_instance": 80,
+     "combined_complexes_nearest": 5,
+     "combined_complexes_instance": 3
+    },
+    {
+     "arm_label": "EquiBind + gnina",
+     "depth": 30,
+     "stratum": "single_copy",
+     "n_complexes": 165,
+     "recovered_nearest": 76,
+     "recovered_instance": 76,
+     "gain": 0,
+     "recovered_nearest_pct": 46.1,
+     "recovered_instance_pct": 46.1,
+     "form_complexes_nearest": 107,
+     "form_complexes_instance": 107,
+     "combined_complexes_nearest": 52,
+     "combined_complexes_instance": 52
+    },
+    {
+     "arm_label": "EquiBind + gnina",
+     "depth": 30,
+     "stratum": "multi_copy",
+     "n_complexes": 138,
+     "recovered_nearest": 7,
+     "recovered_instance": 4,
+     "gain": 3,
+     "recovered_nearest_pct": 5.1,
+     "recovered_instance_pct": 2.9,
+     "form_complexes_nearest": 92,
+     "form_complexes_instance": 93,
+     "combined_complexes_nearest": 5,
+     "combined_complexes_instance": 3
+    }
+   ],
+   "source": "posebusters_results/reference_convention_nearest/reference_convention_sensitivity.csv (stratum in single_copy, multi_copy)",
+   "status": "resolved",
+   "note": "Multi-copy stratum (138): AutoDock rank-1 61 vs 23, DiffDock 52 vs 23, EquiBind 4 vs 2 under nearest vs instance; every gain sits in this stratum."
+  }
+ ]
+}

@@ -1,0 +1,1053 @@
+# 17 stage(s); 88 canonical outputs and 25 canonical trees checked; no emitted output touches any of them
+
+== bench_validity_report ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/posebusters_validity_report.py \
+    --csv posebusters_results/benchmark_matched_equibind/dock/posebusters_filtered_results.csv \
+    --out-dir posebusters_results/benchmark_matched_equibind/dock/validity_report_mgltools_nearest \
+    --per-pose-metrics posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv \
+    --collapse-plots-only \
+    --exclude-preset meeko \
+    --exclude-methods autodock_mgltools,autodock_mgltools_gnina,autodock_mgltools_exh18,autodock_mgltools_exh64,autodock_mgltools_exh64_gnina,autodock_mgltools_exh92
+  note: method-filter [validity-report]: 5 pattern(s) matched nothing in this frame: ['autodock_smina', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_mgltools_gnina', 'autodock_mgltools_exh64_gnina']
+                                 present: ['autodock', 'autodock_mgltools', 'autodock_mgltools_exh128', 'autodock_mgltools_exh18', 'autodock_mgltools_exh64', 'autodock_mgltools_exh92', 'autodock_vinardo', 'diffdock', 'equibind_guided', 'unidock2']
+                                 (benign if this frame predates the optimizer split, or if the campaign never produced that variant — check for a typo otherwise)
+
+method-filter [validity-report]: patterns ['autodock', 'autodock_smina', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_vinardo*', 'autodock_mgltools', 'autodock_mgltools_gnina', 'autodock_mgltools_exh18', 'autodock_mgltools_exh64', 'autodock_mgltools_exh64_gnina', 'autodock_mgltools_exh92'] (preset 'meeko')
+method-filter [validity-report]: dropped 6 of 10 methods, 108,259 of 241,913 rows.
+  dropped: ['autodock', 'autodock_vinardo', 'autodock_mgltools', 'autodock_mgltools_exh18', 'autodock_mgltools_exh64', 'autodock_mgltools_exh92']
+  kept   : ['autodock_mgltools_exh128', 'diffdock', 'equibind_guided', 'unidock2']
+  provenance → posebusters_results/benchmark_matched_equibind/dock/validity_report_mgltools_nearest/method_filter.json
+collapse-plots-only: keeping DiffDock's best on the docking-success gate 'diffdock_smina' in the plots (shown as 'DiffDock*').
+collapse-plots-only: keeping EquiBind's best on the docking-success gate 'equibind_unguided_gnina' in the plots (shown as 'EquiBind*').
+collapse-plots-only: keeping AutoDock's best on the docking-success gate 'autodock' in the plots (shown as 'AutoDock*').
+Stats: paired per-complex tests over n=303 complete units; wrote validity_stats.json + validity_stats.txt
+failure waterfall: top variant per tool = autodock, diffdock_smina, equibind_unguided_gnina
+Total poses scored        : 133,654
+Total PB-valid poses      : 63,552 (47.55%)
+Receptor-ligand pairs     : 303
+Methods / variants found  : 15 (autodock, autodock_gnina, unidock2, diffdock, diffdock_smina, diffdock_gnina, equibind_unguided_raw, equibind_unguided_smina, equibind_unguided_gnina, equibind_fpocket_raw, equibind_fpocket_smina, equibind_fpocket_gnina, equibind_p2rank_raw, equibind_p2rank_smina, equibind_p2rank_gnina)
+Plots collapsed to        : autodock, unidock2, diffdock_smina, equibind_unguided_gnina
+
+── Per-method summary (all variants) ─────────────
+                         total_poses  valid_poses  valid_fraction  pairs_covered  pairs_total  rmsd2_poses  rmsd2_valid_poses  rmsd2_valid_fraction
+docking_method                                                                                                                                     
+autodock                        8976         8943           0.996            303          303          297                293                 0.987
+autodock_gnina                  8976         8880           0.989            303          303          304                298                 0.980
+unidock2                        8605         8493           0.987            303          303          162                158                 0.975
+diffdock                        9013         2198           0.244            303          303         2118               1063                 0.502
+diffdock_smina                  8993         7597           0.845            303          303         2169               2068                 0.953
+diffdock_gnina                  8993         7831           0.871            303          303         2171               2071                 0.954
+equibind_unguided_raw           9090          263           0.029            303          303          103                 21                 0.204
+equibind_unguided_smina         9090         4664           0.513            303          303          465                423                 0.910
+equibind_unguided_gnina         9088         5633           0.620            303          303          515                483                 0.938
+equibind_fpocket_raw            9090           27           0.003            303          303            0                  0                   NaN
+equibind_fpocket_smina          9090         1386           0.152            303          303           32                 23                 0.719
+equibind_fpocket_gnina          9090         2585           0.284            303          303           49                 41                 0.837
+equibind_p2rank_raw             8520           47           0.006            303          303            2                  0                 0.000
+equibind_p2rank_smina           8520         1767           0.207            303          303           53                 35                 0.660
+equibind_p2rank_gnina           8520         3238           0.380            303          303           80                 65                 0.812
+  (rmsd2_* = count / PB-valid / valid-fraction over poses within rmsd ≤ 2 Å of the crystal — the near-native subset)
+
+── PB check failure rate (%) per variant (n_poses, survival %, then worst checks) ──
+                        n_poses survival_% min dist protein vol ovlp protein internal steric clash internal energy min dist waters min dist organic cofactors vol ovlp organic cofactors min dist inorganic cofactors protein-ligand maximum distance vol ovlp inorganic cofactors
+docking_method                                                                                                                                                                                                                                                                    
+autodock                   8976       99.6              0.2              0.0                   0.1             0.0             0.0                        0.0                        0.0                          0.0                             0.0                          0.0
+autodock_gnina             8976       98.9              0.2              0.0                   0.1             0.8             0.0                        0.0                        0.0                          0.0                             0.0                          0.0
+unidock2                   8605       98.7              0.4              0.0                   0.0             0.9             0.0                        0.0                        0.0                          0.0                             0.0                          0.0
+diffdock                   9013       24.4             73.8             34.8                   3.4             1.1             0.0                        0.0                        0.0                          0.0                             1.4                          0.0
+diffdock_smina             8993       84.5             13.4              4.3                   0.4             1.0             0.0                        0.0                        0.0                          0.0                             1.2                          0.0
+diffdock_gnina             8993       87.1             10.7              3.0                   0.3             0.9             0.0                        0.0                        0.0                          0.0                             1.2                          0.0
+equibind_unguided_raw      9090        2.9             96.5             88.3                  22.1            23.3             0.6                        0.6                        0.3                          0.3                             0.2                          0.3
+equibind_unguided_smina    9090       51.3             47.3             34.9                   3.8             1.6             7.0                        7.0                        1.7                          1.6                             0.0                          0.5
+equibind_unguided_gnina    9088       62.0             36.6             25.3                   2.8             1.0             5.1                        5.1                        1.0                          0.8                             0.0                          0.2
+equibind_fpocket_raw       9090        0.3             99.7             98.5                  23.7            23.5             0.6                        0.6                        0.3                          0.2                             0.0                          0.1
+equibind_fpocket_smina     9090       15.2             84.2             75.0                  15.5             7.0             9.6                        9.6                        2.4                          2.5                             0.0                          0.6
+equibind_fpocket_gnina     9090       28.4             70.6             59.0                  10.1             3.7             7.4                        7.4                        1.4                          1.5                             0.0                          0.2
+equibind_p2rank_raw        8520        0.6             99.3             97.6                  24.3            23.9             0.9                        0.9                        0.5                          0.4                             0.0                          0.2
+equibind_p2rank_smina      8520       20.7             78.3             63.5                  14.8             6.9            13.2                       13.2                        4.4                          3.5                             0.0                          1.2
+equibind_p2rank_gnina      8520       38.0             60.8             44.6                   9.0             3.2             9.8                        9.8                        2.3                          1.8                             0.1                          0.4
+  survival_% = poses passing ALL checks; full table (all checks): check_failure_rates_per_variant.csv
+
+── EquiBind axis breakdown (pocket × refine × clamp) ──
+                              total_poses  valid_poses  valid_fraction
+eq_pocket eq_refine eq_clamp                                          
+fpocket   gnina     NaN              9090         2585           0.284
+          raw       NaN              9090           27           0.003
+          smina     NaN              9090         1386           0.152
+p2rank    gnina     NaN              8520         3238           0.380
+          raw       NaN              8520           47           0.006
+          smina     NaN              8520         1767           0.207
+unguided  gnina     NaN              9088         5633           0.620
+          raw       NaN              9090          263           0.029
+          smina     NaN              9090         4664           0.513
+
+Wrote CSVs and 11 figures to: /home/manndo/master_dev/posebusters_results/benchmark_matched_equibind/dock/validity_report_mgltools_nearest
+  figures: 01_per_tool_validity.png, 02_valid_heatmap_top.png, 02b_valid_heatmap_bottom.png, 03_valid_grouped_bars_top.png, 04_valid_per_pair_distribution.png, 05_per_check_passrate.png, 06_equibind_variant_validity.png, 06a_autodock_variant_validity.png, 07_diffdock_variant_validity.png, 07b_variant_validity_matrix.png, 09_failure_waterfall_top.png
+== bench_validity_report exit 0 after 20.6 s
+
+== bench_filmstrip ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/filmstrip_rank1_top5_top15.py \
+    --report-dir posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest \
+    --exclude-preset meeko
+/home/manndo/anaconda3/envs/vina/lib/python3.12/site-packages/MDAnalysis/topology/tables.py:52: DeprecationWarning: Deprecated in version 2.8.0
+MDAnalysis.topology.tables has been moved to MDAnalysis.guesser.tables. This import point will be removed in MDAnalysis version 3.0.0
+  warnings.warn(wmsg, category=DeprecationWarning)
+  note: method-filter [filmstrip]: 1 pattern(s) matched nothing in this frame: ['autodock_smina']
+                           present: ['autodock', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_mgltools', 'autodock_mgltools_exh128', 'autodock_mgltools_exh128_gnina', 'autodock_mgltools_exh18', 'autodock_mgltools_exh64', 'autodock_mgltools_exh64_gnina', 'autodock_mgltools_exh92', 'autodock_mgltools_gnina', 'autodock_vinardo', 'autodock_vinardo_gnina', 'autodock_vinardo_gnina_refinement', 'diffdock', 'diffdock_gnina', 'diffdock_smina', 'equibind_fpocket_gnina', 'equibind_fpocket_raw', 'equibind_fpocket_smina', 'equibind_p2rank_gnina', 'equibind_p2rank_raw', 'equibind_p2rank_smina', 'equibind_unguided_gnina', 'equibind_unguided_raw', 'equibind_unguided_smina', 'unidock2']
+                           (benign if this frame predates the optimizer split, or if the campaign never produced that variant — check for a typo otherwise)
+
+method-filter [filmstrip]: patterns ['autodock', 'autodock_smina', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_vinardo*'] (preset 'meeko')
+method-filter [filmstrip]: dropped 6 of 27 methods, 54,315 of 241,913 rows.
+  dropped: ['autodock', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_vinardo', 'autodock_vinardo_gnina', 'autodock_vinardo_gnina_refinement']
+  kept   : ['autodock_mgltools', 'autodock_mgltools_exh128', 'autodock_mgltools_exh128_gnina', 'autodock_mgltools_exh18', 'autodock_mgltools_exh64', 'autodock_mgltools_exh64_gnina', 'autodock_mgltools_exh92', 'autodock_mgltools_gnina', 'diffdock', 'diffdock_gnina', 'diffdock_smina', 'equibind_fpocket_gnina', 'equibind_fpocket_raw', 'equibind_fpocket_smina', 'equibind_p2rank_gnina', 'equibind_p2rank_raw', 'equibind_p2rank_smina', 'equibind_unguided_gnina', 'equibind_unguided_raw', 'equibind_unguided_smina', 'unidock2']
+  provenance → posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/method_filter.json
+dropped 8,605 non-thesis poses (unidock2)
+collapse → AutoDock=autodock_mgltools_exh128_gnina · DiffDock=diffdock_smina · EquiBind=equibind_unguided_gnina
+wrote stats    → __stats.png + __stats_{per_tool_depth,within_tool_trend,crosstool_paired,pose_diversity}.csv
+
+wrote figure   → posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15.png
+wrote caption  → 20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__caption.txt
+wrote txt      → 20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__panel_data_and_stats.txt
+wrote figure   → 20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__compact_titles.png  (compact titles, larger fonts)
+wrote caption  → 20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__compact_titles__caption.txt
+wrote txt      → 20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__compact_titles__panel_data_and_stats.txt
+wrote per-pose → 20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15.csv  (7,565 rows)
+wrote summary  → 20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__cohort_summary.csv
+
+per-panel pose counts (family × depth):
+  AutoDock  top-1   n=  249 · 249 rec · place/mix/form = 47/26/28%
+  DiffDock  top-1   n=  224 · 224 rec · place/mix/form = 42/29/30%
+  EquiBind  top-1   n=  155 · 155 rec · place/mix/form = 61/23/17%
+  AutoDock  top-5   n= 1147 · 272 rec · place/mix/form = 64/20/17%
+  DiffDock  top-5   n= 1041 · 256 rec · place/mix/form = 44/31/24%
+  EquiBind  top-5   n=  722 · 167 rec · place/mix/form = 65/20/15%
+  AutoDock  top-15  n= 2832 · 286 rec · place/mix/form = 77/14/9%
+  DiffDock  top-15  n= 2801 · 269 rec · place/mix/form = 47/30/22%
+  EquiBind  top-15  n= 1932 · 169 rec · place/mix/form = 70/18/11%
+== bench_filmstrip exit 0 after 7.8 s
+
+== bench_topk ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/topk_recovery_gnina_arm.py \
+    --report-dir posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest \
+    --autodock-variant autodock_mgltools_exh128_gnina \
+    --diffdock-variant diffdock_smina \
+    --equibind-variant equibind_unguided_gnina \
+    --exclude-preset meeko
+/home/manndo/anaconda3/envs/vina/lib/python3.12/site-packages/MDAnalysis/topology/tables.py:52: DeprecationWarning: Deprecated in version 2.8.0
+MDAnalysis.topology.tables has been moved to MDAnalysis.guesser.tables. This import point will be removed in MDAnalysis version 3.0.0
+  warnings.warn(wmsg, category=DeprecationWarning)
+  note: method-filter [topk-recovery]: 1 pattern(s) matched nothing in this frame: ['autodock_smina']
+                               present: ['autodock', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_mgltools', 'autodock_mgltools_exh128', 'autodock_mgltools_exh128_gnina', 'autodock_mgltools_exh18', 'autodock_mgltools_exh64', 'autodock_mgltools_exh64_gnina', 'autodock_mgltools_exh92', 'autodock_mgltools_gnina', 'autodock_vinardo', 'autodock_vinardo_gnina', 'autodock_vinardo_gnina_refinement', 'diffdock', 'diffdock_gnina', 'diffdock_smina', 'equibind_fpocket_gnina', 'equibind_fpocket_raw', 'equibind_fpocket_smina', 'equibind_p2rank_gnina', 'equibind_p2rank_raw', 'equibind_p2rank_smina', 'equibind_unguided_gnina', 'equibind_unguided_raw', 'equibind_unguided_smina', 'unidock2']
+                               (benign if this frame predates the optimizer split, or if the campaign never produced that variant — check for a typo otherwise)
+
+method-filter [topk-recovery]: patterns ['autodock', 'autodock_smina', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_vinardo*'] (preset 'meeko')
+method-filter [topk-recovery]: dropped 6 of 27 methods, 54,315 of 241,913 rows.
+  dropped: ['autodock', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_vinardo', 'autodock_vinardo_gnina', 'autodock_vinardo_gnina_refinement']
+  kept   : ['autodock_mgltools', 'autodock_mgltools_exh128', 'autodock_mgltools_exh128_gnina', 'autodock_mgltools_exh18', 'autodock_mgltools_exh64', 'autodock_mgltools_exh64_gnina', 'autodock_mgltools_exh92', 'autodock_mgltools_gnina', 'diffdock', 'diffdock_gnina', 'diffdock_smina', 'equibind_fpocket_gnina', 'equibind_fpocket_raw', 'equibind_fpocket_smina', 'equibind_p2rank_gnina', 'equibind_p2rank_raw', 'equibind_p2rank_smina', 'equibind_unguided_gnina', 'equibind_unguided_raw', 'equibind_unguided_smina', 'unidock2']
+  provenance → posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/method_filter.json
+wrote posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity_gnina_arm.csv
+wrote posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/topk_recovery_validity_gnina_arm.txt
+  AutoDock gnina*          top-1: 149/303  top-15: 213/303  top-30: 214/303   Q=128.03
+  DiffDock smina*          top-1: 132/303  top-15: 179/303  top-30: 183/303   Q=94.63
+  EquiBind gnina*          top-1: 57/303  top-15: 83/303  top-30: 83/303   Q=52.00
+== bench_topk exit 0 after 3.2 s
+
+== bench_endpoint_diagnostics ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/thesis_endpoint_diagnostics.py \
+    --metrics posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv \
+    --csv posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest \
+    --exclude-preset meeko
+  note: method-filter [endpoint-diagnostics]: 1 pattern(s) matched nothing in this frame: ['autodock_smina']
+                                      present: ['autodock', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_mgltools', 'autodock_mgltools_exh128', 'autodock_mgltools_exh128_gnina', 'autodock_mgltools_exh18', 'autodock_mgltools_exh64', 'autodock_mgltools_exh64_gnina', 'autodock_mgltools_exh92', 'autodock_mgltools_gnina', 'autodock_vinardo', 'autodock_vinardo_gnina', 'autodock_vinardo_gnina_refinement', 'diffdock', 'diffdock_gnina', 'diffdock_smina', 'equibind_fpocket_gnina', 'equibind_fpocket_raw', 'equibind_fpocket_smina', 'equibind_p2rank_gnina', 'equibind_p2rank_raw', 'equibind_p2rank_smina', 'equibind_unguided_gnina', 'equibind_unguided_raw', 'equibind_unguided_smina', 'unidock2']
+                                      (benign if this frame predates the optimizer split, or if the campaign never produced that variant — check for a typo otherwise)
+
+method-filter [endpoint-diagnostics]: patterns ['autodock', 'autodock_smina', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_vinardo*'] (preset 'meeko')
+method-filter [endpoint-diagnostics]: dropped 6 of 27 methods, 54,315 of 241,913 rows.
+  dropped: ['autodock', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_vinardo', 'autodock_vinardo_gnina', 'autodock_vinardo_gnina_refinement']
+  kept   : ['autodock_mgltools', 'autodock_mgltools_exh128', 'autodock_mgltools_exh128_gnina', 'autodock_mgltools_exh18', 'autodock_mgltools_exh64', 'autodock_mgltools_exh64_gnina', 'autodock_mgltools_exh92', 'autodock_mgltools_gnina', 'diffdock', 'diffdock_gnina', 'diffdock_smina', 'equibind_fpocket_gnina', 'equibind_fpocket_raw', 'equibind_fpocket_smina', 'equibind_p2rank_gnina', 'equibind_p2rank_raw', 'equibind_p2rank_smina', 'equibind_unguided_gnina', 'equibind_unguided_raw', 'equibind_unguided_smina', 'unidock2']
+  provenance → posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/method_filter.json
+==============================================================================
+1. VALIDITY GATE COST  (complexes of 303)
+==============================================================================
+k                      1   5   15  30
+arm                                  
+AutoDock Vina (raw)     1   1   0   0
+AutoDock Vina + gnina   2   4   3   3
+DiffDock (raw)         65  60  57  55
+DiffDock + smina        5   4   3   3
+DiffDock + gnina        4   3   3   4
+EquiBind + gnina        2   3   3   3
+
+Headlined arms : 0.66 to 1.65 pp  (2 to 5 complexes)
+Raw DiffDock   : 18.15 to 21.45 pp  (55 to 65 complexes)
+
+==============================================================================
+2. BOUNDED CLAIM  AutoDock Vina + gnina (A) vs DiffDock + smina (B)
+==============================================================================
+ k   A   B  both  A_only  B_only  neither  n_discordant  diff_pp  lo_pp  hi_pp  mcnemar_p  power  mde_pp  n_needed
+ 1 149 132    76      73      56       98           129    -5.61 -12.84   1.71     0.1587  0.322   10.50      1062
+ 5 200 160   112      88      48       55           136   -13.20 -20.45  -5.74     0.0008  0.929   10.78       202
+15 213 179   131      82      48       42           130   -11.22 -18.37  -3.91     0.0036  0.847   10.54       267
+30 214 183   135      79      48       41           127   -10.23 -17.32  -2.99     0.0075  0.785   10.42       314
+
+Equivalence (TOST, alpha = 0.05):
+ k  equiv_5pp  equiv_10pp  equiv_12pp  equiv_15pp
+ 1      False       False        True        True
+ 5      False       False       False       False
+15      False       False       False       False
+30      False       False       False       False
+
+At rank-1: 129 of 303 complexes discordant (42.6%). MDE 10.5 pp at 80% power; observed power 0.32.
+Docking the full 428-complex benchmark would still leave the MDE near 8.8 pp.
+
+written to posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest
+== bench_endpoint_diagnostics exit 0 after 2.5 s
+
+== bench_optimization_benefit ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/optimization_benefit_stats.py \
+    --report-dir posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest \
+    --exclude-preset meeko
+  note: method-filter [optimization-benefit]: 1 pattern(s) matched nothing in this frame: ['autodock_smina']
+                                      present: ['autodock', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_mgltools', 'autodock_mgltools_exh128', 'autodock_mgltools_exh128_gnina', 'autodock_mgltools_exh18', 'autodock_mgltools_exh64', 'autodock_mgltools_exh64_gnina', 'autodock_mgltools_exh92', 'autodock_mgltools_gnina', 'autodock_vinardo', 'autodock_vinardo_gnina', 'autodock_vinardo_gnina_refinement', 'diffdock', 'diffdock_gnina', 'diffdock_smina', 'equibind_fpocket_gnina', 'equibind_fpocket_raw', 'equibind_fpocket_smina', 'equibind_p2rank_gnina', 'equibind_p2rank_raw', 'equibind_p2rank_smina', 'equibind_unguided_gnina', 'equibind_unguided_raw', 'equibind_unguided_smina', 'unidock2']
+                                      (benign if this frame predates the optimizer split, or if the campaign never produced that variant — check for a typo otherwise)
+/home/manndo/anaconda3/envs/vina/lib/python3.12/site-packages/MDAnalysis/topology/tables.py:52: DeprecationWarning: Deprecated in version 2.8.0
+MDAnalysis.topology.tables has been moved to MDAnalysis.guesser.tables. This import point will be removed in MDAnalysis version 3.0.0
+  warnings.warn(wmsg, category=DeprecationWarning)
+
+method-filter [optimization-benefit]: patterns ['autodock', 'autodock_smina', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_vinardo*'] (preset 'meeko')
+method-filter [optimization-benefit]: dropped 6 of 27 methods, 54,315 of 241,913 rows.
+  dropped: ['autodock', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_vinardo', 'autodock_vinardo_gnina', 'autodock_vinardo_gnina_refinement']
+  kept   : ['autodock_mgltools', 'autodock_mgltools_exh128', 'autodock_mgltools_exh128_gnina', 'autodock_mgltools_exh18', 'autodock_mgltools_exh64', 'autodock_mgltools_exh64_gnina', 'autodock_mgltools_exh92', 'autodock_mgltools_gnina', 'diffdock', 'diffdock_gnina', 'diffdock_smina', 'equibind_fpocket_gnina', 'equibind_fpocket_raw', 'equibind_fpocket_smina', 'equibind_p2rank_gnina', 'equibind_p2rank_raw', 'equibind_p2rank_smina', 'equibind_unguided_gnina', 'equibind_unguided_raw', 'equibind_unguided_smina', 'unidock2']
+  provenance → posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/method_filter.json
+
+============================================================================================
+(a) DOES OPTIMIZATION HELP?  Cochran's Q + pairwise exact McNemar (Holm), paired 0/1
+============================================================================================
+
+DiffDock · Near-native (RMSD <= 2 A)
+  rank  1 (n=303)  [PRIMARY]:  raw  43.6%  smina  45.2%  gnina  45.5%   Cochran Q=3.3 p=0.196 (BH 0.241)
+        raw->smina:  +1.7 pp  (flips 10 gain / 5 lose)  McNemar p=0.302 Holm=0.714 ns
+        raw->gnina:  +2.0 pp  (flips 12 gain / 6 lose)  McNemar p=0.238 Holm=0.714 ns
+  rank  5 (n=302):  raw  35.8%  smina  35.8%  gnina  36.4%   Cochran Q=0.6 p=0.751 (BH 0.751)
+        raw->smina:  +0.0 pp  (flips 6 gain / 6 lose)  McNemar p=1.000 Holm=1.000 ns
+        raw->gnina:  +0.7 pp  (flips 7 gain / 5 lose)  McNemar p=0.774 Holm=1.000 ns
+  rank 15 (n=301):  raw  22.6%  smina  23.9%  gnina  23.6%   Cochran Q=2.4 p=0.307 (BH 0.351)
+        raw->smina:  +1.3 pp  (flips 6 gain / 2 lose)  McNemar p=0.289 Holm=0.867 ns
+        raw->gnina:  +1.0 pp  (flips 7 gain / 4 lose)  McNemar p=0.549 Holm=1.000 ns
+  rank 30 (n=280):  raw   6.8%  smina   7.1%  gnina   7.9%   Cochran Q=1.3 p=0.529 (BH 0.564)
+        raw->smina:  +0.4 pp  (flips 5 gain / 4 lose)  McNemar p=1.000 Holm=1.000 ns
+        raw->gnina:  +1.1 pp  (flips 6 gain / 3 lose)  McNemar p=0.508 Holm=1.000 ns
+
+DiffDock · PoseBusters-valid
+  rank  1 (n=303)  [PRIMARY]:  raw  40.9%  smina  93.1%  gnina  93.7%   Cochran Q=308.3 p=<1e-4 (BH <1e-4)
+        raw->smina: +52.1 pp  (flips 159 gain / 1 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+        raw->gnina: +52.8 pp  (flips 161 gain / 1 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+  rank  5 (n=302):  raw  29.1%  smina  91.1%  gnina  91.1%   Cochran Q=368.1 p=<1e-4 (BH <1e-4)
+        raw->smina: +61.9 pp  (flips 187 gain / 0 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+        raw->gnina: +61.9 pp  (flips 187 gain / 0 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+  rank 15 (n=301):  raw  27.2%  smina  87.0%  gnina  89.7%   Cochran Q=347.7 p=<1e-4 (BH <1e-4)
+        raw->smina: +59.8 pp  (flips 181 gain / 1 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+        raw->gnina: +62.5 pp  (flips 189 gain / 1 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+  rank 30 (n=280):  raw   8.6%  smina  69.3%  gnina  77.9%   Cochran Q=333.9 p=<1e-4 (BH <1e-4)
+        raw->smina: +60.7 pp  (flips 170 gain / 0 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+        raw->gnina: +69.3 pp  (flips 194 gain / 0 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+
+EquiBind · Near-native (RMSD <= 2 A)
+  rank  1 (n=303)  [PRIMARY]:  raw   1.3%  smina   6.3%  gnina   6.6%   Cochran Q=18.5 p=<1e-4 (BH 1.7e-04)
+        raw->smina:  +5.0 pp  (flips 17 gain / 2 lose)  McNemar p=7.3e-04 Holm=0.001 **
+        raw->gnina:  +5.3 pp  (flips 18 gain / 2 lose)  McNemar p=4.0e-04 Holm=0.001 **
+  rank  5 (n=303):  raw   1.7%  smina   5.0%  gnina   5.6%   Cochran Q=15.5 p=4.3e-04 (BH 6.9e-04)
+        raw->smina:  +3.3 pp  (flips 11 gain / 1 lose)  McNemar p=0.006 Holm=0.013 *
+        raw->gnina:  +4.0 pp  (flips 13 gain / 1 lose)  McNemar p=0.002 Holm=0.005 **
+  rank 15 (n=303):  raw   1.0%  smina   3.3%  gnina   4.3%   Cochran Q=12.2 p=0.002 (BH 0.003)
+        raw->smina:  +2.3 pp  (flips 7 gain / 0 lose)  McNemar p=0.016 Holm=0.031 *
+        raw->gnina:  +3.3 pp  (flips 10 gain / 0 lose)  McNemar p=0.002 Holm=0.006 **
+  rank 30 (n=302):  raw   1.3%  smina   4.6%  gnina   5.6%   Cochran Q=14.6 p=6.6e-04 (BH 9.7e-04)
+        raw->smina:  +3.3 pp  (flips 12 gain / 2 lose)  McNemar p=0.013 Holm=0.026 *
+        raw->gnina:  +4.3 pp  (flips 14 gain / 1 lose)  McNemar p=9.8e-04 Holm=0.003 **
+
+EquiBind · PoseBusters-valid
+  rank  1 (n=303)  [PRIMARY]:  raw   3.3%  smina  51.5%  gnina  64.4%   Cochran Q=283.9 p=<1e-4 (BH <1e-4)
+        raw->smina: +48.2 pp  (flips 146 gain / 0 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+        raw->gnina: +61.1 pp  (flips 185 gain / 0 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+  rank  5 (n=303):  raw   4.3%  smina  54.5%  gnina  63.7%   Cochran Q=293.2 p=<1e-4 (BH <1e-4)
+        raw->smina: +50.2 pp  (flips 152 gain / 0 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+        raw->gnina: +59.4 pp  (flips 180 gain / 0 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+  rank 15 (n=303):  raw   2.3%  smina  49.2%  gnina  61.7%   Cochran Q=279.8 p=<1e-4 (BH <1e-4)
+        raw->smina: +46.9 pp  (flips 142 gain / 0 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+        raw->gnina: +59.4 pp  (flips 181 gain / 1 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+  rank 30 (n=302):  raw   3.6%  smina  51.7%  gnina  63.6%   Cochran Q=288.4 p=<1e-4 (BH <1e-4)
+        raw->smina: +48.0 pp  (flips 147 gain / 2 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+        raw->gnina: +59.9 pp  (flips 181 gain / 0 lose)  McNemar p=<1e-4 Holm=<1e-4 ***
+
+============================================================================================
+(b) DOES THE BENEFIT DEPEND ON RANK?  logistic opt x rank, cluster(complex) bootstrap
+============================================================================================
+
+DiffDock · Near-native (RMSD <= 2 A)
+  raw rank slope = -0.0604 log-odds/rank [-0.0721, -0.0511] p=0.002 **
+  smina_vs_raw: opt x rank b3 = +0.0016/rank [-0.0037, +0.0069] p=0.557 (BH 0.613) ns   |  benefit early(1-10)=+0.6pp late(21-30)=+0.8pp Δ=+0.3pp
+  gnina_vs_raw: opt x rank b3 = +0.0021/rank [-0.0034, +0.0073] p=0.442 (BH 0.613) ns   |  benefit early(1-10)=+0.6pp late(21-30)=+1.0pp Δ=+0.4pp
+
+DiffDock · PoseBusters-valid
+  raw rank slope = -0.0475 log-odds/rank [-0.0555, -0.0400] p=0.002 **
+  smina_vs_raw: opt x rank b3 = +0.0030/rank [-0.0086, +0.0141] p=0.613 (BH 0.613) ns   |  benefit early(1-10)=+57.5pp late(21-30)=+63.1pp Δ=+5.6pp
+  gnina_vs_raw: opt x rank b3 = +0.0109/rank [-0.0009, +0.0221] p=0.074 (BH 0.591) ns   |  benefit early(1-10)=+58.6pp late(21-30)=+67.4pp Δ=+8.8pp
+
+EquiBind · Near-native (RMSD <= 2 A)
+  raw rank slope = +0.0019 log-odds/rank [-0.0142, +0.0125] p=0.823 ns (NEGATIVE CONTROL — generation order)
+  smina_vs_raw: opt x rank b3 = -0.0076/rank [-0.0180, +0.0070] p=0.292 (BH 0.613) ns   |  benefit early(1-10)=+4.5pp late(21-30)=+3.9pp Δ=-0.6pp
+  gnina_vs_raw: opt x rank b3 = -0.0039/rank [-0.0133, +0.0104] p=0.581 (BH 0.613) ns   |  benefit early(1-10)=+4.7pp late(21-30)=+4.4pp Δ=-0.3pp
+
+EquiBind · PoseBusters-valid
+  raw rank slope = -0.0048 log-odds/rank [-0.0160, +0.0066] p=0.428 ns (NEGATIVE CONTROL — generation order)
+  smina_vs_raw: opt x rank b3 = +0.0043/rank [-0.0073, +0.0158] p=0.482 (BH 0.613) ns   |  benefit early(1-10)=+48.2pp late(21-30)=+48.5pp Δ=+0.3pp
+  gnina_vs_raw: opt x rank b3 = +0.0075/rank [-0.0046, +0.0194] p=0.240 (BH 0.613) ns   |  benefit early(1-10)=+58.3pp late(21-30)=+60.2pp Δ=+1.9pp
+
+wrote optimization_benefit_stats_pairwise.csv / _interaction.csv / .json -> posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest
+  annotated figures -> 15c / 15d_optimization_benefit_by_rank/group.png
+== bench_optimization_benefit exit 0 after 147.2 s
+
+== bench_ligand_difficulty ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/ligand_docking_difficulty.py \
+    --per-pose-metrics posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv \
+    --features PoseBusters_Benchmark_Analysis/ligand_protein_features.csv \
+    --out-dir PoseBusters_Benchmark_Analysis/ligand_difficulty_nearest \
+    --diffdock-variant diffdock_smina \
+    --exclude-preset meeko \
+    --exclude-methods autodock_mgltools,autodock_mgltools_gnina,autodock_mgltools_exh18,autodock_mgltools_exh64,autodock_mgltools_exh64_gnina,autodock_mgltools_exh92
+usage: ligand_docking_difficulty.py [-h] [--per-pose-metrics PER_POSE_METRICS]
+                                    [--features FEATURES] [--out-dir OUT_DIR]
+                                    [--n N]
+                                    [--diffdock-variant {all,raw,smina,gnina}]
+                                    [--exclude-methods PAT[,PAT...]]
+                                    [--exclude-preset {meeko}]
+                                    [--exclude-strict]
+ligand_docking_difficulty.py: error: argument --diffdock-variant: invalid choice: 'diffdock_smina' (choose from all, raw, smina, gnina)
+== bench_ligand_difficulty exit 2 after 0.9 s
+
+== bench_receptor_difficulty ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/receptor_docking_difficulty.py \
+    --per-pose-metrics posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv \
+    --features PoseBusters_Benchmark_Analysis/ligand_protein_features.csv \
+    --out-dir PoseBusters_Benchmark_Analysis/receptor_difficulty_nearest \
+    --diffdock-variant diffdock_smina \
+    --exclude-preset meeko \
+    --exclude-methods autodock_mgltools,autodock_mgltools_gnina,autodock_mgltools_exh18,autodock_mgltools_exh64,autodock_mgltools_exh64_gnina,autodock_mgltools_exh92
+usage: receptor_docking_difficulty.py [-h]
+                                      [--per-pose-metrics PER_POSE_METRICS]
+                                      [--features FEATURES]
+                                      [--out-dir OUT_DIR] [--n N]
+                                      [--diffdock-variant {all,raw,smina,gnina}]
+                                      [--exclude-methods PAT[,PAT...]]
+                                      [--exclude-preset {meeko}]
+                                      [--exclude-strict]
+receptor_docking_difficulty.py: error: argument --diffdock-variant: invalid choice: 'diffdock_smina' (choose from all, raw, smina, gnina)
+== bench_receptor_difficulty exit 2 after 1.0 s
+
+== bench_clusters ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/pose_cluster_crystal_pocket_report.py \
+    --ids-file 'Data/PoseBuster Benchmark Set/posebusters_pdb_ccd_ids.txt' \
+    --per-pose-csv posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv \
+    --out-dir posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest \
+    --autodock-variant autodock_mgltools_exh128_gnina \
+    --diffdock-variant diffdock_smina \
+    --equibind-variant equibind_unguided_gnina \
+    --site-cluster threshold \
+    --pocket-radius 8.0 \
+    --rank-by consensus \
+    --stability-boot 25 \
+    --workers 30 \
+    --stats \
+    --crystal-copies any \
+    --force
+crystal site: any deposited copy (every record of <ID>_ligands.sdf, record 0 = reference instance; every crystal distance is the minimum over copies; a cluster is correct when it is the cluster nearest to ANY copy and lies within the threshold of it; the crystal-closest cluster is the one nearest to the nearest copy; a cluster that is nearest to two copies counts once)
+Complexes: 303 | poses: 27057 | tools: ['autodock', 'diffdock', 'equibind'] | autodock=autodock_mgltools_exh128_gnina | equibind=equibind_unguided_gnina | diffdock=diffdock_smina
+Extracting centroids for 27057 pose SDFs (30 workers)...
+  loaded 27057/27057 centroids
+  analyzed 50/303
+  analyzed 100/303
+  analyzed 150/303
+  analyzed 200/303
+  analyzed 250/303
+  analyzed 300/303
+  cached analysis → posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/analysis_cache.pkl (re-run reuses it unless inputs change)
+  Rank-1 quality cross-tab (all_poses + pb_valid) → rank1_quality_crosstab.csv, rank1_quality_crosstab.txt, rank1_quality_crosstab.png
+
+==============================================================================
+DOCKED CLUSTERS vs fpocket/p2rank vs CRYSTAL  (n=303 complexes w/ crystal, thr=4 Å)
+==============================================================================
+  source               median oracle Å  oracle hit    top1 hit
+  autodock                        0.40        92%         80%
+  diffdock                        0.39        90%         74%
+  equibind                        2.84        53%         37%
+  ensemble_clusters               1.09        98%         71%
+  fpocket                         6.18        35%         19%
+  p2rank                          2.88        68%         55%
+
+  CLUSTERING QUALITY  (site-cluster=threshold, pocket-radius=8 Å, rank-by=consensus):
+    mean #sites 10.88  (legacy silhouette-KMedoids 3.54); single-site (k=1) complexes 2%
+    silhouette 0.619 (k≥2 only) | Calinski-Harabasz 586.8 | Davies-Bouldin 0.39
+    compactness (median intra-spread) 1.10 Å | separation (nearest-site) 5.88 Å
+    bootstrap stability (mean best-Jaccard, 25 resamples) 0.79  (>0.75 stable, <0.5 dissolved)
+    primary-vs-KMedoids agreement (ARI) 0.48
+
+  PRECISION@1 — rank-1 pocket within 4 Å of crystal, per ranking rule:
+    (oracle ceiling = ens_oracle_hit 98%)
+    size (legacy)               60%
+    consensus (n_tools)         71%
+    tightest                    40%
+    confidence-wtd              68%
+    consensus+medoid ctr        69%
+
+  CRYSTAL-CLOSEST CLUSTER purity (are its members really near-native?):
+    within 4 Å (centroid) 92% of members | ≤2 Å RMSD 27% of members | best member RMSD median 0.94 Å
+
+  PLACEMENT-AWARE binding modes  (in-place RMSD, mode-thr=2 Å; translation+orientation+conformation):
+    mean #modes/complex 54.40  vs  mean #sites 10.88 (centroid)
+    modes inside the biggest site: mean 15.80 | >1 mode (site hides distinct orientations) in 100% of complexes
+    mode compactness (median intra-mode RMSD) 0.19 Å | separation 2.05 Å
+    site-vs-mode agreement: ARI 0.11 | NMI 0.68  (low ⇒ one site holds several modes)
+
+  Pose quality vs crystal (RMSD, oracle over poses):
+    autodock   median 1.21 Å | ≤2 Å: 72% | ≤5 Å: 87%
+    diffdock   median 1.40 Å | ≤2 Å: 61% | ≤5 Å: 86%
+    equibind   median 5.96 Å | ≤2 Å: 28% | ≤5 Å: 47%
+
+  Triangulation — finds the true site (oracle ≤ thr):
+    docking_hit    98%
+    fpocket_hit    35%
+    p2rank_hit     68%
+    all three: 28% | none: 1%
+
+  Cross-tool agreement: mean agreeing tool-pairs/complex 0.99/3 | all-3-agree 20%
+  Docked clusters matching fpocket pockets (≤thr): mean 0.27
+  Docked clusters matching p2rank pockets (≤thr): mean 0.64
+
+  TOOL RANKING within the crystal-closest cluster (true-site complexes only, n=297):
+  tool        coverage  median rank   %top-1   %top-5  rank source
+  autodock        93%            1      86%      94%  native
+  diffdock        91%            1      82%      92%  native
+  equibind        53%            1      87%      94%  gnina_affinity
+
+  ENSEMBLE EXPLORATION (which tools combined; thr=4 Å):
+  ensemble  tools               oracle hit  top1 hit   median Å
+  AD        autodock                   92%       47%       0.40
+  DD        diffdock                   90%       68%       0.39
+  EB        equibind                   53%       43%       2.84
+  AD+DD     autodock+diffdock         100%       75%       0.27
+  AD+EB     autodock+equibind          94%       51%       0.33
+  DD+EB     diffdock+equibind          94%       53%       0.32
+  AD+DD+EB  autodock+diffdock+equibind        100%       67%       0.24
+
+  TOP-5 RANKED POSES — MEDIAN distance from crystal (centroid Å | RMSD Å):
+  (median is robust; means are tail-inflated by far poses — see figure/CSV)
+  tool                 rank1           rank2           rank3           rank4           rank5
+  autodock        0.7|   2.0      1.2|   4.3      1.8|   4.9      2.0|   5.7      3.1|   6.9
+  diffdock        0.8|   2.4      1.0|   3.0      1.1|   3.3      1.3|   4.3      1.2|   4.2
+  equibind        4.7|   8.7      4.9|   8.4      5.7|   9.6      5.4|   9.2      6.4|   9.4
+
+  TOP-5 CLUSTER CONSISTENCY (are a tool's 5 best poses in one site?):
+  tool       mean modal frac  mean #clusters  closest-is-rank1
+  autodock              0.71            2.08              41%
+  diffdock              0.73            2.17              27%
+  equibind              0.88            1.44              28%
+
+  RANKING ENRICHMENT (pooled Spearman of cluster rank vs distance-to-crystal): ρ=0.480  (positive = better-ranked clusters are nearer the crystal)
+  RANKING ABLATION SIGNIFICANCE (paired, n=303, k=5 rules): Cochran Q=149.56 p=<1e-4
+    consensus vs size: 43 wins / 8 losses, McNemar p=<1e-4 (Holm p=<1e-4)
+    pairwise McNemar (Holm-adjusted, a=better rule):
+          ntools vs size        43↑/8  ↓  p=<1e-4  Holm=<1e-4 ***
+            size vs tight      105↑/45 ↓  p=<1e-4  Holm=<1e-4 ***
+      confidence vs size        34↑/8  ↓  p=<1e-4  Holm=3.4e-04 ***
+          medoid vs size        39↑/11 ↓  p=<1e-4  Holm=3.6e-04 ***
+          ntools vs tight      124↑/29 ↓  p=<1e-4  Holm=<1e-4 ***
+          ntools vs confidence  21↑/12 ↓  p=0.163  Holm=0.326 ns
+          ntools vs medoid       7↑/0  ↓  p=0.016  Holm=0.047 *
+      confidence vs tight      118↑/32 ↓  p=<1e-4  Holm=<1e-4 ***
+          medoid vs tight      117↑/29 ↓  p=<1e-4  Holm=<1e-4 ***
+          medoid vs confidence  19↑/17 ↓  p=0.868  Holm=0.868 ns
+
+  CSVs + summary written to: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/
+  Stats TXT: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/topN_crystal_cluster_matrix_stats.txt
+  Caption TXT: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/topN_crystal_cluster_matrix_caption.txt
+
+  ── crystal_cluster_homogeneity.png statistics ──
+    (A) pose counts | Friedman chi2=36.596 df=2 p=<1e-4 ***  Kendall W=0.06
+          AutoDock* vs DiffDock*       rank-biserial r=-0.311 p_Holm=<1e-4 ***
+          AutoDock* vs EquiBind*       rank-biserial r=+0.211 p_Holm=0.004 **
+          DiffDock* vs EquiBind*       rank-biserial r=+0.525 p_Holm=<1e-4 ***
+    (A) reaches>=1  | Cochran's Q=159.529 df=2 p=<1e-4 ***  rates={'AutoDock*': 0.898, 'DiffDock*': 0.861, 'EquiBind*': 0.512}
+          AutoDock* vs DiffDock*       McNemar p_Holm=0.161 ns (disc 31/20)
+          AutoDock* vs EquiBind*       McNemar p_Holm=<1e-4 *** (disc 127/10)
+          DiffDock* vs EquiBind*       McNemar p_Holm=<1e-4 *** (disc 116/10)
+    (B) consensus   | perm vs independence: chi2-like=30.63 p=<1e-4 ***
+          all-3 tools observed=137 vs expected=119.85 (p=<1e-4)  obs=[9.0, 37.0, 120.0, 137.0] exp=[2.1, 33.66, 147.4, 119.85] [0,1,2,3 tools]
+    (C) tightness   | Kruskal-Wallis H=49.193 df=2 p=<1e-4 ***  eps^2=0.074 n={'AutoDock*': 252, 'DiffDock*': 247, 'EquiBind*': 145}
+          AutoDock* vs DiffDock*       Dunn z=+6.88 p_Holm=<1e-4 ***
+          AutoDock* vs EquiBind*       Dunn z=+4.14 p_Holm=<1e-4 ***
+          DiffDock* vs EquiBind*       Dunn z=-1.76 p_Holm=0.078 ns
+          sensitivity Friedman (paired, n=119) chi2=37.866 p=<1e-4
+    (D) radius trend| Jonckheere-Terpstra z=6.311 p=<1e-4 ***  Spearman rho=0.367 (p=<1e-4)  n={'1_tools': 37, '2_tools': 120, '3_tools': 137}
+          pose-count control: partial rho=-0.033 (p=0.567 ns) | radius~pose# rho=0.515, n_tools~pose# rho=0.75
+          → if partial_rho collapses toward 0 / loses significance, the raw trend is a pose-count artifact; if it survives, agreement widens the site beyond mere pose count.
+          CAVEAT: radius = max(pose->center) grows mechanically with the number of poses in the cluster, and more-consensus clusters tend to hold more poses; see posecount_control for the confound-adjusted trend.
+  Stats TXT:  posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/crystal_cluster_homogeneity_stats.txt
+  Stats JSON: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/crystal_cluster_homogeneity_stats.json
+
+cluster_quality_metrics.png — precision@1 ranking-ablation statistics
+n=303 complexes; rank-1 pocket within 4 Å of crystal
+crystal site: any deposited copy (every record of <ID>_ligands.sdf, record 0 = reference instance; every crystal distance is the minimum over copies; a cluster is correct when it is the cluster nearest to ANY copy and lies within the threshold of it; the crystal-closest cluster is the one nearest to the nearest copy; a cluster that is nearest to two copies counts once)
+per-pose table reference convention: nearest
+stars: * p<.05  ** p<.01  *** p<.001 (Holm-adjusted McNemar)
+========================================================================
+ranking enrichment: Spearman rho=+0.480
+omnibus (paired): Cochran Q=149.555 df=4 p=<1e-4 *** (k=5 rules, n=303 complexes)
+
+precision@1 by ranking rule (best first):
+    consensus (n tools)      71.3%
+    consensus + medoid       69.0%
+    confidence-weighted      68.3%
+    size (legacy count)      59.7%
+    tightest spread          39.9%
+
+pairwise McNemar (a beats b; Holm-adjusted across the full family):
+    consensus (n tools)    beats size (legacy count)    wins 43/8 (n=303)  p_raw=<1e-4  p_Holm=<1e-4 ***
+    size (legacy count)    beats tightest spread        wins 105/45 (n=303)  p_raw=<1e-4  p_Holm=<1e-4 ***
+    confidence-weighted    beats size (legacy count)    wins 34/8 (n=303)  p_raw=<1e-4  p_Holm=3.4e-04 ***
+    consensus + medoid     beats size (legacy count)    wins 39/11 (n=303)  p_raw=<1e-4  p_Holm=3.6e-04 ***
+    consensus (n tools)    beats tightest spread        wins 124/29 (n=303)  p_raw=<1e-4  p_Holm=<1e-4 ***
+    consensus (n tools)    beats confidence-weighted    wins 21/12 (n=303)  p_raw=0.163  p_Holm=0.326 ns
+    consensus (n tools)    beats consensus + medoid     wins 7/0 (n=303)  p_raw=0.016  p_Holm=0.047 *
+    confidence-weighted    beats tightest spread        wins 118/32 (n=303)  p_raw=<1e-4  p_Holm=<1e-4 ***
+    consensus + medoid     beats tightest spread        wins 117/29 (n=303)  p_raw=<1e-4  p_Holm=<1e-4 ***
+    consensus + medoid     beats confidence-weighted    wins 19/17 (n=303)  p_raw=0.868  p_Holm=0.868 ns
+
+headline — consensus vs legacy size: consensus wins 43, size wins 8 (n=303)  p_raw=<1e-4  p_Holm=<1e-4 ***
+
+Holm-adj. pairwise McNemar
+      cons medo conf size
+medo     *
+conf    ns   ns
+size   ***  ***  ***
+tght   ***  ***  ***  ***
+*** p<.001  ** p<.01  * p<.05
+  Stats TXT:  posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/cluster_quality_metrics_stats.txt
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/example_3d_clusters.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/crystal_pocket_summary.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/summary_oracle_distance_ecdf.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/summary_hit_rate.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/summary_triangulation.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/summary_cross_tool_agreement.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/oracle_distance_ecdf_detail_0-5A.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/oracle_ecdf_split.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/top5_centroid_distance_by_rank.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/top5_rmsd_by_rank.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/top5_pose_concentration.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/top5_distinct_sites.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/top5_best_rank.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/rank_in_crystal_cluster_by_rank.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/rank_cluster_membership_stacked.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/rank_consensus_by_rank.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/rank1_cluster_agreement_matrix.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/topN_crystal_cluster_matrix.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/topN_crystal_cluster_matrix_stats.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/topN_crystal_reach_curves.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/crystal_cluster_homogeneity.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/rank_in_correct_cluster.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/near_native_cluster_rank_composition.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/near_native_cluster_consensus.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/ensemble_exploration.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/cluster_quality_metrics.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/placement_vs_centroid.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/descriptor_accuracy_vs_ro5.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/descriptor_success_vs_flexibility.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/descriptor_property_correlations.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/descriptor_pca_accuracy.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/descriptor_success_pca.png
+  Figure: posebusters_results/cluster_crystal_pocket_matched_equibind/autodock_mgltools_exh128_gnina__diffdock_smina_allposes_nearest/descriptor_per_tool_success_vs_flexibility.png
+== bench_clusters exit 0 after 47.8 s
+
+== bench_effort_charged ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/docking_effort_comparison.py \
+    --dataset benchmark \
+    --autodock-dir Dockings/vina_results_full_protein_vina_scoring_mgltools_exh128 \
+    --autodock-prep mgl_tools \
+    --autodock-refine gnina \
+    --autodock-gnina-gpu \
+    --autodock-method autodock_mgltools_exh128_gnina \
+    --autodock-optimizer-workers 16 \
+    --equibind-dir Dockings/Benchmark_Equibind_cputimed \
+    --unidock2-dir '' \
+    --unidock-dir '' \
+    --per-pose-csv posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv \
+    --out-dir posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged_nearest \
+    --basis charged \
+    --cpu-threads 32
+  Stats sidecar:       posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged_nearest/effort_stats.json
+  Stats sidecar:       posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged_nearest/effort_by_quality_stats.json
+
+====================================================================================================
+DOCKING COMPUTATIONAL EFFORT — PoseBuster benchmark (EquiBind best config: unguided+gnina)
+====================================================================================================
+Compared on the COMMON set of 303 complexes timed for all methods.
+WALL-CLOCK (time-to-result):
+  method                         dev  cplx  total h      gen   valid  valid%   s/gen  s/valid
+  AutoDock Vina + gnina      CPU+GPU   303     5.37    8,976   8,880   98.9%    2.16     2.18
+  DiffDock (smina)           GPU+CPU   303    23.78    8,993   7,597   84.5%    9.52    11.27
+  EquiBind (unguided+gnina)  GPU+CPU   303     0.67    9,088   5,633   62.0%    0.27     0.43
+
+HARDWARE EFFORT (resource-seconds; CPU-core-s and GPU-s are different currencies):
+  method                      CPU core-h    GPU-h  CPUs/valid  GPUs/valid
+  AutoDock Vina + gnina           151.42    10.27       61.39        4.16
+  DiffDock (smina)                  1.32    22.46        0.63       10.64
+  EquiBind (unguided+gnina)        21.39     0.18       13.67        0.12
+
+  AutoDock docking CPU-core-seconds = Vina wall × 32 threads. DiffDock docking is GPU (CPU prep not separately recorded).
+  AutoDock timing = Vina wall + gnina optimization (optimization_log.csv, ÷16 for optimize_workers concurrency; GPU).
+  DiffDock timing = docking wall + smina rescoring (optimization_log.csv, serial; CPU).
+  EquiBind gnina refine ran on CPU (--no_gpu) (gnina_use_gpu false).
+  EquiBind wall = best-config (unguided+gnina) compute ÷ worker pool (pure best-config-only estimate; full fan-out run wall = 11.39 h).
+
+  CSVs written to: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged_nearest/
+  Figure (wall-clock): posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged_nearest/docking_effort_comparison.png
+  Figure (resources):  posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged_nearest/docking_resource_effort.png
+  Figure (time/pose):  posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged_nearest/docking_time_per_pose.png
+  Figure (by quality): posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged_nearest/docking_effort_by_quality_tier.png
+  Individual panels (15) in posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged_nearest/panels/:
+      - wall_overall_total.png
+      - wall_per_complex_distribution.png
+      - wall_poses_generated_vs_valid.png
+      - wall_per_generated_pose.png
+      - wall_per_valid_pose.png
+      - wall_validity_rate.png
+      - resource_overall_total.png
+      - resource_per_generated_pose.png
+      - resource_per_valid_pose.png
+      - resource_per_near_native_valid_pose.png
+      - resource_per_near_native_correct_form_pose.png
+      - effort_by_quality_all.png
+      - effort_by_quality_valid.png
+      - effort_by_quality_near2.png
+      - effort_by_quality_form1.png
+== bench_effort_charged exit 0 after 6.6 s
+
+== bench_effort_elapsed ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/docking_effort_comparison.py \
+    --dataset benchmark \
+    --autodock-dir Dockings/vina_results_full_protein_vina_scoring_mgltools_exh128 \
+    --autodock-prep mgl_tools \
+    --autodock-refine gnina \
+    --autodock-gnina-gpu \
+    --autodock-method autodock_mgltools_exh128_gnina \
+    --autodock-optimizer-workers 16 \
+    --equibind-dir Dockings/Benchmark_Equibind_cputimed \
+    --unidock2-dir '' \
+    --unidock-dir '' \
+    --per-pose-csv posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv \
+    --out-dir posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_nearest
+  Stats sidecar:       posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_nearest/effort_stats.json
+  Stats sidecar:       posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_nearest/effort_by_quality_stats.json
+
+====================================================================================================
+DOCKING COMPUTATIONAL EFFORT — PoseBuster benchmark (EquiBind best config: unguided+gnina)
+====================================================================================================
+Compared on the COMMON set of 303 complexes timed for all methods.
+WALL-CLOCK (time-to-result):
+  method                         dev  cplx  total h      gen   valid  valid%   s/gen  s/valid
+  AutoDock Vina + gnina      CPU+GPU   303     5.37    8,976   8,880   98.9%    2.16     2.18
+  DiffDock (smina)           GPU+CPU   303    23.78    8,993   7,597   84.5%    9.52    11.27
+  EquiBind (unguided+gnina)  GPU+CPU   303     0.67    9,088   5,633   62.0%    0.27     0.43
+
+HARDWARE EFFORT (resource-seconds; CPU-core-s and GPU-s are different currencies):
+  method                      CPU core-h    GPU-h  CPUs/valid  GPUs/valid
+  AutoDock Vina + gnina           151.42    10.27       61.39        4.16
+  DiffDock (smina)                  1.32    22.46        0.63       10.64
+  EquiBind (unguided+gnina)        21.39     0.18       13.67        0.12
+
+  AutoDock docking CPU-core-seconds = Vina wall × 32 threads. DiffDock docking is GPU (CPU prep not separately recorded).
+  AutoDock timing = Vina wall + gnina optimization (optimization_log.csv, ÷16 for optimize_workers concurrency; GPU).
+  DiffDock timing = docking wall + smina rescoring (optimization_log.csv, serial; CPU).
+  EquiBind gnina refine ran on CPU (--no_gpu) (gnina_use_gpu false).
+  EquiBind wall = best-config (unguided+gnina) compute ÷ worker pool (pure best-config-only estimate; full fan-out run wall = 11.39 h).
+
+  CSVs written to: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_nearest/
+  Figure (wall-clock): posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_nearest/docking_effort_comparison.png
+  Figure (resources):  posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_nearest/docking_resource_effort.png
+  Figure (time/pose):  posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_nearest/docking_time_per_pose.png
+  Figure (by quality): posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_nearest/docking_effort_by_quality_tier.png
+  Individual panels (15) in posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_nearest/panels/:
+      - wall_overall_total.png
+      - wall_per_complex_distribution.png
+      - wall_poses_generated_vs_valid.png
+      - wall_per_generated_pose.png
+      - wall_per_valid_pose.png
+      - wall_validity_rate.png
+      - resource_overall_total.png
+      - resource_per_generated_pose.png
+      - resource_per_valid_pose.png
+      - resource_per_near_native_valid_pose.png
+      - resource_per_near_native_correct_form_pose.png
+      - effort_by_quality_all.png
+      - effort_by_quality_valid.png
+      - effort_by_quality_near2.png
+      - effort_by_quality_form1.png
+== bench_effort_elapsed exit 0 after 6.5 s
+
+== bench_pandamap ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/run_pandamap.py \
+    -c Scripts/Analysis/nearest_copy_program/07_benchmark_pandamap_nearest.yaml \
+    --refresh-crystal
+======================================================================
+PandaMap interaction generator
+  input   : PB CSV /home/manndo/master_dev/posebusters_results/benchmark_matched_equibind/dock/posebusters_filtered_results.csv
+  output  : /home/manndo/master_dev/pandamap_results/benchmark_matched_equibind_nearest
+  top-N   : 5 per method×pair   pb_valid_only=True
+  crystal : /home/manndo/master_dev/Data/PoseBuster Benchmark Set
+  crystal copies: all   (--refresh-crystal: crystal fingerprints only)
+======================================================================
+Collected 169245 poses; methods: ['autodock', 'autodock_gnina', 'autodock_gnina_refinement', 'autodock_mgltools', 'autodock_mgltools_exh128', 'autodock_mgltools_exh128_gnina', 'autodock_mgltools_exh18', 'autodock_mgltools_exh64', 'autodock_mgltools_exh64_gnina', 'autodock_mgltools_exh92', 'autodock_mgltools_gnina', 'autodock_vinardo', 'autodock_vinardo_gnina', 'autodock_vinardo_gnina_refinement', 'diffdock', 'diffdock_gnina', 'diffdock_smina', 'equibind_fpocket_gnina', 'equibind_fpocket_raw', 'equibind_fpocket_smina', 'equibind_p2rank_gnina', 'equibind_p2rank_raw', 'equibind_p2rank_smina', 'equibind_unguided_gnina', 'equibind_unguided_raw', 'equibind_unguided_smina', 'unidock2']
+equibind-variant=unguided_gnina: keeping 'equibind_unguided_gnina'; 169245 → 155268 poses. Run the report with the same --equibind-variant to label it 'EquiBind*'.
+autodock-variant=autodock_mgltools_exh128_gnina: keeping 'autodock_mgltools_exh128_gnina'; 155268 → 40632 poses.
+diffdock-variant=smina: keeping 'diffdock_smina'; 40632 → 30603 poses. Run the report with the same --diffdock-variant to label it 'DiffDock*'.
+  [gnina-rank] assigned gnina-affinity ranks to 5633 EquiBind poses (from per_pose_metrics.csv).
+Selected 5759 poses across 303 pairs (4 methods)
+--refresh-crystal: docked-pose fingerprints are left untouched (pandamap_pose_summary.csv / pandamap_interactions.csv not read or written).
+
+Crystal references: 503 poses on 6 workers (render=False)
+  [50/503] done  (ok=50 err=0)
+  [100/503] done  (ok=100 err=0)
+  [150/503] done  (ok=150 err=0)
+  [200/503] done  (ok=200 err=0)
+  [250/503] done  (ok=250 err=0)
+  [300/503] done  (ok=300 err=0)
+  [350/503] done  (ok=350 err=0)
+  [400/503] done  (ok=400 err=0)
+  [450/503] done  (ok=450 err=0)
+  [500/503] done  (ok=500 err=0)
+  [503/503] done  (ok=503 err=0)
+  crystal: 503 mapped, 0 failed → crystal_interactions.csv
+
+======================================================================
+DONE (--refresh-crystal)  /home/manndo/master_dev/pandamap_results/benchmark_matched_equibind_nearest/crystal_interactions.csv
+======================================================================
+== bench_pandamap exit 0 after 24.5 s
+
+== bench_pandamap_report ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/pandamap_interaction_report.py \
+    -c Scripts/Analysis/nearest_copy_program/07_benchmark_pandamap_nearest.yaml \
+    --in-dir pandamap_results/benchmark_matched_equibind_nearest \
+    --per-pose-metrics posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv \
+    --exclude-methods unidock2,autodock_gnina
+  note: method-filter [pandamap/crystal]: 2 pattern(s) matched nothing in this frame: ['unidock2', 'autodock_gnina']
+                                  present: ['crystal']
+                                  (benign if this frame predates the optimizer split, or if the campaign never produced that variant — check for a typo otherwise)
+crystal_interactions.csv carries copy_index and posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv carries nearest_copy_index — every pose is scored against its nearest deposited copy; top-k unions against the union of the selected copies (nearest-copy convention).
+
+method-filter [pandamap]: patterns ['unidock2', 'autodock_gnina']
+method-filter [pandamap]: dropped 2 of 5 methods, 3,020 of 7,282 rows.
+  dropped: ['unidock2', 'autodock_gnina']
+  kept   : ['autodock_mgltools_exh128_gnina', 'diffdock_smina', 'equibind_unguided_gnina']
+  provenance → pandamap_results/benchmark_matched_equibind_nearest/report/method_filter.json
+
+method-filter [pandamap/inter]: patterns ['unidock2', 'autodock_gnina']
+method-filter [pandamap/inter]: dropped 2 of 5 methods, 95,508 of 232,024 rows.
+  dropped: ['unidock2', 'autodock_gnina']
+  kept   : ['autodock_mgltools_exh128_gnina', 'diffdock_smina', 'equibind_unguided_gnina']
+
+method-filter [pandamap/crystal]: patterns ['unidock2', 'autodock_gnina']
+method-filter [pandamap/crystal]: nothing dropped — frame unchanged (1 methods).
+equibind-variant=unguided_gnina: keeping only 'equibind_unguided_gnina' (shown as 'EquiBind (unguided, gnina-opt)').
+diffdock-variant=smina: keeping only 'diffdock_smina' (shown as 'DiffDock (smina-opt)').
+Loaded 4262 poses, 136516 interaction rows, 17931 crystal rows. Methods: ['autodock_mgltools_exh128_gnina', 'diffdock_smina', 'equibind_unguided_gnina']
+Pose-selection scope: top 5 ranked poses per method × complex  (depth-pooled / by-rank figures use top 5).
+
+Native-interaction recovery (mean per method):
+                                precision  recall     f1  jaccard_vs_crystal
+method                                                                      
+autodock_mgltools_exh128_gnina      0.645   0.638  0.638               0.539
+diffdock_smina                      0.657   0.634  0.641               0.555
+equibind_unguided_gnina             0.513   0.468  0.484               0.397
+  RMSD-vs-recovery: joined 4253 poses (autodock_mgltools_exh128_gnina=1503, diffdock_smina=1493, equibind_unguided_gnina=1257).
+  nearest-copy crystal reference: 303 pairs, 138 with >1 copy fingerprinted; 241913 poses carry a nearest_copy_index (60539 point at an alternate copy); 9 profiled poses without an index fell back to the reference copy (in 3 pairs)
+  [stats] wrote interaction_stats.json (14 section(s)).
+  [fig-txt] wrote 23 figure text sidecar(s).
+
+Report written to: /home/manndo/master_dev/pandamap_results/benchmark_matched_equibind_nearest/report
+  01_interaction_profile.png
+  02_type_heatmap.png
+  02b_total_boxplot.png
+  03_residue_hotspots.png
+  04_native_recovery.png
+  04b_native_recovery_cdf.png
+  04c_native_recovery_by_rank.png
+  05_fingerprint_similarity.png
+  05_fingerprint_similarity_top5.png
+  06_interaction_vs_chemotype.png
+  06b_descriptor_corr.png
+  07_residue_class.png
+  08_ligand_element.png
+  09_type_resolved_recovery.png
+  09_type_resolved_recovery_top1.png
+  10_contact_decomposition.png
+  10_contact_decomposition_top1.png
+  10b_contact_decomposition_by_rank.png
+  11_residue_confusion.png
+  12_typed_vs_loose_gap.png
+  13_native_f1_oracle.png
+  14_rmsd_vs_recovery.png
+  15_pair_overlays.png
+== bench_pandamap_report exit 0 after 39.3 s
+  derived posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/analysed_cohort_ids.txt (303 ids)
+
+== bench_interaction_audit ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/interaction_pose_basis_audit.py \
+    --config Scripts/Analysis/nearest_copy_program/07_benchmark_pandamap_nearest.yaml \
+    --in-dir pandamap_results/benchmark_matched_equibind_nearest \
+    --metrics posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv \
+    --ids-file posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/analysed_cohort_ids.txt \
+    --exclude-methods unidock2,autodock_gnina
+  note: method-filter [recovery]: 2 pattern(s) matched nothing in this frame: ['unidock2', 'autodock_gnina']
+                          present: ['autodock_mgltools_exh128_gnina', 'diffdock_smina', 'equibind_unguided_gnina']
+                          (benign if this frame predates the optimizer split, or if the campaign never produced that variant — check for a typo otherwise)
+Restricted to 303 ids from analysed_cohort_ids.txt: 232024 → 231882 interaction rows
+
+method-filter [interactions]: patterns ['unidock2', 'autodock_gnina']
+method-filter [interactions]: dropped 2 of 5 methods, 95,508 of 231,882 rows.
+  dropped: ['unidock2', 'autodock_gnina']
+  kept   : ['autodock_mgltools_exh128_gnina', 'diffdock_smina', 'equibind_unguided_gnina']
+
+method-filter [recovery]: patterns ['unidock2', 'autodock_gnina']
+method-filter [recovery]: nothing dropped — frame unchanged (3 methods).
+Interaction-analysis pose-basis audit — pandamap_results/benchmark_matched_equibind_nearest
+methods: autodock_mgltools_exh128_gnina, diffdock_smina, equibind_unguided_gnina
+excluded: unidock2, autodock_gnina
+metrics : posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv
+join    : 4253/4253 poses carry an RMSD
+crystal : nearest-copy convention — each top-5 union is scored against the union of the crystal copies its poses are nearest to (138 of 303 pairs carry >1 fingerprinted copy)
+
+A. COMPOSITION OF THE PROFILED POOL (no accuracy gate is applied)
+cohort                                  n  median RMSD    <=2 A  Kabsch<1    >5 A
+all profiled poses                   4253        5.01A    26.9%     42.3%   50.0%
+rank-1 poses                          846        3.45A    40.1%     49.5%   41.3%
+
+  autodock_mgltools_exh128_gnina     1503        4.71A    23.8%
+  diffdock_smina                     1493        3.44A    39.0%
+  equibind_unguided_gnina            1257        7.57A    16.1%
+
+B. PLACEMENT SHARE OF THE RANK-1 CONTACT-RECOVERY ORDERING
+   Direct standardisation of rank-1 F1 to the pooled RMSD-band distribution.
+method                              crude F1  standardised     n
+  autodock_mgltools_exh128_gnina      0.7319        0.6673   298
+  diffdock_smina                      0.6940        0.6469   282
+  equibind_unguided_gnina             0.4985        0.6282   266
+  spread 0.2334 -> 0.0391: 83.2% of the ordering is placement
+
+   Sensitivity of that share to the band scheme:
+     3-band                  81.9%   standardised order autodock > diffdock > equibind
+     5-band (reported)       83.2%   standardised order autodock > diffdock > equibind
+     8-band                  85.5%   standardised order autodock > diffdock > equibind
+     14-band                 88.5%   standardised order autodock > diffdock > equibind
+
+   Per-band rank-1 F1 (the tools at matched placement):
+          0-2 A   0.927 (n= 149)  0.919 (n= 132)  0.908 (n=  58)
+          2-5 A   0.806 (n=  53)  0.816 (n=  57)  0.782 (n=  48)
+         5-10 A   0.617 (n=  43)  0.592 (n=  33)  0.593 (n=  50)
+        10-20 A   0.290 (n=  29)  0.213 (n=  31)  0.164 (n=  63)
+          >20 A   0.093 (n=  24)  0.058 (n=  29)  0.052 (n=  47)
+
+C. SITE-FILTER SENSITIVITY OF THE TOP-5 UNION JACCARD (rmsd < 10 A)
+   A site filter, not an accuracy gate. Conditional: the complexes each tool
+   never reached are dropped, so the dropped counts are reported beside it.
+   The Wilcoxon runs on the cohort every tool defines, which is the convention the
+   Results chapter uses. The pairwise AutoDock-DiffDock cohort is printed beside it,
+   because the two differ and quoting one against the other's n misreads the test.
+basis                               autodock          diffdock          equibind  common n   p common  pair n     p pair
+published (all poses)         0.5391 (301)    0.5722 (300)    0.4030 (266)       264   1.08e-02     300   2.65e-02
+rmsd < 10 A                   0.6757 (274)    0.7061 (262)    0.6228 (166)       144   2.00e-04     241   3.52e-04
+   complexes dropped by the site filter (a tool never reached the site):
+     autodock_mgltools_exh128_gnina      27
+     diffdock_smina                      38
+     equibind_unguided_gnina            100
+   share of poses within 2 A rises from 26.9% to 38.8% under the filter
+   threshold sweep (the 10 A cut must not be load-bearing):
+     <    8 A   0.7067  0.7226  0.6530   common n= 132   p=6.42e-03
+     <   10 A   0.6757  0.7061  0.6228   common n= 144   p=2.00e-04
+     <   12 A   0.6635  0.6870  0.6061   common n= 156   p=2.04e-03
+     <   15 A   0.6364  0.6618  0.5502   common n= 178   p=4.81e-04
+     <   20 A   0.6017  0.6166  0.4713   common n= 216   p=1.81e-02
+
+D. metal_coordination POSITION INDEPENDENCE (PandaMap 4.1.0 detection defect)
+   6296 rows over 1662 poses in 121 complexes
+   complexes where EVERY pose carries an identical metal key-set: 121/121
+   complexes where some profiled pose records NO metal contact: 0/121
+   poses beyond 20 A, split on whether the pose carries a metal contact:
+     metal=False n=  335  mean F1 0.0012  share scoring exactly zero  98.2%  recovering any native contact    6
+     metal=True  n=  233  mean F1 0.1419  share scoring exactly zero   0.0%  recovering any native contact  233
+
+   effect of the two detection defects on the published top-5 union Jaccard:
+     published                   0.5391  0.5722  0.4030   p(DD vs AD) = 0.0108 on the common n=264 (0.0265 pairwise n=300)
+     charged classes collapsed   0.5405  0.5738  0.4053   p(DD vs AD) = 0.0101 on the common n=264 (0.0241 pairwise n=300)
+     metal class dropped         0.5308  0.5642  0.3894   p(DD vs AD) = 0.0126 on the common n=264 (0.0308 pairwise n=300)
+     both repaired               0.5320  0.5655  0.3913   p(DD vs AD) = 0.0115 on the common n=264 (0.0275 pairwise n=300)
+
+wrote pandamap_results/benchmark_matched_equibind_nearest/report/interaction_pose_basis_audit.txt
+wrote pandamap_results/benchmark_matched_equibind_nearest/report/interaction_pose_basis_audit.csv
+== bench_interaction_audit exit 0 after 7.4 s
+
+== bench_diffdock_rerank ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/diffdock_gnina_rerank_analysis.py \
+    --tool smina \
+    --per-pose-metrics posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv \
+    --out-dir PoseBusters_Benchmark_Analysis/smina_rerank_nearest
+[ranking] 423 complexes, 12,609 smina poses
+[selection] 303 complexes with a crystal reference
+[selection] Cochran Q p=0.003 (paired across 4 strategies)
+wrote CSVs + figures to PoseBusters_Benchmark_Analysis/smina_rerank_nearest
+== bench_diffdock_rerank exit 0 after 5.2 s
+
+== bench_metal_stratum ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/metal_stratum.py \
+    --benchmark-dir 'Data/PoseBuster Benchmark Set' \
+    --ids-file posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/analysed_cohort_ids.txt \
+    --per-pose-csv posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv \
+    --out-dir posebusters_results/metal_stratum_nearest \
+    --arms autodock_mgltools_exh128_gnina diffdock_smina equibind_unguided_gnina \
+    --cutoffs 4 5 6 \
+    --overwrite
+ids: 303 (posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/analysed_cohort_ids.txt)
+  geometry 50/303
+  geometry 100/303
+  geometry 150/303
+  geometry 200/303
+  geometry 250/303
+  geometry 300/303
+  geometry 303/303
+metal-adjacent counts: {'4A': 73, '5A': 78, '6A': 81}
+copy-dependent complexes at primary cutoff: ['7JHQ_VAJ', '7TB0_UD1']
+
+[reference] recovery at 5A
+stratum                               metal_adjacent  metal_free
+arm                            depth                            
+autodock_mgltools_exh128_gnina 1                34.0       115.0
+                               15               53.0       160.0
+                               30               53.0       161.0
+diffdock_smina                 1                21.0       111.0
+                               15               38.0       141.0
+                               30               38.0       145.0
+equibind_unguided_gnina        1                16.0        41.0
+                               15               20.0        63.0
+                               30               20.0        63.0
+ depth        stratum                            arm                   arm_b   k_a   k_b    diff_pp  n_a_only  n_b_only    p_mcnemar
+     1     metal_free autodock_mgltools_exh128_gnina          diffdock_smina 115.0 111.0  -1.777778      49.0      45.0 7.571891e-01
+     1 metal_adjacent autodock_mgltools_exh128_gnina          diffdock_smina  34.0  21.0 -16.666667      24.0      11.0 4.095959e-02
+     1     metal_free autodock_mgltools_exh128_gnina equibind_unguided_gnina 115.0  41.0 -32.888889      88.0      14.0 2.775388e-14
+     1 metal_adjacent autodock_mgltools_exh128_gnina equibind_unguided_gnina  34.0  16.0 -23.076923      24.0       6.0 1.430906e-03
+     1     metal_free                 diffdock_smina equibind_unguided_gnina 111.0  41.0 -31.111111      78.0       8.0 1.523583e-15
+     1 metal_adjacent                 diffdock_smina equibind_unguided_gnina  21.0  16.0  -6.410256      16.0      11.0 4.420683e-01
+    15     metal_free autodock_mgltools_exh128_gnina          diffdock_smina 160.0 141.0  -8.444444      54.0      35.0 5.577833e-02
+    15 metal_adjacent autodock_mgltools_exh128_gnina          diffdock_smina  53.0  38.0 -19.230769      28.0      13.0 2.753316e-02
+    15     metal_free autodock_mgltools_exh128_gnina equibind_unguided_gnina 160.0  63.0 -43.111111     109.0      12.0 9.869699e-21
+    15 metal_adjacent autodock_mgltools_exh128_gnina equibind_unguided_gnina  53.0  20.0 -42.307692      35.0       2.0 1.024455e-08
+    15     metal_free                 diffdock_smina equibind_unguided_gnina 141.0  63.0 -34.666667      89.0      11.0 2.540853e-16
+    15 metal_adjacent                 diffdock_smina equibind_unguided_gnina  38.0  20.0 -23.076923      26.0       8.0 2.935056e-03
+    30     metal_free autodock_mgltools_exh128_gnina          diffdock_smina 161.0 145.0  -7.111111      51.0      35.0 1.052254e-01
+    30 metal_adjacent autodock_mgltools_exh128_gnina          diffdock_smina  53.0  38.0 -19.230769      28.0      13.0 2.753316e-02
+    30     metal_free autodock_mgltools_exh128_gnina equibind_unguided_gnina 161.0  63.0 -43.555556     110.0      12.0 5.467316e-21
+    30 metal_adjacent autodock_mgltools_exh128_gnina equibind_unguided_gnina  53.0  20.0 -42.307692      35.0       2.0 1.024455e-08
+    30     metal_free                 diffdock_smina equibind_unguided_gnina 145.0  63.0 -36.444444      93.0      11.0 2.486625e-17
+    30 metal_adjacent                 diffdock_smina equibind_unguided_gnina  38.0  20.0 -23.076923      26.0       8.0 2.935056e-03
+
+wrote posebusters_results/metal_stratum_nearest/{metal_stratum.csv, metal_stratum_summary.json, metal_stratum_contrasts.csv}
+== bench_metal_stratum exit 0 after 6.3 s
+
+== bench_itt ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/nearest_copy_program/itt_dropped_complexes.py \
+    --out-dir posebusters_results/itt_nearest \
+    --per-pose-csv posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv
+/home/manndo/anaconda3/envs/vina/lib/python3.12/site-packages/MDAnalysis/topology/tables.py:52: DeprecationWarning: Deprecated in version 2.8.0
+MDAnalysis.topology.tables has been moved to MDAnalysis.guesser.tables. This import point will be removed in MDAnalysis version 3.0.0
+  warnings.warn(wmsg, category=DeprecationWarning)
+[7B2C_TP7] scoring
+[7D6O_MTE] scoring
+[7FRX_O88] scoring
+[7M31_TDR] scoring
+[8F4J_PHO] scoring
+
+ protein  n_copies  rank1_rmsd_ref_instance  rank1_rmsd_nearest  top15_min_rmsd_ref_instance  top15_min_rmsd_nearest  all_min_rmsd_ref_instance  all_min_rmsd_nearest  all_min_rmsd_nearest_rank
+7B2C_TP7         2                    46.57               19.21                        15.46                   15.25                      15.46                 15.25                         15
+7D6O_MTE         2                    43.19               43.19                        34.90                   27.22                      26.26                 26.26                         27
+7FRX_O88         4                    80.75                6.26                        45.99                    2.14                      27.88                  2.14                          5
+7M31_TDR         4                    71.09                6.43                         6.41                    6.41                       6.41                  6.41                          2
+8F4J_PHO         4                    81.85               15.08                        23.18                   15.08                       3.22                  1.54                         28
+
+[nearest] 303: {'autodock_rank1': 149, 'diffdock_rank1': 132, 'autodock_top15': 213, 'diffdock_top15': 179, 'n': 303}  dropped recovered: {'rank1': 0, 'top15': 0, 'all_poses': 1}
+[nearest] 308: {'autodock_rank1': 149, 'diffdock_rank1': 132, 'autodock_top15': 213, 'diffdock_top15': 179, 'n': 308}  margins pp 308: {'rank1': 5.52, 'top15': 11.04}  (303: {'rank1': 5.61, 'top15': 11.22})
+[nearest] closest rank-1 6.26 A (7FRX_O88), top-15 2.14 A (7FRX_O88), all 1.54 A (8F4J_PHO rank 28)
+
+[instance] 303: {'autodock_rank1': 111, 'diffdock_rank1': 103, 'autodock_top15': 198, 'diffdock_top15': 167, 'n': 303}  dropped recovered: {'rank1': 0, 'top15': 0, 'all_poses': 0}
+[instance] 308: {'autodock_rank1': 111, 'diffdock_rank1': 103, 'autodock_top15': 198, 'diffdock_top15': 167, 'n': 308}  margins pp 308: {'rank1': 2.6, 'top15': 10.06}  (303: {'rank1': 2.64, 'top15': 10.23})
+[instance] closest rank-1 43.19 A (7D6O_MTE), top-15 6.41 A (7M31_TDR), all 3.22 A (8F4J_PHO rank 21)
+
+wrote posebusters_results/itt_nearest/itt_dropped_poses.csv
+wrote posebusters_results/itt_nearest/itt_dropped_complexes.csv
+wrote posebusters_results/itt_nearest/itt_summary.json
+== bench_itt exit 0 after 2.0 s
+
+== bench_reference_convention ==
+/home/manndo/anaconda3/envs/vina/bin/python Scripts/Analysis/nearest_copy_program/reference_convention_table.py \
+    --per-pose-csv posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report_nearest/per_pose_metrics.csv \
+    --out-dir posebusters_results/reference_convention_nearest
+complexes 303, multi-copy 138, single-copy 165; 308 basis: {'n_ids': 308, 'n_read': 308, 'multi_copy': 143, 'single_copy': 165}
+                           arm  depth  recovered_nearest  recovered_instance  gain  form_complexes_nearest  form_complexes_instance  combined_complexes_nearest  combined_complexes_instance
+autodock_mgltools_exh128_gnina      1                149                 111    38                     161                      161                         122                           88
+autodock_mgltools_exh128_gnina      5                200                 184    16                     206                      206                         164                          148
+autodock_mgltools_exh128_gnina     15                213                 198    15                     219                      220                         175                          160
+autodock_mgltools_exh128_gnina     30                214                 199    15                     227                      227                         175                          160
+                diffdock_smina      1                132                 103    29                     162                      162                          98                           76
+                diffdock_smina      5                160                 144    16                     205                      207                         130                          115
+                diffdock_smina     15                179                 167    12                     225                      226                         144                          133
+                diffdock_smina     30                183                 169    14                     236                      237                         148                          138
+       equibind_unguided_gnina      1                 57                  55     2                     108                      107                          38                           37
+       equibind_unguided_gnina      5                 76                  73     3                     150                      148                          52                           51
+       equibind_unguided_gnina     15                 83                  80     3                     183                      182                          57                           55
+       equibind_unguided_gnina     30                 83                  80     3                     199                      200                          57                           55
+                           arm  depth     stratum  n_complexes  recovered_nearest  recovered_instance  gain
+autodock_mgltools_exh128_gnina      1 single_copy          165                 88                  88     0
+autodock_mgltools_exh128_gnina      1  multi_copy          138                 61                  23    38
+autodock_mgltools_exh128_gnina      5 single_copy          165                114                 114     0
+autodock_mgltools_exh128_gnina      5  multi_copy          138                 86                  70    16
+autodock_mgltools_exh128_gnina     15 single_copy          165                122                 122     0
+autodock_mgltools_exh128_gnina     15  multi_copy          138                 91                  76    15
+autodock_mgltools_exh128_gnina     30 single_copy          165                123                 123     0
+autodock_mgltools_exh128_gnina     30  multi_copy          138                 91                  76    15
+                diffdock_smina      1 single_copy          165                 80                  80     0
+                diffdock_smina      1  multi_copy          138                 52                  23    29
+                diffdock_smina      5 single_copy          165                 98                  98     0
+                diffdock_smina      5  multi_copy          138                 62                  46    16
+                diffdock_smina     15 single_copy          165                109                 109     0
+                diffdock_smina     15  multi_copy          138                 70                  58    12
+                diffdock_smina     30 single_copy          165                111                 111     0
+                diffdock_smina     30  multi_copy          138                 72                  58    14
+       equibind_unguided_gnina      1 single_copy          165                 53                  53     0
+       equibind_unguided_gnina      1  multi_copy          138                  4                   2     2
+       equibind_unguided_gnina      5 single_copy          165                 69                  69     0
+       equibind_unguided_gnina      5  multi_copy          138                  7                   4     3
+       equibind_unguided_gnina     15 single_copy          165                 76                  76     0
+       equibind_unguided_gnina     15  multi_copy          138                  7                   4     3
+       equibind_unguided_gnina     30 single_copy          165                 76                  76     0
+       equibind_unguided_gnina     30  multi_copy          138                  7                   4     3
+ depth convention   n  autodock  diffdock  margin_pp  autodock_only  diffdock_only  mcnemar_p  newcombe_lo_pp  newcombe_hi_pp
+     1    nearest 303       149       132       5.61             73             56   0.158654           -1.71           12.84
+     1   instance 303       111       103       2.64             60             52   0.508513           -4.18            9.43
+     5    nearest 303       200       160      13.20             88             48   0.000763            5.74           20.45
+     5   instance 303       184       144      13.20             88             48   0.000763            5.74           20.44
+    15    nearest 303       213       179      11.22             82             48   0.003634            3.91           18.37
+    15   instance 303       198       167      10.23             82             51   0.009030            2.82           17.48
+    30    nearest 303       214       183      10.23             79             48   0.007520            2.99           17.32
+    30   instance 303       199       169       9.90             81             51   0.011315            2.52           17.13
+wrote posebusters_results/reference_convention_nearest/reference_convention_sensitivity.csv
+wrote posebusters_results/reference_convention_nearest/reference_convention_margins.csv
+wrote posebusters_results/reference_convention_nearest/reference_convention_sensitivity.tex
+wrote posebusters_results/reference_convention_nearest/reference_convention_summary.json
+== bench_reference_convention exit 0 after 1.4 s

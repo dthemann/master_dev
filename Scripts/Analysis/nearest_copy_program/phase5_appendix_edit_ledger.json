@@ -1,0 +1,492 @@
+[
+ {
+  "label": ":165 rule wording, D4 crossover, 16/62 split",
+  "old": "In 78 of the 303 analysed entries a metal ion or a metal-containing cofactor lies within 5\\angstrom{} of a crystal-ligand heavy atom, most often magnesium, zinc or iron. Fifteen of the 78 involve a metal-bearing cofactor such as haem, an iron-sulfur cluster or cobalamin, and the remaining 63 involve a free ion.",
+  "new": "In 78 of the 303 analysed entries a residue carrying a metal ion or a metal-containing cofactor has an atom within 5\\angstrom{} of a heavy atom of the deposited reference instance of the ligand, most often magnesium, zinc or iron. Membership is a property of the complex and does not follow the copy a pose is scored against, so one AutoDock rank-1 success (7JHQ\\_VAJ, scored against a copy that has no metal within 39\\angstrom{} while the reference instance has a sodium ion at 2.4\\angstrom{}) counts as metal-adjacent, and no success of any selected variant runs the other way. Sixteen of the 78 involve a metal-bearing cofactor such as haem, an iron-sulfur cluster or cobalamin, and the remaining 62 involve a free ion."
+ },
+ {
+  "label": ":165 rank-1 stratum rates",
+  "old": "Rank-1 recovery is 37.8\\% for AutoDock and 39.6\\% for DiffDock on the 225 metal-free complexes, against 33.3\\% and 17.9\\% on the 78 metal-adjacent ones.",
+  "new": "Rank-1 recovery is 51.1\\% for AutoDock and 49.3\\% for DiffDock on the 225 metal-free complexes, against 43.6\\% and 26.9\\% on the 78 metal-adjacent ones."
+ },
+ {
+  "label": ":165 top-15 stratum contrasts",
+  "old": "is \\ensuremath{-}6.7 percentage points on the metal-free stratum (134 against 149 of 225, exact McNemar p = 0.142) and \\ensuremath{-}20.5 points on the metal-adjacent stratum (33 against 49 of 78, p = 0.020).",
+  "new": "is \\ensuremath{-}8.4 percentage points on the metal-free stratum (141 against 160 of 225, exact McNemar p = 0.056) and \\ensuremath{-}19.2 points on the metal-adjacent stratum (38 against 53 of 78, p = 0.028)."
+ },
+ {
+  "label": ":165 Fisher",
+  "old": "(Fisher\\textquotesingle s exact test on the discordant pairs p = 0.256)",
+  "new": "(Fisher\\textquotesingle s exact test on the discordant pairs p = 0.440)"
+ },
+ {
+  "label": ":165 failure shares",
+  "old": "On the metal-free stratum 53.6\\% of AutoDock and 65.4\\% of DiffDock rank-1 failures hold no qualifying pose at any depth, and on the metal-adjacent stratum the shares are 55.8\\% and 70.3\\%.",
+  "new": "On the metal-free stratum 58.2\\% of AutoDock and 70.2\\% of DiffDock rank-1 failures hold no qualifying pose at any depth, and on the metal-adjacent stratum the shares are 56.8\\% and 70.2\\%."
+ },
+ {
+  "label": ":165 distance-rule sensitivity",
+  "old": "with stratum contrasts of \\ensuremath{-}7.4 and \\ensuremath{-}19.2 points and of \\ensuremath{-}6.3 and \\ensuremath{-}21.0 points.",
+  "new": "with stratum contrasts of \\ensuremath{-}9.1 and \\ensuremath{-}17.8 points and of \\ensuremath{-}8.1 and \\ensuremath{-}19.8 points."
+ },
+ {
+  "label": ":167 box sentence (W31)",
+  "old": "No further padding is applied. Over the 303 analysed receptors",
+  "new": "No further padding is applied, and every deposited copy of the ligand lies inside the box. Over the 303 analysed receptors"
+ },
+ {
+  "label": ":173 heads rank-1 and discordance",
+  "old": "Ordering the rescored pose set by CNNaffinity recovers 111 of the 303 complexes at rank-1, or 36.6\\%. Ordering the same poses by gnina\\textquotesingle s default CNNscore recovers 112, or 37.0\\%, and ordering them by the minimised Vina energy recovers 90, or 29.7\\%. The two convolutional heads return a different rank-1 verdict on 31 complexes, 15 favouring CNNaffinity and 16 favouring CNNscore, and the paired contrast is not resolved (exact McNemar p = 1.000).",
+  "new": "Ordering the rescored pose set by CNNaffinity recovers 149 of the 303 complexes at rank-1, or 49.2\\%. Ordering the same poses by gnina\\textquotesingle s default CNNscore recovers 152, or 50.2\\%, and ordering them by the minimised Vina energy recovers 128, or 42.2\\%. The two convolutional heads return a different rank-1 verdict on 31 complexes, 14 favouring CNNaffinity and 17 favouring CNNscore, and the paired contrast is not resolved (exact McNemar p = 0.720)."
+ },
+ {
+  "label": ":173 heads gap and depth",
+  "old": "beat the minimised empirical energy by about seven percentage points at rank-1. The effect is largely confined to the top of the ranking. At top-15 the three heads recover 198, 197 and 190 complexes, and at top-30 all three recover the same 199.",
+  "new": "beat the minimised empirical energy by seven to eight percentage points at rank-1. The effect is largely confined to the top of the ranking. At top-15 the three heads recover 213, 213 and 202 complexes, and at top-30 all three recover the same 214."
+ },
+ {
+  "label": ":182 selection paragraph (W32, D14)",
+  "old": "At top-15 the selected arm recovers 198 of 303 complexes and beats each of the seven alternatives on an exact McNemar test, with Holm-adjusted p-values running from 2e-21 against exhaustiveness 18 to 0.007 against its own raw search. It leads at every depth from top-3 to top-22. At rank-1 only two of the seven contrasts survive correction and the arm ties with exhaustiveness 64 rescored, at 111 against 110. Over the full thirty-pose pool the raw exhaustiveness-128 arm is nominally ahead, 202 against 199, because rescoring minimises poses and a few cross the threshold the wrong way. The selected arm is therefore the best configuration at the depth a user inspects rather than at every depth. On the three-part endpoint the Results use for selection the same ordering holds, at 160 complexes against 152 for its own raw search and 95 at exhaustiveness 18, with Holm-adjusted p-values from 6e-18 to 0.039 over the same family. That family is the seven contrasts against the selected arm, and the step over raw exhaustiveness 128 is the one contrast that would not survive a correction taken over all twenty-eight pairs of the ladder.",
+  "new": "At top-15 the selected arm recovers 213 of 303 complexes and beats each of the seven alternatives on an exact McNemar test, with Holm-adjusted p-values running from 7.3e-20 against exhaustiveness 18 to 0.005 against its own raw search and against exhaustiveness 64 rescored. It leads strictly at every depth from rank-1 to top-25 and ties at top-26. At rank-1 six of the seven contrasts survive correction within this seven-contrast family. The one that does not is the contrast with exhaustiveness 64 rescored, where the arm leads nominally at 149 against 141 on 16 against 8 discordant complexes (exact p = 0.15) and the ordering is unresolved. Over the full thirty-pose pool the raw exhaustiveness-128 arm is nominally ahead, 217 against 214, because rescoring minimises poses and a few cross the threshold the wrong way. The selected arm is therefore the best configuration at every depth a user is likely to inspect, and the raw search overtakes it only over the whole pool. On the three-part endpoint the Results use for selection the same ordering holds, at 175 complexes against 166 for its own raw search and 110 at exhaustiveness 18, with Holm-adjusted p-values from 6.5e-18 to 0.023 over the same family. That family is the seven contrasts against the selected arm, and the steps over raw exhaustiveness 128 and over exhaustiveness 64 rescored are the two contrasts that would not survive a correction taken over all twenty-eight pairs of the ladder."
+ },
+ {
+  "label": ":184 two components",
+  "old": "raising exhaustiveness from 32 to 128 moves top-15 recovery from 154 to 198 complexes. Holding exhaustiveness fixed at 128, adding rescoring moves it from 185 to 198, gaining 17 complexes and losing 4.",
+  "new": "raising exhaustiveness from 32 to 128 moves top-15 recovery from 170 to 213 complexes. Holding exhaustiveness fixed at 128, adding rescoring moves it from 198 to 213, gaining 19 complexes and losing 4."
+ },
+ {
+  "label": ":184 parent Vina order",
+  "old": "recover 93 complexes at rank-1 and 183 at top-15, below the raw search at 94 and 185,",
+  "new": "recover 129 complexes at rank-1 and 196 at top-15, below the raw search at 130 and 198,"
+ },
+ {
+  "label": ":195 Fig 19 caption (W33)",
+  "old": "and the top step is worth three complexes at rank-1 but does not become individually resolvable until about depth 22}",
+  "new": "and the top step is worth seven complexes at rank-1 on the near-nativeness gate, where it is already individually resolvable at an unadjusted p of 0.039, and six on the three-part gate, where it first resolves at depth 2}"
+ },
+ {
+  "label": ":218-225 Table 8 rows",
+  "old": "Exhaustiveness 18 & 72 & 108 & 121 & 125 & 2e\\ensuremath{-}21 & 2.14 \\\\\nExhaustiveness 32 & 85 & 130 & 148 & 154 & 5e\\ensuremath{-}12 & 2.56 \\\\\n\\quad + gnina rescoring & 100 & 144 & 154 & 154 & 2e\\ensuremath{-}09 & 2.56 \\\\\nExhaustiveness 64 & 94 & 145 & 175 & 182 & 1.4e\\ensuremath{-}04 & 3.14 \\\\\n\\quad + gnina rescoring & 110 & 169 & 182 & 182 & 0.0026 & 3.14 \\\\\nExhaustiveness 92 & 91 & 150 & 182 & 194 & 0.0031 & 4.84 \\\\\nExhaustiveness 128 & 94 & 153 & 185 & 202 & 0.0072 & 4.73 \\\\\n\\quad + gnina, selected & 111 & 184 & 198 & 199 & --- & 4.73 \\\\",
+  "new": "Exhaustiveness 18 & 92 & 127 & 138 & 143 & 7.3e\\ensuremath{-}20 & 2.14 \\\\\nExhaustiveness 32 & 109 & 147 & 161 & 170 & 1.4e\\ensuremath{-}12 & 2.56 \\\\\n\\quad + gnina rescoring & 129 & 160 & 170 & 170 & 9.1e\\ensuremath{-}09 & 2.56 \\\\\nExhaustiveness 64 & 123 & 162 & 190 & 201 & 1.4e\\ensuremath{-}04 & 3.14 \\\\\n\\quad + gnina rescoring & 141 & 187 & 200 & 200 & 0.0052 & 3.14 \\\\\nExhaustiveness 92 & 123 & 164 & 194 & 209 & 9.3e\\ensuremath{-}04 & 4.84 \\\\\nExhaustiveness 128 & 130 & 170 & 198 & 217 & 0.0052 & 4.73 \\\\\n\\quad + gnina, selected & 149 & 200 & 213 & 214 & --- & 4.73 \\\\"
+ },
+ {
+  "label": ":227 Table 8 footnote (W34)",
+  "old": "Complexes of 303 with at least one pose that is PoseBusters-valid and within 2\\angstrom{} among the first d ranks.",
+  "new": "Complexes of 303 with at least one pose that is PoseBusters-valid and within 2\\angstrom{} of the nearest deposited copy of the ligand among the first d ranks."
+ },
+ {
+  "label": ":230 D10 confirmatory cell kept on instance, nearest sentence added (W35)",
+  "old": "In absolute terms the five rungs recover 98, 128, 149, 159 and 164 complexes, so the first step adds thirty and the last adds five.",
+  "new": "In absolute terms the five rungs recover 98, 128, 149, 159 and 164 complexes, so the first step adds thirty and the last adds five. Those counts and the confirmatory interval above are kept on the single deposited instance on which the cell was fixed in advance. Scored against the nearest deposited copy the same rungs recover 115, 143, 166, 172 and 178 complexes, so the first step adds twenty-eight and the last six, the three measurable steps return +66.8, +39.3 and +3.5 complexes per hour, and the first-to-last contrast is +62.4 per hour with a 95\\% interval of +32.0 to +133.3."
+ },
+ {
+  "label": ":244 top step",
+  "old": "Exhaustiveness 92 to 128 adds five complexes over the pool and three at rank-1, but its measured wall-time delta",
+  "new": "Exhaustiveness 92 to 128 adds six complexes over the pool and six at rank-1 when scored against the nearest deposited copy, but its measured wall-time delta"
+ },
+ {
+  "label": ":246 plateau argument rewritten (W36)",
+  "old": "Two things follow, and a third does not. Returns diminish sharply and monotonically, the last measurable step costing about ten minutes of wall time per additional complex against about one minute for the first. The ceiling that remains is also a ranking ceiling rather than a sampling one. Measured on placement alone, without the validity requirement the ladder table imposes, raw rank-1 recovery tops out at 95 complexes anywhere above exhaustiveness 64, while rescoring lifts it to 113 and doubling the pool beneath the rescorer leaves it at exactly 113. Extra sampling keeps finding poses that the empirical function then fails to promote.",
+  "new": "One thing follows, one follows in part, and a third does not. Returns diminish sharply and monotonically, the last measurable step costing about seventeen minutes of wall time per additional complex against about one minute for the first. The ceiling that remains is only partly a ranking ceiling. Measured on placement alone, without the validity requirement the ladder table imposes, raw rank-1 recovery is 124 complexes at exhaustiveness 64 and 92 and 131 at 128, while rescoring lifts the two rescored rungs to 144 and 151, so doubling the pool beneath the rescorer still adds seven complexes at rank-1. Extra sampling keeps finding poses that the empirical function fails to promote, and the rescorer promotes a part of what the harder search finds."
+ },
+ {
+  "label": ":267 pocket-guided EquiBind (W37)",
+  "old": "the unguided arms recover 2, 46 and 55 complexes of 303 taken raw, with smina and with gnina, against 0, 7 and 14 under fpocket and 0, 5 and 18 under P2Rank, so the best guided configuration trails the selected unguided one by 37 complexes. Near-native recovery over the full thirty-pose pool separates them the same way, at 19, 64 and 83 complexes unguided against 0, 14 and 24 and 0, 18 and 35, both raw guided arms recovering no near-native complex at all.",
+  "new": "the unguided arms recover 2, 48 and 57 complexes of 303 taken raw, with smina and with gnina, against 0, 10 and 20 under fpocket and 0, 9 and 23 under P2Rank, so the best guided configuration trails the selected unguided one by 34 complexes. Near-native recovery over the full thirty-pose pool separates them the same way, at 19, 67 and 86 complexes unguided against 0, 19 and 32 and 1, 28 and 43, the fpocket raw arm recovering no near-native complex and the P2Rank raw arm one."
+ },
+ {
+  "label": ":267 form range",
+  "old": "between 180 and 200 complexes across all nine configurations",
+  "new": "between 179 and 199 complexes across all nine configurations"
+ },
+ {
+  "label": ":276 accuracy definition (W38)",
+  "old": "and geometric accuracy was scored as the symmetry-corrected heavy-atom RMSD to the crystal ligand.",
+  "new": "and geometric accuracy was scored as the symmetry-corrected heavy-atom RMSD to the nearest deposited copy of the crystal ligand."
+ },
+ {
+  "label": ":487 load_all clause (W39)",
+  "old": "It is kept off the validity axis here because near-nativeness is gated separately.",
+  "new": "It is kept off the validity axis here because near-nativeness is gated separately. That test loads every deposited instance of the ligand and reports the lowest RMSD, which is the copy rule the Methods adopt."
+ },
+ {
+  "label": ":543 profiled pool (W40a)",
+  "old": "being 4,253 poses over 303 complexes with a median deviation of 7.57\\angstrom{} from the crystal ligand and 21.3\\% of poses within 2\\angstrom{}.",
+  "new": "being 4,253 poses over 303 complexes with a median deviation of 5.01\\angstrom{} from the nearest deposited copy of the crystal ligand and 26.9\\% of poses within 2\\angstrom{}."
+ },
+ {
+  "label": ":543 standardised F1, placement share, ordering sentence",
+  "old": "from 0.565, 0.529 and 0.471 to 0.532, 0.527 and 0.513. Roughly four fifths of the separation between the tools is therefore how often each reaches the site rather than which contacts it forms once there, a share running from 80 to 87\\% across band schemes of three to fourteen strata. The AutoDock Vina and DiffDock standardised values swap under finer banding and carry no ordering between them.",
+  "new": "from 0.732, 0.694 and 0.499 to 0.667, 0.647 and 0.628. Roughly four fifths of the separation between the tools is therefore how often each reaches the site rather than which contacts it forms once there, a share running from 82 to 89\\% across band schemes of three to fourteen strata. The standardised ordering, AutoDock Vina above DiffDock above EquiBind, holds at every banding, although the spread between the tools shrinks from 0.233 to 0.039."
+ },
+ {
+  "label": ":543 site filter",
+  "old": "Restricting the fingerprint to poses within 10\\angstrom{} of the crystal ligand, which removes poses placed away from the native site without applying the 2\\angstrom{} near-native criterion, raises the mean top-five union overlap to 0.683 over 257 complexes for AutoDock Vina, 0.714 over 240 for DiffDock and 0.629 over 155 for EquiBind, and moves the DiffDock lead over AutoDock Vina from p = 0.014 to p = 5.7e-5 on the shared cohort.",
+  "new": "Restricting the fingerprint to poses within 10\\angstrom{} of the nearest deposited copy of the crystal ligand, which removes poses placed away from the native site without applying the 2\\angstrom{} near-native criterion, raises the mean top-five union overlap to 0.676 over 274 complexes for AutoDock Vina, 0.706 over 262 for DiffDock and 0.623 over 166 for EquiBind, and moves the DiffDock lead over AutoDock Vina from p = 0.011 to p = 2.0e-4 on the shared cohort."
+ },
+ {
+  "label": ":543 site filter discards",
+  "old": "namely 44, 60 and 111, and it lifts the share of poses within 2\\angstrom{} from 21.3 to 38.1\\%.",
+  "new": "namely 27, 38 and 100, and it lifts the share of poses within 2\\angstrom{} from 26.9 to 38.8\\%."
+ },
+ {
+  "label": ":549 metal far field",
+  "old": "Among poses beyond 20\\angstrom{} from the crystal ligand, those carrying no metal contact recover a mean F1 of 0.0003 and only three of 750 recover any native contact at all, whereas those carrying one recover 0.1112 and not one of the 515 scores zero.",
+  "new": "Among poses beyond 20\\angstrom{} from the nearest deposited copy of the crystal ligand, those carrying no metal contact recover a mean F1 of 0.0012 and only six of 335 recover any native contact at all, whereas those carrying one recover 0.1419 and not one of the 233 scores zero."
+ },
+ {
+  "label": ":549 defect effect on overlap",
+  "old": "from 0.417, 0.450 and 0.380 to 0.407, 0.440 and 0.366, and repairing both this and the charged duplication leaves 0.408, 0.440 and 0.367. On the shared cohort the Results chapter reports, the DiffDock lead over AutoDock Vina moves from p = 0.014 to 0.017 with the metal class removed and to 0.016 with both repaired.",
+  "new": "from 0.539, 0.572 and 0.403 to 0.531, 0.564 and 0.389, and repairing both this and the charged duplication leaves 0.532, 0.566 and 0.391. On the shared cohort the Results chapter reports, the DiffDock lead over AutoDock Vina moves from p = 0.011 to 0.013 with the metal class removed and to 0.012 with both repaired."
+ },
+ {
+  "label": ":551 per-copy crystal fingerprint and union rule (W40b)",
+  "old": "with each tool\\textquotesingle s own docking receptor, which relabels residues without moving any atom. A pose that yields no contact",
+  "new": "with each tool\\textquotesingle s own docking receptor, which relabels residues without moving any atom. The crystal fingerprint is computed for every deposited copy of the ligand on that receptor, and each pose is scored against the copy it lies nearest to, because a pose placed at an alternate copy would otherwise be scored against the residues of a site it does not occupy. A top-five union is scored against the union of the fingerprints of the copies its poses are nearest to. A pose that yields no contact"
+ },
+ {
+  "label": ":664 footnote file roles (A6, Part B clause)",
+  "old": "namely the receptor stripped of solvent but retaining its cofactors (*\\_protein.pdb), all crystallographic instances of the ligand of interest (*\\_ligands.sdf), the single chosen crystal instance that serves as the ground-truth answer pose (*\\_ligand.sdf),",
+  "new": "namely the protein structure without the ligand of interest, without solvent and with all cofactors (*\\_protein.pdb), all crystallographic instances of the ligand of interest (*\\_ligands.sdf), one of those instances, which the benchmark supplies to mark the binding site for docking methods that require one and which is the first record of the multi-instance file (*\\_ligand.sdf),"
+ },
+ {
+  "label": ":666 convention paragraph (B2)",
+  "old": "Where a structure contains multiple crystallographic copies of the same ligand, the comparison is made against the single deposited reference instance rather than against the closest copy. The symmetry correction therefore resolves symmetry within that one instance and not equivalence between copies.",
+  "new": "In 143 of the 308 entries the deposited file holds more than one copy of the ligand, 138 of them among the 303 analysed complexes, and the nearest other copy lies a median 36.0\\angstrom{} from the reference over those 143. Every pose is scored against the nearest deposited copy, and the form, centroid and interaction references follow that copy. The source benchmark scored every method this way. Its 25\\angstrom{} cube centred on the reference kept almost every other copy outside Vina\\textquotesingle s search, whereas the whole-protein box used here contains every one of them, so the convention is live for all three tools in this study. The choice of copy can lower a form count where the copies differ in conformation, and it does so for one complex in each of five printed variants of Table~\\ref{tab:results-pose-production}. Four alternates do not share the reference pocket (7A9E\\_R4W, 7TUO\\_KL9, 7VKZ\\_NOJ, 7Z1Q\\_NIO) and no complex gains recovery through any of them."
+ },
+ {
+  "label": ":722 multi-copy share (W43)",
+  "old": "22\\% carry at least one halogen, and metal atoms are essentially absent from the ligand records.",
+  "new": "22\\% carry at least one halogen, and metal atoms are essentially absent from the ligand records. In 143 of the 308 entries, 46\\%, the deposited structure holds more than one copy of the ligand of interest, and 138 of those are among the 303 analysed complexes."
+ },
+ {
+  "label": ":784 D13 clause (W44)",
+  "old": "The best-fit (Kabsch) symmetry-corrected RMSD between this start conformer and the crystallographic pose is computed after optimal superposition, so it isolates conformational difference from placement.",
+  "new": "The best-fit (Kabsch) symmetry-corrected RMSD between this start conformer and the deposited reference instance of the crystallographic pose is computed after optimal superposition, so it isolates conformational difference from placement. It is a property of the start conformer and is not re-taken against the nearest copy."
+ },
+ {
+  "label": ":871 lead-in names the gate (A4)",
+  "old": "so the smina arm the Results select is printed beside the gnina one, at 34.0\\% and 34.3\\% rank-1 validity-aware recovery respectively. The following tables",
+  "new": "so the smina arm the Results select is printed beside the gnina one. Table~\\ref{tab:appendix-top-k-recovery} prints both gates, near-native placement alone and the validity-aware conjunction the Results use, and the two arms stand at 45.2\\% against 45.5\\% rank-1 on the first and at 43.6\\% against 44.2\\% on the second. Every paired test in this chapter is taken on the near-native gate alone. The following tables"
+ },
+ {
+  "label": ":893-920 Table 18 Wilson rows",
+  "old": "AutoDock Vina (raw) & 1 & 31.4 {[}26.4, 36.8{]} & 31.0 {[}26.1, 36.4{]} \\\\\n & 5 & 50.8 {[}45.2, 56.4{]} & 50.5 {[}44.9, 56.1{]} \\\\\n & 10 & 58.7 {[}53.1, 64.1{]} & 58.7 {[}53.1, 64.1{]} \\\\\n & 15 & 61.1 {[}55.5, 66.4{]} & 61.1 {[}55.5, 66.4{]} \\\\\nAutoDock Vina + gnina & 1 & 37.3 {[}32.0, 42.9{]} & 36.6 {[}31.4, 42.2{]} \\\\\n & 5 & 62.0 {[}56.5, 67.3{]} & 60.7 {[}55.1, 66.1{]} \\\\\n & 10 & 65.0 {[}59.5, 70.2{]} & 64.0 {[}58.5, 69.2{]} \\\\\n & 15 & 66.3 {[}60.8, 71.4{]} & 65.3 {[}59.8, 70.5{]} \\\\\nDiffDock (raw) & 1 & 33.7 {[}28.6, 39.2{]} & 18.2 {[}14.2, 22.9{]} \\\\\n & 5 & 44.6 {[}39.1, 50.2{]} & 25.4 {[}20.8, 30.6{]} \\\\\n & 10 & 48.2 {[}42.6, 53.8{]} & 28.7 {[}23.9, 34.0{]} \\\\\n & 15 & 49.8 {[}44.2, 55.4{]} & 31.0 {[}26.1, 36.4{]} \\\\\nDiffDock + smina & 1 & 35.3 {[}30.1, 40.8{]} & 34.0 {[}28.9, 39.5{]} \\\\\n & 5 & 48.8 {[}43.3, 54.5{]} & 47.5 {[}42.0, 53.1{]} \\\\\n & 10 & 53.5 {[}47.8, 59.0{]} & 52.5 {[}46.9, 58.0{]} \\\\\n & 15 & 56.1 {[}50.5, 61.6{]} & 55.1 {[}49.5, 60.6{]} \\\\\nDiffDock + gnina & 1 & 35.6 {[}30.5, 41.2{]} & 34.3 {[}29.2, 39.8{]} \\\\\n & 5 & 49.2 {[}43.6, 54.8{]} & 48.2 {[}42.6, 53.8{]} \\\\\n & 10 & 52.8 {[}47.2, 58.4{]} & 51.8 {[}46.2, 57.4{]} \\\\\n & 15 & 56.1 {[}50.5, 61.6{]} & 55.1 {[}49.5, 60.6{]} \\\\\nEquiBind (raw) & 1 & 1.3 {[}0.5, 3.3{]} & 0.7 {[}0.2, 2.4{]} \\\\\n & 5 & 3.0 {[}1.6, 5.5{]} & 0.7 {[}0.2, 2.4{]} \\\\\n & 10 & 4.0 {[}2.3, 6.8{]} & 0.7 {[}0.2, 2.4{]} \\\\\n & 15 & 5.9 {[}3.8, 9.2{]} & 0.7 {[}0.2, 2.4{]} \\\\\nEquiBind + gnina & 1 & 18.8 {[}14.8, 23.6{]} & 18.2 {[}14.2, 22.9{]} \\\\\n & 5 & 25.1 {[}20.5, 30.3{]} & 24.1 {[}19.6, 29.2{]} \\\\\n & 10 & 27.4 {[}22.7, 32.7{]} & 26.4 {[}21.8, 31.6{]} \\\\\n & 15 & 27.4 {[}22.7, 32.7{]} & 26.4 {[}21.8, 31.6{]} \\\\",
+  "new": "AutoDock Vina (raw) & 1 & 43.2 {[}37.8, 48.9{]} & 42.9 {[}37.5, 48.5{]} \\\\\n & 5 & 56.4 {[}50.8, 61.9{]} & 56.1 {[}50.5, 61.6{]} \\\\\n & 10 & 62.7 {[}57.1, 68.0{]} & 62.7 {[}57.1, 68.0{]} \\\\\n & 15 & 65.3 {[}59.8, 70.5{]} & 65.3 {[}59.8, 70.5{]} \\\\\nAutoDock Vina + gnina & 1 & 49.8 {[}44.2, 55.4{]} & 49.2 {[}43.6, 54.8{]} \\\\\n & 5 & 67.3 {[}61.9, 72.4{]} & 66.0 {[}60.5, 71.1{]} \\\\\n & 10 & 70.0 {[}64.6, 74.9{]} & 69.0 {[}63.6, 73.9{]} \\\\\n & 15 & 71.3 {[}66.0, 76.1{]} & 70.3 {[}64.9, 75.2{]} \\\\\nDiffDock (raw) & 1 & 43.6 {[}38.1, 49.2{]} & 22.1 {[}17.8, 27.1{]} \\\\\n & 5 & 50.2 {[}44.6, 55.8{]} & 30.4 {[}25.5, 35.8{]} \\\\\n & 10 & 52.1 {[}46.5, 57.7{]} & 32.7 {[}27.6, 38.1{]} \\\\\n & 15 & 52.8 {[}47.2, 58.4{]} & 34.0 {[}28.9, 39.5{]} \\\\\nDiffDock + smina & 1 & 45.2 {[}39.7, 50.8{]} & 43.6 {[}38.1, 49.2{]} \\\\\n & 5 & 54.1 {[}48.5, 59.6{]} & 52.8 {[}47.2, 58.4{]} \\\\\n & 10 & 57.8 {[}52.1, 63.2{]} & 56.8 {[}51.1, 62.2{]} \\\\\n & 15 & 60.1 {[}54.5, 65.4{]} & 59.1 {[}53.5, 64.5{]} \\\\\nDiffDock + gnina & 1 & 45.5 {[}40.0, 51.2{]} & 44.2 {[}38.7, 49.9{]} \\\\\n & 5 & 54.1 {[}48.5, 59.6{]} & 53.1 {[}47.5, 58.7{]} \\\\\n & 10 & 57.1 {[}51.5, 62.5{]} & 56.1 {[}50.5, 61.6{]} \\\\\n & 15 & 59.4 {[}53.8, 64.8{]} & 58.4 {[}52.8, 63.8{]} \\\\\nEquiBind (raw) & 1 & 1.3 {[}0.5, 3.3{]} & 0.7 {[}0.2, 2.4{]} \\\\\n & 5 & 3.0 {[}1.6, 5.5{]} & 0.7 {[}0.2, 2.4{]} \\\\\n & 10 & 4.0 {[}2.3, 6.8{]} & 0.7 {[}0.2, 2.4{]} \\\\\n & 15 & 5.9 {[}3.8, 9.2{]} & 0.7 {[}0.2, 2.4{]} \\\\\nEquiBind + gnina & 1 & 19.5 {[}15.4, 24.3{]} & 18.8 {[}14.8, 23.6{]} \\\\\n & 5 & 26.1 {[}21.5, 31.3{]} & 25.1 {[}20.5, 30.3{]} \\\\\n & 10 & 28.4 {[}23.6, 33.7{]} & 27.4 {[}22.7, 32.7{]} \\\\\n & 15 & 28.4 {[}23.6, 33.7{]} & 27.4 {[}22.7, 32.7{]} \\\\"
+ },
+ {
+  "label": ":947-962 Table 19 rows incl. star flips",
+  "old": "AutoDock Vina + gnina & 1 & 31.4 \\ensuremath{\\rightarrow} 37.3 & 21 / 39 & 0.0273 & 0.082 & ns \\\\\n & 5 & 50.8 \\ensuremath{\\rightarrow} 62.0 & 3 / 37 & \\textless1e-4 & \\textless1e-4 & *** \\\\\n & 10 & 58.7 \\ensuremath{\\rightarrow} 65.0 & 3 / 22 & 1.6e-4 & 0.00159 & ** \\\\\n & 15 & 61.1 \\ensuremath{\\rightarrow} 66.3 & 1 / 17 & 1.4e-4 & 0.00159 & ** \\\\\nDiffDock + smina & 1 & 33.7 \\ensuremath{\\rightarrow} 35.3 & 1 / 6 & 0.125 & 0.219 & ns \\\\\n & 5 & 44.6 \\ensuremath{\\rightarrow} 48.8 & 5 / 18 & 0.0106 & 0.0468 & * \\\\\n & 10 & 48.2 \\ensuremath{\\rightarrow} 53.5 & 5 / 21 & 0.00249 & 0.0175 & * \\\\\n & 15 & 49.8 \\ensuremath{\\rightarrow} 56.1 & 5 / 24 & 5.5e-4 & 0.00492 & ** \\\\\nDiffDock + gnina & 1 & 33.7 \\ensuremath{\\rightarrow} 35.6 & 2 / 8 & 0.109 & 0.219 & ns \\\\\n & 5 & 44.6 \\ensuremath{\\rightarrow} 49.2 & 5 / 19 & 0.00661 & 0.0397 & * \\\\\n & 10 & 48.2 \\ensuremath{\\rightarrow} 52.8 & 6 / 20 & 0.00936 & 0.0468 & * \\\\\n & 15 & 49.8 \\ensuremath{\\rightarrow} 56.1 & 6 / 25 & 8.8e-4 & 0.00702 & ** \\\\\nEquiBind + gnina & 1 & 1.3 \\ensuremath{\\rightarrow} 18.8 & 2 / 55 & \\textless1e-4 & \\textless1e-4 & *** \\\\\n & 5 & 3.0 \\ensuremath{\\rightarrow} 25.1 & 2 / 69 & \\textless1e-4 & \\textless1e-4 & *** \\\\\n & 10 & 4.0 \\ensuremath{\\rightarrow} 27.4 & 1 / 72 & \\textless1e-4 & \\textless1e-4 & *** \\\\\n & 15 & 5.9 \\ensuremath{\\rightarrow} 27.4 & 1 / 66 & \\textless1e-4 & \\textless1e-4 & *** \\\\",
+  "new": "AutoDock Vina + gnina & 1 & 43.2 \\ensuremath{\\rightarrow} 49.8 & 19 / 39 & 0.0119 & 0.0596 & ns \\\\\n & 5 & 56.4 \\ensuremath{\\rightarrow} 67.3 & 3 / 36 & \\textless1e-4 & \\textless1e-4 & *** \\\\\n & 10 & 62.7 \\ensuremath{\\rightarrow} 70.0 & 3 / 25 & \\textless1e-4 & 3.0e-4 & *** \\\\\n & 15 & 65.3 \\ensuremath{\\rightarrow} 71.3 & 1 / 19 & \\textless1e-4 & 4.0e-4 & *** \\\\\nDiffDock + smina & 1 & 43.6 \\ensuremath{\\rightarrow} 45.2 & 5 / 10 & 0.302 & 0.476 & ns \\\\\n & 5 & 50.2 \\ensuremath{\\rightarrow} 54.1 & 5 / 17 & 0.0169 & 0.0676 & ns \\\\\n & 10 & 52.1 \\ensuremath{\\rightarrow} 57.8 & 5 / 22 & 0.0015 & 0.0106 & * \\\\\n & 15 & 52.8 \\ensuremath{\\rightarrow} 60.1 & 5 / 27 & 1.1e-4 & 0.0010 & ** \\\\\nDiffDock + gnina & 1 & 43.6 \\ensuremath{\\rightarrow} 45.5 & 6 / 12 & 0.238 & 0.476 & ns \\\\\n & 5 & 50.2 \\ensuremath{\\rightarrow} 54.1 & 5 / 17 & 0.0169 & 0.0676 & ns \\\\\n & 10 & 52.1 \\ensuremath{\\rightarrow} 57.1 & 5 / 20 & 0.0041 & 0.0245 & * \\\\\n & 15 & 52.8 \\ensuremath{\\rightarrow} 59.4 & 5 / 25 & 3.2e-4 & 0.0026 & ** \\\\\nEquiBind + gnina & 1 & 1.3 \\ensuremath{\\rightarrow} 19.5 & 2 / 57 & \\textless1e-4 & \\textless1e-4 & *** \\\\\n & 5 & 3.0 \\ensuremath{\\rightarrow} 26.1 & 2 / 72 & \\textless1e-4 & \\textless1e-4 & *** \\\\\n & 10 & 4.0 \\ensuremath{\\rightarrow} 28.4 & 1 / 75 & \\textless1e-4 & \\textless1e-4 & *** \\\\\n & 15 & 5.9 \\ensuremath{\\rightarrow} 28.4 & 1 / 69 & \\textless1e-4 & \\textless1e-4 & *** \\\\"
+ },
+ {
+  "label": ":964 Table 19 footnote re-rank",
+  "old": "nominates a near-native rank-1 pose for 32.3\\% of complexes with gnina and 32.7\\% with smina, against the 33.7\\% of the confidence order.",
+  "new": "nominates a near-native rank-1 pose for 41.6\\% of complexes with gnina and 41.6\\% with smina, against the 43.6\\% of the confidence order."
+ },
+ {
+  "label": ":964 Table 19 footnote gains",
+  "old": "EquiBind starts at 1.3\\% and gains more than seventeen points at rank-1, AutoDock Vina starts at 31.4\\% and gains six, DiffDock starts at 33.7\\% and gains two. At the top-15 depth the ordering of the optimised arms, 66.3\\% for AutoDock Vina against 56.1\\% for both DiffDock refiners and 27.4\\% for EquiBind, repeats the ordering of the raw arms, so optimisation narrows the gaps without reversing them. The two DiffDock refiners are indistinguishable, reaching the same 56.1\\% at top-15 by way of 24 and 25 recovered complexes, which is why the Results chapter treats the choice between them as immaterial.",
+  "new": "EquiBind starts at 1.3\\% and gains more than eighteen points at rank-1, AutoDock Vina starts at 43.2\\% and gains nearly seven, DiffDock starts at 43.6\\% and gains two. At the top-15 depth the ordering of the optimised arms, 71.3\\% for AutoDock Vina against 60.1\\% and 59.4\\% for the two DiffDock refiners and 28.4\\% for EquiBind, repeats the ordering of the raw arms, so optimisation narrows the gaps without reversing them. The two DiffDock refiners are within one point of each other, reaching 60.1\\% and 59.4\\% at top-15 by way of 27 and 25 recovered complexes, which is why the Results chapter treats the choice between them as immaterial."
+ },
+ {
+  "label": ":992-997 Table 20 bands",
+  "old": "DiffDock & near-native & +0.6 & +0.7 & +0.1 & +0.1 & +0.5 & +0.4 \\\\\nDiffDock & PoseBusters-valid & +57 & +59 & +60 & +62 & +63 & +67 \\\\\nDiffDock & near-native and PB-valid & +12.9 & +13.0 & +7.7 & +7.6 & +5.2 & +5.2 \\\\\nEquiBind & near-native & +4.4 & +4.6 & +3.5 & +4.4 & +3.7 & +4.1 \\\\\nEquiBind & PoseBusters-valid & +48 & +58 & +49 & +59 & +48 & +60 \\\\\nEquiBind & near-native and PB-valid & +4.8 & +5.0 & +4.1 & +5.0 & +4.2 & +4.7 \\\\",
+  "new": "DiffDock & near-native & +0.6 & +0.6 & +0.4 & +0.3 & +0.8 & +1.0 \\\\\nDiffDock & PoseBusters-valid & +57 & +59 & +60 & +62 & +63 & +67 \\\\\nDiffDock & near-native and PB-valid & +16.5 & +16.5 & +10.5 & +10.3 & +6.5 & +6.7 \\\\\nEquiBind & near-native & +4.5 & +4.7 & +3.6 & +4.6 & +3.9 & +4.4 \\\\\nEquiBind & PoseBusters-valid & +48 & +58 & +49 & +59 & +48 & +60 \\\\\nEquiBind & near-native and PB-valid & +4.9 & +5.1 & +4.1 & +5.2 & +4.3 & +5.0 \\\\"
+ },
+ {
+  "label": ":999 Table 20 footnote",
+  "old": "The near-native gnina bands span 0.1 to 0.7 percentage points for DiffDock and 4.1 to 4.6 for EquiBind, which are the 0.1--0.7 and 4.1--4.6 ranges used in the note to Table~\\ref{tab:appendix-refinement-mcnemar}, and the smina bands span 0.1 to 0.6 and 3.5 to 4.4.",
+  "new": "The near-native gnina bands span 0.3 to 1.0 percentage points for DiffDock and 4.4 to 4.7 for EquiBind, and the smina bands span 0.4 to 0.8 and 3.6 to 4.5."
+ },
+ {
+  "label": ":1026-1029 Table 21 rows",
+  "old": "AutoDock Vina + gnina versus DiffDock (raw) & 37.3 versus 33.7 & 62.0 versus 44.6 & 65.0 versus 48.2 & 66.3 versus 49.8 \\\\\nAutoDock Vina + gnina versus DiffDock (gnina-opt) & 37.3 versus 35.6 & 62.0 versus 49.2 & 65.0 versus 52.8 & 66.3 versus 56.1 \\\\\nDiffDock (gnina-opt) versus EquiBind (gnina-opt) & 35.6 versus 18.8 & 49.2 versus 25.1 & 52.8 versus 27.4 & 56.1 versus 27.4 \\\\\nAutoDock Vina + gnina versus EquiBind (gnina-opt) & 37.3 versus 18.8 & 62.0 versus 25.1 & 65.0 versus 27.4 & 66.3 versus 27.4 \\\\",
+  "new": "AutoDock Vina + gnina versus DiffDock (raw) & 49.8 versus 43.6 & 67.3 versus 50.2 & 70.0 versus 52.1 & 71.3 versus 52.8 \\\\\nAutoDock Vina + gnina versus DiffDock (gnina-opt) & 49.8 versus 45.5 & 67.3 versus 54.1 & 70.0 versus 57.1 & 71.3 versus 59.4 \\\\\nDiffDock (gnina-opt) versus EquiBind (gnina-opt) & 45.5 versus 19.5 & 54.1 versus 26.1 & 57.1 versus 28.4 & 59.4 versus 28.4 \\\\\nAutoDock Vina + gnina versus EquiBind (gnina-opt) & 49.8 versus 19.5 & 67.3 versus 26.1 & 70.0 versus 28.4 & 71.3 versus 28.4 \\\\"
+ },
+ {
+  "label": ":1031 Table 21 footnote",
+  "old": "Against DiffDock (raw) the Holm-corrected p runs 0.694 at k = 1 and then 0.0001, 0.0002 and 0.0003, and against DiffDock (gnina-opt) it runs 0.709 at k = 1 and then 0.0059, 0.0080 and 0.029. The rank-1 tie is a genuine tie rather than a shortfall of discordant pairs, with AutoDock winning 62 complexes and losing 51 against DiffDock (raw) and winning 60 and losing 55 against DiffDock (gnina-opt). Both contrasts against EquiBind (gnina-opt) are significant at every depth, at a Holm-corrected p below 3e-7 throughout,",
+  "new": "Against DiffDock (raw) the Holm-corrected p runs 0.242 at k = 1 and then 1.2e-4, 6.5e-5 and 3.8e-5, and against DiffDock (gnina-opt) it runs 0.294 at k = 1 and then 0.0042, 0.0042 and 0.0071. The rank-1 tie is a genuine tie rather than a shortfall of discordant pairs, with AutoDock winning 77 complexes and losing 58 against DiffDock (raw) and winning 72 and losing 59 against DiffDock (gnina-opt). Both contrasts against EquiBind (gnina-opt) are significant at every depth, at a Holm-corrected p below 1e-12 throughout,"
+ },
+ {
+  "label": ":1057 Table 22 DiffDock raw row",
+  "old": "DiffDock (raw) & 15.5 {[}11.9, 20.0{]} & 19.1 {[}15.1, 23.9{]} & 19.5 {[}15.4, 24.3{]} & 18.8 {[}14.8, 23.6{]} \\\\",
+  "new": "DiffDock (raw) & 21.5 {[}17.2, 26.4{]} & 19.8 {[}15.7, 24.7{]} & 19.5 {[}15.4, 24.3{]} & 18.8 {[}14.8, 23.6{]} \\\\"
+ },
+ {
+  "label": ":1062 Table 22 footnote wording",
+  "old": "counts complexes whose best top-\\emph{k} pose is within 2\\angstrom{} of the crystal ligand but never physically valid at that depth.",
+  "new": "counts complexes whose best top-\\emph{k} pose is within 2\\angstrom{} of the nearest deposited copy of the crystal ligand but never physically valid at that depth."
+ },
+ {
+  "label": ":1074 intention-to-treat",
+  "old": "AutoDock Vina + gnina places none of the five within 2\\angstrom{} of the crystal ligand at rank-1 and none within its top-15 pool, the closest pose in either pool sitting at 6.4\\angstrom{}. On that intention-to-treat basis its recovery stays at 111 of 308 at rank-1 and 198 of 308 at top-15, against 103 and 167 for DiffDock + smina. The AutoDock margin is therefore almost unmoved, holding at 2.6 percentage points at rank-1 and going from 10.2 to 10.1 at top-15.",
+  "new": "AutoDock Vina + gnina places none of the five within 2\\angstrom{} of the nearest deposited copy of the crystal ligand at rank-1, the closest pose sitting at 6.3\\angstrom{}, and none within its top-15 pool, where the closest pose sits at 2.1\\angstrom{} (7FRX\\_O88). Over all thirty poses one complex, 8F4J\\_PHO, reaches 1.5\\angstrom{} of an alternate copy at rank 28. On that intention-to-treat basis its recovery stays at 149 of 308 at rank-1 and 213 of 308 at top-15, against 132 and 179 for DiffDock + smina. The AutoDock margin is therefore almost unmoved, going from 5.6 to 5.5 percentage points at rank-1 and from 11.2 to 11.0 at top-15."
+ },
+ {
+  "label": ":1074 D9 sensitivity table inserted after the intention-to-treat paragraph",
+  "old": "The shortfall is entirely a matter of where the blind search placed the ligand, and the exclusion is close to immaterial for the comparison.\n\n\\hypertarget{design-to-test-mapping}{%",
+  "new": "The shortfall is entirely a matter of where the blind search placed the ligand, and the exclusion is close to immaterial for the comparison.\n\nTable~\\ref{tab:reference_convention_sensitivity} gives the same endpoint under both reference conventions. The nearest-copy convention is the primary one and the single-instance convention is the sensitivity arm. The 165 single-copy complexes are identical under both, so every gain sits in the 138 multi-copy complexes. The Form column can fall under the nearest-copy convention, by one or two complexes at some depth in each of the three selected variants, because the copy a pose is nearest to can differ in conformation from the reference instance.\n\n\\begingroup\n\\scriptsize\n\\setlength{\\tabcolsep}{3pt}\n\\begin{longtable}[]{@{}lrrrrrrrrr@{}}\n\\caption[Sensitivity of the near-native endpoint to the reference convention]{Sensitivity of the Near-Native Endpoint to the Reference Convention}\\label{tab:reference_convention_sensitivity}\\tabularnewline\n\\toprule\\noalign{}\n{\\raggedright \\textbf{Tool}} & \\textbf{d} & \\multicolumn{3}{c}{\\textbf{Recovery}} & \\multicolumn{2}{c}{\\textbf{Form}} & \\multicolumn{2}{c}{\\textbf{Combined}} & \\textbf{Single copy} \\\\\n\\cmidrule(lr){3-5}\\cmidrule(lr){6-7}\\cmidrule(lr){8-9}\\cmidrule(lr){10-10}\n & & nearest & instance & gain & nearest & instance & nearest & instance & both \\\\\n\\midrule\\noalign{}\n\\endfirsthead\n\\caption[]{Sensitivity of the Near-Native Endpoint to the Reference Convention (continued)}\\tabularnewline\n\\toprule\\noalign{}\n{\\raggedright \\textbf{Tool}} & \\textbf{d} & \\multicolumn{3}{c}{\\textbf{Recovery}} & \\multicolumn{2}{c}{\\textbf{Form}} & \\multicolumn{2}{c}{\\textbf{Combined}} & \\textbf{Single copy} \\\\\n\\cmidrule(lr){3-5}\\cmidrule(lr){6-7}\\cmidrule(lr){8-9}\\cmidrule(lr){10-10}\n & & nearest & instance & gain & nearest & instance & nearest & instance & both \\\\\n\\midrule\\noalign{}\n\\endhead\n\\bottomrule\\noalign{}\n\\endlastfoot\nAutoDock Vina + gnina & 1 & 149 & 111 & +38 & 161 & 161 & 122 & 88 & 88 of 165 \\\\\n & 5 & 200 & 184 & +16 & 206 & 206 & 164 & 148 & 114 of 165 \\\\\n & 15 & 213 & 198 & +15 & 219 & 220 & 175 & 160 & 122 of 165 \\\\\n & 30 & 214 & 199 & +15 & 227 & 227 & 175 & 160 & 123 of 165 \\\\\nDiffDock + smina & 1 & 132 & 103 & +29 & 162 & 162 & 98 & 76 & 80 of 165 \\\\\n & 5 & 160 & 144 & +16 & 205 & 207 & 130 & 115 & 98 of 165 \\\\\n & 15 & 179 & 167 & +12 & 225 & 226 & 144 & 133 & 109 of 165 \\\\\n & 30 & 183 & 169 & +14 & 236 & 237 & 148 & 138 & 111 of 165 \\\\\nEquiBind + gnina & 1 & 57 & 55 & +2 & 108 & 107 & 38 & 37 & 53 of 165 \\\\\n & 5 & 76 & 73 & +3 & 150 & 148 & 52 & 51 & 69 of 165 \\\\\n & 15 & 83 & 80 & +3 & 183 & 182 & 57 & 55 & 76 of 165 \\\\\n & 30 & 83 & 80 & +3 & 199 & 200 & 57 & 55 & 76 of 165 \\\\\n\\multicolumn{10}{@{}p{\\dimexpr\\columnwidth-18\\tabcolsep\\relax}@{}}{\\footnotesize%\nEach cell counts complexes of the 303 analysed with at least one pose in the top-d that passes the gate. Recovery is PoseBusters-valid and within 2\\angstrom{} of the nearest deposited copy under the primary convention or of the single reference instance under the sensitivity convention. Form is a best-fit RMSD of at most 1\\angstrom{} without a validity gate, and Combined adds the form condition to the recovery gate. The single-copy column carries the recovery count on the 165 single-copy complexes, which is identical under both conventions by construction. Multi-copy complexes number 138 of the 303 analysed and 143 of the 308 source entries. On the recovery gate the AutoDock Vina + gnina lead over DiffDock + smina, as an exact McNemar test with a Newcombe 95\\% interval in percentage points, is +5.6 at rank-1 under the nearest-copy convention (149 against 132, \\ensuremath{-}1.7 to +12.8, discordant 73 against 56, p = 0.159) and +2.6 under the single-instance convention (111 against 103, \\ensuremath{-}4.2 to +9.4, 60 against 52, p = 0.509). At top-5 the two conventions coincide at +13.2 (+5.7 to +20.4, 88 against 48, p = 7.6e-4). At top-15 the lead is +11.2 (+3.9 to +18.4, 82 against 48, p = 0.0036) against +10.2 (+2.8 to +17.5, 82 against 51, p = 0.009), and at top-30 it is +10.2 (+3.0 to +17.3, 79 against 48, p = 0.0075) against +9.9 (+2.5 to +17.1, 81 against 51, p = 0.011).} \\\\\n\\end{longtable}\n\\endgroup\n\n\\hypertarget{design-to-test-mapping}{%"
+ },
+ {
+  "label": ":1172-1179 Table 24 near-native half",
+  "old": "AutoDock (raw) & 8,976 & 99.6 & 0.0 & 0.1 & 0.2 & 0.2 & 307 & 98.4 & 0.0 & 0.0 & 1.6 & 1.6 \\\\\nAutoDock + gnina & 8,976 & 98.9 & 0.0 & 0.9 & 0.2 & 0.2 & 319 & 97.5 & 0.0 & 0.9 & 1.6 & 1.6 \\\\\nDiffDock (raw) & 9,013 & 24.4 & 0.0 & 3.8 & 75.2 & 73.8 & 1,683 & 50.3 & 0.0 & 2.2 & 48.2 & 48.2 \\\\\nDiffDock + smina & 8,993 & 84.5 & 0.0 & 1.5 & 14.6 & 13.4 & 1,715 & 94.6 & 0.0 & 0.1 & 5.4 & 5.4 \\\\\nDiffDock + gnina & 8,993 & 87.1 & 0.0 & 1.4 & 12.0 & 10.7 & 1,716 & 94.5 & 0.0 & 0.2 & 5.3 & 5.2 \\\\\nEquiBind (raw) & 9,090 & 2.9 & 0.0 & 27.9 & 96.8 & 96.5 & 103 & 20.4 & 0.0 & 10.7 & 78.6 & 78.6 \\\\\nEquiBind + smina & 9,090 & 51.3 & 0.0 & 4.8 & 47.6 & 47.3 & 453 & 91.6 & 0.0 & 0.2 & 8.2 & 8.2 \\\\\nEquiBind + gnina & 9,088 & 62.0 & 0.0 & 3.7 & 37.0 & 36.6 & 498 & 93.6 & 0.0 & 0.2 & 6.2 & 6.2 \\\\",
+  "new": "AutoDock (raw) & 8,976 & 99.6 & 0.0 & 0.1 & 0.2 & 0.2 & 437 & 98.6 & 0.0 & 0.2 & 1.1 & 1.1 \\\\\nAutoDock + gnina & 8,976 & 98.9 & 0.0 & 0.9 & 0.2 & 0.2 & 451 & 98.0 & 0.0 & 0.9 & 1.1 & 1.1 \\\\\nDiffDock (raw) & 9,013 & 24.4 & 0.0 & 3.8 & 75.2 & 73.8 & 2,118 & 50.2 & 0.0 & 1.8 & 48.5 & 48.4 \\\\\nDiffDock + smina & 8,993 & 84.5 & 0.0 & 1.5 & 14.6 & 13.4 & 2,169 & 95.3 & 0.0 & 0.0 & 4.6 & 4.6 \\\\\nDiffDock + gnina & 8,993 & 87.1 & 0.0 & 1.4 & 12.0 & 10.7 & 2,171 & 95.4 & 0.0 & 0.1 & 4.5 & 4.4 \\\\\nEquiBind (raw) & 9,090 & 2.9 & 0.0 & 27.9 & 96.8 & 96.5 & 103 & 20.4 & 0.0 & 10.7 & 78.6 & 78.6 \\\\\nEquiBind + smina & 9,090 & 51.3 & 0.0 & 4.8 & 47.6 & 47.3 & 465 & 91.0 & 0.0 & 0.2 & 8.8 & 8.8 \\\\\nEquiBind + gnina & 9,088 & 62.0 & 0.0 & 3.7 & 37.0 & 36.6 & 515 & 93.8 & 0.0 & 0.2 & 6.0 & 6.0 \\\\"
+ },
+ {
+  "label": ":1181 Table 24 footnote (W46)",
+  "old": "Near-native poses are those within 2\\angstrom{} of the crystal ligand by symmetry-corrected heavy-atom RMSD without superposition,",
+  "new": "Near-native poses are those within 2\\angstrom{} of the nearest deposited copy of the crystal ligand by symmetry-corrected heavy-atom RMSD without superposition,"
+ },
+ {
+  "label": ":1188 coupling strata (W47a)",
+  "old": "Intermolecular failure for DiffDock falls from 14.6\\% over all produced poses to 5.4\\% over its 1,715 near-native poses, and for EquiBind from 37.0\\% to 6.2\\% over 498 near-native poses.",
+  "new": "Intermolecular failure for DiffDock falls from 14.6\\% over all produced poses to 4.6\\% over its 2,169 near-native poses, and for EquiBind from 37.0\\% to 6.0\\% over 515 near-native poses."
+ },
+ {
+  "label": ":1188 residual gap",
+  "old": "EquiBind still fails the intermolecular group on 31 of its 498 near-native poses against 5 of 319 for AutoDock.",
+  "new": "EquiBind still fails the intermolecular group on 31 of its 515 near-native poses against 5 of 451 for AutoDock."
+ },
+ {
+  "label": ":1196 validity cost (W47b) and A1b pb_rmsd sentence",
+  "old": "On the three variants carried through the Results it removes at most four complexes of 303 at any reported depth. The counts are two at rank-1, four at top-5 and three at the deeper pools for AutoDock Vina + gnina, three to four for DiffDock + smina and two to three for unguided EquiBind + gnina. That is a span of 0.66 to 1.32 percentage points. The recovery ordering, the paired differences and the intervals reported in the Results are therefore set almost entirely by the 2\\angstrom{} placement criterion.",
+  "new": "On the three variants carried through the Results it removes at most five complexes of 303 at any reported depth. The counts are two at rank-1, four at top-5 and three at the deeper pools for AutoDock Vina + gnina, five at rank-1, four at top-5 and three at the deeper pools for DiffDock + smina and two to three for unguided EquiBind + gnina. That is a span of 0.66 to 1.65 percentage points. The recovery ordering, the paired differences and the intervals reported in the Results are therefore set almost entirely by the 2\\angstrom{} placement criterion. The choice of RMSD implementation moves the same endpoint even less. Substituting the fully symmetrised PoseBusters RMSD for the study\\textquotesingle s own value in the rank-1 gate recovers two further complexes, 7PGX\\_FMN for AutoDock Vina + gnina and 6XBO\\_5MC for unguided EquiBind + gnina, and removes none, because the PoseBusters value never exceeds the study\\textquotesingle s own on any of the 241,913 scored poses of the canonical table."
+ },
+ {
+  "label": ":1196 raw DiffDock cost",
+  "old": "For raw DiffDock it removes 47 complexes at rank-1 and 57 to 59 at the deeper pools, a span of 15.5 to 19.5 percentage points.",
+  "new": "For raw DiffDock it removes 65 complexes at rank-1 and 55 to 60 at the deeper pools, a span of 18.2 to 21.5 percentage points."
+ },
+ {
+  "label": ":1203 cube regime clause (W48)",
+  "old": "a volume of 15,625\\angstrom{}\\textsuperscript{3}. The median box used here encloses",
+  "new": "a volume of 15,625\\angstrom{}\\textsuperscript{3}. That cube kept almost every other deposited copy of the ligand outside Vina\\textquotesingle s search, since only 8 of the 211 alternate copies have a centroid inside it, whereas every box used here contains every copy, so the nearest-copy convention is live for all three tools in this study. The median box used here encloses"
+ },
+ {
+  "label": ":1207 exh32 to 128",
+  "old": "lifts raw top-15 recovery from 148 to 185 complexes of 303",
+  "new": "lifts raw top-15 recovery from 161 to 198 complexes of 303"
+ },
+ {
+  "label": ":1247-1250 Table 25",
+  "old": "Complexes gaining a near-native pose\\newline (RMSD \\ensuremath{\\leq} 2\\angstrom{} gate) & +88 & +63 & +26 \\\\\nof which remain PoseBusters-invalid & -2 & -1 & -2 \\\\\nValid near-native rescued from a\\newline lower rank & +1 & +2 & +1 \\\\\nNet valid complexes added & +87 *** & +64 *** & +25 *** \\\\",
+  "new": "Complexes gaining a near-native pose\\newline (RMSD \\ensuremath{\\leq} 2\\angstrom{} gate) & +65 & +45 & +27 \\\\\nof which remain PoseBusters-invalid & -2 & 0 & -2 \\\\\nValid near-native rescued from a\\newline lower rank & +1 & +2 & +1 \\\\\nNet valid complexes added & +64 *** & +47 *** & +26 *** \\\\"
+ },
+ {
+  "label": ":1258 H.9 differences",
+  "old": "is +2.6 percentage points at rank-1, with a Newcombe hybrid score 95\\% interval of \\ensuremath{-}4.2 to +9.4 points. It is +13.2 points at top-5 (+5.7 to +20.4), +10.2 points at top-15 (+2.8 to +17.5) and +9.9 points at top-30 (+2.5 to +17.1).",
+  "new": "is +5.6 percentage points at rank-1, with a Newcombe hybrid score 95\\% interval of \\ensuremath{-}1.7 to +12.8 points. It is +13.2 points at top-5 (+5.7 to +20.4), +11.2 points at top-15 (+3.9 to +18.4) and +10.2 points at top-30 (+3.0 to +17.3)."
+ },
+ {
+  "label": ":1260 H.9 resolution",
+  "old": "At rank-1 both pipelines recover 51 of the 303 complexes and neither recovers 140. Only the remaining 112 discordant complexes, 37.0\\% of the set, resolve the contrast. That discordant count rather than the 303 sets the resolution. It puts the minimum detectable difference at 9.8 percentage points for 80\\% power and leaves the observed 2.6-point difference tested at a power of 0.12.",
+  "new": "At rank-1 both pipelines recover 76 of the 303 complexes and neither recovers 98. Only the remaining 129 discordant complexes, 42.6\\% of the set, resolve the contrast. That discordant count rather than the 303 sets the resolution. It puts the minimum detectable difference at 10.5 percentage points for 80\\% power and leaves the observed 5.6-point difference tested at a power of 0.32."
+ },
+ {
+  "label": ":1260 H.9 power",
+  "old": "Detecting it reliably would require roughly 4,200 paired complexes. Even the 428 entries of the earlier preprint release of this benchmark would leave the minimum detectable difference near 8.2 points,",
+  "new": "Detecting it reliably would require roughly 1,100 paired complexes. Even the 428 entries of the earlier preprint release of this benchmark would leave the minimum detectable difference near 8.8 points,"
+ },
+ {
+  "label": ":1260 H.9 deeper p",
+  "old": "at exact McNemar p = 7.6e\\ensuremath{-}4, 0.009 and 0.011.",
+  "new": "at exact McNemar p = 7.6e\\ensuremath{-}4, 0.0036 and 0.0075."
+ },
+ {
+  "label": ":1260 H.9 equivalence (W49)",
+  "old": "On that grid only rank-1 is equivalent, within 10 points, and its smallest passing value of 8.4 points is read off the observed interval rather than taken from the grid. No depth is equivalent within 5 points, and top-5, top-15 and top-30 are not equivalent within any scanned margin, their smallest passing values being 19.4, 16.4 and 16.0 points. The procedure declares equivalence exactly when the 90\\% Newcombe interval lies inside the margin. That interval is the more informative quantity, running from \\ensuremath{-}3.1 to +8.3 points at rank-1, +6.9 to +19.3 at top-5, +4.0 to +16.3 at top-15 and +3.7 to +16.0 at top-30.",
+  "new": "On that grid only rank-1 is equivalent, within 12 points and no longer within 10, and its smallest passing value of 11.7 points is read off the observed interval rather than taken from the grid. No depth is equivalent within 5 points, and top-5, top-15 and top-30 are not equivalent within any scanned margin, their smallest passing values being 19.4, 17.3 and 16.2 points. The procedure declares equivalence exactly when the 90\\% Newcombe interval lies inside the margin. That interval is the more informative quantity, running from \\ensuremath{-}0.5 to +11.7 points at rank-1, +6.9 to +19.3 at top-5, +5.1 to +17.2 at top-15 and +4.2 to +16.2 at top-30."
+ },
+ {
+  "label": ":1265 threshold lead-in (W50)",
+  "old": "for both the as-placed and the best-fit (Kabsch) criterion. The 2\\angstrom{} in-place column",
+  "new": "for both the as-placed and the best-fit (Kabsch) criterion, each taken to the deposited copy of the ligand nearest to the pose. The 2\\angstrom{} in-place column"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('RMSD', 'AD', 1)",
+  "old": "0.0\\%} & 5.9\\% & 13.5\\% & 22.1\\% & 27.1\\% & 30.4\\% & 32.7\\% & 36.6\\% & 37.0\\% & 38.9\\% \\\\",
+  "new": "0.0\\%} & 8.6\\% & 18.2\\% & 30.0\\% & 38.0\\% & 41.6\\% & 44.9\\% & 49.2\\% & 49.8\\% & 53.5\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('RMSD', 'AD', 15)",
+  "old": "0.0\\%} & 11.2\\% & 20.1\\% & 34.7\\% & 45.5\\% & 52.1\\% & 59.4\\% & 65.3\\% & 67.0\\% & 69.6\\% \\\\",
+  "new": "0.0\\%} & 13.2\\% & 24.4\\% & 40.6\\% & 50.2\\% & 57.8\\% & 64.7\\% & 70.3\\% & 71.9\\% & 74.3\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('RMSD', 'AD', 30)",
+  "old": "0.0\\%} & 11.2\\% & 20.1\\% & 34.7\\% & 45.9\\% & 52.8\\% & 60.1\\% & 65.7\\% & 67.7\\% & 70.6\\% \\\\",
+  "new": "0.0\\%} & 13.2\\% & 24.4\\% & 40.6\\% & 50.5\\% & 58.4\\% & 65.7\\% & 70.6\\% & 72.6\\% & 75.2\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('RMSD', 'DD', 1)",
+  "old": "0.3\\%} & 4.0\\% & 10.9\\% & 15.5\\% & 21.5\\% & 26.1\\% & 31.4\\% & 34.0\\% & 35.3\\% & 37.6\\% \\\\",
+  "new": "0.3\\%} & 5.0\\% & 12.5\\% & 20.1\\% & 28.4\\% & 34.3\\% & 40.3\\% & 43.6\\% & 46.2\\% & 48.8\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('RMSD', 'DD', 15)",
+  "old": "1.0\\%} & 9.6\\% & 20.5\\% & 30.0\\% & 40.6\\% & 46.5\\% & 51.8\\% & 55.1\\% & 58.1\\% & 60.1\\% \\\\",
+  "new": "1.3\\%} & 11.9\\% & 23.4\\% & 34.3\\% & 43.9\\% & 50.5\\% & 55.4\\% & 59.1\\% & 62.7\\% & 64.7\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('RMSD', 'DD', 30)",
+  "old": "1.0\\%} & 10.9\\% & 21.8\\% & 31.7\\% & 41.6\\% & 48.2\\% & 53.1\\% & 55.8\\% & 59.4\\% & 61.7\\% \\\\",
+  "new": "1.3\\%} & 12.9\\% & 24.4\\% & 35.3\\% & 44.9\\% & 52.8\\% & 57.4\\% & 60.4\\% & 64.0\\% & 66.7\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('RMSD', 'EB', 1)",
+  "old": "0.0\\%} & 1.3\\% & 4.0\\% & 6.9\\% & 9.6\\% & 12.5\\% & 15.5\\% & 18.2\\% & 19.5\\% & 20.5\\% \\\\",
+  "new": "0.0\\%} & 1.3\\% & 4.0\\% & 6.9\\% & 10.2\\% & 13.2\\% & 16.2\\% & 18.8\\% & 20.1\\% & 21.1\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('RMSD', 'EB', 15)",
+  "old": "0.3\\%} & 3.0\\% & 6.3\\% & 10.2\\% & 14.2\\% & 17.8\\% & 22.1\\% & 26.4\\% & 27.7\\% & 29.4\\% \\\\",
+  "new": "0.7\\%} & 3.3\\% & 6.6\\% & 10.6\\% & 14.9\\% & 18.5\\% & 22.8\\% & 27.4\\% & 29.0\\% & 30.7\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('RMSD', 'EB', 30)",
+  "old": "0.3\\%} & 3.0\\% & 6.6\\% & 10.6\\% & 14.2\\% & 17.8\\% & 22.4\\% & 26.4\\% & 27.7\\% & 29.4\\% \\\\",
+  "new": "0.7\\%} & 3.3\\% & 6.9\\% & 10.9\\% & 14.9\\% & 18.5\\% & 23.1\\% & 27.4\\% & 29.0\\% & 30.7\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('K', 'AD', 1)",
+  "old": "10.2\\%} & 25.7\\% & 41.6\\% & 52.5\\% & 61.1\\% & 66.7\\% & 74.6\\% & 78.9\\% & 81.5\\% & 84.8\\% \\\\",
+  "new": "10.6\\%} & 25.1\\% & 41.6\\% & 52.5\\% & 60.7\\% & 66.7\\% & 74.9\\% & 78.9\\% & 81.5\\% & 84.8\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('K', 'AD', 15)",
+  "old": "17.8\\%} & 35.3\\% & 55.8\\% & 71.9\\% & 81.2\\% & 87.1\\% & 91.4\\% & 93.4\\% & 96.0\\% & 97.4\\% \\\\",
+  "new": "18.5\\%} & 35.0\\% & 55.8\\% & 71.6\\% & 81.2\\% & 87.1\\% & 91.4\\% & 93.4\\% & 96.0\\% & 97.4\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('K', 'AD', 30)",
+  "old": "18.8\\%} & 37.0\\% & 58.7\\% & 74.3\\% & 82.8\\% & 88.4\\% & 92.7\\% & 95.4\\% & 97.7\\% & 97.7\\% \\\\",
+  "new": "19.5\\%} & 36.6\\% & 58.7\\% & 74.3\\% & 82.8\\% & 88.4\\% & 92.7\\% & 95.4\\% & 97.7\\% & 97.7\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('K', 'DD', 1)",
+  "old": "11.9\\%} & 25.1\\% & 38.6\\% & 52.1\\% & 61.7\\% & 70.0\\% & 76.2\\% & 82.5\\% & 85.8\\% & 88.1\\% \\\\",
+  "new": "11.6\\%} & 24.4\\% & 38.9\\% & 52.1\\% & 62.0\\% & 70.3\\% & 75.9\\% & 82.2\\% & 86.1\\% & 88.4\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('K', 'DD', 15)",
+  "old": "21.1\\%} & 39.3\\% & 57.4\\% & 72.3\\% & 80.2\\% & 87.8\\% & 94.1\\% & 95.7\\% & 96.0\\% & 96.4\\% \\\\",
+  "new": "21.1\\%} & 39.9\\% & 57.4\\% & 72.3\\% & 80.9\\% & 88.1\\% & 94.4\\% & 95.4\\% & 96.0\\% & 96.4\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('K', 'DD', 30)",
+  "old": "22.4\\%} & 42.6\\% & 60.4\\% & 74.6\\% & 84.5\\% & 92.7\\% & 96.0\\% & 97.0\\% & 97.7\\% & 98.0\\% \\\\",
+  "new": "22.8\\%} & 41.9\\% & 59.7\\% & 74.6\\% & 84.5\\% & 93.1\\% & 96.0\\% & 97.0\\% & 97.7\\% & 98.0\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('K', 'EB', 1)",
+  "old": "5.6\\%} & 15.5\\% & 21.8\\% & 33.3\\% & 42.9\\% & 48.5\\% & 53.1\\% & 61.4\\% & 66.3\\% & 71.0\\% \\\\",
+  "new": "5.6\\%} & 15.2\\% & 21.8\\% & 33.3\\% & 42.9\\% & 48.5\\% & 53.5\\% & 62.0\\% & 67.0\\% & 71.0\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('K', 'EB', 15)",
+  "old": "15.2\\%} & 27.7\\% & 40.3\\% & 51.2\\% & 62.0\\% & 71.0\\% & 75.9\\% & 79.9\\% & 82.5\\% & 85.1\\% \\\\",
+  "new": "14.9\\%} & 27.4\\% & 39.9\\% & 51.5\\% & 62.4\\% & 71.0\\% & 76.2\\% & 80.2\\% & 82.8\\% & 85.1\\% \\\\"
+ },
+ {
+  "label": ":1303-1340 Table 26 ('K', 'EB', 30)",
+  "old": "17.2\\%} & 31.0\\% & 43.9\\% & 54.1\\% & 64.4\\% & 72.6\\% & 77.6\\% & 81.8\\% & 83.5\\% & 85.5\\% \\\\",
+  "new": "16.8\\%} & 30.7\\% & 43.6\\% & 53.8\\% & 64.7\\% & 72.6\\% & 77.9\\% & 82.5\\% & 83.8\\% & 85.5\\% \\\\"
+ },
+ {
+  "label": ":1377-1385 Table 27 AutoDock Vina + gnina (1)",
+  "old": "AutoDock Vina + gnina (1) & 190 & 190 & 62.7\\% & 1.490 & 0.758 & 4.220 & 0.845 & 0.426 & 1.507 & 0.365 & 47.9\\% & 25.3\\% & 26.8\\% \\\\",
+  "new": "AutoDock Vina + gnina (1) & 249 & 249 & 82.2\\% & 1.376 & 0.682 & 3.734 & 0.824 & 0.402 & 1.513 & 0.368 & 46.6\\% & 25.7\\% & 27.7\\% \\\\"
+ },
+ {
+  "label": ":1377-1385 Table 27 AutoDock Vina + gnina (5)",
+  "old": "AutoDock Vina + gnina (5) & 882 & 256 & 84.5\\% & 3.476 & 1.791 & 6.035 & 1.265 & 0.704 & 1.984 & 0.172 & 65.1\\% & 19.4\\% & 15.5\\% \\\\",
+  "new": "AutoDock Vina + gnina (5) & 1147 & 272 & 89.8\\% & 3.291 & 1.615 & 5.926 & 1.215 & 0.645 & 1.962 & 0.178 & 63.7\\% & 19.6\\% & 16.7\\% \\\\"
+ },
+ {
+  "label": ":1377-1385 Table 27 AutoDock Vina + gnina (15)",
+  "old": "AutoDock Vina + gnina (15) & 2200 & 275 & 90.8\\% & 5.043 & 2.937 & 7.414 & 1.445 & 0.811 & 2.200 & 0.094 & 77.8\\% & 13.9\\% & 8.3\\% \\\\",
+  "new": "AutoDock Vina + gnina (15) & 2832 & 286 & 94.4\\% & 4.922 & 2.847 & 7.314 & 1.416 & 0.776 & 2.201 & 0.097 & 77.3\\% & 13.9\\% & 8.8\\% \\\\"
+ },
+ {
+  "label": ":1377-1385 Table 27 DiffDock + smina (1)",
+  "old": "DiffDock + smina (1) & 164 & 164 & 54.1\\% & 1.467 & 0.753 & 3.068 & 0.885 & 0.488 & 1.427 & 0.458 & 40.9\\% & 28.7\\% & 30.5\\% \\\\",
+  "new": "DiffDock + smina (1) & 224 & 224 & 73.9\\% & 1.532 & 0.868 & 3.843 & 0.890 & 0.499 & 1.421 & 0.458 & 41.5\\% & 29.0\\% & 29.5\\% \\\\"
+ },
+ {
+  "label": ":1377-1385 Table 27 DiffDock + smina (5)",
+  "old": "DiffDock + smina (5) & 790 & 235 & 77.6\\% & 1.646 & 0.863 & 4.000 & 0.882 & 0.498 & 1.469 & 0.406 & 44.2\\% & 32.5\\% & 23.3\\% \\\\",
+  "new": "DiffDock + smina (5) & 1041 & 256 & 84.5\\% & 1.683 & 0.866 & 4.286 & 0.883 & 0.503 & 1.489 & 0.416 & 44.5\\% & 31.2\\% & 24.3\\% \\\\"
+ },
+ {
+  "label": ":1377-1385 Table 27 DiffDock + smina (15)",
+  "old": "DiffDock + smina (15) & 2139 & 259 & 85.5\\% & 1.929 & 0.921 & 4.893 & 0.918 & 0.517 & 1.569 & 0.363 & 47.9\\% & 30.8\\% & 21.3\\% \\\\",
+  "new": "DiffDock + smina (15) & 2801 & 269 & 88.8\\% & 2.062 & 0.945 & 4.935 & 0.936 & 0.520 & 1.603 & 0.377 & 47.1\\% & 30.5\\% & 22.4\\% \\\\"
+ },
+ {
+  "label": ":1377-1385 Table 27 EquiBind + gnina (1)",
+  "old": "EquiBind + gnina (1) & 143 & 143 & 47.2\\% & 2.977 & 1.347 & 5.476 & 1.120 & 0.592 & 2.008 & 0.214 & 59.4\\% & 23.8\\% & 16.8\\% \\\\",
+  "new": "EquiBind + gnina (1) & 155 & 155 & 51.2\\% & 3.239 & 1.353 & 5.940 & 1.148 & 0.650 & 2.015 & 0.208 & 60.6\\% & 22.6\\% & 16.8\\% \\\\"
+ },
+ {
+  "label": ":1377-1385 Table 27 EquiBind + gnina (5)",
+  "old": "EquiBind + gnina (5) & 673 & 156 & 51.5\\% & 3.640 & 1.770 & 6.191 & 1.260 & 0.752 & 2.018 & 0.154 & 64.3\\% & 20.8\\% & 14.9\\% \\\\",
+  "new": "EquiBind + gnina (5) & 722 & 167 & 55.1\\% & 3.723 & 1.817 & 6.395 & 1.313 & 0.775 & 2.035 & 0.146 & 64.8\\% & 20.2\\% & 15.0\\% \\\\"
+ },
+ {
+  "label": ":1377-1385 Table 27 EquiBind + gnina (15)",
+  "old": "EquiBind + gnina (15) & 1830 & 156 & 51.5\\% & 4.065 & 2.334 & 6.453 & 1.342 & 0.789 & 2.118 & 0.133 & 70.2\\% & 18.5\\% & 11.3\\% \\\\",
+  "new": "EquiBind + gnina (15) & 1932 & 169 & 55.8\\% & 4.195 & 2.365 & 6.556 & 1.354 & 0.808 & 2.118 & 0.132 & 70.5\\% & 18.1\\% & 11.4\\% \\\\"
+ },
+ {
+  "label": ":1387 Table 27 footnote trim (W51)",
+  "old": "trimmed of poses whose centroid lies more than 8\\angstrom{} from the crystal-ligand site, that is outside the crystal-site neighbourhood rather than off the receptor,",
+  "new": "trimmed of poses whose centroid lies more than 8\\angstrom{} from the nearest deposited copy of the ligand, that is outside the crystal-site neighbourhood rather than off the receptor,"
+ },
+ {
+  "label": ":1387 Table 27 footnote medians",
+  "old": "at rank-1 medians of 1.490 against 1.543\\angstrom{} for AutoDock Vina + gnina and 1.467 against 1.566\\angstrom{} for DiffDock + smina,",
+  "new": "at rank-1 medians of 1.376 against 1.491\\angstrom{} for AutoDock Vina + gnina and 1.532 against 1.585\\angstrom{} for DiffDock + smina,"
+ },
+ {
+  "label": ":1387 Table 27 footnote gate substitution",
+  "old": "Rank-1 recovery would then read 37.0\\% for AutoDock Vina + gnina and 18.5\\% for EquiBind + gnina against an unchanged 34.0\\% for DiffDock + smina.",
+  "new": "Rank-1 recovery would then read 49.5\\% for AutoDock Vina + gnina and 19.1\\% for EquiBind + gnina against an unchanged 43.6\\% for DiffDock + smina."
+ },
+ {
+  "label": ":1394 cluster statistics (D5, verdict change on AutoDock vs EquiBind pose count)",
+  "old": "is significant on both pose count (Friedman \\ensuremath{\\chi}\\textsuperscript{2} = 33.6, Kendall W = 0.055) and reach (Cochran\\textquotesingle s Q = 139.6). The two measures do not, however, agree on which pairs are separable, and the difference matters for how panel (A) is read. On pose count DiffDock contributes more than AutoDock, at a rank-biserial of \\ensuremath{-}0.28 in AutoDock-first orientation (Holm-corrected Wilcoxon p = 2.7e-4 over 248 paired complexes), and more than EquiBind at +0.34 (p \\textless{} 1e-4). AutoDock and EquiBind do not separate on pose count, at a rank-biserial of +0.01 and Holm p = 0.912. On reach the pattern differs: AutoDock and DiffDock are indistinguishable (Holm-corrected McNemar p = 0.470 on 38 against 31 discordant complexes), while both exceed EquiBind at p \\textless{} 1e-20. DiffDock therefore places more poses inside the crystal cluster without reaching it in more complexes. The consensus polarisation of panel (B) rests on 55 single-tool complexes against 51.8 expected and 105 two-tool complexes against 149.9, with the enrichment concentrated at the extremes rather than in the middle.",
+  "new": "is significant on both pose count (Friedman \\ensuremath{\\chi}\\textsuperscript{2} = 36.6, Kendall W = 0.060) and reach (Cochran\\textquotesingle s Q = 159.5). The two measures do not, however, agree on which pairs are separable, and the difference matters for how panel (A) is read. On pose count DiffDock contributes more than AutoDock, at a rank-biserial of \\ensuremath{-}0.31 in AutoDock-first orientation (Holm-corrected Wilcoxon p \\textless{} 1e-4 over 249 paired complexes), and more than EquiBind at +0.52 (p \\textless{} 1e-4). AutoDock also contributes more than EquiBind, at a rank-biserial of +0.21 and Holm p = 0.004 over 250 paired complexes. On reach the pattern differs. AutoDock and DiffDock are indistinguishable (Holm-corrected McNemar p = 0.161 on 31 against 20 discordant complexes), while both exceed EquiBind at p \\textless{} 1e-23. DiffDock therefore places more poses inside the crystal cluster without reaching it in more complexes. The consensus polarisation of panel (B) rests on 37 single-tool complexes against 33.7 expected and 120 two-tool complexes against 147.4, with the enrichment concentrated at the extremes rather than in the middle."
+ },
+ {
+  "label": ":1394 tightness",
+  "old": "Its ordering gives Kruskal-Wallis H = 46.4, p \\textless{} 1e-10 and \\ensuremath{\\varepsilon}\\textsuperscript{2} = 0.075 on the unpaired comparison. Restricting to the 110 complexes on which all three tools are measurable and treating them as paired still separates the three (Friedman \\ensuremath{\\chi}\\textsuperscript{2} = 31.1, p \\textless{} 1e-6).",
+  "new": "Its ordering gives Kruskal-Wallis H = 49.2, p \\textless{} 1e-10 and \\ensuremath{\\varepsilon}\\textsuperscript{2} = 0.074 on the unpaired comparison. Restricting to the 119 complexes on which all three tools are measurable and treating them as paired still separates the three (Friedman \\ensuremath{\\chi}\\textsuperscript{2} = 37.9, p \\textless{} 1e-8)."
+ },
+ {
+  "label": ":1394 radius trend and ranking rule",
+  "old": "The radius trend of panel (D) gives Jonckheere-Terpstra z = 6.07, p \\textless{} 1e-8 before the pose-count control. The ranking-rule comparison gives an omnibus Cochran\\textquotesingle s Q = 174.0.",
+  "new": "The radius trend of panel (D) gives Jonckheere-Terpstra z = 6.31, p \\textless{} 1e-9 before the pose-count control. The ranking-rule comparison gives an omnibus Cochran\\textquotesingle s Q = 149.6."
+ },
+ {
+  "label": ":1399 Fig 38 caption (W52, D5 wording)",
+  "old": "(n = 303, 8\\angstrom{} centroid-clustering cut and 4\\angstrom{} crystal-site recovery threshold).",
+  "new": "(n = 303, 8\\angstrom{} centroid-clustering cut and 4\\angstrom{} crystal-site recovery threshold to any deposited copy of the ligand, where for every copy the cluster nearest to that copy counts when within 4\\angstrom{} and a cluster nearest to two copies counts once)."
+ },
+ {
+  "label": ":1407 Kendall tau recovery (verdict change for DiffDock)",
+  "old": "AutoDock Vina + gnina orders its own poses well, at \\ensuremath{\\tau} = \\ensuremath{-}0.20, \\ensuremath{-}0.32 and \\ensuremath{-}0.20 for precision, recall and F1 with all three at BH q \\textless{} 0.001. Only that arm was profiled here, so the effect of the re-ranking itself is not measured. EquiBind\\textquotesingle s gnina-affinity rank works for recall and F1, at \\ensuremath{\\tau} = \\ensuremath{-}0.20 for both and with both significant, and only marginally for precision at q = 0.022. DiffDock\\textquotesingle s native confidence shows no detected association on any of the three, at \\ensuremath{\\tau} \\ensuremath{\\approx} 0 with none significant. That is an absence of detected ordering rather than a demonstration that the confidence carries no signal.",
+  "new": "AutoDock Vina + gnina orders its own poses well, at \\ensuremath{\\tau} = \\ensuremath{-}0.32, \\ensuremath{-}0.40 and \\ensuremath{-}0.40 for precision, recall and F1 with all three at BH q \\textless{} 0.001. Only that arm was profiled here, so the effect of the re-ranking itself is not measured. EquiBind\\textquotesingle s gnina-affinity rank works for recall and F1, at \\ensuremath{\\tau} = \\ensuremath{-}0.20 for both and with both significant, and more weakly for precision at \\ensuremath{\\tau} = \\ensuremath{-}0.11 and q = 0.008. DiffDock\\textquotesingle s native confidence shows a weak but detected association on all three, at \\ensuremath{\\tau} = \\ensuremath{-}0.11, \\ensuremath{-}0.18 and \\ensuremath{-}0.11 with q = 0.008, 5.1e-4 and 0.002. That ordering is detected but small, and it is the weakest of the three tools."
+ },
+ {
+  "label": ":1412 Fig 39 caption (W53)",
+  "old": "\\caption[Typed contacts versus the crystal by pose rank]{Matched, missed and spurious typed contacts versus the crystal, by pose rank, whole-protein search}",
+  "new": "\\caption[Typed contacts versus the crystal by pose rank]{Matched, missed and spurious typed contacts versus the nearest deposited copy of the crystal ligand, by pose rank, whole-protein search}"
+ },
+ {
+  "label": ":1415 contact decomposition (verdict change on fewest spurious)",
+  "old": "At rank 1 AutoDock Vina + gnina invents slightly more spurious contacts than DiffDock + smina, at 15.3 against 14.1. By rank 5 its spurious count climbs to 17.6 while DiffDock\\textquotesingle s stays flat. EquiBind recovers 16.7 matched contacts against 18.9 missed at rank 1 and invents the fewest non-native contacts, at 12.0 to 12.6. The same rank test orders AutoDock cleanly across all three classes, at \\ensuremath{\\tau} = \\ensuremath{-}0.32 matched, +0.32 missed and +0.11 spurious with all three significant. It orders EquiBind on matched and missed at \\ensuremath{\\pm}0.26. DiffDock\\textquotesingle s counts are flat.",
+  "new": "At rank 1 AutoDock Vina + gnina invents slightly more spurious contacts than DiffDock + smina, at 9.1 against 7.8. By rank 5 its spurious count climbs to 13.5 while DiffDock\\textquotesingle s rises only to 8.6. EquiBind recovers 17.7 matched contacts against 17.8 missed at rank 1 and invents 11.2 to 11.6 non-native contacts at every rank, more than DiffDock and fewer than AutoDock beyond rank 2. The same rank test orders AutoDock cleanly across all three classes, at \\ensuremath{\\tau} = \\ensuremath{-}0.40 matched, +0.40 missed and +0.32 spurious with all three significant. It orders EquiBind on matched and missed at \\ensuremath{\\pm}0.20. DiffDock\\textquotesingle s spurious count is flat and its matched and missed counts move weakly, at \\ensuremath{\\tau} = \\ensuremath{-}0.12 and +0.12."
+ }
+]
