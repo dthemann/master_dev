@@ -119,3 +119,13 @@ about 10:50 (about one hour, which fixes the plan's "1-2 h estimate").
 Conclusion: the hub change is bit-identical under the default convention on the whole cohort, up to the
 plif nondeterminism that predates it. The nearest convention has been exercised only on the eight-id smoke
 set; the full nearest rebuild is plan Phase 3 and would go into a NEW directory.
+
+## Plan step 0.5, the eight borderline flips (1.5-2.0 A), result
+
+Report: `FLIP_INSPECTION_1p5_2p0_2026-09-08.md`. None of the eight rank-1 flips with nearest-copy RMSD in
+(1.5, 2.0] A is an artefact of the RMSD engine. All eight poses sit on a second deposited copy (pose centroid
+0.27-1.08 A from that copy against 10-49 A from the reference), the thesis engine and PoseBusters agree to
+machine precision on four and differ on four phosphate or carboxylate ligands only through PoseBusters'
+symmetrisation of conjugated terminal groups (the thesis value is the stricter one in every case), and even the
+worst symmetry-equivalent atom mapping stays at or below 1.946 A. One pose (6YT6_PKE, 1.991 A) clears the gate
+by 9 mA and is the only fragile case. The derived counts 149 / 132 / 57 therefore stand.
