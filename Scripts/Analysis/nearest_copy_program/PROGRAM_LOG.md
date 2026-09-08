@@ -171,3 +171,20 @@ Not acted on: `thesis_latex_nearest/` stays tracked as the audited record (it no
 - `Scripts/Analysis/tests/test_diffdock_sweep_gate.py` retired to `obsolete/tests/` beside the notebook it pins (`obsolete/DiffDock_Parameter_Sweep.ipynb`, gitignored since the repo clean-up); it could not run in a clean clone and the sweep is no longer reported. The two live tests (`method_filter`, `stats_utils`) stay.
 - LaTeX build by-products of the shipped thesis untracked and ignored (`.aux .blg .dvi .fdb_latexmk .fls .lof .log .lot .out.ps .toc`, plus the regenerated `.bcf` and `.run.xml`); `.tex`, `.bib`, `.bbl` and the PDF stay tracked. Files remain on disk; no history rewrite.
 - The cluster sidecar double-rounding (55.5 %) was already closed by the promotion: the regenerated sidecar prints from the exact fraction (71.3 % = 216/303).
+
+## 2026-09-08 21:25–22:40 — full double-validation sweep (interim) and the six fixes
+
+Two workflows (wf_1702f0bf-8ee: 16 text chunks x 2 routes + gap + refuters; wf_b44d0e7e-09e: figures x 2 routes + refuters) were cut short by the session's agent limit: 14 of 30 text verifiers completed (Abstract/Kurzfassung, Methods, Results 4.1 part 1, 4.2, 4.3, Discussion, Conclusions on both routes; Results 4.1 parts 2-3 on the sidecar route only; no appendix chunk), plus the figure provenance route (37 of 39 confirmed, 2 declared hand renders unverifiable, 0 stale, 0 inconsistent; the 14 regenerated figures are exactly image3/4/5/6/7/8/9/11/24/25/44/45/46/47). Coverage of the completed text: 843 values confirmed by both routes, 417 by one. Retries scheduled (cron 00:07 and 14:07 on 09-09) resume both runs from cache. Harvest: scratchpad/dv/harvest.json.
+
+No value anywhere in the covered text equals a retired single-instance number; Abstract and Kurzfassung agree number for number. Six inconsistencies were flagged, each adjudicated here with an independent recomputation, and FIXED on the author's instruction ("fix the six"):
+
+| # | location | was | now | evidence |
+|---|---|---|---|---|
+| 1 | :333 rank-biserial range | 0.994–1.000 | 0.998–1.000 | 09f_pbvalid_yield_report.txt lines 74/77 (+0.998, +0.998; EquiBind pairs 1.000); recomputed by both routes |
+| 2 | Table 4, six cells | 0.641 / 0.671 / 0.632 / 0.508 / 0.459 / 0.499 | 0.640 / 0.670 / 0.631 / 0.507 / 0.458 / 0.498 | double rounding of the 4-dp CSV; exact per-pose means 0.640476 / 0.670448 / 0.631477 / 0.507464 / 0.458474 / 0.498483 (recovery_detail_per_pose.csv); 39 other cells exact; App. :543 0.499 → 0.498; yaml pins set to the exact-mean values |
+| 3 | footnote :733 | 0.74 h / 5.47 h / 13.5 % / "fourteen times" (from a retired 2,677.7 s span) | 0.72 h "the union of the per-pose optimiser intervals" / 5.45 h / 13.2 % / "roughly fifteen times" | exhaustiveness_arm_status.json gnina_optimizer_wall_clock_s 2,587.3 s, serial sum 37,693.7 s (14.6x); REGENERATE_NOTES:229 calls 2,677.7 retired |
+| 4 | :779 Cochran's Q | "pipeline success differs ... Q = 61.1" | "the share of complexes with at least one PoseBusters-valid pose differs strongly between pipelines (Q = 61.1 ...)" | effort_stats.json validity.omnibus tests the PB-valid indicator (301/300/266); the qualifying-success indicator would give Q 132.7, p 1.6e-29 |
+| 5 | :648 Orai labels | "p = 0.667"; "to above 0.2" | "Holm p = 0.667"; "to about 0.2" | pbvalid_tm_share_compare_stats.txt:57 raw 0.333 (Holm 0.667); prefix-matched Holm p 0.1997 |
+| 6 | :429 gate qualifier | "rank-1 recovery" | "rank-1 near-native rate ... before the validity requirement is applied" | smina/gnina rerank summaries: 3.0 / 3.6 pp on the ungated rmsd<=2 rank-1 rate |
+
+Unverifiable by construction (literature values, no repository source): 73 % Orai1 transmembrane identity (:614, ref037), 22.1 % and 67.3 % TEMPL success (:822, ref065).
