@@ -269,3 +269,53 @@ value of the metal-adjacent stratum, the three ranking heads, the box-volume dis
 exhaustiveness ladder with its Holm column, Tables 18 to 22 in full on both routes, Table 23 cell for cell, the
 H.9 two-pipeline contrast with its intervals and power calculation, Tables 26 and 27, and the preparation audit,
 much of which had never had a registered generator and was recomputed from raw inputs for the first time.
+
+---
+
+## 8. Appendix fixes applied 2026-09-09
+
+Every value below was **re-derived by me from the primary data before the edit was made**, not taken on the
+strength of the agent adjudications. Where my own computation did not exactly reproduce the proposed
+replacement, the line was **left untouched** — that rule is what section 7.1 says should have been applied to
+:1235 in the first place.
+
+### 8.1 Applied (12 lines, 16 replacements)
+
+| line | change | how I verified it |
+|---|---|---|
+| :13 | unreconstructable list now names the flow chart, the two unseeded DiffDock runs, the Fr0 receptor, the prepared ligand files and the status record, and drops the non-existent cluster-quality figure | read `REGENERATE.md` section 7 directly; its list contains no such figure |
+| :77 | **37 / 80 / 42 / 90 → 45 / 104 / 54 / 117**, and "of the crystal ligand" → "of the nearest deposited copy of the ligand" | recomputed rank-1 `rmsd <= 2` per arm on the promoted table: `autodock_vinardo` 45 (instance 37), `autodock` 104 (80), `autodock_vinardo_gnina` 54 (42), `autodock_gnina` 117 (90). The printed quartet is exactly the instance column |
+| :156 | boron is typed **B**, the patch was live not latent, radius 1.87 Å under both functions | read the staged ligand `2abp-nh2-OPT.pdbqt`: 12 A, 1 B, 2 C, 2 HD, 1 N, 1 OA. Corroborates a defect already recorded in project memory |
+| :167, :1240 | "prepared receptor" → "cleaned receptor, taken before ADFRsuite writes the PDBQT" | computed the bounding box of one complex from both files: the cleaned PDB reproduces `box.txt` centre and size exactly, the PDBQT does not (57.8/57.0/82.2 against 57.8/56.0/80.5) |
+| :330, :355 | **0.74 → 0.72 hours** | `exhaustiveness_arm_status.json` records `gnina_optimizer_wall_clock_s` 2,587.3 s = 0.71869 h; the 0.74 came from a 2,677.7 s span the notes call retired. Same defect as main :733, whose repair had missed these twins |
+| :363, :395 | "all 1,232 control complexes wrote ten modes" → **1,227 wrote ten and five wrote nine** | grouped the control panel's AutoDock rows by unit: distribution is exactly `{10: 1227, 9: 5}` |
+| :369 | **76.4 % / 89.2 % → 77.3 % / 90.1 %**, and "wrote ten modes" → "wrote at most ten modes" | the printed pair is the validity-gated share (76.445 / 89.212); the sentence says only "outside the slab", which is 77.289 / 90.122. Decided by the paragraph's own Spearman, which reproduces on slab occupancy alone (+0.2109, p 6.98e-124 and +0.0044, p 0.629) and not on the gated indicator |
+| :533 | **5,201 / 1,223 / 1,321 / 339 → 4,795 / 1,124 / 1,258 / 330**; **1,558 / 81 → 1,152 / 74**; **80,100 → 80,098** | recomputed each check over the EquiBind rows of `posebusters_filtered_results.csv`; the water pair reproduces over the three unguided variants exactly, and the nine EquiBind configurations sum to 80,098 |
+| :1235 | **57 to 60 → 55 to 60** and **18.8 → 18.2** | `validity_gate_cost.csv` carries depths 1, 5, 15, 30 with costs 65, 60, 57, 55 and spans 21.45 to 18.15. There is no depth 10. This reverts the erroneous audit-driven edit recorded in section 7.1 |
+| :1244 | "sit above the value used here" → "sit below the value used here and above the lowest rungs of the ladder" | the paragraph's own citations give convergence at exhaustiveness 25 and 50, against the 128 the reported arm uses |
+
+### 8.2 Held back (7 items, deliberately not edited)
+
+In each case the finding is credible but **my own recomputation did not land on the proposed replacement**, so
+editing would mean trusting a number I could not reproduce.
+
+| line | proposed | what I got | why it is held |
+|---|---|---|---|
+| :367 | tie interval upper end 0.21 → 0.23 | 0.0617 to 0.0796 under either test | I could not reconstruct the generator's ligand-unit collapse under any reading; none of the three candidate values agrees |
+| :533 (last clause) | "12 poses" → 6 | 0 | depends on the exact twenty-two-check set, which I did not pin |
+| :1233 | 9,090 poses, 2,116 failures, 11.3 % | 9,186 poses, 2,178 failures | cohort basis (303 against 308) not pinned |
+| :1262 | χ² 393.3 / 299.0 → 351.7 / 267.1 | 349.4 / 264.2 | the printed pair is certainly stale, but the replacement depends on the arm definition; my EquiBind selection gives 9,061 rows against a probable 9,088 |
+| :562 | Tyr80 and Lys87 → Glu106 and Tyr80 | not attempted | needs a contact recomputation over the Fr0 rank-1 poses |
+| :615 | pocket span holds for three of four frames | not attempted | needs the fpocket output per frame |
+| :666, :1074 | claims are arm-conditional / unsourced | not attempted | :666 needs a 27-arm sweep, :1074 needs 150 poses re-busted |
+
+### 8.3 Verification after the edits
+
+| check | result |
+|---|---|
+| `thesis_assertions.py` | **1398 / 1398 checks reproduce** |
+| `latexmk -pdf` | 0 errors, 145 pages |
+| PDF probes | 27 of 27 — every new string present, every superseded string absent |
+| Kurzfassung | keywords still on page 4 |
+
+No edit changed a computed quantity that the harness pins, so nothing was regenerated and no yaml value moved.
