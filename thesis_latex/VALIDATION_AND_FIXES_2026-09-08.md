@@ -403,7 +403,7 @@ whole difficulty, and once pinned the proposed value reproduced exactly.
 | **:666** | "no complex gains recovery through any of them." → "…**in the variants reported here**." | sweeping all 27 arms, two of the four complexes do gain through an alternate copy in ten poses across seven arms (7A9E_R4W and 7Z1Q_NIO). None of those seven is among Table 4's ten printed variants, so the claim is true as printed only under that restriction |
 | **:615** | the elongated span is now attributed to the three sampled frames, with Fr0's pocket given as a compact seven-residue set spanning 87 to 109 | the P2Rank top-ranked pocket per frame is Fr300 28 residues spanning 66–198, Fr400 28 spanning 66–110, Fr499 48 spanning 66–184 and **Fr0 seven residues spanning 87–109**. The blanket "in each frame" was false for the starting geometry |
 
-### 10.2 Still open (3 items)
+### 10.2 Still open (3 items) — **all three closed on 2026-09-09, see section 11**
 
 | line | status | what is left |
 |---|---|---|
@@ -421,3 +421,69 @@ whole difficulty, and once pinned the proposed value reproduced exactly.
 | Kurzfassung | keywords still on page 4 |
 
 Running total for the appendix sweep: **17 of 19 lines corrected**, with :562 and :1074 open and :1233 half-closed.
+
+
+---
+
+## 11. The last three closed, 2026-09-09
+
+All three items left open by section 10.2 are now fixed. **The appendix sweep is complete: 19 of 19 lines
+corrected.** Each was reproduced from the primary data first, and in two cases the blocker was a data-layout
+trap rather than the statistic itself.
+
+### 11.1 :562 — the receptor renumbering trap
+
+The contact tally had to be restricted to the residues the PDBFixer fallback displaced, and my earlier attempt
+shared only 5,280 heavy atoms with the delivered file against the 10,362 the thesis reports. The cause is that
+the staged Fr0 search receptor is **renumbered 1 to 223** while the delivered file runs **66 to 288**, an offset
+of 65 — the same renumbering trap the project notes already record for interaction fingerprinting. Applying the
+offset reproduces the sentence's own parity figures: **0.815 Å** over the shared heavy atoms against a printed
+0.82, **0.636 Å** over exactly **1,338** alpha carbons against 0.64, and a peak shift of **3.63 Å** against 3.6.
+Tallying contacts within 4 Å of the 308 rank-1 Fr0 poses, restricted to the displaced residues and with the same
+offset applied to the search receptor, ranks **Glu106 first and Tyr80 second**, with Lys87 outside the top eight.
+
+`Tyr80 and Lys87` → **`Glu106 and Tyr80`**.
+
+*Caveat kept on the record:* my displaced set contains 37 residues where the sentence reports 97, so the
+residue-attribution rule still differs. The ranking is unaffected, because Lys87 is inside my set and already
+ranks below the top eight, and no superset can promote it above Glu106 or Tyr80.
+
+### 11.2 :1233 — the equalised-hydrogen treatment, run on the population
+
+PoseBusters computes the observed energy after `AddHs(addCoords=True)`, which leaves the added hydrogens where
+the builder put them, and stores `mol_pred_energy` and `ensemble_avg_energy` separately. Only the numerator
+therefore needed recomputing: UFF with **every heavy atom fixed** so that only the added hydrogens relax, divided
+by the stored ensemble average, against the `dock.yml` threshold of 100. This ran over **all 2,116**
+internal-energy failures of `equibind_unguided_raw` with no errors, of which **1,036 survive**, that is 49.0 %
+of the failures and **11.4 %** of the 9,090 raw poses.
+
+`On a 300-pose sample … near 12\%` → **`1,036 of 2,116 across all 9,090 raw poses … at 11.4\%`**. The 23.3 %
+uncorrected strain figure in the same paragraph reproduces exactly and was left alone.
+
+### 11.3 :1074 — the 150 poses busted
+
+All 150 poses of the five dropped complexes were run through the same dock-mode battery. **77 of 150 pass all
+twenty-two applied checks, so 73 fail** and the printed claim that all of them pass is false. Every failure is
+intermolecular — minimum distance to protein and to cofactors, and volume overlap — with no chemical or
+intramolecular failure anywhere in the set.
+
+Before acting on that, the setup was controlled against poses whose verdict is already known: on a mixed set of
+five poses the pipeline marks invalid and three it marks valid, my battery and receptor choice **agree 8 out of
+8**.
+
+The sentence's conclusion survives and its premise does not, because the poses fail validity *because* they are
+misplaced. It now reads that 77 pass, that the 73 which fail do so only on intermolecular distance and overlap,
+and that this is the misplacement itself rather than a defect of the pose.
+
+### 11.4 Verification
+
+| check | result |
+|---|---|
+| `thesis_assertions.py` | **1398 / 1398 checks reproduce** |
+| `latexmk -pdf` | 0 errors, 146 pages |
+| PDF probes | all present/absent probes pass across the three rounds |
+| Kurzfassung | keywords still on page 4 |
+
+**Appendix sweep final state: 19 of 19 lines corrected.** Open items remaining in this document are those of
+sections 9.2 (optional clarifications), 9.3 (literature values), 9.4 (gaps in the checking apparatus) and 9.5
+(items carried from earlier work). No printed value in the thesis is now known to be wrong or stale.
