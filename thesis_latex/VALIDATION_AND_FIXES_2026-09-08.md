@@ -270,7 +270,6 @@ exhaustiveness ladder with its Holm column, Tables 18 to 22 in full on both rout
 H.9 two-pipeline contrast with its intervals and power calculation, Tables 26 and 27, and the preparation audit,
 much of which had never had a registered generator and was recomputed from raw inputs for the first time.
 
----
 
 ## 8. Appendix fixes applied 2026-09-09
 
@@ -329,7 +328,7 @@ stands: the harness reproduces 1398 of 1398, no printed value is known to be sta
 either unreproduced replacements, optional clarifications, or gaps in the checking apparatus rather than in
 the thesis.
 
-### 9.1 Appendix values held back (7 items)
+### 9.1 Appendix values held back (7 items) — **five closed on 2026-09-09, see section 10**
 
 Each is a credible finding whose replacement value I could not reproduce. The work needed in every case is the
 same shape: **pin the generator's own cohort and arm definition, then recompute**. Until that is done the
@@ -384,3 +383,41 @@ change here that prevents recurrence rather than repairing a symptom.
   in Appendix C.4, while the body attributes the effect to the model.
 - The Fr0-resolved Results sentence proposed when the M1 receptor-parity finding was closed was left as an
   option and never applied.
+
+
+---
+
+## 10. Section 9.1 worked through, 2026-09-09
+
+The seven recipes of section 9.1 were executed. **Five closed and are now fixed; three remain open.** In every
+closed case the recipe's first step — pin the generator's own cohort and arm definition — turned out to be the
+whole difficulty, and once pinned the proposed value reproduced exactly.
+
+### 10.1 Closed and applied
+
+| line | change | what pinning the generator revealed |
+|---|---|---|
+| **:367** | "between 0.20 and 0.21" → **"between 0.20 and 0.23"**, and "from 0.012 to above 0.2" → "to about 0.2" | `orai_ligand_level_contrasts.py` collapses each ligand to the **median** over its frames, not the mean. With that collapse my recomputation reproduces the shipped adjusted p of **0.012** exactly, which validates the method, and the prefix-matched counterfactual then gives 0.1997 asymptotic against 0.2320 exact. The printed span was therefore too narrow at both ends |
+| **:533** last clause | "moves **12**" → "moves **6**" | the twenty-two applied checks are the PoseBusters `dock.yml` set. Restricted to exactly those columns, dropping the four cofactor checks moves 6 EquiBind poses across the threshold. My earlier attempt used all 34 boolean columns and got 0 |
+| **:1262** | χ² **393.3 → 351.7** with q **6.2e-85 → 6.9e-76**, and χ² **299.0 → 267.1** with q **9.5e-65 → 8.0e-58** | the arm definition was the whole gap. Joining the per-pose table's `method` column through `pose_file` gives `equibind_unguided_gnina` its true 9,088 rows rather than the 9,061 my earlier filter produced, and both χ² values then reproduce exactly. The q values follow from the thesis's own stated family of sixteen checks (4.332e-77 × 16 ÷ 1 and 1.006e-58 × 16 ÷ 2). Note the shipped `validity_stats.json` is a different test entirely, Cochran Q on an any-pass indicator over all variants, and matches neither |
+| **:666** | "no complex gains recovery through any of them." → "…**in the variants reported here**." | sweeping all 27 arms, two of the four complexes do gain through an alternate copy in ten poses across seven arms (7A9E_R4W and 7Z1Q_NIO). None of those seven is among Table 4's ten printed variants, so the claim is true as printed only under that restriction |
+| **:615** | the elongated span is now attributed to the three sampled frames, with Fr0's pocket given as a compact seven-residue set spanning 87 to 109 | the P2Rank top-ranked pocket per frame is Fr300 28 residues spanning 66–198, Fr400 28 spanning 66–110, Fr499 48 spanning 66–184 and **Fr0 seven residues spanning 87–109**. The blanket "in each frame" was false for the starting geometry |
+
+### 10.2 Still open (3 items)
+
+| line | status | what is left |
+|---|---|---|
+| **:1233** | **basis confirmed, treatment not** | the cohort is now pinned exactly: `equibind_unguided_raw` has **9,090 poses with 2,116 internal-energy failures**, both matching the proposal. Only the equalised-hydrogen step is unreproduced, and it needs a definition of that treatment (strip hydrogens and recompute the UFF energy ratio) plus a run over the 2,116 failures. Everything else for this line is now settled |
+| **:562** | **not reproducible as specified** | the sentence ranks residues among the **displaced** set, so the tally must be restricted to the residues the PDBFixer fallback moved. My pairing of `Data/Receptors/Orai1WT-START-Fr0.pdb` against the staged search receptor shares only 5,280 heavy atoms where the thesis reports 10,362, and reports 158 displaced residues against the stated 97, so the atom correspondence is wrong. The displaced-residue recipe used when the M1 receptor-parity finding was closed has to be recovered first. For the record, an unrestricted tally over all residues gives Phe34, Val37 and Leu30, which matches neither the printed pair nor the proposed one |
+| **:1074** | unchanged | still needs the 150 poses in `posebusters_results/itt/itt_dropped_poses.csv` re-busted, or the validity clause deleted |
+
+### 10.3 Verification
+
+| check | result |
+|---|---|
+| `thesis_assertions.py` | **1398 / 1398 checks reproduce** |
+| `latexmk -pdf` | 0 errors, 146 pages (the :615 replacement adds one page) |
+| PDF probes | 12 of 12 — every new string present, every superseded string absent |
+| Kurzfassung | keywords still on page 4 |
+
+Running total for the appendix sweep: **17 of 19 lines corrected**, with :562 and :1074 open and :1233 half-closed.
