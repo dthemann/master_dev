@@ -319,3 +319,68 @@ editing would mean trusting a number I could not reproduce.
 | Kurzfassung | keywords still on page 4 |
 
 No edit changed a computed quantity that the harness pins, so nothing was regenerated and no yaml value moved.
+
+---
+
+## 9. Open issues and how to close them
+
+Everything the sweep left unresolved, with a concrete route for each. Nothing here blocks the document as it
+stands: the harness reproduces 1398 of 1398, no printed value is known to be stale, and the items below are
+either unreproduced replacements, optional clarifications, or gaps in the checking apparatus rather than in
+the thesis.
+
+### 9.1 Appendix values held back (7 items)
+
+Each is a credible finding whose replacement value I could not reproduce. The work needed in every case is the
+same shape: **pin the generator's own cohort and arm definition, then recompute**. Until that is done the
+printed value stays, because replacing a wrong number with an unverified one is not an improvement.
+
+| line | printed | proposed | what to do |
+|---|---|---|---|
+| **:367** | tie interval "between 0.20 and 0.21" | "0.20 and 0.23" | Read `Scripts/Analysis/orai_pbvalid_tm_share_compare.py` and copy its ligand-unit collapse exactly, in particular how it pools the 308 control ligands against the 3 experimental ones and which Mann-Whitney method and correction it applies. My reconstruction gave 0.062 to 0.080, so the collapse differs from the obvious one. Then re-run with `method="exact"` and with the normal approximation and print the true span. |
+| **:533** last clause | "moves 12 of its 80,098 poses" | 6 | Extract the twenty-two applied checks from the PoseBusters run config under `Scripts/Docking/configs_thesis/` (the calibration entry, not the Orai ones), restrict to exactly those boolean columns, then count EquiBind poses that fail the full set but pass it with the four cofactor checks removed. Using all 34 boolean columns gives 0, so the check set is decisive. |
+| **:1233** | "300-pose sample", "near 12 %" | all 9,090 poses, 1,029 of 2,116, 11.3 % | Pin the cohort: my raw unguided EquiBind selection (`pocket_source == unguided`, `receptor_stage == equibind_graph_full`) has 9,186 poses and 2,178 internal-energy failures over the 308 source entries, against a proposed 9,090 and 2,116, which is the 303-complex cohort. Decide which basis the sentence uses, then recompute the equalised-hydrogen pass rate on that basis. |
+| **:1262** | χ² 393.3 / 299.0, q 6.2e-85 / 9.5e-65 | 351.7 / 267.1, q 6.9e-76 / 8.0e-58 | The printed pair is certainly stale, since every independent recomputation lands near 350 and 265. Find the generator of the sixteen-check BH family (it is not in `Scripts/Analysis`; check the notebook cells and `pandamap_interaction_report.py` / `pose_cluster_crystal_pocket_report.py`, which both import `friedmanchisquare`), read its arm selection, and re-run. My EquiBind arm had 9,061 rows where the per-pose table's `equibind_unguided_gnina` has 9,088, which alone explains the residual difference. |
+| **:562** | "Tyr80 and Lys87" | "Glu106 and Tyr80" | For each of the 308 control complexes take the AutoDock rank-1 Fr0 pose from the Orai control tree, list receptor residues with any heavy atom within 4 Å, and tally across complexes. The proposed counts are Glu106 79/308, Tyr80 51/308, Lys87 19/308 and fifth. |
+| **:615** | pore span "M1 residues 66 to 110" in each frame | true for the three sampled frames only; Fr0 is a compact 87 to 109 set | Read the top-ranked pocket residue list per frame from `pocket_results/fpocket_results` (the same outputs that fed the fpocket-guided EquiBind arm) and compare Fr0 against Fr300, Fr400 and Fr499. |
+| **:666** | "no complex gains recovery through any of them" | true only for the ten variants in Table 4 | For the four named complexes, sweep every arm in `per_pose_metrics.csv` and flag any pose with `pb_valid` and `rmsd <= 2` whose `nearest_copy_index` differs from `ref_copy_index`. If the exception exists only outside the printed variants, qualify the sentence rather than deleting the claim. |
+| **:1074** | "all 150 poses it produced for them pass the twenty-two applied checks" | unsourced for the reported arm | Two routes. Either bust the 150 poses named in `posebusters_results/itt/itt_dropped_poses.csv` (they sit under the exh128 tree's `optimized_gnina/` folders) and re-derive the claim, or delete the validity clause and keep only the placement statement the ITT sidecar already supports. |
+
+### 9.2 Optional clarifications, not errors
+
+| location | issue | suggested action |
+|---|---|---|
+| main :871 | "sixteenfold" is the ratio of the two printed medians (39.0 / 2.4); the cost sidecar's paired estimator on the same tier gives 10.5 with a 95 % interval of 7.1 to 14.2 | name the estimator, for example "about sixteenfold on the ratio of medians", or quote the paired figure |
+| main :516 | the Wilcoxon p of 0.064 is correct, but the 26 exact ties drive it and the Pratt and z-split variants both give 0.043 | consider a half-sentence on the tie handling, since a reader recomputing with different defaults will get a significant result |
+| Figure 3 caption | silent on the fact that the Kabsch RMSD is measured against the copy nearest in place rather than minimised over copies | one clause in the caption |
+| Figure 7 report directory | carries two pose bases side by side (`native_recovery_summary.csv` 0.539/0.555/0.397 against the published 0.539/0.572/0.403) | add a header line to each file naming its basis |
+
+### 9.3 Cannot be closed from this repository
+
+| location | value | route |
+|---|---|---|
+| main :614 | 73 % Orai1 transmembrane identity | check against Hou et al. 2012 (`ref037`); to make it reproducible, store the Drosophila-versus-human TM alignment as a sidecar |
+| main :822 | 22.1 % and 67.3 % TEMPL success | check against Fülöp, Šícho and Dehaen 2025 (`ref065`) |
+
+### 9.4 Gaps in the checking apparatus
+
+These are why two of the fixed defects survived the promotion in the first place, and closing them is the only
+change here that prevents recurrence rather than repairing a symptom.
+
+1. **No harness assertion covers prose clauses.** Every one of the 1398 checks targets a table cell or a named
+   scalar. The wrong arm count at main :433 and the stale Vinardo quartet at :77 both lived in sentences.
+   *Route:* add a `prose` block keyed by thesis line for the counts that sentences quote, in the style of the
+   existing `prose.nearest_copy_program` entries.
+2. **The `autodock_vinardo` and `autodock` arms carry no assertion at all.** That is precisely why :77's stale
+   quartet was invisible to the harness. *Route:* add a `table_appendix_vinardo` block over the four rank-1
+   counts, which also pins them against a future convention change.
+3. **`Scripts/Analysis/REGENERATE.md:487`** still records that App. C :165 prints "15 / 63". The thesis prints
+   sixteen and 62, which is what the registered rule produces, so the guide's note is the stale side.
+   *Route:* correct the stage note in `_build_reproduction_notebook.py` and regenerate the guide.
+
+### 9.5 Carried from earlier work, untouched by this sweep
+
+- The EquiBind harness non-parity (thirty MMFF conformers against one shared UFF conformer) is disclosed only
+  in Appendix C.4, while the body attributes the effect to the model.
+- The Fr0-resolved Results sentence proposed when the M1 receptor-parity finding was closed was left as an
+  option and never applied.
