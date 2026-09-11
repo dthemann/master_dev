@@ -710,6 +710,7 @@ EFFORT_COMMON = [
     "--autodock-prep", "mgl_tools", "--autodock-refine", "gnina", "--autodock-gnina-gpu",
     "--autodock-method", "autodock_mgltools_exh128_gnina",
     "--autodock-optimizer-workers", "16",
+    "--autodock-gnina-accounting", "device-occupancy",
     "--equibind-dir", "Dockings/Benchmark_Equibind_cputimed",
     "--unidock2-dir", "", "--unidock-dir", "",
     "--per-pose-csv", f"{BENCH_REPORT}/per_pose_metrics.csv",
@@ -725,9 +726,12 @@ reg.add(Stage(
     thesis="Table 6; Figure 15",
     cmd=[VINA_PY, ANA / "docking_effort_comparison.py", *EFFORT_COMMON,
          "--out-dir", str(EFF_C), "--basis", "charged", "--cpu-threads", "32"],
-    notes="The charged basis divides cpu_core_s/32 + gpu_s uniformly. The default "
+    notes="The charged basis divides cpu_core_s/32 + gpu_s uniformly; the default "
           "elapsed basis divides wall_s, which is not one quantity across arms and "
-          "is sensitive to --autodock-optimizer-workers; charged is not."))
+          "moves with --autodock-optimizer-workers. Charged does not move with it "
+          "under either gnina accounting, but only under --autodock-gnina-accounting "
+          "device-occupancy is the AutoDock GPU term a measured device occupancy "
+          "rather than a ~14x-inflated sum over sixteen concurrent workers."))
 
 reg.add(Stage(
     name="bench_effort_elapsed", section="3. Benchmark analysis",

@@ -885,3 +885,52 @@ def test_unidock_effort_requires_matching_commit_and_keeps_engines_separate(tmp_
     summary["fingerprint"] = "stale"
     summary_path.write_text(json.dumps(summary))
     assert effort._unidock_effort("CPLX", single_root, "unidock2") is None
+
+
+def _write_gnina_sidecar(path, created_at, elapsed):
+    path.write_text(json.dumps({"created_at": created_at,
+                                "optimizer_elapsed_time_s": elapsed,
+                                "fingerprint": "x" * 64}))
+
+
+def test_autodock_effort_device_occupancy_charges_measured_union(tmp_path):
+    prep = tmp_path / "CPLX" / "meeko"
+    out = prep / "docking" / "optimized_gnina"
+    out.mkdir(parents=True)
+    (prep / "docking_summary.json").write_text(json.dumps({"overall": {"total_time_seconds": 10.0}}))
+    # three invocations: two overlap (0-4 s and 2-6 s -> union 6 s), one disjoint (10-13 s)
+    _write_gnina_sidecar(out / "a.sdf.provenance.json", "2026-01-01T00:00:00", 4.0)
+    _write_gnina_sidecar(out / "b.sdf.provenance.json", "2026-01-01T00:00:02", 4.0)
+    _write_gnina_sidecar(out / "c.sdf.provenance.json", "2026-01-01T00:00:10", 3.0)
+    pd.DataFrame([{"tool": "gnina", "elapsed_time_s": e, "status": "success"}
+                  for e in (4.0, 4.0, 3.0)]).to_csv(prep / "optimization_log.csv", index=False)
+    effort._GNINA_OCCUPANCY_CACHE.clear()
+    # default accounting is untouched: undivided sum as gpu_s, gnina CPU dropped
+    assert effort._autodock_effort(
+        "CPLX", tmp_path, "meeko", "gnina", docking_cpu=32, optimizer_cpu=4,
+        gnina_gpu=True, optimizer_workers=2) == (10.0 + 11.0 / 2, 11.0, 320.0)
+    # device-occupancy: gpu_s = measured union (6 + 3 = 9 s); host CPU billed at 2 cores
+    wall, gpu, cpu = effort._autodock_effort(
+        "CPLX", tmp_path, "meeko", "gnina", docking_cpu=32, optimizer_cpu=4,
+        gnina_gpu=True, optimizer_workers=2,
+        gnina_accounting="device-occupancy", gnina_host_cores=2.0)
+    assert (wall, gpu) == (10.0 + 11.0 / 2, 9.0)
+    assert cpu == 320.0 + 11.0 * 2.0
+    # invariants the real data satisfy: longest interval <= union <= process sum
+    occ = effort._autodock_gnina_occupancy(tmp_path, "meeko", "gnina")["CPLX"]
+    assert occ == (9.0, 11.0, 3)
+    assert 4.0 <= occ[0] <= occ[1]
+    # CSV/sidecar disagreement must fail loudly rather than silently change the cohort
+    pd.DataFrame([{"tool": "gnina", "elapsed_time_s": e, "status": "success"}
+                  for e in (4.0, 4.0, 3.0, 5.0)]).to_csv(prep / "optimization_log.csv", index=False)
+    with pytest.raises(SystemExit):
+        effort._autodock_effort("CPLX", tmp_path, "meeko", "gnina", docking_cpu=32,
+                                optimizer_cpu=4, gnina_gpu=True,
+                                gnina_accounting="device-occupancy")
+    # no sidecars at all -> None: never fabricate an occupancy
+    effort._GNINA_OCCUPANCY_CACHE.clear()
+    for f in out.glob("*.provenance.json"):
+        f.unlink()
+    assert effort._autodock_effort("CPLX", tmp_path, "meeko", "gnina", docking_cpu=32,
+                                   optimizer_cpu=4, gnina_gpu=True,
+                                   gnina_accounting="device-occupancy") is None

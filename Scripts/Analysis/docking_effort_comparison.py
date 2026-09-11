@@ -115,8 +115,9 @@ import json
 import os
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -162,6 +163,32 @@ METHODS = {
 # selected independently. DiffDock/EquiBind continue to use only smina/gnina.
 _AUTODOCK_REFINERS = frozenset({"smina", "gnina", "gnina_refinement"})
 _AUTODOCK_GNINA_REFINERS = frozenset({"gnina", "gnina_refinement"})
+# How the GPU-side AutoDock gnina stage is billed (see _autodock_effort). 'process-sum' is
+# the historical accounting: gpu_s is the UNDIVIDED sum of the per-invocation elapsed times
+# in optimization_log.csv. On the exh128 arm those invocations ran optimize_workers=16 deep
+# on ONE device, so the sum is ~14x the time the device was actually busy (10.27 h against a
+# measured 0.71 h). 'device-occupancy' charges the measured per-complex union of the
+# optimizer intervals read from the provenance sidecars, and bills the stage's host CPU
+# at DEFAULT_GNINA_HOST_CORES instead of dropping it.
+GNINA_ACCOUNTINGS = ("process-sum", "device-occupancy")
+DEFAULT_GNINA_ACCOUNTING = "process-sum"      # byte-preserves every committed effort tree
+DEFAULT_GNINA_HOST_CORES = 2.1                 # measured per worker (exh128 gnina config, line 88)
+_GNINA_ACCOUNTING_MODE = DEFAULT_GNINA_ACCOUNTING   # set from args in main; read by labels
+_ORAI_PROCESS_SUM_WARNED = False
+
+
+def _set_gnina_accounting_mode(args) -> None:
+    global _GNINA_ACCOUNTING_MODE
+    _GNINA_ACCOUNTING_MODE = getattr(args, "autodock_gnina_accounting", DEFAULT_GNINA_ACCOUNTING)
+
+
+def _warn_orai_process_sum_once() -> None:
+    global _ORAI_PROCESS_SUM_WARNED
+    if not _ORAI_PROCESS_SUM_WARNED:
+        print("NOTE: --autodock-gnina-accounting device-occupancy applies to the benchmark path only. "
+              "Orai timing comes from one aggregated optimiser log with no per-invocation sidecars, "
+              "so its AutoDock gnina term stays process-sum.", file=sys.stderr)
+        _ORAI_PROCESS_SUM_WARNED = True
 # EquiBind per-pose timing fields, classified by the hardware that does the work.
 # Inference is GPU; conformer prep / UFF / IO are CPU. The REFINE step's hardware
 # depends on the tool AND the pipeline's gnina_use_gpu flag: smina is always CPU;
@@ -417,6 +444,82 @@ def _autodock_opt_time(cid: str, root: Path, prep: str, tool: str) -> Optional[f
     return total if total > 0 else None
 
 
+# Two top-level scalars out of a sidecar that also carries a full input-identity block.
+# A byte scan is ~2x faster than json.loads over the exh128 arm's 9,126 files; a file that
+# does not yield BOTH groups falls back to json.loads before being called unreadable, so a
+# writer-side formatting change degrades to slow, never to wrong.
+_PROV_SCAN = re.compile(rb'"created_at"\s*:\s*"([^"]+)"'
+                        rb'|"optimizer_elapsed_time_s"\s*:\s*(-?[0-9][0-9.eE+-]*)')
+_PROV_EPOCH = datetime(2000, 1, 1)   # naive local stamps differenced against a naive origin
+_GNINA_OCCUPANCY_CACHE: Dict[tuple, Dict[str, tuple]] = {}
+
+
+def _interval_union_s(intervals) -> float:
+    """Total length of the union of half-open [start, end) intervals, in seconds."""
+    if not intervals:
+        return 0.0
+    items = sorted(intervals)
+    total, cur_s, cur_e = 0.0, items[0][0], items[0][1]
+    for s, e in items[1:]:
+        if s > cur_e:
+            total += cur_e - cur_s
+            cur_s, cur_e = s, e
+        elif e > cur_e:
+            cur_e = e
+    return total + (cur_e - cur_s)
+
+
+def _autodock_gnina_occupancy(root: Path, prep: str, tool: str) -> Dict[str, Tuple[float, float, int]]:
+    """MEASURED per-complex device occupancy of one AutoDock optimizer tool.
+
+    Returns ``{cid: (occupancy_s, process_s, n)}``: the union of that complex's own
+    optimizer intervals, their undivided sum, and the invocation count.
+
+    Read from the provenance sidecars, NOT from optimization_log.csv. The CSV's
+    ``timestamp`` is a batch-WRITE stamp applied to every row of a complex after the
+    whole batch returns (measured spread across a complex's 30 rows: 0.57 ms), so a
+    union taken on it collapses to max(elapsed) and reports 0.39 h against the sidecars'
+    0.71 h on the exh128 arm. The sidecar's ``created_at`` is stamped per invocation
+    BEFORE execution (run_autodock.py, _build_optimizer_provenance) and
+    ``optimizer_elapsed_time_s`` wraps only the subprocess.
+
+    Complexes did not overlap each other on that arm: the sum of the 303 per-complex
+    unions equals the union of all their intervals to 1e-6, so this is an exact additive
+    decomposition of global occupancy and stays a true occupancy figure after the
+    common-set restriction.
+    """
+    key = (str(Path(root).resolve()), str(prep), str(tool))
+    hit = _GNINA_OCCUPANCY_CACHE.get(key)
+    if hit is not None:
+        return hit
+    per: Dict[str, list] = {}
+    for f in Path(root).glob(f"*/{prep}/docking/optimized_{tool}/*.provenance.json"):
+        cid = f.relative_to(root).parts[0]
+        created = elapsed = None
+        try:
+            raw = f.read_bytes()
+            for m in _PROV_SCAN.finditer(raw):
+                if m.group(1) is not None and created is None:
+                    created = m.group(1).decode()
+                elif m.group(2) is not None and elapsed is None:
+                    elapsed = float(m.group(2))
+                if created is not None and elapsed is not None:
+                    break
+            if created is None or elapsed is None:
+                d = json.loads(raw)
+                created, elapsed = d["created_at"], float(d["optimizer_elapsed_time_s"])
+            t0 = (datetime.fromisoformat(created) - _PROV_EPOCH).total_seconds()
+        except Exception:
+            continue                       # unreadable sidecar: leave that invocation out
+        if elapsed < 0:
+            continue
+        per.setdefault(cid, []).append((t0, t0 + elapsed))
+    out = {cid: (_interval_union_s(iv), sum(e - s for s, e in iv), len(iv))
+           for cid, iv in per.items()}
+    _GNINA_OCCUPANCY_CACHE[key] = out
+    return out
+
+
 def _autodock_effort(
     cid: str,
     root: Path,
@@ -426,8 +529,16 @@ def _autodock_effort(
     optimizer_cpu: int,
     gnina_gpu: bool = False,
     optimizer_workers: Optional[int] = None,
+    gnina_accounting: str = DEFAULT_GNINA_ACCOUNTING,
+    gnina_host_cores: float = DEFAULT_GNINA_HOST_CORES,
 ) -> Optional[tuple]:
-    """Return ``(wall_s, gpu_s, cpu_core_s)`` for an AutoDock variant."""
+    """Return ``(wall_s, gpu_s, cpu_core_s)`` for an AutoDock variant.
+
+    ``gnina_accounting`` decides what gpu_s IS for a GPU-run gnina stage: 'process-sum'
+    (default, historical) the undivided Σ of per-invocation elapsed times; 'device-occupancy'
+    the measured per-complex union of those invocations' intervals, with the stage's host
+    CPU billed at ``gnina_host_cores`` per invocation-second instead of dropped.
+    """
     dock = _autodock_time(cid, root, prep)
     if dock is None:
         return None
@@ -440,10 +551,33 @@ def _autodock_effort(
     # Σ per-pose optimizer elapsed IS the optimizer's wall clock only while the poses of a
     # complex were minimised one at a time. Arms run with optimize_workers > 1 overlap those
     # intervals, so the sum becomes compute time and the divisor recovers an approximate wall
-    # clock. Resource-seconds are deliberately left un-divided: sixteen concurrent gnina calls
-    # still bill sixteen calls' worth of GPU and CPU cores.
+    # clock. Under 'process-sum' the resource-seconds are left un-divided (sixteen concurrent
+    # gnina calls bill sixteen calls' worth of GPU); under 'device-occupancy' gpu_s is the
+    # MEASURED union of the intervals instead, so no divisor is involved at all.
     opt_wall = opt / max(int(optimizer_workers), 1) if optimizer_workers else opt
     if refine in _AUTODOCK_GNINA_REFINERS and gnina_gpu:
+        if gnina_accounting == "device-occupancy":
+            occ = _autodock_gnina_occupancy(root, prep, refine).get(cid)
+            if occ is None:
+                return None                # no sidecars: never fabricate an occupancy
+            occupancy_s, process_s, n = occ
+            # Same invocations, two records. The CSV sum is rounded to 2 dp and INCLUDES
+            # failed attempts, which write no sidecar; a gap wider than rounding means the
+            # two sources describe different sets (stale optimized_* dir, partial re-run).
+            if abs(process_s - opt) > 0.01 * max(n, 1) + 1e-6:
+                raise SystemExit(
+                    f"ERROR: {cid} {refine}: provenance sidecars sum to {process_s:.3f} s over "
+                    f"{n} invocations but optimization_log.csv sums to {opt:.3f} s. Under "
+                    "--autodock-gnina-accounting device-occupancy the two must describe the "
+                    "same invocations.")
+            # gpu_s is the measured union. The host cores each concurrent gnina occupied are
+            # billed as CPU instead of dropped; opt (the CSV sum) multiplies the cores because
+            # it is the record that includes failed attempts' real CPU.
+            return (dock + opt_wall, occupancy_s,
+                    dock_cpu_s + opt * float(gnina_host_cores))
+        if gnina_accounting != "process-sum":
+            raise ValueError(f"unknown gnina accounting {gnina_accounting!r}; "
+                             f"expected one of {GNINA_ACCOUNTINGS}")
         return dock + opt_wall, opt, dock_cpu_s
     return dock + opt_wall, 0.0, dock_cpu_s + opt * max(int(optimizer_cpu), 1)
 
@@ -1195,6 +1329,8 @@ def _collect_rows_benchmark(args, counts) -> tuple:
                     getattr(args, "autodock_opt_cpu", 1),
                     getattr(args, "autodock_gnina_gpu", False),
                     getattr(args, "autodock_optimizer_workers", None),
+                    getattr(args, "autodock_gnina_accounting", DEFAULT_GNINA_ACCOUNTING),
+                    getattr(args, "autodock_gnina_host_cores", DEFAULT_GNINA_HOST_CORES),
                 )
                 if effort is not None:
                     wall, gpu_s, cpu_core_s = effort
@@ -1259,6 +1395,11 @@ def _collect_rows_orai(args, counts) -> tuple:
                     cpu_core_s = w * args.autodock_cpu
                     if (ad_refine in _AUTODOCK_GNINA_REFINERS
                             and getattr(args, "autodock_gnina_gpu", False)):
+                        # Orai has ONE aggregated optimiser log and no per-invocation sidecars,
+                        # so device-occupancy cannot be measured here. Stay process-sum, say so.
+                        if getattr(args, "autodock_gnina_accounting",
+                                   DEFAULT_GNINA_ACCOUNTING) == "device-occupancy":
+                            _warn_orai_process_sum_once()
                         gpu_s = opt
                     else:
                         gpu_s = 0.0
@@ -1404,14 +1545,22 @@ _MIN_PAIRED = 3          # need at least this many paired complexes for a real t
 #
 #   charged  cpu_core_s / cpu_threads + gpu_s, applied identically to every arm.
 #            Device occupancy: a processor stage that saturates all cpu_threads is
-#            charged at its elapsed-equivalent, a GPU stage at its device-occupancy
-#            time, and consecutive stages sum. This is a time, not a resource-second,
+#            charged at its elapsed-equivalent, a GPU stage at its gpu_s (a true
+#            device-occupancy time only under --autodock-gnina-accounting
+#            device-occupancy), and consecutive stages sum. This is a time, not a resource-second,
 #            so it does not violate the "CPU-core-s and GPU-s are never summed" rule
 #            that governs the resource panels.
 #
-# The charged numerator reads only cpu_core_s and gpu_s, and neither is ever divided
-# by --autodock-optimizer-workers (see _autodock_effort). The charged basis is
-# therefore invariant to that flag, while the elapsed basis is not.
+# The charged numerator reads only cpu_core_s and gpu_s, and neither is divided by
+# --autodock-optimizer-workers (that flag rescales only wall_s), so the charged basis is
+# arithmetically invariant to it under either gnina accounting. That invariance is not, on
+# its own, an argument for the basis: under --autodock-gnina-accounting process-sum (the
+# default) AutoDock's gpu_s is the undivided sum of ~9,000 gnina process elapsed times that
+# ran sixteen-deep on ONE device, so it counts the same device-second up to sixteen times
+# and is invariant to the worker count only because it ignores it. Under device-occupancy
+# gpu_s is the measured union of each complex's own optimizer intervals, so concurrency is
+# removed by measurement rather than by a divisor, and the stage's host CPU is billed at
+# --autodock-gnina-host-cores instead of dropped.
 COST_BASES = ("elapsed", "charged")
 DEFAULT_COST_BASIS = "elapsed"
 DEFAULT_COST_CPU_THREADS = 32
@@ -1464,6 +1613,7 @@ def compute_effort_stats(pc: pd.DataFrame, summ: pd.DataFrame, meta: dict,
                 "Pooled per-pose validity rates are shown descriptively with Wilson CIs.",
         "cost_basis": basis,
         "cpu_threads": int(cpu_threads),
+        "gnina_accounting": _GNINA_ACCOUNTING_MODE,
         "common_n": int(meta.get("common_n", 0)),
         "min_paired": _MIN_PAIRED,
         "notes": [],
@@ -1588,6 +1738,7 @@ def compute_effort_by_quality_stats(pc: pd.DataFrame, seed: int = 0,
                    "median/IQR are over each tool's own qualifying complexes; the paired "
                    "tests use only complexes every tool populates at that tier.",
            "cost_basis": basis, "cpu_threads": int(cpu_threads),
+           "gnina_accounting": _GNINA_ACCOUNTING_MODE,
            "min_paired": _MIN_PAIRED, "tiers": {}, "notes": []}
     # Self-document which per-pose endpoint the near2 / form1 tiers were scored on, so a
     # reader can tell at a glance whether this cost view matches the headline accuracy view.
@@ -2207,8 +2358,10 @@ def make_effort_by_quality_figure(pc, out_dir, stats=None,
             if basis == "charged":
                 # Name the currency on the panel itself. Under the elapsed basis the
                 # title is left exactly as it was, so committed outputs reproduce.
-                title += (f"\ncharged device occupancy: CPU-core-s / {int(cpu_threads)}"
-                          " + GPU-s, one basis for every arm")
+                _tail = (" + GPU-s, gnina at measured device occupancy"
+                         if _GNINA_ACCOUNTING_MODE == "device-occupancy"
+                         else " + GPU-s, one basis for every arm")
+                title += f"\ncharged device occupancy: CPU-core-s / {int(cpu_threads)}" + _tail
             note = _omnibus_note(ts.get("omnibus"), "friedman")
             if note:
                 title += "\n" + note + "  [paired Friedman; Wilcoxon/Holm]"
@@ -2687,11 +2840,15 @@ def main(argv=None) -> int:
                          "vina elapsed plus its gnina sum, DiffDock's is measured, and "
                          "EquiBind's is best-config compute over its own worker count. "
                          "'charged' divides cpu_core_s / --cpu-threads + gpu_s for every "
-                         "arm alike — device occupancy, a time rather than a "
-                         "resource-second, so it does not break the rule that CPU-core-s "
-                         "and GPU-s are never summed. Neither cpu_core_s nor gpu_s is ever "
-                         "divided by --autodock-optimizer-workers, so 'charged' is "
-                         "invariant to that flag while 'elapsed' is not. Default "
+                         "arm alike. It is a true device-occupancy time only when the "
+                         "AutoDock gnina term is charged at its measured occupancy "
+                         "(--autodock-gnina-accounting device-occupancy); it does not break "
+                         "the rule that CPU-core-s and GPU-s are never summed. Neither term "
+                         "is divided by --autodock-optimizer-workers, so 'charged' is "
+                         "invariant to that flag while 'elapsed' is not; whether that "
+                         "invariance is meaningful depends on the gnina accounting "
+                         "(process-sum ignores the stage's concurrency, device-occupancy "
+                         "measures it). Default "
                          f"'{DEFAULT_COST_BASIS}', under which every committed effort "
                          "directory reproduces unchanged.")
     ap.add_argument("--cpu-threads", type=int, default=DEFAULT_COST_CPU_THREADS,
@@ -2747,6 +2904,29 @@ def main(argv=None) -> int:
                     default=False,
                     help="AutoDock gnina/gnina_refinement used the GPU. By default elapsed "
                          "time is classified as CPU work; set this for gnina_use_gpu=true.")
+    ap.add_argument("--autodock-gnina-accounting", default=DEFAULT_GNINA_ACCOUNTING,
+                    choices=GNINA_ACCOUNTINGS,
+                    help="How the GPU-side AutoDock gnina stage is billed. 'process-sum' "
+                         "(default) charges gpu_s the UNDIVIDED sum of the per-invocation "
+                         "elapsed times in optimization_log.csv; on the exh128 arm those ran "
+                         "optimize_workers=16 deep on one device, so the sum is ~14x the time "
+                         "the device was busy, and every committed effort directory reproduces "
+                         "unchanged under it. 'device-occupancy' charges the MEASURED union of "
+                         "each complex's own optimizer intervals, read from the "
+                         "optimized_<tool> provenance sidecars (created_at + "
+                         "optimizer_elapsed_time_s), and additionally bills the stage's host "
+                         "CPU at --autodock-gnina-host-cores instead of dropping it. Applies "
+                         "only to gnina/gnina_refinement with --autodock-gnina-gpu; the CPU "
+                         "branch already bills both. Benchmark-only; the Orai path stays "
+                         "process-sum and prints a note.")
+    ap.add_argument("--autodock-gnina-host-cores", type=float,
+                    default=DEFAULT_GNINA_HOST_CORES,
+                    help="CPU cores one concurrent GPU-gnina invocation occupies, for its "
+                         f"CPU-core-seconds. Default {DEFAULT_GNINA_HOST_CORES}, the value the "
+                         "exh128 gnina run config records as measured (16 x 2.1 = 33.6 against "
+                         "32 hardware threads: the pass saturated the processor). Distinct "
+                         "from --autodock-opt-cpu, the REQUESTED --cpu of a CPU-branch "
+                         "optimization. Ignored under --autodock-gnina-accounting process-sum.")
     ap.add_argument("--unidock-dir", default=None,
                     help="Tiled Uni-Dock result root. A complex is timed only when its "
                          "summary, v2 JSON sentinel, and run manifest agree. Dataset default: "
@@ -2816,6 +2996,7 @@ def main(argv=None) -> int:
                          "benchmark pipeline phase timing (~4.7 s); pass a value to override.")
     mf.add_method_filter_args(ap)
     args = ap.parse_args(argv)
+    _set_gnina_accounting_mode(args)
     _record_explicit_dataset_args(args)      # before the fill, while None still means "unset"
     _apply_dataset_defaults(args)
 

@@ -661,7 +661,8 @@ Both v2 runs use the same command; only `--basis` differs.
     --unidock2-dir "" --unidock-dir "" \
     --per-pose-csv posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv \
     --out-dir posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged \
-    --basis charged --cpu-threads 32
+    --basis charged --cpu-threads 32 \
+    --autodock-gnina-accounting device-occupancy
 ```
 
 Drop `--basis charged --cpu-threads 32` and change the `--out-dir` to `..._v2` to rebuild the
@@ -675,9 +676,15 @@ previously committed effort directory reproduces byte-for-byte apart from two ne
 (`cost_basis`, `cpu_threads`) in the two stats JSONs — verified 2026-09-01, 21 of 23 files
 md5-identical and the numeric payload of both JSONs unchanged.
 
-Because neither `cpu_core_s` nor `gpu_s` is ever divided by `--autodock-optimizer-workers`, the
-**charged basis is invariant to that flag**; the elapsed basis is not. That is why the same command
-serves both.
+Neither `cpu_core_s` nor `gpu_s` is divided by `--autodock-optimizer-workers` (that flag rescales
+only `wall_s`), so the **charged basis is arithmetically invariant to it** under either gnina
+accounting, and the same command serves both bases. That invariance is not an argument for the basis
+on its own. Under `--autodock-gnina-accounting process-sum` (the historical default) AutoDock's `gpu_s`
+is the undivided sum of ~9,000 gnina process-elapsed times that ran sixteen-deep on one GPU, i.e. about
+14x the 0.71 h the device was actually busy; under `device-occupancy` (added 2026-09-11, examiner
+finding C1) it is the measured per-complex union of those intervals read from the provenance sidecars,
+and the stage's host CPU (~2.1 cores per worker) is billed instead of dropped. The committed trees
+are regenerated under `device-occupancy`; drop the flag to reproduce the pre-C1 numbers.
 
 **Why the basis was unified.** Table 6 previously spliced an AutoDock row charged at device
 occupancy onto DiffDock and EquiBind rows charged at elapsed time, and Figure 25 was a third thing
