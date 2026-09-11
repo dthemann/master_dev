@@ -32,6 +32,7 @@ confidence of its own.
 from __future__ import annotations
 
 import hashlib
+import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -401,6 +402,51 @@ def check_table_6(spec: dict, rep: Report, verbose: bool = False) -> None:
 # =============================================================================
 # Table 8
 # =============================================================================
+
+def check_table_6_medians(spec: dict, rep: Report, verbose: bool = False) -> None:
+    """Table 6's headline column and Figure 15's paired block, from the stats sidecar.
+
+    check_table_6 pins the resource columns read from effort_summary.csv; the charged
+    median/IQR and the paired Friedman/Holm verdict live in effort_by_quality_stats.json
+    and were asserted nowhere before 2026-09-11.
+    """
+    t = spec.get("table_6_medians")
+    if not t:
+        return
+    p = ROOT / t["input"]
+    if not p.exists():
+        rep.add("table_6_medians", "stats sidecar present", "missing", False, t["source"])
+        return
+    tier = json.loads(p.read_text())["tiers"][t["tier"]]
+    nbad = 0
+    for method, (w_med, w_q1, w_q3) in t["rows"].items():
+        pm = tier["per_method"][method]
+        for key, want in (("median_s", w_med), ("q1_s", w_q1), ("q3_s", w_q3)):
+            got = round(float(pm[key]), 1)
+            ok = _close(got, want, 0.05)
+            nbad += not ok
+            rep.add(f"table_6_medians[{method}].{key}", want, got, ok, t["source"])
+    pr = t.get("paired", {}) or {}
+    om = tier["omnibus"]
+    checks = {"n": (int(tier["n_paired"]), pr.get("n")),
+              "chi2": (round(float(om["chi2"]), 1), pr.get("chi2")),
+              "kendall_w": (round(float(om["kendall_w"]), 2), pr.get("kendall_w"))}
+    ad_dd = [x for x in tier["pairwise"]
+             if str(x["a"]).startswith("AutoDock") and str(x["b"]).startswith("DiffDock")]
+    if ad_dd and "holm_autodock_vs_diffdock" in pr:
+        checks["holm_autodock_vs_diffdock"] = (round(float(ad_dd[0]["p_holm"]), 3),
+                                              pr["holm_autodock_vs_diffdock"])
+    for k, (got, want) in checks.items():
+        if want is None:
+            continue
+        tol = 0.05 if k == "chi2" else 0.005
+        ok = (got == want) if isinstance(want, int) else _close(got, want, tol)
+        nbad += not ok
+        rep.add(f"table_6_medians[paired.{k}]", want, got, ok, t["source"])
+    if verbose:
+        print(f"  Table 6 medians / Figure 15 paired block             "
+              f"{'ok' if not nbad else f'{nbad} DIFFER'}")
+
 
 def check_table_8(spec: dict, rep: Report, verbose: bool = False) -> None:
     """The exhaustiveness ladder, on the validity-aware near-native gate.
@@ -935,6 +981,7 @@ def run_all(verbose: bool = False) -> Report:
     check_table_4(spec, rep, verbose)
     check_table_5(spec, rep, verbose)
     check_table_6(spec, rep, verbose)
+    check_table_6_medians(spec, rep, verbose)
     check_table_8(spec, rep, verbose)
     check_table_9(spec, rep, verbose)
     check_table_10(spec, rep, verbose)
@@ -1112,7 +1159,7 @@ def check_table_10(spec: dict, rep: Report, verbose: bool = False) -> None:
         "autodock_poses_generated": int(ad["poses_generated"]),
         "autodock_cpu_core_h": round(float(ad["total_cpu_core_h"]), 2),
         "autodock_gpu_h": round(float(ad["total_gpu_h"]), 2),
-        "autodock_search_wall_h": round(search_h, 2),
+        "autodock_cpu_charged_h": round(search_h, 2),
         "autodock_charged_h": round(charged_h, 2),
         "autodock_rescoring_share_pct": round(100 * float(ad["total_gpu_h"]) / charged_h, 1),
         "equibind_full_run_wall_h": round(float(df.loc["equibind", "total_wall_full_h"]), 2),

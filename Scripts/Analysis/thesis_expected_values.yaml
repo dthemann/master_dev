@@ -174,21 +174,27 @@ table_4:
 # appendix table and the Results convention from drifting apart. The footnote's
 # derived quantities are pinned alongside, because they are the numbers a reader
 # checks the table against.
+# Since 2026-09-11 (examiner finding C1) the input tree is regenerated under
+# --autodock-gnina-accounting device-occupancy: AutoDock's gpu_s is the measured
+# per-complex union of its gnina intervals (0.71 h, not the 10.27 h summed over
+# sixteen concurrent workers on one GPU) and the stage's host CPU (2.1 cores per
+# worker) is billed, so cpu_core_h / 32 is no longer the search wall alone but
+# 4.73 h of search plus 0.67 h of gnina host CPU.
 table_10:
   source: "body_appendix_short.tex, tab:appendix-cost-per-pose"
   input: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/effort_summary.csv
   threads: 32
   rows:                           # [charged s, gpu s, cpu-core s] per generated pose
-    autodock: [6.02, 4.12, 60.73]
+    autodock: [2.45, 0.29, 69.38]
     diffdock: [9.01, 8.99, 0.53]
     equibind: [0.34, 0.07, 8.47]
   footnote:
     autodock_poses_generated: 8976
-    autodock_cpu_core_h: 151.42
-    autodock_gpu_h: 10.27
-    autodock_search_wall_h: 4.73      # cpu_core_h / 32
-    autodock_charged_h: 15.00         # search_wall_h + gpu_h
-    autodock_rescoring_share_pct: 68.5
+    autodock_cpu_core_h: 172.99       # 151.42 search + 21.57 gnina host CPU (10.27 h x 2.1 cores)
+    autodock_gpu_h: 0.71              # measured device occupancy of the gnina pass
+    autodock_cpu_charged_h: 5.41      # cpu_core_h / 32: 4.73 h search + 0.67 h gnina host CPU
+    autodock_charged_h: 6.12          # cpu_charged_h + gpu_h
+    autodock_rescoring_share_pct: 11.6   # GPU-only share; the whole gnina stage incl. its CPU is 22.6%
     equibind_full_run_wall_h: 11.39   # all nine configurations
 
 # -----------------------------------------------------------------------------
@@ -888,20 +894,41 @@ table_5:
 # Table 6 - Cost per Qualifying Pose (charged basis)
 # -----------------------------------------------------------------------------
 # A qualifying pose is PoseBusters-valid and within 2 A. The charged basis is
-# cpu_core_s / 32 + gpu_s, applied uniformly. The default elapsed basis divides
+# cpu_core_s / 32 + gpu_s, applied uniformly, with the AutoDock gnina term charged
+# at its measured device occupancy (--autodock-gnina-accounting device-occupancy,
+# since 2026-09-11) and its host CPU billed. The default elapsed basis divides
 # wall_s, which is not one quantity across arms and moves with the optimiser
-# worker count; the charged basis does not.
+# worker count; the charged basis does not move with it under either accounting,
+# and only under device-occupancy is its AutoDock GPU term a measured occupancy.
 table_6:
   source: "body_main_short.tex, tab:results-cost-per-qualifying-pose"
   input: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/effort_summary.csv
   rows:
-    autodock: {complexes: 214, cpu_core_s_per_near2: 1233.3, gpu_s_per_near2: 83.6, poses_near2: 442}
+    autodock: {complexes: 214, cpu_core_s_per_near2: 1408.9, gpu_s_per_near2: 5.8, poses_near2: 442}
     diffdock: {complexes: 183, cpu_core_s_per_near2: 2.30,   gpu_s_per_near2: 39.1,  poses_near2: 2068}
     equibind: {complexes: 83,  cpu_core_s_per_near2: 159.4,  gpu_s_per_near2: 1.4,   poses_near2: 483}
   note: >-
     The complexes column uses the VALIDITY-AWARE near-native gate
     (pb_valid AND rmsd <= 2), unlike Table 1's near-native column, which is
     unconditioned. That is why AutoDock reads 214 here and 217 there.
+
+# The headline column of Table 6 (charged median and IQR per qualifying pose) and the
+# paired Friedman/Holm block that Figure 15 and Results 4.3 print. Added 2026-09-11:
+# until then the headline number was asserted nowhere, so a regeneration that moved
+# it would have passed silently.
+table_6_medians:
+  source: "body_main_short.tex, tab:results-cost-per-qualifying-pose; fig:results-r23"
+  input: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/effort_by_quality_stats.json
+  tier: near2
+  rows:                           # [median s, q1 s, q3 s] over the tool's own qualifying complexes
+    "AutoDock Vina + gnina": [28.8, 16.3, 50.7]
+    "DiffDock (smina)": [39.0, 11.7, 115.4]
+    "EquiBind (unguided+gnina)": [2.4, 1.0, 7.3]
+  paired:
+    n: 54
+    chi2: 73.4
+    kendall_w: 0.68
+    holm_autodock_vs_diffdock: 0.907   # not separable once the rescoring pass is charged at occupancy
 
 # -----------------------------------------------------------------------------
 # Table 8 - AutoDock Exhaustiveness Ladder
