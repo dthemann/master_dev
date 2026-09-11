@@ -683,7 +683,7 @@ serves both.
 occupancy onto DiffDock and EquiBind rows charged at elapsed time, and Figure 25 was a third thing
 again — a uniform elapsed panel whose AutoDock-versus-DiffDock bracket read `ns` directly beneath
 prose claiming every pair cleared Holm. On the uniform charged basis the panel and the text agree:
-Friedman chi2 = 85.2, p = 3.2e-19, Kendall W = 0.80, n = 53 paired, all three pairs `***`.
+Friedman chi2 = 87.1, p = 1.2e-19, Kendall W = 0.81, n = 54 paired, all three pairs `***`.
 The AutoDock cells are unchanged by the unification (151.42 CPU-core-h / 32 = 4.73 h, its measured
 search wall); only DiffDock (50.5 -> 49.4 s) and EquiBind (1.7 -> 2.4 s) move.
 
