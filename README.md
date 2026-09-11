@@ -46,9 +46,12 @@ arm and survives in the `*_ref_instance` columns of the per-pose table.
 | --- | --- |
 | `THESIS_REPRODUCTION.md` | how the pipeline was built and why each decision was made |
 | `Scripts/Analysis/REGENERATE.md` | generated from the registry: every float, its source, the command that rebuilds it, the environment it needs and what cannot be reconstructed |
-| `Scripts/Analysis/FINDINGS_2026-09-02.md` | defects found and their evidence, plus an md5-verified index of all 39 figures |
 | `Scripts/Analysis/IMPLEMENTED_STATS_TESTS.md` | the statistical design |
-| `CLEANUP_PLAN.md` | the repository cleanup and its outcome |
+
+Working notes that are not part of the repository are kept locally instead: findings
+records, examiner reviews, implementation plans, session logs and defence material.
+Some documents here still name them, so a reference that resolves to nothing is a
+pointer into that local set rather than a missing file.
 
 ## Two things to know before changing anything
 
