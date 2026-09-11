@@ -229,8 +229,13 @@ required against the exh128 tree:
   intervals; 2,611.5 s under the opposite created_at convention, first-to-last span **2,681.9 s** —
   that span is the ~2,677.7 s figure this document used to quote). So the sum overstates the wall by
   **~14.5×**. Dividing by 16 lands ~10 % below the measured wall because the speed-up is sublinear;
-  it is an approximation, not a measurement. Resource-seconds are deliberately NOT divided — sixteen
-  concurrent gnina calls still bill sixteen calls' worth of GPU-s and CPU-core-s.
+  it is an approximation, not a measurement. Under the historical `process-sum` accounting the
+  resource-seconds were deliberately NOT divided, so sixteen concurrent gnina calls billed sixteen
+  calls' worth of GPU-s. **Superseded 2026-09-11 (examiner finding C1):** with
+  `--autodock-gnina-accounting device-occupancy` the stage's `wall_s` and `gpu_s` are the measured
+  union of the per-complex sidecar intervals (2,561.6 s over the 303-complex cohort, start-anchored;
+  the 2,587.3 s above is the 308-complex end-anchored figure) and its host CPU is billed at 2.1
+  cores per invocation-second, so the `/16` divisor no longer enters the committed trees at all.
 
 Both flags are wired into notebook cell `4821046f`, so `docking_effort_gnina/` is now regenerated
 from the notebook rather than recomputed by hand. Do NOT read the `timestamp` column of

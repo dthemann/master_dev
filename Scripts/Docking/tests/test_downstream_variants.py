@@ -909,18 +909,28 @@ def test_autodock_effort_device_occupancy_charges_measured_union(tmp_path):
     assert effort._autodock_effort(
         "CPLX", tmp_path, "meeko", "gnina", docking_cpu=32, optimizer_cpu=4,
         gnina_gpu=True, optimizer_workers=2) == (10.0 + 11.0 / 2, 11.0, 320.0)
-    # device-occupancy: gpu_s = measured union (6 + 3 = 9 s); host CPU billed at 2 cores
+    # device-occupancy: wall and gpu_s = measured union (6 + 3 = 9 s); host CPU billed at 2 cores
     wall, gpu, cpu = effort._autodock_effort(
         "CPLX", tmp_path, "meeko", "gnina", docking_cpu=32, optimizer_cpu=4,
         gnina_gpu=True, optimizer_workers=2,
         gnina_accounting="device-occupancy", gnina_host_cores=2.0)
-    assert (wall, gpu) == (10.0 + 11.0 / 2, 9.0)
+    assert (wall, gpu) == (10.0 + 9.0, 9.0)
     assert cpu == 320.0 + 11.0 * 2.0
     # invariants the real data satisfy: longest interval <= union <= process sum
     occ = effort._autodock_gnina_occupancy(tmp_path, "meeko", "gnina")["CPLX"]
     assert occ == (9.0, 11.0, 3)
     assert 4.0 <= occ[0] <= occ[1]
-    # CSV/sidecar disagreement must fail loudly rather than silently change the cohort
+    # a FAILED attempt writes no sidecar: it must not trip the guard, but it still bills CPU
+    pd.DataFrame([{"tool": "gnina", "elapsed_time_s": 4.0, "status": "success"},
+                  {"tool": "gnina", "elapsed_time_s": 4.0, "status": "success"},
+                  {"tool": "gnina", "elapsed_time_s": 3.0, "status": "success"},
+                  {"tool": "gnina", "elapsed_time_s": 5.0, "status": "failed"}]
+                 ).to_csv(prep / "optimization_log.csv", index=False)
+    wall, gpu, cpu = effort._autodock_effort(
+        "CPLX", tmp_path, "meeko", "gnina", docking_cpu=32, optimizer_cpu=4,
+        gnina_gpu=True, gnina_accounting="device-occupancy", gnina_host_cores=2.0)
+    assert (wall, gpu, cpu) == (19.0, 9.0, 320.0 + 16.0 * 2.0)
+    # a committed-success row without a sidecar is a real disagreement: fail loudly
     pd.DataFrame([{"tool": "gnina", "elapsed_time_s": e, "status": "success"}
                   for e in (4.0, 4.0, 3.0, 5.0)]).to_csv(prep / "optimization_log.csv", index=False)
     with pytest.raises(SystemExit):

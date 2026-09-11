@@ -77,8 +77,9 @@ The default run mode executes nothing. It walks all 66 stages, checks their
 outputs exist, and asserts the thesis numbers. That takes a few minutes.
 
 The reason is arithmetic. Appendix B records the AutoDock search at 4.73
-wall-hours over 303 complexes and the gnina rescoring at 10.27 GPU-hours in 0.74
-wall-hours, and that is one arm of one panel. The exhaustiveness ladder is five
+wall-hours over 303 complexes and the gnina rescoring at 0.71 GPU-hours of measured
+device occupancy (10.27 GPU-hours if the sixteen concurrent workers' elapsed times are
+summed), and that is one arm of one panel. The exhaustiveness ladder is five
 independent searches. The Orai control panel is 1,232 units across three tools.
 A notebook that re-docks on every run would never be run, and one that re-docks
 by accident would destroy irreplaceable trees.

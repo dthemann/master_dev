@@ -467,43 +467,65 @@ No hard figures in the note prose. Two definitions carry weight.
 
 - **Is** CPU-core-seconds divided by the 32 hardware threads of the workstation, plus
   GPU-seconds. It charges *device occupancy* rather than wall clock, so work that merely
-  ran with more concurrency does not look cheaper.
+  ran with more concurrency does not look cheaper. Since 2026-09-11 the GPU term of the
+  AutoDock rescoring pass is the measured union of its per-pose intervals rather than the
+  sum over its sixteen concurrent workers, and the host CPU those workers held is charged;
+  no stage is charged for more time than its device supplied.
 - **Hardware** Intel Core i9-14900HX, 32 threads, NVIDIA RTX 4070 Laptop, 8 GB VRAM,
   32 GB system memory.
 - **Source** main :710, appendix :330, :355.
 
-### `0.74` wall-hours, `sixteen` ways, `10.27` GPU-hours
+### `0.71` GPU-hours, `sixteen` ways, `2.1` cores, `1.39` charged hours
 
 - **Is** the gnina rescoring pass that completes the AutoDock arm. It ran sixteen poses
-  at a time on the GPU, consuming 10.27 GPU-hours of device occupancy in 0.74 wall-hours.
-- **Trap** the 0.74 figure is a *scheduling result*, not a property of the method. It is
-  the number that would flatter this arm.
+  at a time on one GPU and occupied the device for 0.71 hours, the union of the per-pose
+  provenance-sidecar intervals over the 303 complexes (the per-complex unions sum exactly
+  to that figure because the complexes ran one after another). Its workers each held
+  about 2.1 processor cores, so the pass also charges 21.6 CPU-core-hours, 0.67 charged
+  hours at the 32-thread rate. Stage total 1.39 charged hours.
+- **Trap** summing the sixteen workers' elapsed times gives 10.27 GPU-hours, more than one
+  device can deliver in 0.71 hours. The thesis used that sum until 2026-09-11 (examiner
+  finding C1) and it must not be defended as an occupancy. If asked: it counted the same
+  device-second up to sixteen times.
 
-### `15.00` charged hours and `68.5 %`
+### `6.12` charged hours and `22.6 %`
 
-- **Is** AutoDock's total: 4.73 wall-hours of blind Vina search plus 10.27 GPU-hours of
-  gnina occupancy. The rescorer is 68.5 % of the bill and is roughly twice as expensive
-  as the search it re-ranks.
-- **Source** main :710, :756, :850.
+- **Is** AutoDock's total: 4.73 wall-hours of blind Vina search plus the 1.39-hour
+  rescoring pass. Rescoring is 22.6 % of the bill (11.6 % is the GPU occupancy alone) and
+  costs roughly three tenths of the search it re-ranks. The parts are rounded separately,
+  so 4.73 + 0.67 + 0.71 reads 6.11 while the unrounded total is 6.12.
+- **Consequence** Table 6 AutoDock 28.8 s per qualifying pose (was 91.8), 1,408.9
+  CPU-core-s (was 1,233.3, now including the gnina host CPU), 5.8 GPU-s (was 83.6).
+  AutoDock and DiffDock are not separable on the charged basis (Holm p 0.91 on the 54
+  complexes all three solve); AutoDock leads the processor axis by nearly an order of
+  magnitude (8.8x), DiffDock the GPU axis.
+- **Source** main 4.3 cost paragraphs, Table 6, 6.3; appendix C.7, Table 10.
 
-### `5.47` hours
+### `5.44` hours
 
-- **Is** what AutoDock would total if the rescoring pass were charged at wall clock
-  instead of occupancy, with rescoring falling to 13.5 % of the bill. That is the
-  flattering accounting, and the thesis declines it.
-- **Source** main :710.
+- **Is** AutoDock's measured elapsed total: 4.73 hours of search plus the 0.71 hours the
+  rescoring pass occupied the GPU. Until 2026-09-11 the thesis called this "the flattering
+  accounting" and declined it in favour of a 15.00-hour total that summed sixteen concurrent
+  workers; examiner finding C1 showed that sum exceeded what one device could deliver, and
+  the measured occupancy is now the basis. The charged total of 6.12 hours exceeds 5.44 only
+  by the 0.67 hours of host CPU the rescoring workers held, which elapsed time cannot see.
+- **Source** appendix C.7; `effort_summary.csv` total_wall_h 5.4434.
 
-### `137.2`, `49.4`, `2.4` seconds and `199`, `169`, `80` complexes
+### `28.8`, `39.0`, `2.4` seconds and `214`, `183`, `83` complexes
 
 - **Is** median charged seconds per **qualifying pose**, where qualifying means
-  PoseBusters-valid and within 2 Å, and the count of complexes contributing at least one
-  such pose. AutoDock 137.2 s over 199 complexes, DiffDock 49.4 s over 169, EquiBind
-  2.4 s over 80.
-- **Source** main :737–739, :848.
-- **Worth noticing** these three counts are exactly the best-of-top-30 recovery counts
-  from the accuracy table, 199 / 169 / 80 of 303. The cost denominator and the deepest
-  accuracy pool are the same quantity, which is why the cost slide and the RQ1 slide can
-  be read against each other.
+  PoseBusters-valid and within 2 Å of the nearest deposited ligand copy, and the count of
+  complexes contributing at least one such pose. AutoDock 28.8 s over 214 complexes
+  (IQR 16.3 to 50.7), DiffDock 39.0 s over 183, EquiBind 2.4 s over 83.
+- **Trap** AutoDock and DiffDock are NOT separable: on the 54 complexes all three solve the
+  paired medians are 27.2 against 17.7 s and the Holm-corrected p is 0.91. Do not defend an
+  ordering between them. EquiBind is separable from both (***). Earlier drafts printed
+  91.8 s for AutoDock (summed-worker GPU term) and, before the nearest-copy promotion,
+  137.2 / 49.4 / 2.4 over 199 / 169 / 80; neither set is current.
+- **Source** main Table 6 and 4.3; Figure 15; `effort_by_quality_stats.json` near2 tier.
+- **Worth noticing** the complex counts use the validity-aware gate (valid AND within 2 Å),
+  so they sit slightly below the unconditioned best-of-top-30 recovery counts of Table 1
+  (AutoDock 214 here against 217 there).
 - **Reading** on 53 complexes where every tool succeeds the ordering persists
   (Friedman χ² = 85.2, p = 3.2e-19, Kendall W = 0.80) and every pair clears Holm.
   Median per-complex cost ratios are 0.14 for DiffDock against AutoDock and 0.02 for
@@ -515,33 +537,40 @@ No hard figures in the note prose. Two definitions carry weight.
   median describes only the 80 successes.
 - **Trap — concede immediately** cost conditional on success favours whoever fails most.
   The thesis states it. Alternative denominators are reported and none changes the
-  ordering: per attempted docking the medians are 157.7 / 227.6 / 8.1 s; allocating the
-  whole campaign to successful complexes gives 271 / 479 / 38 s, on which AutoDock is
-  actually *cheaper* than DiffDock in charged and GPU terms.
+  ordering: per attempted docking the medians are 49.4 / 227.6 / 8.1 s; allocating the
+  whole campaign to successful complexes gives 103 / 443 / 37 s, on which AutoDock is
+  *cheaper* than DiffDock in charged and GPU terms (12 against 442 GPU-seconds per success)
+  but remains far dearer in CPU-core-seconds.
 
-### `21.7` seconds
+### `17.8` seconds
 
 - **Is** the median charged cost per qualifying pose for **Vina search alone**, with no
-  GPU time, over 202 complexes and 302 qualifying poses. Below DiffDock on the charged
-  basis.
-- **Trap** Vina alone nevertheless has the highest CPU cost per qualifying pose,
-  1,805.0 s against the rescored arm's 1,752.8 s, because rescoring adds nine qualifying
-  poses at no CPU cost. Its 32 threads compress 151.42 CPU-core-hours into 4.73
-  wall-hours. AutoDock's advantage is coverage and admissibility, not economy.
+  GPU time, over 217 complexes and 431 qualifying poses. Below both DiffDock and the
+  rescored AutoDock arm on the charged basis.
+- **Trap** the CPU comparison between the two AutoDock arms flipped on 2026-09-11. Vina
+  alone costs 1,264.8 CPU-core-seconds per qualifying pose and the rescored arm 1,408.9,
+  because the rescoring workers hold about 2.1 processor cores each and that CPU is now
+  charged; earlier drafts had the rescored arm *lower* "because rescoring adds poses at no
+  CPU cost", which was an accounting omission, not a fact. Vina's 32 threads compress
+  151.42 CPU-core-hours into 4.73 wall-hours. AutoDock's advantage is coverage and
+  admissibility, not economy.
 
-### `5.3`, `5.3`, `137.2` — the endpoint-tightening series
+### `1.7`, `1.7`, `28.8` — the endpoint-tightening series
 
 - Worth having ready: median charged seconds per **generated**, **valid**, and
-  **valid-near-native** pose. AutoDock 5.3 / 5.3 / 137.2. DiffDock 7.6 / 9.2 / 49.4.
-  EquiBind 0.3 / 0.4 / 2.4. Contributing complexes fall 303 → 301 → 199, 303 → 300 → 169,
-  303 → 266 → 80. Tightening from valid to valid-near-native multiplies AutoDock's unit
-  cost by 25.9, against 5.4 and 6.0.
-- **Trap** these are charged seconds, **not** wall seconds. The wall figures are
-  1.4 / 1.4 / 26.6 and quoting those instead breaks the RQ3 argument.
+  **valid-near-native** pose. AutoDock 1.7 / 1.7 / 28.8. DiffDock 7.6 / 9.2 / 39.0.
+  EquiBind 0.3 / 0.4 / 2.4. Contributing complexes fall 303 → 301 → 214, 303 → 300 → 183,
+  303 → 266 → 83. Tightening from valid to valid-near-native multiplies AutoDock's unit
+  cost by 17.3, against 4.3 and 6.4, because a succeeding complex contributes only one or
+  two qualifying poses out of thirty.
+- **Trap** these are charged seconds. Under the measured-occupancy accounting AutoDock's
+  charged total exceeds its elapsed total only by the 0.67 hours of rescoring host CPU, so
+  the RQ3 argument no longer rests on the currency: AutoDock and DiffDock are not separable
+  per qualifying pose and EquiBind is far cheaper than both on the complexes it solves.
 
 ### `a quarter of the time`
 
-- EquiBind succeeds on 80 of 303 complexes, which is 26.4 %. The note's "a quarter" is
+- EquiBind succeeds on 83 of 303 complexes, which is 27.4 %. The note's "a quarter" is
   that. Its charged figure is also an idealised floor, because the uniform 32-thread
   basis credits it with concurrency it reaches only by running separate complexes in
   parallel. Its 21.39 CPU-core-hours are under a seventh of AutoDock's 151.42.
@@ -682,11 +711,11 @@ at a cost negligible next to the generation step. The supporting numbers are sli
 | `303` | analysed benchmark complexes | never 308, which is the prepared / Orai-control ligand count |
 | `0.4–0.8 pp` | winner's curse over three refiner arms per learned family | **not** the AutoDock correction, which is ~2.0 pp at rank-1 |
 | `95 %` | cluster-level 4 Å oracle (slide 8) | **not** a confidence interval, and **not** pose accuracy |
-| `5.3 s` | charged seconds per generated pose | **not** wall seconds, which are 1.4 s |
+| `1.7 s` | AutoDock charged seconds per generated pose (median) | **not** 2.45 s, the pooled ratio of Table 10, and no longer 5.3 s |
 
 ## Three numbers to keep out of your mouth unless asked
 
 1. **97.7 %** pooled full-cloud oracle. It is true and it sounds like an accuracy claim.
-2. **0.74 wall-hours** for the gnina pass. It is the accounting you rejected.
+2. **10.27 GPU-hours / 15.00 charged hours** for the AutoDock arm. That is the summed-worker accounting the thesis used until 2026-09-11 and now rejects; the measured figures are 0.71 GPU-hours and 6.12 charged hours.
 3. **75 %** AutoDock on the Vina prefix. Correct, but it is the number that removes your
    own Orai1 headline. Volunteer it only in the caveat, where it reads as rigour.

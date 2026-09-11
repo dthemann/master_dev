@@ -47,7 +47,10 @@ Timing sources (per complex):
                + optimization_log.csv for --autodock-refine
                  smina/gnina/gnina_refinement
                CPU-core-seconds = wall × N threads (--autodock-cpu, default 32);
-               optimizer work is added on its recorded CPU/GPU device.
+               optimizer work is added on its recorded CPU/GPU device. Under
+               --autodock-gnina-accounting device-occupancy a GPU-run gnina stage is
+               charged the measured union of its provenance-sidecar intervals (wall_s
+               and gpu_s) plus --autodock-gnina-host-cores per invocation-second of CPU.
   * Uni-Dock : Dockings/unidock_results_full_protein_vina_scoring/<id>/
                docking_summary.json -> elapsed_s, accepted only with the matching
                v2 .unidock_done + run_manifest.json commit. Tiled and Uni-Dock2
@@ -172,9 +175,10 @@ _AUTODOCK_GNINA_REFINERS = frozenset({"gnina", "gnina_refinement"})
 # at DEFAULT_GNINA_HOST_CORES instead of dropping it.
 GNINA_ACCOUNTINGS = ("process-sum", "device-occupancy")
 DEFAULT_GNINA_ACCOUNTING = "process-sum"      # byte-preserves every committed effort tree
-DEFAULT_GNINA_HOST_CORES = 2.1                 # measured per worker (exh128 gnina config, line 88)
+DEFAULT_GNINA_HOST_CORES = 2.1                 # recorded as measured in the exh128 gnina run config (optimize_cpu comment)
 _GNINA_ACCOUNTING_MODE = DEFAULT_GNINA_ACCOUNTING   # set from args in main; read by labels
 _ORAI_PROCESS_SUM_WARNED = False
+_ORAI_PROCESS_SUM_HIT = False       # set when an Orai row was charged process-sum under a device-occupancy request
 
 
 def _set_gnina_accounting_mode(args) -> None:
@@ -182,8 +186,16 @@ def _set_gnina_accounting_mode(args) -> None:
     _GNINA_ACCOUNTING_MODE = getattr(args, "autodock_gnina_accounting", DEFAULT_GNINA_ACCOUNTING)
 
 
+def _gnina_accounting_label() -> str:
+    """Provenance label for the stats sidecars: the mode APPLIED, not merely requested."""
+    if _GNINA_ACCOUNTING_MODE == "device-occupancy" and _ORAI_PROCESS_SUM_HIT:
+        return "device-occupancy (benchmark path); Orai AutoDock gnina term: process-sum"
+    return _GNINA_ACCOUNTING_MODE
+
+
 def _warn_orai_process_sum_once() -> None:
-    global _ORAI_PROCESS_SUM_WARNED
+    global _ORAI_PROCESS_SUM_WARNED, _ORAI_PROCESS_SUM_HIT
+    _ORAI_PROCESS_SUM_HIT = True
     if not _ORAI_PROCESS_SUM_WARNED:
         print("NOTE: --autodock-gnina-accounting device-occupancy applies to the benchmark path only. "
               "Orai timing comes from one aggregated optimiser log with no per-invocation sidecars, "
@@ -410,7 +422,8 @@ def _autodock_time(cid: str, root: Path, prep: str) -> Optional[float]:
     return t if t > 0 else None
 
 
-def _autodock_opt_time(cid: str, root: Path, prep: str, tool: str) -> Optional[float]:
+def _autodock_opt_time(cid: str, root: Path, prep: str, tool: str,
+                       success_only: bool = False) -> Optional[float]:
     """Serial optimizer wall time for one AutoDock complex and committed tool.
 
     Failed attempts are included because they consumed real compute; collectors
@@ -438,6 +451,8 @@ def _autodock_opt_time(cid: str, root: Path, prep: str, tool: str) -> Optional[f
     # exists, retain all its failed-attempt time in the measured total below.
     if not statuses.eq("success").any():
         return None
+    if success_only:                      # rows that wrote a provenance sidecar
+        selected = selected[statuses.eq("success").to_numpy()]
     elapsed = pd.to_numeric(selected["elapsed_time_s"], errors="coerce")
     elapsed = elapsed[np.isfinite(elapsed) & (elapsed >= 0)]
     total = float(elapsed.sum()) if len(elapsed) else 0.0
@@ -558,22 +573,27 @@ def _autodock_effort(
     if refine in _AUTODOCK_GNINA_REFINERS and gnina_gpu:
         if gnina_accounting == "device-occupancy":
             occ = _autodock_gnina_occupancy(root, prep, refine).get(cid)
-            if occ is None:
-                return None                # no sidecars: never fabricate an occupancy
+            if occ is None:                # no sidecars: never fabricate an occupancy
+                print(f"NOTE: {cid} {refine}: no provenance sidecars; complex dropped from the "
+                      "timed set under --autodock-gnina-accounting device-occupancy", file=sys.stderr)
+                return None
             occupancy_s, process_s, n = occ
-            # Same invocations, two records. The CSV sum is rounded to 2 dp and INCLUDES
-            # failed attempts, which write no sidecar; a gap wider than rounding means the
-            # two sources describe different sets (stale optimized_* dir, partial re-run).
-            if abs(process_s - opt) > 0.01 * max(n, 1) + 1e-6:
+            # Same invocations, two records. Only committed-success rows write a sidecar, so
+            # the sidecar sum is compared with the success-only CSV sum (rounded to 2 dp); a
+            # gap wider than rounding means the two sources describe different sets (stale
+            # optimized_* dir, partial re-run). Failed attempts still bill CPU below.
+            opt_ok = _autodock_opt_time(cid, root, prep, refine, success_only=True) or 0.0
+            if abs(process_s - opt_ok) > 0.01 * max(n, 1) + 1e-6:
                 raise SystemExit(
                     f"ERROR: {cid} {refine}: provenance sidecars sum to {process_s:.3f} s over "
-                    f"{n} invocations but optimization_log.csv sums to {opt:.3f} s. Under "
-                    "--autodock-gnina-accounting device-occupancy the two must describe the "
-                    "same invocations.")
-            # gpu_s is the measured union. The host cores each concurrent gnina occupied are
-            # billed as CPU instead of dropped; opt (the CSV sum) multiplies the cores because
-            # it is the record that includes failed attempts' real CPU.
-            return (dock + opt_wall, occupancy_s,
+                    f"{n} invocations but optimization_log.csv success rows sum to {opt_ok:.3f} s. "
+                    "Under --autodock-gnina-accounting device-occupancy the two must describe "
+                    "the same invocations.")
+            # wall_s and gpu_s are the MEASURED union (the /optimizer_workers idealisation is
+            # not needed once the stage's occupancy is in hand). The host cores each concurrent
+            # gnina held are billed as CPU instead of dropped; opt (the full CSV sum) multiplies
+            # the cores because it is the record that includes failed attempts' real CPU.
+            return (dock + occupancy_s, occupancy_s,
                     dock_cpu_s + opt * float(gnina_host_cores))
         if gnina_accounting != "process-sum":
             raise ValueError(f"unknown gnina accounting {gnina_accounting!r}; "
@@ -1613,7 +1633,7 @@ def compute_effort_stats(pc: pd.DataFrame, summ: pd.DataFrame, meta: dict,
                 "Pooled per-pose validity rates are shown descriptively with Wilson CIs.",
         "cost_basis": basis,
         "cpu_threads": int(cpu_threads),
-        "gnina_accounting": _GNINA_ACCOUNTING_MODE,
+        "gnina_accounting": _gnina_accounting_label(),
         "common_n": int(meta.get("common_n", 0)),
         "min_paired": _MIN_PAIRED,
         "notes": [],
@@ -1738,7 +1758,7 @@ def compute_effort_by_quality_stats(pc: pd.DataFrame, seed: int = 0,
                    "median/IQR are over each tool's own qualifying complexes; the paired "
                    "tests use only complexes every tool populates at that tier.",
            "cost_basis": basis, "cpu_threads": int(cpu_threads),
-           "gnina_accounting": _GNINA_ACCOUNTING_MODE,
+           "gnina_accounting": _gnina_accounting_label(),
            "min_paired": _MIN_PAIRED, "tiers": {}, "notes": []}
     # Self-document which per-pose endpoint the near2 / form1 tiers were scored on, so a
     # reader can tell at a glance whether this cost view matches the headline accuracy view.
@@ -2359,7 +2379,7 @@ def make_effort_by_quality_figure(pc, out_dir, stats=None,
                 # Name the currency on the panel itself. Under the elapsed basis the
                 # title is left exactly as it was, so committed outputs reproduce.
                 _tail = (" + GPU-s, gnina at measured device occupancy"
-                         if _GNINA_ACCOUNTING_MODE == "device-occupancy"
+                         if _GNINA_ACCOUNTING_MODE == "device-occupancy" and not _ORAI_PROCESS_SUM_HIT
                          else " + GPU-s, one basis for every arm")
                 title += f"\ncharged device occupancy: CPU-core-s / {int(cpu_threads)}" + _tail
             note = _omnibus_note(ts.get("omnibus"), "friedman")
@@ -2915,7 +2935,8 @@ def main(argv=None) -> int:
                          "each complex's own optimizer intervals, read from the "
                          "optimized_<tool> provenance sidecars (created_at + "
                          "optimizer_elapsed_time_s), and additionally bills the stage's host "
-                         "CPU at --autodock-gnina-host-cores instead of dropping it. Applies "
+                         "CPU at --autodock-gnina-host-cores instead of dropping it, and sets the "
+                         "stage's wall_s to that union as well. Applies "
                          "only to gnina/gnina_refinement with --autodock-gnina-gpu; the CPU "
                          "branch already bills both. Benchmark-only; the Orai path stays "
                          "process-sum and prints a note.")
