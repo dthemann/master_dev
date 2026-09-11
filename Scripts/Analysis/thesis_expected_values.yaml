@@ -916,7 +916,7 @@ table_6:
 # paired Friedman/Holm block that Figure 15 and Results 4.3 print. Added 2026-09-11:
 # until then the headline number was asserted nowhere, so a regeneration that moved
 # it would have passed silently.
-table_6_medians:
+cost_headline_medians:
   source: "body_main_short.tex, tab:results-cost-per-qualifying-pose; fig:results-r23"
   input: posebusters_results/benchmark_matched_equibind/docking_effort_gnina_v2_charged/effort_by_quality_stats.json
   tier: near2

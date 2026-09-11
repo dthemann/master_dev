@@ -14,7 +14,7 @@
 > been retired and its paths predated the matched-EquiBind migration. That
 > drift is what this generator exists to prevent. See [`FINDINGS_2026-09-02.md`](FINDINGS_2026-09-02.md).
 
-Generated 2026-09-08 15:25 from 66 registered stages.
+Generated 2026-09-11 09:55 from 66 registered stages.
 
 Float numbers are the SHORT build's, read from the figure environments of
 `body_main_short.tex` and `body_appendix_short.tex` in document order.
@@ -651,6 +651,7 @@ The out-dir tag reads 'allposes' because --pb-valid-only is OFF for the shipped 
     --autodock-gnina-gpu \
     --autodock-method autodock_mgltools_exh128_gnina \
     --autodock-optimizer-workers 16 \
+    --autodock-gnina-accounting device-occupancy \
     --equibind-dir Dockings/Benchmark_Equibind_cputimed \
     --unidock2-dir  \
     --unidock-dir  \
@@ -660,7 +661,7 @@ The out-dir tag reads 'allposes' because --pb-valid-only is OFF for the shipped 
     --cpu-threads 32
 ```
 
-The charged basis divides cpu_core_s/32 + gpu_s uniformly. The default elapsed basis divides wall_s, which is not one quantity across arms and is sensitive to --autodock-optimizer-workers; charged is not.
+The charged basis divides cpu_core_s/32 + gpu_s uniformly; the default elapsed basis divides wall_s, which is not one quantity across arms and moves with --autodock-optimizer-workers. Charged does not move with it under either gnina accounting, but only under --autodock-gnina-accounting device-occupancy is the AutoDock GPU term a measured device occupancy rather than a ~14x-inflated sum over sixteen concurrent workers.
 
 #### `bench_effort_elapsed` — Hardware resource per near-native valid pose
 
@@ -678,6 +679,7 @@ The charged basis divides cpu_core_s/32 + gpu_s uniformly. The default elapsed b
     --autodock-gnina-gpu \
     --autodock-method autodock_mgltools_exh128_gnina \
     --autodock-optimizer-workers 16 \
+    --autodock-gnina-accounting device-occupancy \
     --equibind-dir Dockings/Benchmark_Equibind_cputimed \
     --unidock2-dir  \
     --unidock-dir  \
@@ -1178,7 +1180,7 @@ byte-identical copies exist.
 
 | Fig | Asset | Subject | Source |
 | --- | --- | --- | --- |
-| 1 | `image2` | Post-hoc optimisation and PoseBusters validity. Significance… | `posebusters_results/benchmark_matched_equibind/dock/validity_report_mgltools/00_figure2_validity_yield.png` |
+| 1 | `image2` | Post-hoc optimisation and PB-validity. Significance brackets… | `posebusters_results/benchmark_matched_equibind/dock/validity_report_mgltools/00_figure2_validity_yield.png` |
 | 2 | `image3` | Best-of-top-N accuracy against the as-placed RMSD to the… | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/18_topn_within_thresholds_pbvalid_depths.png` |
 | 3 | `image4` | Best-of-top-N accuracy against the best-fit (Kabsch) RMSD | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/18_topn_within_thresholds_kabsch_pbvalid_depths.png` |
 | 4 | `image5` | Form versus in-place RMSD across ranking depth | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/20d_form_vs_placement_by_family__depth_filmstrip_pbvalid__rank1_top5_top15__thesis.png` |
@@ -1209,9 +1211,9 @@ byte-identical copies exist.
 | 29 | `image34` | Drug-likeness of the benchmark ligands | `PoseBusters_Benchmark_Analysis/figures/02_druglikeness_ro5_qed.png` |
 | 30 | `image35` | Elemental and charge composition | `PoseBusters_Benchmark_Analysis/figures/03_elemental_charge_composition.png` |
 | 31 | `image36` | Descriptor correlation matrix | `PoseBusters_Benchmark_Analysis/figures/04_ligand_correlation_heatmap.png` |
-| 32 | `image37` | Two-Dimensional Attribute Mappings Coloured by QED | `PoseBusters_Benchmark_Analysis/figures/05_2d_attribute_mappings.png` |
+| 32 | `image37` | Two-dimensional attribute mappings coloured by QED | `PoseBusters_Benchmark_Analysis/figures/05_2d_attribute_mappings.png` |
 | 33 | `image38` | Joint distributions of six core descriptors | `PoseBusters_Benchmark_Analysis/figures/06_pairplot_core_descriptors.png` |
-| 34 | `image39` | Principal Component Analysis of the Ligand Descriptors | `PoseBusters_Benchmark_Analysis/figures/09_pca_scree_loadings.png` |
+| 34 | `image39` | Principal-component analysis of the ligand descriptors | `PoseBusters_Benchmark_Analysis/figures/09_pca_scree_loadings.png` |
 | 35 | `image40` | PCA biplot and score plot | `PoseBusters_Benchmark_Analysis/figures/10_pca_biplot.png` |
 | 36 | `image41` | Receptor profile | `PoseBusters_Benchmark_Analysis/figures/07_receptor_profile.png` |
 | 37 | `image42` | Conformer-generation difficulty | `PoseBusters_Benchmark_Analysis/figures/08_startconf_rmsd.png` |
@@ -1242,6 +1244,7 @@ Tables whose printed values are recomputed and asserted on every run by
 | 20 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/optimization_benefit_by_rank.csv` | body_appendix_short.tex, tab:appendix-refinement-bands |
 | 21 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_stats.csv` | body_appendix_short.tex, tab:appendix-cross-tool-mcnemar |
 | 22 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/topk_recovery_validity.csv` | body_appendix_short.tex, tab:appendix-accurate-invalid |
+| 23 | `posebusters_results/reference_convention/reference_convention_sensitivity.csv` | body_appendix_short.tex, tab:reference_convention_sensitivity |
 | 24 | `` | body_appendix_short.tex, tab:appendix-pb-decomposition-full |
 | 25 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv` | body_appendix_short.tex, tab:results-depth-gain |
 | 26 | `posebusters_results/benchmark_matched_equibind/dock/pose_comparison_report/per_pose_metrics.csv` | body_appendix_short.tex, tab:results-near-native-form |

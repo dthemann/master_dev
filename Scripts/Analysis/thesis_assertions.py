@@ -410,12 +410,12 @@ def check_table_6_medians(spec: dict, rep: Report, verbose: bool = False) -> Non
     median/IQR and the paired Friedman/Holm verdict live in effort_by_quality_stats.json
     and were asserted nowhere before 2026-09-11.
     """
-    t = spec.get("table_6_medians")
+    t = spec.get("cost_headline_medians")
     if not t:
         return
     p = ROOT / t["input"]
     if not p.exists():
-        rep.add("table_6_medians", "stats sidecar present", "missing", False, t["source"])
+        rep.add("cost_headline_medians", "stats sidecar present", "missing", False, t["source"])
         return
     tier = json.loads(p.read_text())["tiers"][t["tier"]]
     nbad = 0
