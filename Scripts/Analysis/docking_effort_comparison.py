@@ -2362,6 +2362,11 @@ def make_effort_by_quality_figure(pc, out_dir, stats=None,
                            flierprops=dict(marker="o", ms=3, mec="none", alpha=0.4))
             for (i, _d), patch in zip(drawn, bp["boxes"]):
                 patch.set_facecolor(tool_colors[i]); patch.set_alpha(0.8)
+            # One boxplot call serves every tool, so the shared flierprops cannot carry a
+            # per-tool colour. Without a face colour matplotlib paints the fliers with
+            # nothing (mec is "none" too) and the outliers above each whisker vanish.
+            for (i, _d), flier in zip(drawn, bp["fliers"]):
+                flier.set_markerfacecolor(tool_colors[i])
             a.set_yscale("log")
             a.set_xticks(x); a.set_xticklabels(names, rotation=15, ha="right", fontsize=9)
             a.set_xlim(-0.6, len(order) - 0.4)
